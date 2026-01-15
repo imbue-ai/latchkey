@@ -9,4 +9,5 @@ Python style guide:
 - Use frozen pydantic models for most classes.
 - Use pytest for testing.
 - Prefer functional, stateless logic as much as possible.
+- Use immutable data structures (for example, use lists over tuples) as much as possible.
 - Do not use abbreviations in variable (class, function, ...) names. It's fine for names to be somewhat verbose.
