@@ -1,6 +1,6 @@
 # Latchkey
 
-A command-line tool that injects credentials to requests to known public APIs.
+A command-line tool that injects credentials to curl requests to known public APIs.
 
 This is how it works:
 
