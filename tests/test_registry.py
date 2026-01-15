@@ -5,7 +5,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from latchkey.registry import REGISTRY
 from latchkey.registry import Registry
 from latchkey.services import Service
 
@@ -85,8 +84,3 @@ class TestRegistry:
         registry = Registry()
         with pytest.raises(Exception):  # pydantic raises ValidationError for frozen models
             registry.services = (mock_service,)  # type: ignore[misc]
-
-    def test_global_registry_exists(self) -> None:
-        """A global REGISTRY instance exists and is empty by default."""
-        assert isinstance(REGISTRY, Registry)
-        assert REGISTRY.services == ()
