@@ -13,6 +13,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pre-commit",
+    "pytest>=8.0",
 ]
 
 [project.scripts]
