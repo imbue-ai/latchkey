@@ -1,12 +1,12 @@
-from abc import ABC
 from abc import abstractmethod
 
 from playwright.sync_api import Page
+from pydantic import BaseModel
 
 from latchkey.credentials import Credentials
 
 
-class Service(ABC):
+class Service(BaseModel, frozen=True):
     """Abstract base class for third-party services."""
 
     name: str
