@@ -21,7 +21,7 @@ Notice that `-H 'Authorization: Bearer` is absent. This is because latchkey:
 - Notices when the request fails with HTTP status 401 or 403.
 - Opens the browser with a login screen.
 - After the user logs in, latchkey extracts the necessary credentials from the browser session.
-- The browser is closed and the credentials are injected into the curl arguments.
+- The browser is closed, the credentials are injected into the arguments and curl is invoked.
 
 Otherwise, `latchkey curl` just directly passes your arguments through to `curl` so you can use the same interface you are used to.
 The return code, stdin and stdout are passed back from curl to the caller of `latchkey`.
