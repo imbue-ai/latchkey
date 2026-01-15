@@ -9,6 +9,7 @@ from latchkey.credentials import Credentials
 class Service(ABC):
     """Abstract base class for third-party services."""
 
+    name: str
     base_api_url: str
     login_url: str
 
