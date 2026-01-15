@@ -13,6 +13,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pre-commit",
+    "pyright>=1.1",
     "pytest>=8.0",
 ]
 
@@ -34,3 +35,9 @@ order-by-type = false
 known-first-party = [
     "latchkey",
 ]
+
+[tool.pyright]
+include = ["latchkey"]
+venvPath = "."
+venv = ".venv"
+reportMissingImports = "warning"
