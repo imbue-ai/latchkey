@@ -35,11 +35,15 @@ The return code, stdin and stdout are passed back from curl to the caller of `la
 
 ## Installation
 
-### Using uv
-
 1. Clone this repository to your local machine.
-1. Enter the repository's directory.
-2. `uv tool install .`
+2. Enter the repository's directory.
+3. `uv tool install .`
+
+## Tests
+
+```
+uv run pytest .
+```
 
 
 ## Use cases
