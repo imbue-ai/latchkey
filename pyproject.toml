@@ -1,0 +1,30 @@
+[project]
+name = "latchkey"
+version = "0.1.0"
+description = "A command-line tool that injects credentials to curl requests to known public APIs."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.0",
+]
+
+[dependency-groups]
+dev = [
+    "pre-commit",
+]
+
+[tool.ruff]
+line-length = 119
+
+[tool.ruff.format]
+docstring-code-line-length = 119
+quote-style = "double"
+indent-style = "space"
+
+[tool.ruff.lint.isort]
+force-single-line = true
+case-sensitive = true
+order-by-type = false
+known-first-party = [
+    "latchkey",
+]
