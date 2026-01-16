@@ -109,13 +109,6 @@ def curl(
         list[str] | None,
         typer.Argument(help="Arguments to pass to curl."),
     ] = None,
-    latchkey_playwright_store: Annotated[
-        Path | None,
-        typer.Option(
-            "--latchkey-playwright-store",
-            help="Path to store/load Playwright browser state for reusing logins.",
-        ),
-    ] = None,
     latchkey_store: Annotated[
         Path | None,
         typer.Option(
@@ -138,7 +131,7 @@ def curl(
                 credentials = credential_store.get(service.name)
 
             if credentials is None:
-                credentials = service.login(storage_state=latchkey_playwright_store)
+                credentials = service.login()
                 if credential_store is not None:
                     credential_store.save(service.name, credentials)
 

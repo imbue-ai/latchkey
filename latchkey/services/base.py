@@ -1,5 +1,4 @@
 from abc import abstractmethod
-from pathlib import Path
 
 from playwright.sync_api import Page
 from playwright.sync_api import sync_playwright
@@ -97,21 +96,16 @@ class Service(BaseModel):
         page.set_content(instructions_html)
         page.wait_for_function("window.loginContinue === true")
 
-    def login(self, storage_state: Path | None = None) -> Credentials:
+    def login(self) -> Credentials:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=False)
-            context = browser.new_context(
-                storage_state=str(storage_state) if storage_state and storage_state.exists() else None
-            )
+            context = browser.new_context()
             page = context.new_page()
 
             self._show_login_instructions(page)
             page.goto(self.login_url)
             self.wait_for_login_completed(page)
             credentials = self.extract_credentials(page)
-
-            if storage_state is not None:
-                context.storage_state(path=str(storage_state))
 
             browser.close()
 
