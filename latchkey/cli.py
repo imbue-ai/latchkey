@@ -87,7 +87,7 @@ def match(
         typer.echo("Error: Could not extract URL from curl arguments.", err=True)
         raise typer.Exit(code=1)
 
-    service = REGISTRY.get_from_url(url)
+    service = REGISTRY.get_by_url(url)
     if service is None:
         typer.echo(f"Error: No service matches URL: {url}", err=True)
         typer.echo("Use 'latchkey services' to see available services.", err=True)
@@ -122,7 +122,7 @@ def curl(
 
     url = _extract_url_from_curl_arguments(all_arguments)
     if url is not None:
-        service = REGISTRY.get_from_url(url)
+        service = REGISTRY.get_by_url(url)
         if service is not None:
             credentials = None
             credential_store = CredentialStore(path=latchkey_store) if latchkey_store else None

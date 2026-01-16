@@ -21,7 +21,7 @@ from playwright.sync_api import sync_playwright
 
 from latchkey.credentials import Credentials
 from latchkey.registry import REGISTRY
-from latchkey.services.base import Service
+from latchkey.services import Service
 
 RECORDINGS_DIRECTORY = Path(__file__).parent.parent / "scripts" / "recordings"
 
@@ -121,14 +121,6 @@ def _discover_recordings() -> list[tuple[str, Path]]:
     return recordings
 
 
-def _get_service_by_name(name: str) -> Service | None:
-    """Get a service from the registry by name."""
-    for service in REGISTRY.services:
-        if service.name == name:
-            return service
-    return None
-
-
 # Discover recordings at module load time for pytest parametrization
 _DISCOVERED_RECORDINGS = _discover_recordings()
 
@@ -140,7 +132,7 @@ _DISCOVERED_RECORDINGS = _discover_recordings()
 )
 def test_recording(service_name: str, recording_path: Path) -> None:
     """Test that a recorded login session produces valid credentials."""
-    service = _get_service_by_name(service_name)
+    service = REGISTRY.get_by_name(service_name)
     if service is None:
         pytest.skip(f"Service '{service_name}' not found in registry")
 

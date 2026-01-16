@@ -98,7 +98,6 @@ import typer
 from playwright.sync_api import sync_playwright
 
 from latchkey.registry import REGISTRY
-from latchkey.services import Service
 
 # Default maximum size for media content in HAR files (1MB)
 DEFAULT_MAX_MEDIA_SIZE_BYTES = 1024 * 1024
@@ -146,20 +145,14 @@ def _filter_har_media(har_path: Path, max_size_bytes: int = DEFAULT_MAX_MEDIA_SI
         json.dump(har_data, file, indent=2)
 
 
-def _get_service_by_name(name: str) -> Service:
-    """Get a service from the registry by name."""
-    for service in REGISTRY.services:
-        if service.name == name:
-            return service
-    raise UnknownServiceError(f"Unknown service: {name}")
-
-
 def _record(
     service_name: str,
     max_media_size: int,
 ) -> None:
     """Record a browser session for later replay."""
-    service = _get_service_by_name(service_name)
+    service = REGISTRY.get_by_name(service_name)
+    if service is None:
+        raise UnknownServiceError(f"Unknown service: {service_name}")
 
     output_directory = RECORDINGS_DIRECTORY / service_name
     output_directory.mkdir(parents=True, exist_ok=True)

@@ -194,11 +194,11 @@ def test_curl_injects_credentials_for_slack_api() -> None:
     with patch("latchkey.cli.REGISTRY") as mock_registry:
         mock_service = MagicMock()
         mock_service.login.return_value = mock_credentials
-        mock_registry.get_from_url.return_value = mock_service
+        mock_registry.get_by_url.return_value = mock_service
 
         result = runner.invoke(app, ["curl", "https://slack.com/api/conversations.list"])
 
-        mock_registry.get_from_url.assert_called_once_with("https://slack.com/api/conversations.list")
+        mock_registry.get_by_url.assert_called_once_with("https://slack.com/api/conversations.list")
         mock_service.login.assert_called_once()
 
     assert result.exit_code == 0
@@ -222,11 +222,11 @@ def test_curl_does_not_inject_credentials_for_unknown_service() -> None:
     set_subprocess_runner(mock_runner)
 
     with patch("latchkey.cli.REGISTRY") as mock_registry:
-        mock_registry.get_from_url.return_value = None
+        mock_registry.get_by_url.return_value = None
 
         result = runner.invoke(app, ["curl", "https://unknown-api.example.com"])
 
-        mock_registry.get_from_url.assert_called_once_with("https://unknown-api.example.com")
+        mock_registry.get_by_url.assert_called_once_with("https://unknown-api.example.com")
 
     assert result.exit_code == 0
     assert captured_args == ["curl", "https://unknown-api.example.com"]
@@ -244,7 +244,7 @@ def test_curl_does_not_inject_credentials_when_no_url_found() -> None:
     with patch("latchkey.cli.REGISTRY") as mock_registry:
         result = runner.invoke(app, ["curl", "--", "-X", "POST"])
 
-        mock_registry.get_from_url.assert_not_called()
+        mock_registry.get_by_url.assert_not_called()
 
     assert result.exit_code == 0
     assert captured_args == ["curl", "-X", "POST"]
@@ -257,11 +257,11 @@ def test_match_prints_service_name_for_slack_url() -> None:
     with patch("latchkey.cli.REGISTRY") as mock_registry:
         mock_service = MagicMock()
         mock_service.name = "slack"
-        mock_registry.get_from_url.return_value = mock_service
+        mock_registry.get_by_url.return_value = mock_service
 
         result = runner.invoke(app, ["match", "https://slack.com/api/conversations.list"])
 
-        mock_registry.get_from_url.assert_called_once_with("https://slack.com/api/conversations.list")
+        mock_registry.get_by_url.assert_called_once_with("https://slack.com/api/conversations.list")
 
     assert result.exit_code == 0
     assert result.stdout.strip() == "slack"
@@ -269,11 +269,11 @@ def test_match_prints_service_name_for_slack_url() -> None:
 
 def test_match_returns_error_for_unknown_service() -> None:
     with patch("latchkey.cli.REGISTRY") as mock_registry:
-        mock_registry.get_from_url.return_value = None
+        mock_registry.get_by_url.return_value = None
 
         result = runner.invoke(app, ["match", "https://unknown-api.example.com"])
 
-        mock_registry.get_from_url.assert_called_once_with("https://unknown-api.example.com")
+        mock_registry.get_by_url.assert_called_once_with("https://unknown-api.example.com")
 
     assert result.exit_code == 1
     assert "No service matches URL" in result.stderr
@@ -292,7 +292,7 @@ def test_match_works_with_complex_curl_arguments() -> None:
     with patch("latchkey.cli.REGISTRY") as mock_registry:
         mock_service = MagicMock()
         mock_service.name = "slack"
-        mock_registry.get_from_url.return_value = mock_service
+        mock_registry.get_by_url.return_value = mock_service
 
         result = runner.invoke(
             app,
@@ -307,7 +307,7 @@ def test_match_works_with_complex_curl_arguments() -> None:
             ],
         )
 
-        mock_registry.get_from_url.assert_called_once_with("https://slack.com/api/chat.postMessage")
+        mock_registry.get_by_url.assert_called_once_with("https://slack.com/api/chat.postMessage")
 
     assert result.exit_code == 0
     assert result.stdout.strip() == "slack"
@@ -325,7 +325,7 @@ def test_match_works_with_curl_options_without_double_dash() -> None:
     with patch("latchkey.cli.REGISTRY") as mock_registry:
         mock_service = MagicMock()
         mock_service.name = "slack"
-        mock_registry.get_from_url.return_value = mock_service
+        mock_registry.get_by_url.return_value = mock_service
 
         result = runner.invoke(
             app,
@@ -341,7 +341,7 @@ def test_match_works_with_curl_options_without_double_dash() -> None:
             ],
         )
 
-        mock_registry.get_from_url.assert_called_once_with("https://slack.com/api/conversations.create")
+        mock_registry.get_by_url.assert_called_once_with("https://slack.com/api/conversations.create")
 
     assert result.exit_code == 0
     assert result.stdout.strip() == "slack"
