@@ -11,6 +11,7 @@ from typing import Annotated
 import typer
 import uncurl
 
+from latchkey.credential_store import CredentialStore
 from latchkey.registry import REGISTRY
 
 app = typer.Typer(
@@ -116,6 +117,13 @@ def curl(
             help="Path to store/load Playwright browser state for reusing logins.",
         ),
     ] = None,
+    latchkey_store: Annotated[
+        Path | None,
+        typer.Option(
+            "--latchkey-store",
+            help="Path to store/load serialized credentials for all services.",
+        ),
+    ] = None,
 ) -> None:
     """Run curl with credential injection."""
     all_arguments = _collect_curl_arguments(curl_arguments, context)
@@ -124,7 +132,17 @@ def curl(
     if url is not None:
         service = REGISTRY.get_from_url(url)
         if service is not None:
-            credentials = service.login(storage_state=latchkey_playwright_store)
+            credentials = None
+            credential_store = CredentialStore(path=latchkey_store) if latchkey_store else None
+
+            if credential_store is not None:
+                credentials = credential_store.get(service.name)
+
+            if credentials is None:
+                credentials = service.login(storage_state=latchkey_playwright_store)
+                if credential_store is not None:
+                    credential_store.save(service.name, credentials)
+
             all_arguments = list(credentials.as_curl_arguments()) + all_arguments
 
     result = _subprocess_runner(["curl", *all_arguments])

@@ -6,6 +6,7 @@ from latchkey.services.base import Service
 
 
 class SlackCredentials(Credentials):
+    object_type: str = "slack"
     token: str
     d_cookie: str
 
