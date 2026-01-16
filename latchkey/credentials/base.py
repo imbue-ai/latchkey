@@ -1,7 +1,13 @@
 from abc import ABC
+from abc import abstractmethod
+
+from pydantic import BaseModel
 
 
-class Credentials(ABC):
+class Credentials(BaseModel, ABC, frozen=True):
     """Abstract base class for service credentials."""
 
-    pass
+    @abstractmethod
+    def as_curl_arguments(self) -> tuple[str, ...]:
+        """Return curl command-line arguments for authentication."""
+        ...

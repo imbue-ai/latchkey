@@ -47,7 +47,9 @@ def test_curl_passes_multiple_arguments() -> None:
     set_subprocess_runner(mock_runner)
 
     # Use -- to separate curl arguments from latchkey options
-    result = runner.invoke(app, ["curl", "--", "-X", "POST", "-H", "Content-Type: application/json", "https://api.example.com"])
+    result = runner.invoke(
+        app, ["curl", "--", "-X", "POST", "-H", "Content-Type: application/json", "https://api.example.com"]
+    )
 
     assert captured_args == ["curl", "-X", "POST", "-H", "Content-Type: application/json", "https://api.example.com"]
     assert result.exit_code == 0
@@ -55,6 +57,7 @@ def test_curl_passes_multiple_arguments() -> None:
 
 def test_curl_returns_subprocess_exit_code() -> None:
     """Test that the exit code from subprocess is returned."""
+
     def mock_runner(args: Sequence[str]) -> subprocess.CompletedProcess[bytes]:
         return subprocess.CompletedProcess(args=args, returncode=42)
 
@@ -67,6 +70,7 @@ def test_curl_returns_subprocess_exit_code() -> None:
 
 def test_curl_returns_nonzero_exit_code() -> None:
     """Test that non-zero exit codes are properly propagated."""
+
     def mock_runner(args: Sequence[str]) -> subprocess.CompletedProcess[bytes]:
         return subprocess.CompletedProcess(args=args, returncode=1)
 
