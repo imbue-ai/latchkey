@@ -318,3 +318,30 @@ def test_match_with_no_arguments() -> None:
 
     assert result.exit_code == 1
     assert "Could not extract URL" in result.stderr
+
+
+def test_match_works_with_curl_options_without_double_dash() -> None:
+    """Test that match works with curl options like -X without requiring --."""
+    with patch("latchkey.cli.REGISTRY") as mock_registry:
+        mock_service = MagicMock()
+        mock_service.name = "slack"
+        mock_registry.get_from_url.return_value = mock_service
+
+        result = runner.invoke(
+            app,
+            [
+                "match",
+                "-X",
+                "POST",
+                "https://slack.com/api/conversations.create",
+                "-H",
+                "Content-Type: application/json",
+                "-d",
+                '{"name":"test-conversation"}',
+            ],
+        )
+
+        mock_registry.get_from_url.assert_called_once_with("https://slack.com/api/conversations.create")
+
+    assert result.exit_code == 0
+    assert result.stdout.strip() == "slack"

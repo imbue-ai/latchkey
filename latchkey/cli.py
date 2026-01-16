@@ -65,7 +65,11 @@ def services() -> None:
 
 
 @app.command(
-    context_settings={"allow_extra_args": True, "allow_interspersed_args": False},
+    context_settings={
+        "allow_extra_args": True,
+        "allow_interspersed_args": False,
+        "ignore_unknown_options": True,
+    },
 )
 def match(
     context: typer.Context,
@@ -92,7 +96,11 @@ def match(
 
 
 @app.command(
-    context_settings={"allow_extra_args": True, "allow_interspersed_args": False},
+    context_settings={
+        "allow_extra_args": True,
+        "allow_interspersed_args": False,
+        "ignore_unknown_options": True,
+    },
 )
 def curl(
     context: typer.Context,
