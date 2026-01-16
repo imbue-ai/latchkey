@@ -12,7 +12,6 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "pre-commit",
     "pyright>=1.1",
     "pytest>=8.0",
     "ruff>=0.14",
