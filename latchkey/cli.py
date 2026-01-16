@@ -1,11 +1,15 @@
 """Command-line interface for latchkey."""
 
+import shlex
 import subprocess
 from collections.abc import Callable
 from collections.abc import Sequence
 from typing import Annotated
 
 import typer
+import uncurl
+
+from latchkey.registry import REGISTRY
 
 app = typer.Typer(
     help="A command-line tool that injects credentials to curl requests to known public APIs.",
@@ -36,6 +40,17 @@ def reset_subprocess_runner() -> None:
     _subprocess_runner = _default_subprocess_runner
 
 
+def _extract_url_from_curl_arguments(arguments: Sequence[str]) -> str | None:
+    """Extract the URL from curl command-line arguments using uncurl."""
+    curl_command = "curl " + " ".join(shlex.quote(arg) for arg in arguments)
+    try:
+        context = uncurl.parse_context(curl_command)
+        return context.url if context.url else None
+    except SystemExit:
+        # uncurl raises SystemExit for invalid/unparseable commands
+        return None
+
+
 @app.command()
 def services() -> None:
     """List known and supported third-party services."""
@@ -54,6 +69,14 @@ def curl(
 ) -> None:
     """Run curl with credential injection."""
     all_arguments = list(curl_arguments or []) + context.args
+
+    url = _extract_url_from_curl_arguments(all_arguments)
+    if url is not None:
+        service = REGISTRY.get_from_url(url)
+        if service is not None:
+            credentials = service.login()
+            all_arguments = list(credentials.as_curl_arguments()) + all_arguments
+
     result = _subprocess_runner(["curl", *all_arguments])
     raise typer.Exit(code=result.returncode)
 
