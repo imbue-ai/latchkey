@@ -37,8 +37,7 @@ class Slack(Service):
     @property
     def login_instructions(self) -> tuple[str, ...]:
         return (
-            "Sign in with your Slack workspace credentials.",
-            "Select a workspace if you belong to multiple.",
+            "(!) Accept all cookies if prompted.",
             "(!) Launch Slack in your browser (not the desktop app).",
         )
 
