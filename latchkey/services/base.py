@@ -12,7 +12,7 @@ class Service(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     name: str
-    base_api_url: str
+    base_api_urls: tuple[str, ...]
     login_url: str
 
     @abstractmethod

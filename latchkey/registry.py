@@ -22,8 +22,9 @@ class Registry(BaseModel):
             A Service instance if one matches the URL, None otherwise.
         """
         for service in self.services:
-            if url.startswith(service.base_api_url):
-                return service
+            for base_api_url in service.base_api_urls:
+                if url.startswith(base_api_url):
+                    return service
         return None
 
 
