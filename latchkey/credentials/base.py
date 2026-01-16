@@ -2,9 +2,11 @@ from abc import ABC
 from abc import abstractmethod
 
 from pydantic import BaseModel
+from pydantic import ConfigDict
 
 
-class Credentials(BaseModel, ABC, frozen=True):
+class Credentials(BaseModel, ABC):
+    model_config = ConfigDict(frozen=True)
     """Abstract base class for service credentials."""
 
     @abstractmethod

@@ -1,7 +1,7 @@
 from latchkey.credentials.base import Credentials
 
 
-class AuthorizationBearer(Credentials, frozen=True):
+class AuthorizationBearer(Credentials):
     """Credentials using Bearer token authentication via Authorization header."""
 
     token: str

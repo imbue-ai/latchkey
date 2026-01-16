@@ -1,11 +1,13 @@
 """Service registry for looking up services by URL."""
 
 from pydantic import BaseModel
+from pydantic import ConfigDict
 
 from latchkey.services import Service
 
 
-class Registry(BaseModel, frozen=True):
+class Registry(BaseModel):
+    model_config = ConfigDict(frozen=True)
     """Registry of supported services."""
 
     services: tuple[Service, ...] = ()
