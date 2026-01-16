@@ -19,7 +19,6 @@ latchkey curl -X POST 'https://slack.com/api/conversations.create' \
 
 Notice that `-H 'Authorization: Bearer` is absent. This is because latchkey:
 
-- Notices when the request fails with HTTP status 401 or 403.
 - Opens the browser with a login screen.
 - After the user logs in, latchkey extracts the necessary credentials from the browser session.
 - The browser is closed, the credentials are injected into the arguments and curl is invoked.
