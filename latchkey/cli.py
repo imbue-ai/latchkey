@@ -2,7 +2,6 @@
 
 import shlex
 import subprocess
-import sys
 from collections.abc import Callable
 from collections.abc import Sequence
 from pathlib import Path
@@ -63,7 +62,7 @@ def _collect_curl_arguments(curl_arguments: list[str] | None, context: typer.Con
 @app.command()
 def services() -> None:
     """List known and supported third-party services."""
-    print("[]")
+    typer.echo("[]")
 
 
 @app.command(
@@ -85,16 +84,16 @@ def match(
 
     url = _extract_url_from_curl_arguments(all_arguments)
     if url is None:
-        print("Error: Could not extract URL from curl arguments.", file=sys.stderr)
+        typer.echo("Error: Could not extract URL from curl arguments.", err=True)
         raise typer.Exit(code=1)
 
     service = REGISTRY.get_from_url(url)
     if service is None:
-        print(f"Error: No service matches URL: {url}", file=sys.stderr)
-        print("Use 'latchkey services' to see available services.", file=sys.stderr)
+        typer.echo(f"Error: No service matches URL: {url}", err=True)
+        typer.echo("Use 'latchkey services' to see available services.", err=True)
         raise typer.Exit(code=1)
 
-    print(service.name)
+    typer.echo(service.name)
 
 
 @app.command(

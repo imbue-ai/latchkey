@@ -17,7 +17,6 @@ The recording consists of two files:
 """
 
 import json
-import sys
 from pathlib import Path
 from typing import Annotated
 
@@ -73,10 +72,10 @@ def _record(
     har_path = output_directory / f"{recording_name}.har"
     state_path = output_directory / f"{recording_name}.state.json"
 
-    print(f"Recording browser session to: {output_directory}")
-    print(f"  HAR file: {har_path}")
-    print(f"  State file: {state_path}")
-    print("\nClose the browser window when you're done to save the recording.")
+    typer.echo(f"Recording browser session to: {output_directory}")
+    typer.echo(f"  HAR file: {har_path}")
+    typer.echo(f"  State file: {state_path}")
+    typer.echo("\nClose the browser window when you're done to save the recording.")
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=False)
@@ -103,11 +102,11 @@ def _record(
     # Filter out large media from HAR file
     if har_path.exists():
         _filter_har_media(har_path, max_media_size)
-        print(f"\nRecording saved successfully!")
-        print(f"  HAR file: {har_path}")
-        print(f"  State file: {state_path}")
+        typer.echo("\nRecording saved successfully!")
+        typer.echo(f"  HAR file: {har_path}")
+        typer.echo(f"  State file: {state_path}")
     else:
-        print("\nWarning: HAR file was not created.", file=sys.stderr)
+        typer.echo("\nWarning: HAR file was not created.", err=True)
 
 
 def main(
