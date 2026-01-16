@@ -2,6 +2,7 @@
 
 import shlex
 import subprocess
+import sys
 from collections.abc import Callable
 from collections.abc import Sequence
 from typing import Annotated
@@ -51,10 +52,43 @@ def _extract_url_from_curl_arguments(arguments: Sequence[str]) -> str | None:
         return None
 
 
+def _collect_curl_arguments(curl_arguments: list[str] | None, context: typer.Context) -> list[str]:
+    # Typer splits arguments around "--": those before go into curl_arguments,
+    # those after go into context.args. Concatenate them to get all arguments.
+    return list(curl_arguments or []) + context.args
+
+
 @app.command()
 def services() -> None:
     """List known and supported third-party services."""
     print("[]")
+
+
+@app.command(
+    context_settings={"allow_extra_args": True, "allow_interspersed_args": False},
+)
+def match(
+    context: typer.Context,
+    curl_arguments: Annotated[
+        list[str] | None,
+        typer.Argument(help="Arguments to pass to curl (for URL extraction)."),
+    ] = None,
+) -> None:
+    """Print the name of the service that matches the given curl invocation."""
+    all_arguments = _collect_curl_arguments(curl_arguments, context)
+
+    url = _extract_url_from_curl_arguments(all_arguments)
+    if url is None:
+        print("Error: Could not extract URL from curl arguments.", file=sys.stderr)
+        raise typer.Exit(code=1)
+
+    service = REGISTRY.get_from_url(url)
+    if service is None:
+        print(f"Error: No service matches URL: {url}", file=sys.stderr)
+        print("Use 'latchkey services' to see available services.", file=sys.stderr)
+        raise typer.Exit(code=1)
+
+    print(service.name)
 
 
 @app.command(
@@ -68,7 +102,7 @@ def curl(
     ] = None,
 ) -> None:
     """Run curl with credential injection."""
-    all_arguments = list(curl_arguments or []) + context.args
+    all_arguments = _collect_curl_arguments(curl_arguments, context)
 
     url = _extract_url_from_curl_arguments(all_arguments)
     if url is not None:

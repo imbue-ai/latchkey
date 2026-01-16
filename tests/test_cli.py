@@ -248,3 +248,73 @@ def test_curl_does_not_inject_credentials_when_no_url_found() -> None:
 
     assert result.exit_code == 0
     assert captured_args == ["curl", "-X", "POST"]
+
+
+# Tests for match command
+
+
+def test_match_prints_service_name_for_slack_url() -> None:
+    with patch("latchkey.cli.REGISTRY") as mock_registry:
+        mock_service = MagicMock()
+        mock_service.name = "slack"
+        mock_registry.get_from_url.return_value = mock_service
+
+        result = runner.invoke(app, ["match", "https://slack.com/api/conversations.list"])
+
+        mock_registry.get_from_url.assert_called_once_with("https://slack.com/api/conversations.list")
+
+    assert result.exit_code == 0
+    assert result.stdout.strip() == "slack"
+
+
+def test_match_returns_error_for_unknown_service() -> None:
+    with patch("latchkey.cli.REGISTRY") as mock_registry:
+        mock_registry.get_from_url.return_value = None
+
+        result = runner.invoke(app, ["match", "https://unknown-api.example.com"])
+
+        mock_registry.get_from_url.assert_called_once_with("https://unknown-api.example.com")
+
+    assert result.exit_code == 1
+    assert "No service matches URL" in result.stderr
+    assert "https://unknown-api.example.com" in result.stderr
+    assert "latchkey services" in result.stderr
+
+
+def test_match_returns_error_when_no_url_found() -> None:
+    result = runner.invoke(app, ["match", "--", "-X", "POST"])
+
+    assert result.exit_code == 1
+    assert "Could not extract URL" in result.stderr
+
+
+def test_match_works_with_complex_curl_arguments() -> None:
+    with patch("latchkey.cli.REGISTRY") as mock_registry:
+        mock_service = MagicMock()
+        mock_service.name = "slack"
+        mock_registry.get_from_url.return_value = mock_service
+
+        result = runner.invoke(
+            app,
+            [
+                "match",
+                "--",
+                "-X",
+                "POST",
+                "-H",
+                "Content-Type: application/json",
+                "https://slack.com/api/chat.postMessage",
+            ],
+        )
+
+        mock_registry.get_from_url.assert_called_once_with("https://slack.com/api/chat.postMessage")
+
+    assert result.exit_code == 0
+    assert result.stdout.strip() == "slack"
+
+
+def test_match_with_no_arguments() -> None:
+    result = runner.invoke(app, ["match"])
+
+    assert result.exit_code == 1
+    assert "Could not extract URL" in result.stderr
