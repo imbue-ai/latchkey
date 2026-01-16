@@ -19,14 +19,6 @@ class Discord(Service):
         }
     """
 
-    @property
-    def login_instructions(self) -> tuple[str, ...]:
-        return (
-            "Sign in with your Discord account credentials",
-            "Complete any two-factor authentication if prompted",
-            "The browser will close automatically once login is complete",
-        )
-
     def wait_for_login_completed(self, page: Page) -> None:
         # Wait for navigation to the Discord app (channels page)
         page.wait_for_function(

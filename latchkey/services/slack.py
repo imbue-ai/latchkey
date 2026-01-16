@@ -37,9 +37,9 @@ class Slack(Service):
     @property
     def login_instructions(self) -> tuple[str, ...]:
         return (
-            "Sign in with your Slack workspace credentials",
-            "Select a workspace if you belong to multiple",
-            "The browser will close automatically once login is complete",
+            "Sign in with your Slack workspace credentials.",
+            "Select a workspace if you belong to multiple.",
+            "(!) Launch Slack in your browser (not the desktop app).",
         )
 
     def wait_for_login_completed(self, page: Page) -> None:
