@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """Record a browser login session for later replay.
 
-This script opens a browser at a given URL and records all network traffic
-and browser state. When you close the browser, the recording is saved.
-This is useful for recording login flows that can be replayed later.
+This script opens a browser at a service's login URL and records all network
+traffic and browser state. When you close the browser, the recording is saved.
+This is useful for recording login flows that can be replayed later for testing.
 
 Usage:
-    uv run scripts/record_login.py <URL> [OPTIONS]
+    uv run scripts/record_login.py <SERVICE_NAME>
 
 Example:
-    uv run scripts/record_login.py https://slack.com/signin -o ./recordings -n slack-login
+    uv run scripts/record_login.py slack
 
-The recording consists of two files:
-- {name}.har: Network traffic (HTTP Archive format)
-- {name}.state.json: Browser state (cookies, localStorage, etc.)
+The recording is saved to scripts/recordings/<service_name>/ with:
+- recording.har: Network traffic (HTTP Archive format)
+- recording.state.json: Browser state (cookies, localStorage, etc.)
 """
 
 import json
@@ -23,8 +23,19 @@ from typing import Annotated
 import typer
 from playwright.sync_api import sync_playwright
 
+from latchkey.registry import REGISTRY
+from latchkey.services import Service
+
 # Default maximum size for media content in HAR files (1MB)
 DEFAULT_MAX_MEDIA_SIZE_BYTES = 1024 * 1024
+
+# Recordings directory relative to this script
+RECORDINGS_DIRECTORY = Path(__file__).parent / "recordings"
+
+
+class UnknownServiceError(Exception):
+    pass
+
 
 # Media MIME type prefixes to filter
 MEDIA_MIME_PREFIXES = ("image/", "video/", "audio/")
@@ -61,20 +72,29 @@ def _filter_har_media(har_path: Path, max_size_bytes: int = DEFAULT_MAX_MEDIA_SI
         json.dump(har_data, file, indent=2)
 
 
+def _get_service_by_name(name: str) -> Service:
+    """Get a service from the registry by name."""
+    for service in REGISTRY.services:
+        if service.name == name:
+            return service
+    raise UnknownServiceError(f"Unknown service: {name}")
+
+
 def _record(
-    url: str,
-    output_directory: Path,
-    recording_name: str,
+    service_name: str,
     max_media_size: int,
 ) -> None:
     """Record a browser session for later replay."""
-    output_directory.mkdir(parents=True, exist_ok=True)
-    har_path = output_directory / f"{recording_name}.har"
-    state_path = output_directory / f"{recording_name}.state.json"
+    service = _get_service_by_name(service_name)
 
-    typer.echo(f"Recording browser session to: {output_directory}")
-    typer.echo(f"  HAR file: {har_path}")
-    typer.echo(f"  State file: {state_path}")
+    output_directory = RECORDINGS_DIRECTORY / service_name
+    output_directory.mkdir(parents=True, exist_ok=True)
+    har_path = output_directory / "recording.har"
+    state_path = output_directory / "recording.state.json"
+
+    typer.echo(f"Recording login for service: {service.name}")
+    typer.echo(f"Login URL: {service.login_url}")
+    typer.echo(f"Output directory: {output_directory}")
     typer.echo("\nClose the browser window when you're done to save the recording.")
 
     with sync_playwright() as playwright:
@@ -82,7 +102,7 @@ def _record(
         context = browser.new_context(record_har_path=str(har_path))
         page = context.new_page()
 
-        page.goto(url)
+        page.goto(service.login_url)
 
         # Wait for user to close the browser
         try:
@@ -110,23 +130,10 @@ def _record(
 
 
 def main(
-    url: Annotated[str, typer.Argument(help="URL to open (typically a login URL).")],
-    output: Annotated[
-        Path,
-        typer.Option(
-            "--output",
-            "-o",
-            help="Directory to save the recording.",
-        ),
-    ] = Path("."),
-    name: Annotated[
+    service_name: Annotated[
         str,
-        typer.Option(
-            "--name",
-            "-n",
-            help="Name for the recording files.",
-        ),
-    ] = "recording",
+        typer.Argument(help="Name of the service to record login for (e.g., 'slack', 'discord')."),
+    ],
     max_media_size: Annotated[
         int,
         typer.Option(
@@ -137,20 +144,18 @@ def main(
 ) -> None:
     """Record a browser login session for later replay.
 
-    Opens a browser at the given URL and records all network traffic and browser
-    state. When you close the browser, the recording is saved. This is useful for
-    recording login flows that can be replayed later.
+    Opens a browser at the service's login URL and records all network traffic
+    and browser state. When you close the browser, the recording is saved.
+    This is useful for recording login flows that can be replayed later for testing.
 
-    The recording consists of two files:
+    The recording is saved to scripts/recordings/<service_name>/ with:
 
-    - {name}.har: Network traffic (HTTP Archive format)
+    - recording.har: Network traffic (HTTP Archive format)
 
-    - {name}.state.json: Browser state (cookies, localStorage, etc.)
+    - recording.state.json: Browser state (cookies, localStorage, etc.)
     """
     _record(
-        url=url,
-        output_directory=output,
-        recording_name=name,
+        service_name=service_name,
         max_media_size=max_media_size,
     )
 
