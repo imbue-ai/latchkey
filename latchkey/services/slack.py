@@ -3,6 +3,7 @@ import re
 from playwright.sync_api import Page
 
 from latchkey.credentials import Credentials
+from latchkey.services.base import CredentialExtractionError
 from latchkey.services.base import Service
 
 
@@ -42,7 +43,7 @@ class Slack(Service):
         """)
 
         if not token:
-            raise ValueError("Could not extract Slack token from localStorage")
+            raise CredentialExtractionError("Could not extract Slack token from localStorage")
 
         context = page.context
         cookies = context.cookies()
@@ -55,7 +56,7 @@ class Slack(Service):
                 break
 
         if not d_cookie:
-            raise ValueError("Could not extract Slack d cookie")
+            raise CredentialExtractionError("Could not extract Slack d cookie")
 
         return SlackCredentials(token=token, d_cookie=d_cookie)
 

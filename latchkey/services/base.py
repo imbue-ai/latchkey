@@ -8,6 +8,10 @@ from pydantic import ConfigDict
 from latchkey.credentials import Credentials
 
 
+class CredentialExtractionError(Exception):
+    pass
+
+
 class Service(BaseModel):
     model_config = ConfigDict(frozen=True)
 
