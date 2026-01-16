@@ -7,6 +7,10 @@ scripts/recordings/<service_name>/ and verifies that:
 1. The service's wait_for_login_completed() method succeeds
 2. The service's extract_credentials() method returns valid credentials
 
+The tests work by replaying recorded user actions (clicks, typing) while
+serving network responses from the recorded HAR file. This simulates the
+actual login flow rather than just loading a pre-authenticated state.
+
 Usage:
     uv run pytest tests/test_recordings.py           # Test all recordings
     uv run pytest tests/test_recordings.py -v        # Verbose output
@@ -15,8 +19,10 @@ Usage:
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
+from playwright.sync_api import Page
 from playwright.sync_api import sync_playwright
 
 from latchkey.credentials import Credentials
@@ -38,17 +44,58 @@ class CredentialExtractionError(Exception):
     pass
 
 
-def _get_first_url_from_har(har_path: Path) -> str | None:
-    """Get the first URL from HAR file (initial navigation)."""
-    with open(har_path) as file:
-        har_data = json.load(file)
-    entries = har_data.get("log", {}).get("entries", [])
-    for entry in entries:
-        request = entry.get("request", {})
-        url = request.get("url", "")
-        if url:
-            return url
-    return None
+class ActionReplayError(Exception):
+    pass
+
+
+def _load_actions(actions_path: Path) -> list[dict[str, Any]]:
+    """Load recorded actions from JSON file."""
+    with open(actions_path) as file:
+        return json.load(file)
+
+
+def _replay_action(page: Page, action: dict[str, Any]) -> None:
+    """Replay a single recorded action on the page."""
+    action_type = action.get("type")
+
+    if action_type == "goto":
+        page.goto(action["url"], wait_until="domcontentloaded")
+
+    elif action_type == "click":
+        selector = action.get("selector")
+        if selector:
+            try:
+                page.click(selector, timeout=5000)
+            except Exception:
+                # If selector fails, try to find by text as fallback
+                text = action.get("text")
+                if text:
+                    page.get_by_text(text[:50]).first.click(timeout=5000)
+                else:
+                    raise
+
+    elif action_type == "fill":
+        selector = action.get("selector")
+        value = action.get("value", "")
+        if selector:
+            page.fill(selector, value, timeout=5000)
+
+    elif action_type == "select":
+        selector = action.get("selector")
+        value = action.get("value", "")
+        if selector:
+            page.select_option(selector, value, timeout=5000)
+
+    elif action_type == "submit":
+        # Form submission is usually triggered by a click, so we may not need
+        # to do anything special here. The click on submit button handles it.
+        pass
+
+
+def _replay_actions(page: Page, actions: list[dict[str, Any]]) -> None:
+    """Replay all recorded actions on the page."""
+    for action in actions:
+        _replay_action(page, action)
 
 
 def _test_service_with_recording(
@@ -57,35 +104,38 @@ def _test_service_with_recording(
 ) -> Credentials:
     """Test a service's credential extraction using a recorded session.
 
-    Uses Playwright's routeFromHAR to replay all recorded network requests,
-    combined with the saved browser state (cookies, localStorage).
+    Replays recorded user actions while using Playwright's routeFromHAR to
+    serve the recorded network responses. This simulates the actual login flow.
     """
     har_path = recording_directory / "recording.har"
-    state_path = recording_directory / "recording.state.json"
+    actions_path = recording_directory / "recording.actions.json"
 
     if not har_path.exists():
         raise InvalidRecordingError(f"HAR file not found: {har_path}")
-    if not state_path.exists():
-        raise InvalidRecordingError(f"State file not found: {state_path}")
+    if not actions_path.exists():
+        raise InvalidRecordingError(f"Actions file not found: {actions_path}")
 
-    first_url = _get_first_url_from_har(har_path)
-    if not first_url:
-        raise InvalidRecordingError("Could not determine start URL from HAR")
+    actions = _load_actions(actions_path)
+    if not actions:
+        raise InvalidRecordingError("No actions recorded")
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
-        context = browser.new_context(storage_state=str(state_path))
+        # Start with fresh context (no pre-loaded state)
+        context = browser.new_context()
 
-        # Use Playwright's built-in HAR replay
-        # This replays all recorded network responses matching URL and method
+        # Use Playwright's built-in HAR replay for network requests
         context.route_from_har(str(har_path), not_found="fallback")
 
         page = context.new_page()
-        page.goto(first_url, wait_until="domcontentloaded")
+        page.set_default_timeout(10000)
 
         try:
-            # Use a short timeout since we're using recorded state
-            page.set_default_timeout(5000)
+            _replay_actions(page, actions)
+        except Exception as error:
+            raise ActionReplayError(f"Failed to replay actions: {error}") from error
+
+        try:
             service.wait_for_login_completed(page)
         except Exception as error:
             raise LoginDetectionError(f"wait_for_login_completed failed: {error}") from error
@@ -114,8 +164,8 @@ def _discover_recordings() -> list[tuple[str, Path]]:
     for item in sorted(RECORDINGS_DIRECTORY.iterdir()):
         if item.is_dir() and not item.name.startswith("."):
             har_path = item / "recording.har"
-            state_path = item / "recording.state.json"
-            if har_path.exists() and state_path.exists():
+            actions_path = item / "recording.actions.json"
+            if har_path.exists() and actions_path.exists():
                 recordings.append((item.name, item))
 
     return recordings
