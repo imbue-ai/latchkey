@@ -24,10 +24,10 @@ class Slack(Service):
     base_api_urls: tuple[str, ...] = ("https://slack.com/api/",)
     login_url: str = "https://slack.com/signin"
 
-    def wait_for_login_completed(self, page: Page, timeout: float = 30.0) -> None:
+    def wait_for_login_completed(self, page: Page) -> None:
         page.wait_for_url(
             re.compile(r"https://app\.slack\.com/client/.*"),
-            timeout=timeout * 1000,
+            timeout=0,
         )
 
     def extract_credentials(self, page: Page) -> SlackCredentials:

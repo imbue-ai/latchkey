@@ -16,7 +16,7 @@ class Service(BaseModel):
     login_url: str
 
     @abstractmethod
-    def wait_for_login_completed(self, page: Page, timeout: float = 30.0) -> None:
+    def wait_for_login_completed(self, page: Page) -> None:
         pass
 
     @abstractmethod
