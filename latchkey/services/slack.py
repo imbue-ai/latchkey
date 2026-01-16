@@ -33,6 +33,14 @@ class Slack(Service):
         }
     """
 
+    @property
+    def login_instructions(self) -> tuple[str, ...]:
+        return (
+            "Sign in with your Slack workspace credentials",
+            "Select a workspace if you belong to multiple",
+            "The browser will close automatically once login is complete",
+        )
+
     def wait_for_login_completed(self, page: Page) -> None:
         # Match both https://app.slack.com/client/... and https://<workspace>.slack.com/client/...
         # Use wait_for_function instead of wait_for_url to avoid ERR_ABORTED errors
