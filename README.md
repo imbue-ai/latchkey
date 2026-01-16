@@ -5,8 +5,8 @@ A command-line tool that injects credentials to curl requests to known public AP
 This is how it works:
 
 - Call `latchkey services` to get a list of known and supported third-party services.
-- Call `latchkey match <curl arguments>` to check which service matches a given curl invocation.
 - Call `latchkey curl <arguments>` to retrieve and inject credentials to your otherwise standard curl calls to public APIs.
+- Call `latchkey match <curl arguments>` to check if a given curl invocation matches any supported service.
 
 
 ## Example
