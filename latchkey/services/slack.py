@@ -26,7 +26,7 @@ class Slack(Service):
     def wait_for_login_completed(self, page: Page) -> None:
         # Match both https://app.slack.com/client/... and https://<workspace>.slack.com/client/...
         # Use wait_for_function instead of wait_for_url to avoid ERR_ABORTED errors
-        # when the frame gets detached during SSB redirects
+        # when the frame gets detached during SSB redirects.
         page.wait_for_function(
             """() => /^https:\\/\\/[a-zA-Z0-9-]+\\.slack\\.com\\/client\\//.test(window.location.href)""",
             timeout=0,

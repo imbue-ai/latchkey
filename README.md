@@ -39,6 +39,7 @@ The return code, stdin and stdout are passed back from curl to the caller of `la
 1. Clone this repository to your local machine.
 2. Enter the repository's directory.
 3. `uv tool install .`
+4. `uv run playwright install chromium`
 
 ## Tests
 
