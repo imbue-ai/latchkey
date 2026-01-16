@@ -23,6 +23,16 @@ class Slack(Service):
     base_api_urls: tuple[str, ...] = ("https://slack.com/api/",)
     login_url: str = "https://slack.com/signin"
 
+    TOKEN_EXTRACTION_JS: str = """
+        () => {
+            const localConfig = JSON.parse(localStorage.getItem('localConfig_v2'));
+            if (localConfig && localConfig.teams && localConfig.lastActiveTeamId) {
+                return localConfig.teams[localConfig.lastActiveTeamId].token;
+            }
+            return null;
+        }
+    """
+
     def wait_for_login_completed(self, page: Page) -> None:
         # Match both https://app.slack.com/client/... and https://<workspace>.slack.com/client/...
         # Use wait_for_function instead of wait_for_url to avoid ERR_ABORTED errors
@@ -31,17 +41,11 @@ class Slack(Service):
             """() => /^https:\\/\\/[a-zA-Z0-9-]+\\.slack\\.com\\/client\\//.test(window.location.href)""",
             timeout=0,
         )
+        # Wait for the token to be present in localStorage
+        page.wait_for_function(self.TOKEN_EXTRACTION_JS, timeout=0)
 
     def extract_credentials(self, page: Page) -> SlackCredentials:
-        token = page.evaluate("""
-            () => {
-                const localConfig = JSON.parse(localStorage.getItem('localConfig_v2'));
-                if (localConfig && localConfig.teams && localConfig.lastActiveTeamId) {
-                    return localConfig.teams[localConfig.lastActiveTeamId].token;
-                }
-                return null;
-            }
-        """)
+        token = page.evaluate(self.TOKEN_EXTRACTION_JS)
 
         if not token:
             raise CredentialExtractionError("Could not extract Slack token from localStorage")
