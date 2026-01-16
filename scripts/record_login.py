@@ -6,10 +6,10 @@ and browser state. When you close the browser, the recording is saved.
 This is useful for recording login flows that can be replayed later.
 
 Usage:
-    uv run dev/record_login.py <URL> [OPTIONS]
+    uv run scripts/record_login.py <URL> [OPTIONS]
 
 Example:
-    uv run dev/record_login.py https://slack.com/signin -o ./recordings -n slack-login
+    uv run scripts/record_login.py https://slack.com/signin -o ./recordings -n slack-login
 
 The recording consists of two files:
 - {name}.har: Network traffic (HTTP Archive format)

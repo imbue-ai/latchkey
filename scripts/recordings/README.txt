@@ -26,11 +26,11 @@ HOW TO CREATE A RECORDING
 
 Use the record_login.py script to create a recording for a service:
 
-    uv run dev/record_login.py <login_url> -o dev/recordings/<service_name> -n recording
+    uv run scripts/record_login.py <login_url> -o scripts/recordings/<service_name> -n recording
 
 For example, to record a Slack login:
 
-    uv run dev/record_login.py https://slack.com/signin -o dev/recordings/slack -n recording
+    uv run scripts/record_login.py https://slack.com/signin -o scripts/recordings/slack -n recording
 
 This will:
 1. Open a browser at the login URL
@@ -49,15 +49,15 @@ To run all tests including recording tests:
 
 To run only recording tests:
 
-    uv run pytest dev/test_recordings.py
+    uv run pytest tests/test_recordings.py
 
 To test a specific service:
 
-    uv run pytest dev/test_recordings.py -k slack
+    uv run pytest tests/test_recordings.py -k slack
 
 Verbose output:
 
-    uv run pytest dev/test_recordings.py -v
+    uv run pytest tests/test_recordings.py -v
 
 
 HOW THE TESTS WORK

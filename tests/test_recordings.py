@@ -2,15 +2,15 @@
 
 This module validates that recorded login sessions can be used to test
 service credential extraction logic. It discovers recordings in
-dev/recordings/<service_name>/ and verifies that:
+scripts/recordings/<service_name>/ and verifies that:
 
 1. The service's wait_for_login_completed() method succeeds
 2. The service's extract_credentials() method returns valid credentials
 
 Usage:
-    uv run pytest dev/test_recordings.py           # Test all recordings
-    uv run pytest dev/test_recordings.py -v        # Verbose output
-    uv run pytest dev/test_recordings.py -k slack  # Test only Slack
+    uv run pytest tests/test_recordings.py           # Test all recordings
+    uv run pytest tests/test_recordings.py -v        # Verbose output
+    uv run pytest tests/test_recordings.py -k slack  # Test only Slack
 """
 
 import json
@@ -23,7 +23,7 @@ from latchkey.credentials import Credentials
 from latchkey.registry import REGISTRY
 from latchkey.services.base import Service
 
-RECORDINGS_DIRECTORY = Path(__file__).parent / "recordings"
+RECORDINGS_DIRECTORY = Path(__file__).parent.parent / "scripts" / "recordings"
 
 
 class InvalidRecordingError(Exception):
