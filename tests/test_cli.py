@@ -2,6 +2,7 @@
 
 import subprocess
 from collections.abc import Sequence
+from pathlib import Path
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -345,3 +346,93 @@ def test_match_works_with_curl_options_without_double_dash() -> None:
 
     assert result.exit_code == 0
     assert result.stdout.strip() == "slack"
+
+
+# Tests for curl with --latchkey-playwright-store
+
+
+def test_curl_with_latchkey_playwright_store_missing_path_exits() -> None:
+    result = runner.invoke(app, ["curl", "https://example.com", "--latchkey-playwright-store"])
+    assert result.exit_code == 2  # Typer returns 2 for missing option argument
+
+
+def test_curl_passes_playwright_store_to_service_login() -> None:
+    captured_args: list[str] = []
+
+    def mock_runner(args: Sequence[str]) -> subprocess.CompletedProcess[bytes]:
+        captured_args.extend(args)
+        return subprocess.CompletedProcess(args=args, returncode=0)
+
+    set_subprocess_runner(mock_runner)
+
+    mock_credentials = SlackCredentials(token="xoxc-test-token", d_cookie="test-cookie")
+
+    with patch("latchkey.cli.REGISTRY") as mock_registry:
+        mock_service = MagicMock()
+        mock_service.login.return_value = mock_credentials
+        mock_registry.get_from_url.return_value = mock_service
+
+        result = runner.invoke(
+            app,
+            ["curl", "--latchkey-playwright-store", "/tmp/browser-state", "https://slack.com/api/conversations.list"],
+        )
+
+        mock_service.login.assert_called_once_with(storage_state=Path("/tmp/browser-state"))
+
+    assert result.exit_code == 0
+    assert captured_args == [
+        "curl",
+        "-H",
+        "Authorization: Bearer xoxc-test-token",
+        "-H",
+        "Cookie: d=test-cookie",
+        "https://slack.com/api/conversations.list",
+    ]
+
+
+def test_curl_with_playwright_store_equals_format() -> None:
+    captured_args: list[str] = []
+
+    def mock_runner(args: Sequence[str]) -> subprocess.CompletedProcess[bytes]:
+        captured_args.extend(args)
+        return subprocess.CompletedProcess(args=args, returncode=0)
+
+    set_subprocess_runner(mock_runner)
+
+    mock_credentials = SlackCredentials(token="xoxc-test-token", d_cookie="test-cookie")
+
+    with patch("latchkey.cli.REGISTRY") as mock_registry:
+        mock_service = MagicMock()
+        mock_service.login.return_value = mock_credentials
+        mock_registry.get_from_url.return_value = mock_service
+
+        result = runner.invoke(
+            app, ["curl", "--latchkey-playwright-store=/tmp/browser-state", "https://slack.com/api/conversations.list"]
+        )
+
+        mock_service.login.assert_called_once_with(storage_state=Path("/tmp/browser-state"))
+
+    assert result.exit_code == 0
+
+
+def test_curl_without_playwright_store_passes_none() -> None:
+    captured_args: list[str] = []
+
+    def mock_runner(args: Sequence[str]) -> subprocess.CompletedProcess[bytes]:
+        captured_args.extend(args)
+        return subprocess.CompletedProcess(args=args, returncode=0)
+
+    set_subprocess_runner(mock_runner)
+
+    mock_credentials = SlackCredentials(token="xoxc-test-token", d_cookie="test-cookie")
+
+    with patch("latchkey.cli.REGISTRY") as mock_registry:
+        mock_service = MagicMock()
+        mock_service.login.return_value = mock_credentials
+        mock_registry.get_from_url.return_value = mock_service
+
+        result = runner.invoke(app, ["curl", "https://slack.com/api/conversations.list"])
+
+        mock_service.login.assert_called_once_with(storage_state=None)
+
+    assert result.exit_code == 0

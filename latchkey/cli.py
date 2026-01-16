@@ -5,6 +5,7 @@ import subprocess
 import sys
 from collections.abc import Callable
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -108,6 +109,13 @@ def curl(
         list[str] | None,
         typer.Argument(help="Arguments to pass to curl."),
     ] = None,
+    latchkey_playwright_store: Annotated[
+        Path | None,
+        typer.Option(
+            "--latchkey-playwright-store",
+            help="Path to store/load Playwright browser state for reusing logins.",
+        ),
+    ] = None,
 ) -> None:
     """Run curl with credential injection."""
     all_arguments = _collect_curl_arguments(curl_arguments, context)
@@ -116,7 +124,7 @@ def curl(
     if url is not None:
         service = REGISTRY.get_from_url(url)
         if service is not None:
-            credentials = service.login()
+            credentials = service.login(storage_state=latchkey_playwright_store)
             all_arguments = list(credentials.as_curl_arguments()) + all_arguments
 
     result = _subprocess_runner(["curl", *all_arguments])
