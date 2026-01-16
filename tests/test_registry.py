@@ -28,8 +28,6 @@ def create_registry() -> Callable[[tuple[Service, ...]], Registry]:
 
 
 class TestRegistry:
-    """Tests for the Registry class."""
-
     def test_get_from_url_returns_none_when_no_services(self) -> None:
         """get_from_url returns None when there are no registered services."""
         registry = Registry()

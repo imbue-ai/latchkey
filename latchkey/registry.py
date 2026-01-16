@@ -8,7 +8,6 @@ from latchkey.services import Service
 
 class Registry(BaseModel):
     model_config = ConfigDict(frozen=True)
-    """Registry of supported services."""
 
     services: tuple[Service, ...] = ()
 
