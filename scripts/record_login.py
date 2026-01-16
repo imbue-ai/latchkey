@@ -14,6 +14,80 @@ Example:
 The recording is saved to scripts/recordings/<service_name>/ with:
 - recording.har: Network traffic (HTTP Archive format)
 - recording.state.json: Browser state (cookies, localStorage, etc.)
+
+
+Recordings Directory Structure
+------------------------------
+
+Recordings are organized in subdirectories named after the service they belong
+to. The service name must match a name from the global service registry (see
+latchkey/registry.py). For example:
+
+    recordings/
+        slack/
+            recording.har
+            recording.state.json
+        discord/
+            recording.har
+            recording.state.json
+
+
+Running the Tests
+-----------------
+
+To run all tests including recording tests:
+
+    uv run pytest
+
+To run only recording tests:
+
+    uv run pytest tests/test_recordings.py
+
+To test a specific service:
+
+    uv run pytest tests/test_recordings.py -k slack
+
+
+How the Tests Work
+------------------
+
+The test script uses Playwright's routeFromHAR feature to replay the recorded
+network traffic. This means:
+
+1. The browser loads with the saved state (cookies, localStorage)
+2. When the browser makes network requests, Playwright serves responses from
+   the HAR file instead of making real network calls
+3. The service's wait_for_login_completed() and extract_credentials() methods
+   are called against this replayed session
+
+This allows testing credential extraction logic without needing live network
+access or valid credentials.
+
+
+Important Notes
+---------------
+
+1. Recordings are .gitignored because:
+   - They can be large (HAR files can contain many network requests)
+   - They contain sensitive data (credentials, tokens, cookies)
+
+2. Each recording directory should contain:
+   - recording.har: Required for replaying network traffic
+   - recording.state.json: Required for restoring browser state
+
+3. The test script validates that:
+   - The service's wait_for_login_completed() method succeeds
+   - The service's extract_credentials() method returns valid credentials
+
+4. If a test fails, it usually means:
+   - The recording is incomplete (login wasn't fully completed)
+   - The service implementation has changed
+   - The service's website has changed its login flow
+
+5. HAR replay limitations:
+   - Playwright matches requests by URL and HTTP method (and POST body for POSTs)
+   - Dynamic parameters (timestamps, nonces) may cause mismatches
+   - If requests don't match, they fall back to real network calls
 """
 
 import json
