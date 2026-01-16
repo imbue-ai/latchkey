@@ -12,4 +12,5 @@ Python style guide:
 - Use immutable data structures (for example, use lists over tuples) as much as possible.
 - Do not use abbreviations in variable (class, function, ...) names. It's fine for names to be somewhat verbose.
 - Omit docstrings if they don't add any value beyond what can be obviously inferred from the function signature / class name.
+- Do not raise builtin errors; always replace them with dedicated error subclasses.
 - When done, validate your changes by running `uv run pytest`.
