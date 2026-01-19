@@ -83,8 +83,13 @@ invocations.
 ## Integrations
 
 ### Claude Code
-
 ```
 mkdir -p ~/.claude/skills/latchkey
 cp integrations/SKILL.md ~/.claude/skills/latchkey/SKILL.md
+```
+
+Optionally, add the following line to your `.bashrc` to remember logins:
+
+```
+export LATCHKEY_STORE=~/.latchkey/credentials.json
 ```
