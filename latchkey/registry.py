@@ -2,7 +2,6 @@ from pydantic import BaseModel
 from pydantic import ConfigDict
 
 from latchkey.services import DISCORD
-from latchkey.services import DROPBOX
 from latchkey.services import SLACK
 from latchkey.services import Service
 
@@ -26,4 +25,4 @@ class Registry(BaseModel):
         return None
 
 
-REGISTRY = Registry(services=(SLACK, DISCORD, DROPBOX))
+REGISTRY = Registry(services=(SLACK, DISCORD))
