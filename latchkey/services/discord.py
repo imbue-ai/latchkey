@@ -23,16 +23,10 @@ class Discord(Service):
 
         headers = request.headers
         authorization = headers.get("authorization")
-        if authorization is not None:
+        if authorization is not None and authorization.strip() != "":
             self._captured_token = authorization
 
     def wait_for_login_completed(self, page: Page) -> None:
-        # # Wait for navigation to the Discord app (channels page)
-        # page.wait_for_function(
-        #     """() => /^https:\\/\\/discord\\.com\\/(channels|app)/.test(window.location.href)""",
-        #     timeout=0,
-        # )
-
         # Wait until we've captured the token from a network request
         while self._captured_token is None:
             page.wait_for_timeout(100)
