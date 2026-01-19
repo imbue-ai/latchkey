@@ -73,7 +73,8 @@ def _get_latchkey_store_path() -> Path | None:
 @app.command()
 def services() -> None:
     """List known and supported third-party services."""
-    typer.echo("[]")
+    service_names = [service.name for service in REGISTRY.services]
+    typer.echo(service_names)
 
 
 @app.command(
