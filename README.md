@@ -52,7 +52,7 @@ latchkey curl 'https://discord.com/api/v10/users/@me'
 
 1. Clone this repository to your local machine.
 2. Enter the repository's directory.
-3. `uv tool install .`
+3. `uv cache clean latchkey && uv tool install --force latchkey`
 4. `uv run playwright install chromium`
 
 ## Tests
