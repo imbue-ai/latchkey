@@ -2,6 +2,7 @@
 
 import subprocess
 from collections.abc import Sequence
+from pathlib import Path
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -347,9 +348,44 @@ def test_match_works_with_curl_options_without_double_dash() -> None:
     assert result.stdout.strip() == "slack"
 
 
-# Tests for curl with --latchkey-store
+# Tests for curl with LATCHKEY_STORE environment variable
 
 
-def test_curl_with_latchkey_store_missing_path_exits() -> None:
-    result = runner.invoke(app, ["curl", "https://example.com", "--latchkey-store"])
-    assert result.exit_code == 2  # Typer returns 2 for missing option argument
+def test_curl_reads_credentials_from_latchkey_store_env_var(tmp_path: Path) -> None:
+    """Test that LATCHKEY_STORE environment variable is used to load stored credentials."""
+    captured_args: list[str] = []
+
+    def mock_runner(args: Sequence[str]) -> subprocess.CompletedProcess[bytes]:
+        captured_args.extend(args)
+        return subprocess.CompletedProcess(args=args, returncode=0)
+
+    set_subprocess_runner(mock_runner)
+
+    # Create a credential store with pre-saved credentials
+    store_path = tmp_path / "credentials.json"
+    store_path.write_text('{"slack": {"object_type": "slack", "token": "stored-token", "d_cookie": "stored-cookie"}}')
+
+    with patch("latchkey.cli.REGISTRY") as mock_registry:
+        mock_service = MagicMock()
+        mock_service.name = "slack"
+        mock_registry.get_by_url.return_value = mock_service
+
+        result = runner.invoke(
+            app,
+            ["curl", "https://slack.com/api/conversations.list"],
+            env={"LATCHKEY_STORE": str(store_path)},
+        )
+
+        # login() should NOT be called because credentials were loaded from store
+        mock_service.login.assert_not_called()
+
+    assert result.exit_code == 0
+    # Credentials from the store should be injected
+    assert captured_args == [
+        "curl",
+        "-H",
+        "Authorization: Bearer stored-token",
+        "-H",
+        "Cookie: d=stored-cookie",
+        "https://slack.com/api/conversations.list",
+    ]

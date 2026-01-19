@@ -28,18 +28,18 @@ through to `curl` so you can use the same interface you are used
 to. The return code, stdin and stdout are passed back from curl
 to the caller of `latchkey`.
 
-### Remembering credentials 
+### Remembering credentials
 
-You can optionally add the `--latchkey-store` option to the
-`latchkey curl` command. The value of that option should be
-a path to a .json file that will be used to store the extracted
+You can optionally set the `LATCHKEY_STORE` environment variable
+to a path to a .json file that will be used to store the extracted
 credentials. Next time you invoke a `latchkey curl` command
 against the same service, the stored credentials will be reused.
 While the file shouldn't contain any passwords (only tokens and
 cookies), you should still treat it as a sensitive file.
 
 ```
-latchkey curl 'https://discord.com/api/v10/users/@me' --latchkey-store=~/.latchkey_credentials.json 
+export LATCHKEY_STORE=~/.latchkey/credentials.json
+latchkey curl 'https://discord.com/api/v10/users/@me'
 ```
 
 ## Prerequisites

@@ -1,5 +1,6 @@
 """Command-line interface for latchkey."""
 
+import os
 import shlex
 import subprocess
 from collections.abc import Callable
@@ -12,6 +13,8 @@ import uncurl
 
 from latchkey.credential_store import CredentialStore
 from latchkey.registry import REGISTRY
+
+LATCHKEY_STORE_ENV_VAR = "LATCHKEY_STORE"
 
 app = typer.Typer(
     help="A command-line tool that injects credentials to curl requests to known public APIs.",
@@ -57,6 +60,14 @@ def _collect_curl_arguments(curl_arguments: list[str] | None, context: typer.Con
     # Typer splits arguments around "--": those before go into curl_arguments,
     # those after go into context.args. Concatenate them to get all arguments.
     return list(curl_arguments or []) + context.args
+
+
+def _get_latchkey_store_path() -> Path | None:
+    """Get the credential store path from environment variable."""
+    env_value = os.environ.get(LATCHKEY_STORE_ENV_VAR)
+    if env_value:
+        return Path(env_value).expanduser()
+    return None
 
 
 @app.command()
@@ -109,16 +120,13 @@ def curl(
         list[str] | None,
         typer.Argument(help="Arguments to pass to curl."),
     ] = None,
-    latchkey_store: Annotated[
-        Path | None,
-        typer.Option(
-            "--latchkey-store",
-            help="Path to store/load serialized credentials for all services.",
-        ),
-    ] = None,
 ) -> None:
-    """Run curl with credential injection."""
+    """Run curl with credential injection.
+
+    Set LATCHKEY_STORE environment variable to persist credentials to a file.
+    """
     all_arguments = _collect_curl_arguments(curl_arguments, context)
+    latchkey_store = _get_latchkey_store_path()
 
     url = _extract_url_from_curl_arguments(all_arguments)
     if url is not None:
