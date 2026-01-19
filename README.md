@@ -79,3 +79,12 @@ user's behalf.
 By re-using the well-known interface of `curl`, it should be
 relatively easy for pre-trained models to come up with proper
 invocations.
+
+## Integrations
+
+### Claude Code
+
+```
+mkdir -p ~/.claude/skills/latchkey
+cp integrations/SKILL.md ~/.claude/skills/latchkey/SKILL.md
+```
