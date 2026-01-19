@@ -1,6 +1,7 @@
 from playwright.sync_api import Page
+from playwright.sync_api import Request
 
-from latchkey.credentials import AuthorizationBearer
+from latchkey.credentials import AuthorizationBare
 from latchkey.services.base import CredentialExtractionError
 from latchkey.services.base import Service
 
@@ -10,31 +11,37 @@ class Discord(Service):
     base_api_urls: tuple[str, ...] = ("https://discord.com/api/",)
     login_url: str = "https://discord.com/login"
 
-    TOKEN_EXTRACTION_JS: str = """
-        () => {
-            // Try to extract token from localStorage
-            // Discord stores the token in various localStorage keys
-            const token = (webpackChunkdiscord_app.push([[''],{},e=>{m=[];for(let c in e.c)m.push(e.c[c])}]),m).find(m=>m?.exports?.default?.getToken!==void 0).exports.default.getToken();
-            return token || null;
-        }
-    """
+    _captured_token: str | None = None
+
+    def on_request(self, request: Request) -> None:
+        if self._captured_token is not None:
+            return
+
+        url = request.url
+        if not url.startswith("https://discord.com/api/"):
+            return
+
+        headers = request.headers
+        authorization = headers.get("authorization")
+        if authorization is not None:
+            self._captured_token = authorization
 
     def wait_for_login_completed(self, page: Page) -> None:
-        # Wait for navigation to the Discord app (channels page)
-        page.wait_for_function(
-            """() => /^https:\\/\\/discord\\.com\\/(channels|app)/.test(window.location.href)""",
-            timeout=0,
-        )
-        # Wait for the token to be extractable
-        page.wait_for_function(self.TOKEN_EXTRACTION_JS, timeout=0)
+        # # Wait for navigation to the Discord app (channels page)
+        # page.wait_for_function(
+        #     """() => /^https:\\/\\/discord\\.com\\/(channels|app)/.test(window.location.href)""",
+        #     timeout=0,
+        # )
 
-    def extract_credentials(self, page: Page) -> AuthorizationBearer:
-        token = page.evaluate(self.TOKEN_EXTRACTION_JS)
+        # Wait until we've captured the token from a network request
+        while self._captured_token is None:
+            page.wait_for_timeout(100)
 
-        if not token:
-            raise CredentialExtractionError("Could not extract Discord token from browser")
+    def extract_credentials(self, page: Page) -> AuthorizationBare:
+        if self._captured_token is None:
+            raise CredentialExtractionError("Could not capture Discord token from network requests")
 
-        return AuthorizationBearer(token=token)
+        return AuthorizationBare(token=self._captured_token)
 
 
 DISCORD = Discord()

@@ -1,6 +1,7 @@
 from abc import abstractmethod
 
 from playwright.sync_api import Page
+from playwright.sync_api import Request
 from playwright.sync_api import sync_playwright
 from pydantic import BaseModel
 from pydantic import ConfigDict
@@ -25,6 +26,9 @@ class Service(BaseModel):
 
     @abstractmethod
     def extract_credentials(self, page: Page) -> Credentials:
+        pass
+
+    def on_request(self, request: Request) -> None:
         pass
 
     @property
@@ -101,6 +105,8 @@ class Service(BaseModel):
             browser = playwright.chromium.launch(headless=False)
             context = browser.new_context()
             page = context.new_page()
+
+            page.on("request", self.on_request)
 
             self._show_login_instructions(page)
             page.goto(self.login_url)

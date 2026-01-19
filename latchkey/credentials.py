@@ -22,3 +22,11 @@ class AuthorizationBearer(Credentials):
 
     def as_curl_arguments(self) -> tuple[str, ...]:
         return ("-H", f"Authorization: Bearer {self.token}")
+
+
+class AuthorizationBare(Credentials):
+    object_type: str = "authorization_bare"
+    token: str
+
+    def as_curl_arguments(self) -> tuple[str, ...]:
+        return ("-H", f"Authorization: {self.token}")
