@@ -37,6 +37,9 @@ known-first-party = [
     "latchkey",
 ]
 
+[tool.setuptools.packages.find]
+include = ["latchkey", "latchkey.*"]
+
 [tool.pyright]
 include = ["latchkey"]
 venvPath = "."
