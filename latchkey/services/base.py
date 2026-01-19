@@ -1,5 +1,6 @@
 from abc import abstractmethod
 
+from playwright._impl._errors import TargetClosedError
 from playwright.sync_api import Page
 from playwright.sync_api import Request
 from playwright.sync_api import sync_playwright
@@ -10,6 +11,12 @@ from latchkey.credentials import Credentials
 
 
 class CredentialExtractionError(Exception):
+    pass
+
+
+class LoginCancelledError(Exception):
+    """Raised when the user closes the browser before completing the login."""
+
     pass
 
 
@@ -108,10 +115,13 @@ class Service(BaseModel):
 
             page.on("request", self.on_request)
 
-            self._show_login_instructions(page)
-            page.goto(self.login_url)
-            self.wait_for_login_completed(page)
-            credentials = self.extract_credentials(page)
+            try:
+                self._show_login_instructions(page)
+                page.goto(self.login_url)
+                self.wait_for_login_completed(page)
+                credentials = self.extract_credentials(page)
+            except TargetClosedError as error:
+                raise LoginCancelledError("Login was cancelled because the browser was closed.") from error
 
             browser.close()
 

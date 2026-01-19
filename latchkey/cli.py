@@ -13,6 +13,7 @@ import uncurl
 
 from latchkey.credential_store import CredentialStore
 from latchkey.registry import REGISTRY
+from latchkey.services.base import LoginCancelledError
 
 LATCHKEY_STORE_ENV_VAR = "LATCHKEY_STORE"
 
@@ -140,7 +141,11 @@ def curl(
                 credentials = credential_store.get(service.name)
 
             if credentials is None:
-                credentials = service.login()
+                try:
+                    credentials = service.login()
+                except LoginCancelledError:
+                    typer.echo("Login cancelled.", err=True)
+                    raise typer.Exit(code=1)
                 if credential_store is not None:
                     credential_store.save(service.name, credentials)
 
