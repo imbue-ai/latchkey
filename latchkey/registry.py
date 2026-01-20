@@ -26,4 +26,4 @@ class Registry(BaseModel):
         return None
 
 
-REGISTRY = Registry(services=(SLACK, DISCORD, NOTION))
+REGISTRY = Registry(services=(SLACK, DISCORD))
