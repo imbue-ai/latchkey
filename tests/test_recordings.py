@@ -2,14 +2,14 @@
 
 This module validates that recorded login sessions can be used to test
 service credential extraction logic. It discovers recordings in
-scripts/recordings/<service_name>/ and verifies that:
+scripts/recordings/<service_name>/ and verifies that the service's
+_get_credentials_from_outgoing_request() method can extract valid credentials
+from the recorded requests.
 
-1. The service's wait_for_login_completed() method succeeds
-2. The service's extract_credentials() method returns valid credentials
-
-The tests work by replaying recorded user actions (clicks, typing) while
-serving network responses from the recorded HAR file. This simulates the
-actual login flow rather than just loading a pre-authenticated state.
+The tests work by loading recorded HTTP requests from requests.json and
+creating mock Request objects to pass to the service's credential extraction
+method. This validates that the service can correctly identify and extract
+credentials from outgoing browser requests.
 
 Usage:
     uv run pytest tests/test_recordings.py           # Test all recordings
@@ -20,10 +20,9 @@ Usage:
 import json
 from pathlib import Path
 from typing import Any
+from unittest.mock import Mock
 
 import pytest
-from playwright.sync_api import Page
-from playwright.sync_api import sync_playwright
 
 from latchkey.credentials import Credentials
 from latchkey.registry import REGISTRY
@@ -36,66 +35,25 @@ class InvalidRecordingError(Exception):
     pass
 
 
-class LoginDetectionError(Exception):
-    pass
-
-
 class CredentialExtractionError(Exception):
     pass
 
 
-class ActionReplayError(Exception):
-    pass
-
-
-def _load_actions(actions_path: Path) -> list[dict[str, Any]]:
-    """Load recorded actions from JSON file."""
-    with open(actions_path) as file:
+def _load_requests(requests_path: Path) -> list[dict[str, Any]]:
+    """Load recorded requests from JSON file."""
+    with open(requests_path) as file:
         return json.load(file)
 
 
-def _replay_action(page: Page, action: dict[str, Any]) -> None:
-    """Replay a single recorded action on the page."""
-    action_type = action.get("type")
-
-    if action_type == "goto":
-        page.goto(action["url"], wait_until="domcontentloaded")
-
-    elif action_type == "click":
-        selector = action.get("selector")
-        if selector:
-            try:
-                page.click(selector, timeout=5000)
-            except Exception:
-                # If selector fails, try to find by text as fallback
-                text = action.get("text")
-                if text:
-                    page.get_by_text(text[:50]).first.click(timeout=5000)
-                else:
-                    raise
-
-    elif action_type == "fill":
-        selector = action.get("selector")
-        value = action.get("value", "")
-        if selector:
-            page.fill(selector, value, timeout=5000)
-
-    elif action_type == "select":
-        selector = action.get("selector")
-        value = action.get("value", "")
-        if selector:
-            page.select_option(selector, value, timeout=5000)
-
-    elif action_type == "submit":
-        # Form submission is usually triggered by a click, so we may not need
-        # to do anything special here. The click on submit button handles it.
-        pass
-
-
-def _replay_actions(page: Page, actions: list[dict[str, Any]]) -> None:
-    """Replay all recorded actions on the page."""
-    for action in actions:
-        _replay_action(page, action)
+def _create_mock_request(request_data: dict[str, Any]) -> Mock:
+    """Create a mock Playwright Request object from recorded request data."""
+    mock_request = Mock()
+    mock_request.url = request_data["url"]
+    mock_request.method = request_data["method"]
+    mock_request.headers = request_data["headers"]
+    mock_request.resource_type = request_data.get("resource_type", "other")
+    mock_request.post_data = request_data.get("post_data")
+    return mock_request
 
 
 def _test_service_with_recording(
@@ -104,54 +62,28 @@ def _test_service_with_recording(
 ) -> Credentials:
     """Test a service's credential extraction using a recorded session.
 
-    Replays recorded user actions while using Playwright's routeFromHAR to
-    serve the recorded network responses. This simulates the actual login flow.
+    Loads recorded HTTP requests and tests that the service can extract
+    credentials from them using _get_credentials_from_outgoing_request().
     """
-    har_path = recording_directory / "recording.har"
-    actions_path = recording_directory / "recording.actions.json"
+    requests_path = recording_directory / "requests.json"
 
-    if not har_path.exists():
-        raise InvalidRecordingError(f"HAR file not found: {har_path}")
-    if not actions_path.exists():
-        raise InvalidRecordingError(f"Actions file not found: {actions_path}")
+    if not requests_path.exists():
+        raise InvalidRecordingError(f"Requests file not found: {requests_path}")
 
-    actions = _load_actions(actions_path)
-    if not actions:
-        raise InvalidRecordingError("No actions recorded")
+    recorded_requests = _load_requests(requests_path)
+    if not recorded_requests:
+        raise InvalidRecordingError("No requests recorded")
 
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=True)
-        # Start with fresh context (no pre-loaded state)
-        context = browser.new_context()
+    # Try to extract credentials from each recorded request
+    for request_data in recorded_requests:
+        mock_request = _create_mock_request(request_data)
+        credentials = service._get_credentials_from_outgoing_request(mock_request)
+        if credentials is not None:
+            return credentials
 
-        # Use Playwright's built-in HAR replay for network requests
-        context.route_from_har(str(har_path), not_found="fallback")
-
-        page = context.new_page()
-        page.set_default_timeout(10000)
-
-        # Register the service's request handler (needed for services that capture
-        # credentials from network requests, like Discord)
-        page.on("request", service.on_request)
-
-        try:
-            _replay_actions(page, actions)
-        except Exception as error:
-            raise ActionReplayError(f"Failed to replay actions: {error}") from error
-
-        try:
-            service.wait_for_login_completed(page)
-        except Exception as error:
-            raise LoginDetectionError(f"wait_for_login_completed failed: {error}") from error
-
-        try:
-            credentials = service.extract_credentials(page)
-        except Exception as error:
-            raise CredentialExtractionError(f"extract_credentials failed: {error}") from error
-
-        browser.close()
-
-    return credentials
+    raise CredentialExtractionError(
+        f"No credentials could be extracted from {len(recorded_requests)} recorded requests"
+    )
 
 
 def _discover_recordings() -> list[tuple[str, Path]]:
@@ -167,9 +99,8 @@ def _discover_recordings() -> list[tuple[str, Path]]:
 
     for item in sorted(RECORDINGS_DIRECTORY.iterdir()):
         if item.is_dir() and not item.name.startswith("."):
-            har_path = item / "recording.har"
-            actions_path = item / "recording.actions.json"
-            if har_path.exists() and actions_path.exists():
+            requests_path = item / "requests.json"
+            if requests_path.exists():
                 recordings.append((item.name, item))
 
     return recordings
