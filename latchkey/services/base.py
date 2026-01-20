@@ -118,7 +118,9 @@ class Service(BaseModel):
     def login(self, browser_state_path: Path | None = None) -> ApiCredentials:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=False)
-            context = browser.new_context(storage_state=str(browser_state_path) if browser_state_path else None)
+            context = browser.new_context(
+                storage_state=str(browser_state_path) if browser_state_path and browser_state_path.exists() else None
+            )
             page = context.new_page()
 
             api_credentials_future: Future[ApiCredentials] = Future()
