@@ -164,6 +164,10 @@ def match(
 )
 def curl(
     context: typer.Context,
+    force_login: Annotated[
+        bool,
+        typer.Option("--latchkey-force-login", help="Force re-authentication even if credentials exist."),
+    ] = False,
     curl_arguments: Annotated[
         list[str] | None,
         typer.Argument(help="Arguments to pass to curl."),
@@ -183,7 +187,7 @@ def curl(
             credentials = None
             credential_store = CredentialStore(path=latchkey_store) if latchkey_store else None
 
-            if credential_store is not None:
+            if credential_store is not None and not force_login:
                 credentials = credential_store.get(service.name)
 
             if credentials is None:

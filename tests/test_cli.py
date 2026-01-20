@@ -520,3 +520,163 @@ def test_status_returns_error_for_unknown_service() -> None:
         mock_registry.get_by_name.assert_called_once_with("unknown-service")
 
     assert result.exit_code == 1
+
+
+# Tests for --latchkey-force-login flag
+
+
+def test_curl_force_login_triggers_login_even_with_stored_credentials(tmp_path: Path) -> None:
+    """Test that --latchkey-force-login forces re-authentication even when credentials exist."""
+    captured_args: list[str] = []
+
+    def mock_runner(args: Sequence[str]) -> subprocess.CompletedProcess[bytes]:
+        captured_args.extend(args)
+        return subprocess.CompletedProcess(args=args, returncode=0)
+
+    set_subprocess_runner(mock_runner)
+
+    # Create a credential store with pre-saved credentials
+    store_path = tmp_path / "credentials.json"
+    store_path.write_text('{"slack": {"object_type": "slack", "token": "stored-token", "d_cookie": "stored-cookie"}}')
+
+    fresh_credentials = SlackCredentials(token="fresh-token", d_cookie="fresh-cookie")
+
+    with patch("latchkey.cli.REGISTRY") as mock_registry:
+        mock_service = MagicMock()
+        mock_service.name = "slack"
+        mock_service.login.return_value = fresh_credentials
+        mock_registry.get_by_url.return_value = mock_service
+
+        result = runner.invoke(
+            app,
+            ["curl", "--latchkey-force-login", "https://slack.com/api/conversations.list"],
+            env={"LATCHKEY_STORE": str(store_path)},
+        )
+
+        # login() SHOULD be called because force_login is set
+        mock_service.login.assert_called_once()
+
+    assert result.exit_code == 0
+    # Fresh credentials from login should be used, not stored ones
+    assert captured_args == [
+        "curl",
+        "-H",
+        "Authorization: Bearer fresh-token",
+        "-H",
+        "Cookie: d=fresh-cookie",
+        "https://slack.com/api/conversations.list",
+    ]
+
+
+def test_curl_force_login_saves_new_credentials_to_store(tmp_path: Path) -> None:
+    """Test that --latchkey-force-login saves new credentials to the store."""
+
+    def mock_runner(args: Sequence[str]) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.CompletedProcess(args=args, returncode=0)
+
+    set_subprocess_runner(mock_runner)
+
+    # Create a credential store with pre-saved credentials
+    store_path = tmp_path / "credentials.json"
+    store_path.write_text('{"slack": {"object_type": "slack", "token": "old-token", "d_cookie": "old-cookie"}}')
+
+    fresh_credentials = SlackCredentials(token="fresh-token", d_cookie="fresh-cookie")
+
+    with patch("latchkey.cli.REGISTRY") as mock_registry:
+        mock_service = MagicMock()
+        mock_service.name = "slack"
+        mock_service.login.return_value = fresh_credentials
+        mock_registry.get_by_url.return_value = mock_service
+
+        result = runner.invoke(
+            app,
+            ["curl", "--latchkey-force-login", "https://slack.com/api/conversations.list"],
+            env={"LATCHKEY_STORE": str(store_path)},
+        )
+
+    assert result.exit_code == 0
+
+    # Verify that new credentials were saved to store
+    import json
+
+    stored_data = json.loads(store_path.read_text())
+    assert stored_data["slack"]["token"] == "fresh-token"
+    assert stored_data["slack"]["d_cookie"] == "fresh-cookie"
+
+
+def test_curl_force_login_works_without_stored_credentials(tmp_path: Path) -> None:
+    """Test that --latchkey-force-login works when no credentials are stored."""
+    captured_args: list[str] = []
+
+    def mock_runner(args: Sequence[str]) -> subprocess.CompletedProcess[bytes]:
+        captured_args.extend(args)
+        return subprocess.CompletedProcess(args=args, returncode=0)
+
+    set_subprocess_runner(mock_runner)
+
+    # Create an empty credential store
+    store_path = tmp_path / "credentials.json"
+    store_path.write_text("{}")
+
+    fresh_credentials = SlackCredentials(token="fresh-token", d_cookie="fresh-cookie")
+
+    with patch("latchkey.cli.REGISTRY") as mock_registry:
+        mock_service = MagicMock()
+        mock_service.name = "slack"
+        mock_service.login.return_value = fresh_credentials
+        mock_registry.get_by_url.return_value = mock_service
+
+        result = runner.invoke(
+            app,
+            ["curl", "--latchkey-force-login", "https://slack.com/api/conversations.list"],
+            env={"LATCHKEY_STORE": str(store_path)},
+        )
+
+        mock_service.login.assert_called_once()
+
+    assert result.exit_code == 0
+    assert captured_args == [
+        "curl",
+        "-H",
+        "Authorization: Bearer fresh-token",
+        "-H",
+        "Cookie: d=fresh-cookie",
+        "https://slack.com/api/conversations.list",
+    ]
+
+
+def test_curl_force_login_works_without_latchkey_store() -> None:
+    """Test that --latchkey-force-login works when LATCHKEY_STORE is not set."""
+    captured_args: list[str] = []
+
+    def mock_runner(args: Sequence[str]) -> subprocess.CompletedProcess[bytes]:
+        captured_args.extend(args)
+        return subprocess.CompletedProcess(args=args, returncode=0)
+
+    set_subprocess_runner(mock_runner)
+
+    fresh_credentials = SlackCredentials(token="fresh-token", d_cookie="fresh-cookie")
+
+    with patch("latchkey.cli.REGISTRY") as mock_registry:
+        mock_service = MagicMock()
+        mock_service.name = "slack"
+        mock_service.login.return_value = fresh_credentials
+        mock_registry.get_by_url.return_value = mock_service
+
+        result = runner.invoke(
+            app,
+            ["curl", "--latchkey-force-login", "https://slack.com/api/conversations.list"],
+            env={},
+        )
+
+        mock_service.login.assert_called_once()
+
+    assert result.exit_code == 0
+    assert captured_args == [
+        "curl",
+        "-H",
+        "Authorization: Bearer fresh-token",
+        "-H",
+        "Cookie: d=fresh-cookie",
+        "https://slack.com/api/conversations.list",
+    ]
