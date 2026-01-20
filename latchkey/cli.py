@@ -66,6 +66,37 @@ def services() -> None:
 
 
 @app.command()
+def clear(
+    service_name: Annotated[
+        str,
+        typer.Argument(help="Name of the service to clear credentials for."),
+    ],
+) -> None:
+    """Clear stored credentials for a service.
+
+    Set LATCHKEY_STORE environment variable to specify the credential store location.
+    """
+    service = REGISTRY.get_by_name(service_name)
+    if service is None:
+        typer.echo(f"Error: Unknown service: {service_name}", err=True)
+        typer.echo("Use 'latchkey services' to see available services.", err=True)
+        raise typer.Exit(code=1)
+
+    latchkey_store = _get_latchkey_store_path()
+    if latchkey_store is None:
+        typer.echo(f"Error: {LATCHKEY_STORE_ENV_VAR} environment variable is not set.", err=True)
+        raise typer.Exit(code=1)
+
+    credential_store = CredentialStore(path=latchkey_store)
+    deleted = credential_store.delete(service_name)
+
+    if deleted:
+        typer.echo(f"Credentials for {service_name} have been cleared.")
+    else:
+        typer.echo(f"No credentials found for {service_name}.")
+
+
+@app.command()
 def status(
     service_name: Annotated[
         str,
@@ -139,10 +170,6 @@ def match(
 )
 def curl(
     context: typer.Context,
-    force_login: Annotated[
-        bool,
-        typer.Option("--latchkey-force-new-login", help="Force re-authentication even if credentials exist."),
-    ] = False,
     curl_arguments: Annotated[
         list[str] | None,
         typer.Argument(help="Arguments to pass to curl."),
@@ -162,7 +189,7 @@ def curl(
             credentials = None
             credential_store = CredentialStore(path=latchkey_store) if latchkey_store else None
 
-            if credential_store is not None and not force_login:
+            if credential_store is not None:
                 credentials = credential_store.get(service.name)
 
             if credentials is None:

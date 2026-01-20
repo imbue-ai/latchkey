@@ -66,3 +66,12 @@ class CredentialStore(BaseModel):
         data = self._load_store_data()
         data[service_name] = credentials.model_dump()
         self._save_store_data(data)
+
+    def delete(self, service_name: str) -> bool:
+        """Delete credentials for a service. Returns True if credentials were deleted, False if not found."""
+        data = self._load_store_data()
+        if service_name not in data:
+            return False
+        del data[service_name]
+        self._save_store_data(data)
+        return True

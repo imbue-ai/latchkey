@@ -96,3 +96,50 @@ def test_credentials_stored_as_json_with_type_discriminator(tmp_path: Path) -> N
     assert raw_data["slack"]["object_type"] == "slack"
     assert raw_data["slack"]["token"] == "xoxc-token"
     assert raw_data["slack"]["d_cookie"] == "d-cookie"
+
+
+def test_delete_removes_credentials(tmp_path: Path) -> None:
+    store_path = tmp_path / "credentials.json"
+    store = CredentialStore(path=store_path)
+
+    credentials = AuthorizationBearer(token="test-token")
+    store.save("discord", credentials)
+
+    result = store.delete("discord")
+
+    assert result is True
+    assert store.get("discord") is None
+
+
+def test_delete_returns_false_for_missing_service(tmp_path: Path) -> None:
+    store_path = tmp_path / "credentials.json"
+    store = CredentialStore(path=store_path)
+
+    result = store.delete("nonexistent")
+
+    assert result is False
+
+
+def test_delete_returns_false_for_nonexistent_file(tmp_path: Path) -> None:
+    store_path = tmp_path / "does_not_exist.json"
+    store = CredentialStore(path=store_path)
+
+    result = store.delete("any_service")
+
+    assert result is False
+
+
+def test_delete_preserves_other_services(tmp_path: Path) -> None:
+    store_path = tmp_path / "credentials.json"
+    store = CredentialStore(path=store_path)
+
+    discord_creds = AuthorizationBearer(token="discord-token")
+    slack_creds = SlackCredentials(token="slack-token", d_cookie="cookie")
+
+    store.save("discord", discord_creds)
+    store.save("slack", slack_creds)
+
+    store.delete("discord")
+
+    assert store.get("discord") is None
+    assert store.get("slack") == slack_creds
