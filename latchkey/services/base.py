@@ -11,10 +11,6 @@ from latchkey.credentials import CredentialStatus
 from latchkey.credentials import Credentials
 
 
-class CredentialExtractionError(Exception):
-    pass
-
-
 class LoginCancelledError(Exception):
     """Raised when the user closes the browser before completing the login."""
 
@@ -28,20 +24,20 @@ class Service(BaseModel):
     base_api_urls: tuple[str, ...]
     login_url: str
 
-    @abstractmethod
-    def wait_for_login_completed(self, page: Page) -> None:
-        pass
+    _credentials: Credentials | None = None
 
     @abstractmethod
-    def extract_credentials(self, page: Page) -> Credentials:
+    def on_request(self, request: Request) -> None:
         pass
 
     @abstractmethod
     def check_credentials(self, credentials: Credentials) -> CredentialStatus:
         pass
 
-    def on_request(self, request: Request) -> None:
-        pass
+    def wait_for_credentials(self, page: Page) -> Credentials:
+        while self._credentials is None:
+            page.wait_for_timeout(100)
+        return self._credentials
 
     @property
     def login_instructions(self) -> tuple[str, ...] | None:
@@ -123,8 +119,7 @@ class Service(BaseModel):
             try:
                 self._show_login_instructions(page)
                 page.goto(self.login_url)
-                self.wait_for_login_completed(page)
-                credentials = self.extract_credentials(page)
+                credentials = self.wait_for_credentials(page)
             except TargetClosedError as error:
                 raise LoginCancelledError("Login was cancelled because the browser was closed.") from error
 

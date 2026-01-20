@@ -1,13 +1,11 @@
 import json
 import re
 
-from playwright.sync_api import Page
 from playwright.sync_api import Request
 
 from latchkey import curl
 from latchkey.credentials import CredentialStatus
 from latchkey.credentials import Credentials
-from latchkey.services.base import CredentialExtractionError
 from latchkey.services.base import Service
 
 
@@ -30,9 +28,6 @@ class Slack(Service):
     base_api_urls: tuple[str, ...] = ("https://slack.com/api/",)
     login_url: str = "https://slack.com/signin"
 
-    _captured_token: str | None = None
-    _captured_d_cookie: str | None = None
-
     @property
     def login_instructions(self) -> tuple[str, ...]:
         return (
@@ -41,7 +36,7 @@ class Slack(Service):
         )
 
     def on_request(self, request: Request) -> None:
-        if self._captured_token is not None and self._captured_d_cookie is not None:
+        if self._credentials is not None:
             return
 
         url = request.url
@@ -50,33 +45,22 @@ class Slack(Service):
 
         headers = request.headers
 
-        if self._captured_token is None:
-            authorization = headers.get("authorization")
-            if authorization is not None and authorization.strip() != "":
-                token = authorization
-                if token.lower().startswith("bearer "):
-                    token = token[7:]
-                self._captured_token = token
+        authorization = headers.get("authorization")
+        if authorization is None or authorization.strip() == "":
+            return
+        token = authorization
+        if token.lower().startswith("bearer "):
+            token = token[7:]
 
-        if self._captured_d_cookie is None:
-            cookie_header = headers.get("cookie")
-            if cookie_header is not None:
-                match = re.search(r"\bd=([^;]+)", cookie_header)
-                if match:
-                    self._captured_d_cookie = match.group(1)
+        cookie_header = headers.get("cookie")
+        if cookie_header is None:
+            return
+        match = re.search(r"\bd=([^;]+)", cookie_header)
+        if not match:
+            return
+        d_cookie = match.group(1)
 
-    def wait_for_login_completed(self, page: Page) -> None:
-        while self._captured_token is None or self._captured_d_cookie is None:
-            page.wait_for_timeout(100)
-
-    def extract_credentials(self, page: Page) -> SlackCredentials:
-        if self._captured_token is None:
-            raise CredentialExtractionError("Could not capture Slack token from network requests")
-
-        if self._captured_d_cookie is None:
-            raise CredentialExtractionError("Could not capture Slack d cookie from network requests")
-
-        return SlackCredentials(token=self._captured_token, d_cookie=self._captured_d_cookie)
+        self._credentials = SlackCredentials(token=token, d_cookie=d_cookie)
 
     def check_credentials(self, credentials: Credentials) -> CredentialStatus:
         if not isinstance(credentials, SlackCredentials):
