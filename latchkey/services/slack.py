@@ -1,6 +1,8 @@
 import json
+import re
 
 from playwright.sync_api import Page
+from playwright.sync_api import Request
 
 from latchkey import curl
 from latchkey.credentials import CredentialStatus
@@ -28,15 +30,8 @@ class Slack(Service):
     base_api_urls: tuple[str, ...] = ("https://slack.com/api/",)
     login_url: str = "https://slack.com/signin"
 
-    TOKEN_EXTRACTION_JS: str = """
-        () => {
-            const localConfig = JSON.parse(localStorage.getItem('localConfig_v2'));
-            if (localConfig && localConfig.teams && localConfig.lastActiveTeamId) {
-                return localConfig.teams[localConfig.lastActiveTeamId].token;
-            }
-            return null;
-        }
-    """
+    _captured_token: str | None = None
+    _captured_d_cookie: str | None = None
 
     @property
     def login_instructions(self) -> tuple[str, ...]:
@@ -45,37 +40,43 @@ class Slack(Service):
             "Launch Slack in your browser (not the desktop app).",
         )
 
+    def on_request(self, request: Request) -> None:
+        if self._captured_token is not None and self._captured_d_cookie is not None:
+            return
+
+        url = request.url
+        if not url.startswith("https://slack.com/api/") and not url.startswith("https://edgeapi.slack.com/"):
+            return
+
+        headers = request.headers
+
+        if self._captured_token is None:
+            authorization = headers.get("authorization")
+            if authorization is not None and authorization.strip() != "":
+                token = authorization
+                if token.lower().startswith("bearer "):
+                    token = token[7:]
+                self._captured_token = token
+
+        if self._captured_d_cookie is None:
+            cookie_header = headers.get("cookie")
+            if cookie_header is not None:
+                match = re.search(r"\bd=([^;]+)", cookie_header)
+                if match:
+                    self._captured_d_cookie = match.group(1)
+
     def wait_for_login_completed(self, page: Page) -> None:
-        # Match both https://app.slack.com/client/... and https://<workspace>.slack.com/client/...
-        # Use wait_for_function instead of wait_for_url to avoid ERR_ABORTED errors
-        # when the frame gets detached during SSB redirects.
-        page.wait_for_function(
-            """() => /^https:\\/\\/[a-zA-Z0-9-]+\\.slack\\.com\\/client\\//.test(window.location.href)""",
-            timeout=0,
-        )
-        # Wait for the token to be present in localStorage
-        page.wait_for_function(self.TOKEN_EXTRACTION_JS, timeout=0)
+        while self._captured_token is None or self._captured_d_cookie is None:
+            page.wait_for_timeout(100)
 
     def extract_credentials(self, page: Page) -> SlackCredentials:
-        token = page.evaluate(self.TOKEN_EXTRACTION_JS)
+        if self._captured_token is None:
+            raise CredentialExtractionError("Could not capture Slack token from network requests")
 
-        if not token:
-            raise CredentialExtractionError("Could not extract Slack token from localStorage")
+        if self._captured_d_cookie is None:
+            raise CredentialExtractionError("Could not capture Slack d cookie from network requests")
 
-        context = page.context
-        cookies = context.cookies()
-        d_cookie = None
-        for cookie in cookies:
-            name = cookie.get("name")
-            domain = cookie.get("domain", "")
-            if name == "d" and "slack.com" in domain:
-                d_cookie = cookie.get("value")
-                break
-
-        if not d_cookie:
-            raise CredentialExtractionError("Could not extract Slack d cookie")
-
-        return SlackCredentials(token=token, d_cookie=d_cookie)
+        return SlackCredentials(token=self._captured_token, d_cookie=self._captured_d_cookie)
 
     def check_credentials(self, credentials: Credentials) -> CredentialStatus:
         if not isinstance(credentials, SlackCredentials):
