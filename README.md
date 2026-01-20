@@ -82,6 +82,11 @@ invocations.
 
 ## Integrations
 
+Warning: giving AI agents access to your credentials is
+potentially dangerous. They will be able to do most of the
+actions you can do. Only do this if you're willing to accept the
+risk.
+
 ### Claude Code
 ```
 mkdir -p ~/.claude/skills/latchkey
