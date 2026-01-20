@@ -130,6 +130,10 @@ def _test_service_with_recording(
         page = context.new_page()
         page.set_default_timeout(10000)
 
+        # Register the service's request handler (needed for services that capture
+        # credentials from network requests, like Discord)
+        page.on("request", service.on_request)
+
         try:
             _replay_actions(page, actions)
         except Exception as error:
