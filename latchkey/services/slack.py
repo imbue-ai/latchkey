@@ -53,7 +53,7 @@ class Slack(Service):
         if not re.match(r"https://([a-z0-9-]+\.)?slack\.com/", url):
             return None
 
-        headers = request.headers
+        headers = request.all_headers()
 
         cookie_header = headers.get("cookie")
         if cookie_header is None:
