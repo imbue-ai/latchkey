@@ -26,8 +26,15 @@ class Service(BaseModel):
     login_url: str
 
     @abstractmethod
-    def on_request(self, request: Request, credentials_future: Future[Credentials]) -> None:
+    def _get_credentials_from_outgoing_request(self, request: Request) -> Credentials | None:
         pass
+
+    def on_request(self, request: Request, credentials_future: Future[Credentials]) -> None:
+        if credentials_future.done():
+            return
+        credentials = self._get_credentials_from_outgoing_request(request)
+        if credentials is not None:
+            credentials_future.set_result(credentials)
 
     @abstractmethod
     def check_credentials(self, credentials: Credentials) -> CredentialStatus:

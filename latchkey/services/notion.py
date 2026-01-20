@@ -1,5 +1,3 @@
-from concurrent.futures import Future
-
 from playwright.sync_api import Request
 
 from latchkey import curl
@@ -33,13 +31,10 @@ class Notion(Service):
             "After logging in, the token will be captured automatically.",
         )
 
-    def on_request(self, request: Request, credentials_future: Future[Credentials]) -> None:
-        if credentials_future.done():
-            return
-
+    def _get_credentials_from_outgoing_request(self, request: Request) -> Credentials | None:
         url = request.url
         if not url.startswith("https://www.notion.so/api/") and not url.startswith("https://api.notion.com/"):
-            return
+            return None
 
         headers = request.headers
         authorization = headers.get("authorization")
@@ -47,7 +42,9 @@ class Notion(Service):
             token = authorization
             if token.lower().startswith("bearer "):
                 token = token[7:]
-            credentials_future.set_result(NotionCredentials(token=token))
+            return NotionCredentials(token=token)
+
+        return None
 
     def check_credentials(self, credentials: Credentials) -> CredentialStatus:
         if not isinstance(credentials, NotionCredentials):

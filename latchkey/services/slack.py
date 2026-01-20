@@ -1,6 +1,5 @@
 import json
 import re
-from concurrent.futures import Future
 
 from playwright.sync_api import Request
 
@@ -36,32 +35,29 @@ class Slack(Service):
             "Launch Slack in your browser (not the desktop app).",
         )
 
-    def on_request(self, request: Request, credentials_future: Future[Credentials]) -> None:
-        if credentials_future.done():
-            return
-
+    def _get_credentials_from_outgoing_request(self, request: Request) -> Credentials | None:
         url = request.url
         if not url.startswith("https://slack.com/api/") and not url.startswith("https://edgeapi.slack.com/"):
-            return
+            return None
 
         headers = request.headers
 
         authorization = headers.get("authorization")
         if authorization is None or authorization.strip() == "":
-            return
+            return None
         token = authorization
         if token.lower().startswith("bearer "):
             token = token[7:]
 
         cookie_header = headers.get("cookie")
         if cookie_header is None:
-            return
+            return None
         match = re.search(r"\bd=([^;]+)", cookie_header)
         if not match:
-            return
+            return None
         d_cookie = match.group(1)
 
-        credentials_future.set_result(SlackCredentials(token=token, d_cookie=d_cookie))
+        return SlackCredentials(token=token, d_cookie=d_cookie)
 
     def check_credentials(self, credentials: Credentials) -> CredentialStatus:
         if not isinstance(credentials, SlackCredentials):
