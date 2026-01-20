@@ -178,6 +178,18 @@ def test_extract_url_skips_flags_without_values() -> None:
     assert _extract_url_from_curl_arguments(arguments) == "https://api.example.com"
 
 
+def test_extract_url_handles_verbose_flag() -> None:
+    """Test that -v/--verbose flags are handled correctly (not supported by uncurl)."""
+    arguments = ["-v", "https://api.example.com"]
+    assert _extract_url_from_curl_arguments(arguments) == "https://api.example.com"
+
+    arguments = ["--verbose", "https://api.example.com"]
+    assert _extract_url_from_curl_arguments(arguments) == "https://api.example.com"
+
+    arguments = ["-v", "-X", "POST", "https://api.example.com"]
+    assert _extract_url_from_curl_arguments(arguments) == "https://api.example.com"
+
+
 # Tests for credential injection
 
 
@@ -209,6 +221,40 @@ def test_curl_injects_credentials_for_slack_api() -> None:
         "Authorization: Bearer xoxc-test-token",
         "-H",
         "Cookie: d=test-cookie",
+        "https://slack.com/api/conversations.list",
+    ]
+
+
+def test_curl_injects_credentials_with_verbose_flag() -> None:
+    """Test that credentials are injected even when -v flag is present (regression test)."""
+    captured_args: list[str] = []
+
+    def mock_runner(args: Sequence[str]) -> subprocess.CompletedProcess[bytes]:
+        captured_args.extend(args)
+        return subprocess.CompletedProcess(args=args, returncode=0)
+
+    set_subprocess_runner(mock_runner)
+
+    mock_credentials = SlackCredentials(token="xoxc-test-token", d_cookie="test-cookie")
+
+    with patch("latchkey.cli.REGISTRY") as mock_registry:
+        mock_service = MagicMock()
+        mock_service.login.return_value = mock_credentials
+        mock_registry.get_by_url.return_value = mock_service
+
+        result = runner.invoke(app, ["curl", "--", "-v", "https://slack.com/api/conversations.list"])
+
+        mock_registry.get_by_url.assert_called_once_with("https://slack.com/api/conversations.list")
+        mock_service.login.assert_called_once()
+
+    assert result.exit_code == 0
+    assert captured_args == [
+        "curl",
+        "-H",
+        "Authorization: Bearer xoxc-test-token",
+        "-H",
+        "Cookie: d=test-cookie",
+        "-v",
         "https://slack.com/api/conversations.list",
     ]
 

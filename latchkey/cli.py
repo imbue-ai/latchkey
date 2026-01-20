@@ -47,9 +47,20 @@ def reset_subprocess_runner() -> None:
     _subprocess_runner = _default_subprocess_runner
 
 
+# Curl flags that don't affect the HTTP request semantics but aren't supported by uncurl.
+# These are filtered out before passing to uncurl for URL extraction.
+_CURL_PASSTHROUGH_FLAGS = frozenset({"-v", "--verbose"})
+
+
+def _filter_passthrough_flags(arguments: Sequence[str]) -> list[str]:
+    """Filter out curl flags that uncurl doesn't understand but don't affect URL extraction."""
+    return [arg for arg in arguments if arg not in _CURL_PASSTHROUGH_FLAGS]
+
+
 def _extract_url_from_curl_arguments(arguments: Sequence[str]) -> str | None:
     """Extract the URL from curl command-line arguments using uncurl."""
-    curl_command = "curl " + " ".join(shlex.quote(arg) for arg in arguments)
+    filtered_arguments = _filter_passthrough_flags(arguments)
+    curl_command = "curl " + " ".join(shlex.quote(arg) for arg in filtered_arguments)
     try:
         context = uncurl.parse_context(curl_command)
         return context.url if context.url else None
