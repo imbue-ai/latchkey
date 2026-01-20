@@ -2,6 +2,7 @@
 
 import subprocess
 from collections.abc import Sequence
+import json
 from pathlib import Path
 from unittest.mock import MagicMock
 from unittest.mock import patch
@@ -549,8 +550,6 @@ def test_clear_deletes_credentials(tmp_path: Path) -> None:
     assert "Credentials for slack have been cleared" in result.stdout
 
     # Verify credentials were deleted
-    import json
-
     stored_data = json.loads(store_path.read_text())
     assert "slack" not in stored_data
 
@@ -632,8 +631,6 @@ def test_clear_preserves_other_services(tmp_path: Path) -> None:
     assert result.exit_code == 0
 
     # Verify only slack was deleted
-    import json
-
     stored_data = json.loads(store_path.read_text())
     assert "slack" not in stored_data
     assert "discord" in stored_data
