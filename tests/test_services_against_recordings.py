@@ -1,15 +1,15 @@
 """Test login recordings against service implementations.
 
 This module validates that recorded login sessions can be used to test
-service credential extraction logic. It discovers recordings in
+service API credential extraction logic. It discovers recordings in
 scripts/recordings/<service_name>/ and verifies that the service's
-_get_credentials_from_outgoing_request() method can extract valid credentials
+_get_api_credentials_from_outgoing_request() method can extract valid API credentials
 from the recorded requests.
 
 The tests work by loading recorded HTTP requests from requests.json and
-creating mock Request objects to pass to the service's credential extraction
+creating mock Request objects to pass to the service's API credential extraction
 method. This validates that the service can correctly identify and extract
-credentials from outgoing browser requests.
+API credentials from outgoing browser requests.
 
 Usage:
     uv run pytest tests/test_services_against_recordings.py           # Test all recordings
@@ -24,7 +24,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from latchkey.credentials import Credentials
+from latchkey.api_credentials import ApiCredentials
 from latchkey.registry import REGISTRY
 from latchkey.services import Service
 
@@ -35,7 +35,7 @@ class InvalidRecordingError(Exception):
     pass
 
 
-class CredentialExtractionError(Exception):
+class ApiCredentialExtractionError(Exception):
     pass
 
 
@@ -59,11 +59,11 @@ def _create_mock_request(request_data: dict[str, Any]) -> Mock:
 def _test_service_with_recording(
     service: Service,
     recording_directory: Path,
-) -> Credentials:
-    """Test a service's credential extraction using a recorded session.
+) -> ApiCredentials:
+    """Test a service's API credential extraction using a recorded session.
 
     Loads recorded HTTP requests and tests that the service can extract
-    credentials from them using _get_credentials_from_outgoing_request().
+    API credentials from them using _get_api_credentials_from_outgoing_request().
     """
     requests_path = recording_directory / "requests.json"
 
@@ -74,15 +74,15 @@ def _test_service_with_recording(
     if not recorded_requests:
         raise InvalidRecordingError("No requests recorded")
 
-    # Try to extract credentials from each recorded request
+    # Try to extract API credentials from each recorded request
     for request_data in recorded_requests:
         mock_request = _create_mock_request(request_data)
-        credentials = service._get_credentials_from_outgoing_request(mock_request)
-        if credentials is not None:
-            return credentials
+        api_credentials = service._get_api_credentials_from_outgoing_request(mock_request)
+        if api_credentials is not None:
+            return api_credentials
 
-    raise CredentialExtractionError(
-        f"No credentials could be extracted from {len(recorded_requests)} recorded requests"
+    raise ApiCredentialExtractionError(
+        f"No API credentials could be extracted from {len(recorded_requests)} recorded requests"
     )
 
 
@@ -116,14 +116,14 @@ _DISCOVERED_RECORDINGS = _discover_recordings()
     ids=[name for name, _ in _DISCOVERED_RECORDINGS],
 )
 def test_recording(service_name: str, recording_path: Path) -> None:
-    """Test that a recorded login session produces valid credentials."""
+    """Test that a recorded login session produces valid API credentials."""
     service = REGISTRY.get_by_name(service_name)
     if service is None:
         pytest.skip(f"Service '{service_name}' not found in registry")
 
-    credentials = _test_service_with_recording(service, recording_path)
+    api_credentials = _test_service_with_recording(service, recording_path)
 
-    # Verify credentials are valid
-    assert credentials is not None, "extract_credentials returned None"
-    curl_args = credentials.as_curl_arguments()
-    assert curl_args, "Credentials produced no curl arguments"
+    # Verify API credentials are valid
+    assert api_credentials is not None, "extract_api_credentials returned None"
+    curl_args = api_credentials.as_curl_arguments()
+    assert curl_args, "API credentials produced no curl arguments"

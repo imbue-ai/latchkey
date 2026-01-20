@@ -9,8 +9,8 @@ from typing import Annotated
 import typer
 import uncurl
 
-from latchkey.credential_store import CredentialStore
-from latchkey.credentials import CredentialStatus
+from latchkey.api_credential_store import ApiCredentialStore
+from latchkey.api_credentials import ApiCredentialStatus
 from latchkey.curl import run as run_curl
 from latchkey.registry import REGISTRY
 from latchkey.services.base import LoginCancelledError
@@ -18,7 +18,7 @@ from latchkey.services.base import LoginCancelledError
 LATCHKEY_STORE_ENV_VAR = "LATCHKEY_STORE"
 
 app = typer.Typer(
-    help="A command-line tool that injects credentials to curl requests to known public APIs.",
+    help="A command-line tool that injects API credentials to curl requests to known public APIs.",
 )
 
 
@@ -51,7 +51,7 @@ def _collect_curl_arguments(curl_arguments: list[str] | None, context: typer.Con
 
 
 def _get_latchkey_store_path() -> Path | None:
-    """Get the credential store path from environment variable."""
+    """Get the API credential store path from environment variable."""
     env_value = os.environ.get(LATCHKEY_STORE_ENV_VAR)
     if env_value:
         return Path(env_value).expanduser()
@@ -69,12 +69,12 @@ def services() -> None:
 def clear(
     service_name: Annotated[
         str,
-        typer.Argument(help="Name of the service to clear credentials for."),
+        typer.Argument(help="Name of the service to clear API credentials for."),
     ],
 ) -> None:
-    """Clear stored credentials for a service.
+    """Clear stored API credentials for a service.
 
-    Set LATCHKEY_STORE environment variable to specify the credential store location.
+    Set LATCHKEY_STORE environment variable to specify the API credential store location.
     """
     service = REGISTRY.get_by_name(service_name)
     if service is None:
@@ -87,13 +87,13 @@ def clear(
         typer.echo(f"Error: {LATCHKEY_STORE_ENV_VAR} environment variable is not set.", err=True)
         raise typer.Exit(code=1)
 
-    credential_store = CredentialStore(path=latchkey_store)
-    deleted = credential_store.delete(service_name)
+    api_credential_store = ApiCredentialStore(path=latchkey_store)
+    deleted = api_credential_store.delete(service_name)
 
     if deleted:
-        typer.echo(f"Credentials for {service_name} have been cleared.")
+        typer.echo(f"API credentials for {service_name} have been cleared.")
     else:
-        typer.echo(f"No credentials found for {service_name}.")
+        typer.echo(f"No API credentials found for {service_name}.")
 
 
 @app.command()
@@ -103,10 +103,10 @@ def status(
         typer.Argument(help="Name of the service to check status for."),
     ],
 ) -> None:
-    """Check the credential status for a service.
+    """Check the API credential status for a service.
 
     Returns one of: missing, valid, invalid.
-    Set LATCHKEY_STORE environment variable to specify the credential store location.
+    Set LATCHKEY_STORE environment variable to specify the API credential store location.
     """
     service = REGISTRY.get_by_name(service_name)
     if service is None:
@@ -116,18 +116,18 @@ def status(
 
     latchkey_store = _get_latchkey_store_path()
     if latchkey_store is None:
-        typer.echo(CredentialStatus.MISSING.value)
+        typer.echo(ApiCredentialStatus.MISSING.value)
         return
 
-    credential_store = CredentialStore(path=latchkey_store)
-    credentials = credential_store.get(service_name)
+    api_credential_store = ApiCredentialStore(path=latchkey_store)
+    api_credentials = api_credential_store.get(service_name)
 
-    if credentials is None:
-        typer.echo(CredentialStatus.MISSING.value)
+    if api_credentials is None:
+        typer.echo(ApiCredentialStatus.MISSING.value)
         return
 
-    credential_status = service.check_credentials(credentials)
-    typer.echo(credential_status.value)
+    api_credential_status = service.check_api_credentials(api_credentials)
+    typer.echo(api_credential_status.value)
 
 
 @app.command(
@@ -175,9 +175,9 @@ def curl(
         typer.Argument(help="Arguments to pass to curl."),
     ] = None,
 ) -> None:
-    """Run curl with credential injection.
+    """Run curl with API credential injection.
 
-    Set LATCHKEY_STORE environment variable to persist credentials to a file.
+    Set LATCHKEY_STORE environment variable to persist API credentials to a file.
     """
     all_arguments = _collect_curl_arguments(curl_arguments, context)
     latchkey_store = _get_latchkey_store_path()
@@ -186,22 +186,22 @@ def curl(
     if url is not None:
         service = REGISTRY.get_by_url(url)
         if service is not None:
-            credentials = None
-            credential_store = CredentialStore(path=latchkey_store) if latchkey_store else None
+            api_credentials = None
+            api_credential_store = ApiCredentialStore(path=latchkey_store) if latchkey_store else None
 
-            if credential_store is not None:
-                credentials = credential_store.get(service.name)
+            if api_credential_store is not None:
+                api_credentials = api_credential_store.get(service.name)
 
-            if credentials is None:
+            if api_credentials is None:
                 try:
-                    credentials = service.login()
+                    api_credentials = service.login()
                 except LoginCancelledError:
                     typer.echo("Login cancelled.", err=True)
                     raise typer.Exit(code=1)
-                if credential_store is not None:
-                    credential_store.save(service.name, credentials)
+                if api_credential_store is not None:
+                    api_credential_store.save(service.name, api_credentials)
 
-            all_arguments = list(credentials.as_curl_arguments()) + all_arguments
+            all_arguments = list(api_credentials.as_curl_arguments()) + all_arguments
 
     result = run_curl(all_arguments)
     raise typer.Exit(code=result.returncode)

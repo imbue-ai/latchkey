@@ -1,9 +1,9 @@
 from playwright.sync_api import Request
 
 from latchkey import curl
-from latchkey.credentials import AuthorizationBare
-from latchkey.credentials import CredentialStatus
-from latchkey.credentials import Credentials
+from latchkey.api_credentials import ApiCredentialStatus
+from latchkey.api_credentials import ApiCredentials
+from latchkey.api_credentials import AuthorizationBare
 from latchkey.services.base import Service
 
 
@@ -12,7 +12,7 @@ class Discord(Service):
     base_api_urls: tuple[str, ...] = ("https://discord.com/api/",)
     login_url: str = "https://discord.com/login"
 
-    def _get_credentials_from_outgoing_request(self, request: Request) -> Credentials | None:
+    def _get_api_credentials_from_outgoing_request(self, request: Request) -> ApiCredentials | None:
         url = request.url
         if not url.startswith("https://discord.com/api/"):
             return None
@@ -24,9 +24,9 @@ class Discord(Service):
 
         return None
 
-    def check_credentials(self, credentials: Credentials) -> CredentialStatus:
-        if not isinstance(credentials, AuthorizationBare):
-            return CredentialStatus.INVALID
+    def check_api_credentials(self, api_credentials: ApiCredentials) -> ApiCredentialStatus:
+        if not isinstance(api_credentials, AuthorizationBare):
+            return ApiCredentialStatus.INVALID
 
         result = curl.run_captured(
             [
@@ -35,15 +35,15 @@ class Discord(Service):
                 "/dev/null",
                 "-w",
                 "%{http_code}",
-                *credentials.as_curl_arguments(),
+                *api_credentials.as_curl_arguments(),
                 "https://discord.com/api/v9/users/@me",
             ],
             timeout=10,
         )
 
         if result.stdout == "200":
-            return CredentialStatus.VALID
-        return CredentialStatus.INVALID
+            return ApiCredentialStatus.VALID
+        return ApiCredentialStatus.INVALID
 
 
 DISCORD = Discord()

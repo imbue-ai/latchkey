@@ -14,7 +14,7 @@ from latchkey.cli import _extract_url_from_curl_arguments
 from latchkey.cli import app
 from latchkey.curl import reset_subprocess_runner
 from latchkey.curl import set_subprocess_runner
-from latchkey.services.slack import SlackCredentials
+from latchkey.services.slack import SlackApiCredentials
 
 runner = CliRunner()
 
@@ -191,10 +191,10 @@ def test_extract_url_handles_verbose_flag() -> None:
     assert _extract_url_from_curl_arguments(arguments) == "https://api.example.com"
 
 
-# Tests for credential injection
+# Tests for API credential injection
 
 
-def test_curl_injects_credentials_for_slack_api() -> None:
+def test_curl_injects_api_credentials_for_slack_api() -> None:
     captured_args: list[str] = []
 
     def mock_runner(args: Sequence[str]) -> subprocess.CompletedProcess[bytes]:
@@ -203,12 +203,12 @@ def test_curl_injects_credentials_for_slack_api() -> None:
 
     set_subprocess_runner(mock_runner)
 
-    mock_credentials = SlackCredentials(token="xoxc-test-token", d_cookie="test-cookie")
+    mock_api_credentials = SlackApiCredentials(token="xoxc-test-token", d_cookie="test-cookie")
 
     with patch("latchkey.cli.REGISTRY") as mock_registry:
         mock_service = MagicMock()
         mock_service.name = "slack"
-        mock_service.login.return_value = mock_credentials
+        mock_service.login.return_value = mock_api_credentials
         mock_registry.get_by_url.return_value = mock_service
 
         result = runner.invoke(app, ["curl", "https://slack.com/api/conversations.list"])
@@ -227,8 +227,8 @@ def test_curl_injects_credentials_for_slack_api() -> None:
     ]
 
 
-def test_curl_injects_credentials_with_verbose_flag() -> None:
-    """Test that credentials are injected even when -v flag is present (regression test)."""
+def test_curl_injects_api_credentials_with_verbose_flag() -> None:
+    """Test that API credentials are injected even when -v flag is present (regression test)."""
     captured_args: list[str] = []
 
     def mock_runner(args: Sequence[str]) -> subprocess.CompletedProcess[bytes]:
@@ -237,12 +237,12 @@ def test_curl_injects_credentials_with_verbose_flag() -> None:
 
     set_subprocess_runner(mock_runner)
 
-    mock_credentials = SlackCredentials(token="xoxc-test-token", d_cookie="test-cookie")
+    mock_api_credentials = SlackApiCredentials(token="xoxc-test-token", d_cookie="test-cookie")
 
     with patch("latchkey.cli.REGISTRY") as mock_registry:
         mock_service = MagicMock()
         mock_service.name = "slack"
-        mock_service.login.return_value = mock_credentials
+        mock_service.login.return_value = mock_api_credentials
         mock_registry.get_by_url.return_value = mock_service
 
         result = runner.invoke(app, ["curl", "--", "-v", "https://slack.com/api/conversations.list"])
@@ -262,7 +262,7 @@ def test_curl_injects_credentials_with_verbose_flag() -> None:
     ]
 
 
-def test_curl_does_not_inject_credentials_for_unknown_service() -> None:
+def test_curl_does_not_inject_api_credentials_for_unknown_service() -> None:
     captured_args: list[str] = []
 
     def mock_runner(args: Sequence[str]) -> subprocess.CompletedProcess[bytes]:
@@ -282,7 +282,7 @@ def test_curl_does_not_inject_credentials_for_unknown_service() -> None:
     assert captured_args == ["curl", "https://unknown-api.example.com"]
 
 
-def test_curl_does_not_inject_credentials_when_no_url_found() -> None:
+def test_curl_does_not_inject_api_credentials_when_no_url_found() -> None:
     captured_args: list[str] = []
 
     def mock_runner(args: Sequence[str]) -> subprocess.CompletedProcess[bytes]:
@@ -400,8 +400,8 @@ def test_match_works_with_curl_options_without_double_dash() -> None:
 # Tests for curl with LATCHKEY_STORE environment variable
 
 
-def test_curl_reads_credentials_from_latchkey_store_env_var(tmp_path: Path) -> None:
-    """Test that LATCHKEY_STORE environment variable is used to load stored credentials."""
+def test_curl_reads_api_credentials_from_latchkey_store_env_var(tmp_path: Path) -> None:
+    """Test that LATCHKEY_STORE environment variable is used to load stored API credentials."""
     captured_args: list[str] = []
 
     def mock_runner(args: Sequence[str]) -> subprocess.CompletedProcess[bytes]:
@@ -410,8 +410,8 @@ def test_curl_reads_credentials_from_latchkey_store_env_var(tmp_path: Path) -> N
 
     set_subprocess_runner(mock_runner)
 
-    # Create a credential store with pre-saved credentials
-    store_path = tmp_path / "credentials.json"
+    # Create an API credential store with pre-saved API credentials
+    store_path = tmp_path / "api_credentials.json"
     store_path.write_text('{"slack": {"object_type": "slack", "token": "stored-token", "d_cookie": "stored-cookie"}}')
 
     with patch("latchkey.cli.REGISTRY") as mock_registry:
@@ -425,11 +425,11 @@ def test_curl_reads_credentials_from_latchkey_store_env_var(tmp_path: Path) -> N
             env={"LATCHKEY_STORE": str(store_path)},
         )
 
-        # login() should NOT be called because credentials were loaded from store
+        # login() should NOT be called because API credentials were loaded from store
         mock_service.login.assert_not_called()
 
     assert result.exit_code == 0
-    # Credentials from the store should be injected
+    # API credentials from the store should be injected
     assert captured_args == [
         "curl",
         "-H",
@@ -451,9 +451,9 @@ def test_status_returns_missing_when_no_latchkey_store_set() -> None:
     assert result.stdout.strip() == "missing"
 
 
-def test_status_returns_missing_when_no_credentials_stored(tmp_path: Path) -> None:
-    """Test that status returns missing when credentials are not in store."""
-    store_path = tmp_path / "credentials.json"
+def test_status_returns_missing_when_no_api_credentials_stored(tmp_path: Path) -> None:
+    """Test that status returns missing when API credentials are not in store."""
+    store_path = tmp_path / "api_credentials.json"
     store_path.write_text("{}")
 
     result = runner.invoke(
@@ -466,15 +466,15 @@ def test_status_returns_missing_when_no_credentials_stored(tmp_path: Path) -> No
     assert result.stdout.strip() == "missing"
 
 
-def test_status_returns_valid_when_credentials_are_valid(tmp_path: Path) -> None:
-    """Test that status returns valid when credentials are valid."""
-    store_path = tmp_path / "credentials.json"
+def test_status_returns_valid_when_api_credentials_are_valid(tmp_path: Path) -> None:
+    """Test that status returns valid when API credentials are valid."""
+    store_path = tmp_path / "api_credentials.json"
     store_path.write_text('{"slack": {"object_type": "slack", "token": "test-token", "d_cookie": "test-cookie"}}')
 
     with patch("latchkey.cli.REGISTRY") as mock_registry:
         mock_service = MagicMock()
         mock_service.name = "slack"
-        mock_service.check_credentials.return_value = MagicMock(value="valid")
+        mock_service.check_api_credentials.return_value = MagicMock(value="valid")
         mock_registry.get_by_name.return_value = mock_service
 
         result = runner.invoke(
@@ -484,21 +484,21 @@ def test_status_returns_valid_when_credentials_are_valid(tmp_path: Path) -> None
         )
 
         mock_registry.get_by_name.assert_called_once_with("slack")
-        mock_service.check_credentials.assert_called_once()
+        mock_service.check_api_credentials.assert_called_once()
 
     assert result.exit_code == 0
     assert result.stdout.strip() == "valid"
 
 
-def test_status_returns_invalid_when_credentials_are_invalid(tmp_path: Path) -> None:
-    """Test that status returns invalid when credentials are invalid."""
-    store_path = tmp_path / "credentials.json"
+def test_status_returns_invalid_when_api_credentials_are_invalid(tmp_path: Path) -> None:
+    """Test that status returns invalid when API credentials are invalid."""
+    store_path = tmp_path / "api_credentials.json"
     store_path.write_text('{"slack": {"object_type": "slack", "token": "test-token", "d_cookie": "test-cookie"}}')
 
     with patch("latchkey.cli.REGISTRY") as mock_registry:
         mock_service = MagicMock()
         mock_service.name = "slack"
-        mock_service.check_credentials.return_value = MagicMock(value="invalid")
+        mock_service.check_api_credentials.return_value = MagicMock(value="invalid")
         mock_registry.get_by_name.return_value = mock_service
 
         result = runner.invoke(
@@ -507,7 +507,7 @@ def test_status_returns_invalid_when_credentials_are_invalid(tmp_path: Path) -> 
             env={"LATCHKEY_STORE": str(store_path)},
         )
 
-        mock_service.check_credentials.assert_called_once()
+        mock_service.check_api_credentials.assert_called_once()
 
     assert result.exit_code == 0
     assert result.stdout.strip() == "invalid"
@@ -528,9 +528,9 @@ def test_status_returns_error_for_unknown_service() -> None:
 # Tests for clear command
 
 
-def test_clear_deletes_credentials(tmp_path: Path) -> None:
-    """Test that clear command deletes stored credentials."""
-    store_path = tmp_path / "credentials.json"
+def test_clear_deletes_api_credentials(tmp_path: Path) -> None:
+    """Test that clear command deletes stored API credentials."""
+    store_path = tmp_path / "api_credentials.json"
     store_path.write_text('{"slack": {"object_type": "slack", "token": "test-token", "d_cookie": "test-cookie"}}')
 
     with patch("latchkey.cli.REGISTRY") as mock_registry:
@@ -547,16 +547,16 @@ def test_clear_deletes_credentials(tmp_path: Path) -> None:
         mock_registry.get_by_name.assert_called_once_with("slack")
 
     assert result.exit_code == 0
-    assert "Credentials for slack have been cleared" in result.stdout
+    assert "API credentials for slack have been cleared" in result.stdout
 
-    # Verify credentials were deleted
+    # Verify API credentials were deleted
     stored_data = json.loads(store_path.read_text())
     assert "slack" not in stored_data
 
 
-def test_clear_reports_no_credentials_found(tmp_path: Path) -> None:
-    """Test that clear command reports when no credentials exist."""
-    store_path = tmp_path / "credentials.json"
+def test_clear_reports_no_api_credentials_found(tmp_path: Path) -> None:
+    """Test that clear command reports when no API credentials exist."""
+    store_path = tmp_path / "api_credentials.json"
     store_path.write_text("{}")
 
     with patch("latchkey.cli.REGISTRY") as mock_registry:
@@ -571,7 +571,7 @@ def test_clear_reports_no_credentials_found(tmp_path: Path) -> None:
         )
 
     assert result.exit_code == 0
-    assert "No credentials found for slack" in result.stdout
+    assert "No API credentials found for slack" in result.stdout
 
 
 def test_clear_returns_error_for_unknown_service() -> None:
@@ -610,8 +610,8 @@ def test_clear_returns_error_when_latchkey_store_not_set() -> None:
 
 
 def test_clear_preserves_other_services(tmp_path: Path) -> None:
-    """Test that clear only deletes the specified service's credentials."""
-    store_path = tmp_path / "credentials.json"
+    """Test that clear only deletes the specified service's API credentials."""
+    store_path = tmp_path / "api_credentials.json"
     store_path.write_text(
         '{"slack": {"object_type": "slack", "token": "slack-token", "d_cookie": "slack-cookie"}, '
         '"discord": {"object_type": "authorization_bearer", "token": "discord-token"}}'

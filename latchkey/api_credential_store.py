@@ -1,4 +1,4 @@
-"""Credential store for persisting and loading credentials."""
+"""API credential store for persisting and loading API credentials."""
 
 import json
 from pathlib import Path
@@ -11,35 +11,35 @@ from pydantic import Discriminator
 from pydantic import Tag
 from pydantic import TypeAdapter
 
-from latchkey.credentials import AuthorizationBare
-from latchkey.credentials import AuthorizationBearer
-from latchkey.credentials import Credentials
-from latchkey.services.notion import NotionCredentials
-from latchkey.services.slack import SlackCredentials
+from latchkey.api_credentials import ApiCredentials
+from latchkey.api_credentials import AuthorizationBare
+from latchkey.api_credentials import AuthorizationBearer
+from latchkey.services.notion import NotionApiCredentials
+from latchkey.services.slack import SlackApiCredentials
 
 
-def _get_credential_type(value: dict[str, object] | object) -> str:
+def _get_api_credential_type(value: dict[str, object] | object) -> str:
     if isinstance(value, dict):
         return str(value.get("object_type", ""))
     return getattr(value, "object_type", "")
 
 
-CredentialType = Annotated[
+ApiCredentialType = Annotated[
     Annotated[AuthorizationBearer, Tag("authorization_bearer")]
     | Annotated[AuthorizationBare, Tag("authorization_bare")]
-    | Annotated[NotionCredentials, Tag("notion")]
-    | Annotated[SlackCredentials, Tag("slack")],
-    Discriminator(_get_credential_type),
+    | Annotated[NotionApiCredentials, Tag("notion")]
+    | Annotated[SlackApiCredentials, Tag("slack")],
+    Discriminator(_get_api_credential_type),
 ]
 
-_credential_type_adapter: TypeAdapter[CredentialType] = TypeAdapter(CredentialType)
+_api_credential_type_adapter: TypeAdapter[ApiCredentialType] = TypeAdapter(ApiCredentialType)
 
 
-class CredentialStoreError(Exception):
+class ApiCredentialStoreError(Exception):
     pass
 
 
-class CredentialStore(BaseModel):
+class ApiCredentialStore(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     path: Path
@@ -54,21 +54,21 @@ class CredentialStore(BaseModel):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(json.dumps(data, indent=2))
 
-    def get(self, service_name: str) -> Credentials | None:
+    def get(self, service_name: str) -> ApiCredentials | None:
         data = self._load_store_data()
         if service_name not in data:
             return None
 
-        credential_data = data[service_name]
-        return _credential_type_adapter.validate_python(credential_data)
+        api_credential_data = data[service_name]
+        return _api_credential_type_adapter.validate_python(api_credential_data)
 
-    def save(self, service_name: str, credentials: Credentials) -> None:
+    def save(self, service_name: str, api_credentials: ApiCredentials) -> None:
         data = self._load_store_data()
-        data[service_name] = credentials.model_dump()
+        data[service_name] = api_credentials.model_dump()
         self._save_store_data(data)
 
     def delete(self, service_name: str) -> bool:
-        """Delete credentials for a service. Returns True if credentials were deleted, False if not found."""
+        """Delete API credentials for a service. Returns True if credentials were deleted, False if not found."""
         data = self._load_store_data()
         if service_name not in data:
             return False

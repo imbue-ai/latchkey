@@ -6,13 +6,13 @@ from pydantic import BaseModel
 from pydantic import ConfigDict
 
 
-class CredentialStatus(StrEnum):
+class ApiCredentialStatus(StrEnum):
     MISSING = "missing"
     VALID = "valid"
     INVALID = "invalid"
 
 
-class Credentials(BaseModel, ABC):
+class ApiCredentials(BaseModel, ABC):
     model_config = ConfigDict(frozen=True)
 
     object_type: str
@@ -23,7 +23,7 @@ class Credentials(BaseModel, ABC):
         ...
 
 
-class AuthorizationBearer(Credentials):
+class AuthorizationBearer(ApiCredentials):
     object_type: str = "authorization_bearer"
     token: str
 
@@ -31,7 +31,7 @@ class AuthorizationBearer(Credentials):
         return ("-H", f"Authorization: Bearer {self.token}")
 
 
-class AuthorizationBare(Credentials):
+class AuthorizationBare(ApiCredentials):
     object_type: str = "authorization_bare"
     token: str
 

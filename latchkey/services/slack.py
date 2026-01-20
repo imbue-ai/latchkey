@@ -4,12 +4,12 @@ import re
 from playwright.sync_api import Request
 
 from latchkey import curl
-from latchkey.credentials import CredentialStatus
-from latchkey.credentials import Credentials
+from latchkey.api_credentials import ApiCredentialStatus
+from latchkey.api_credentials import ApiCredentials
 from latchkey.services.base import Service
 
 
-class SlackCredentials(Credentials):
+class SlackApiCredentials(ApiCredentials):
     object_type: str = "slack"
     token: str
     d_cookie: str
@@ -35,7 +35,7 @@ class Slack(Service):
             "Launch Slack in your browser (not the desktop app).",
         )
 
-    def _get_credentials_from_outgoing_request(self, request: Request) -> Credentials | None:
+    def _get_api_credentials_from_outgoing_request(self, request: Request) -> ApiCredentials | None:
         url = request.url
         if not url.startswith("https://slack.com/api/") and not url.startswith("https://edgeapi.slack.com/"):
             return None
@@ -57,16 +57,16 @@ class Slack(Service):
             return None
         d_cookie = match.group(1)
 
-        return SlackCredentials(token=token, d_cookie=d_cookie)
+        return SlackApiCredentials(token=token, d_cookie=d_cookie)
 
-    def check_credentials(self, credentials: Credentials) -> CredentialStatus:
-        if not isinstance(credentials, SlackCredentials):
-            return CredentialStatus.INVALID
+    def check_api_credentials(self, api_credentials: ApiCredentials) -> ApiCredentialStatus:
+        if not isinstance(api_credentials, SlackApiCredentials):
+            return ApiCredentialStatus.INVALID
 
         result = curl.run_captured(
             [
                 "-s",
-                *credentials.as_curl_arguments(),
+                *api_credentials.as_curl_arguments(),
                 "https://slack.com/api/auth.test",
             ],
             timeout=10,
@@ -75,10 +75,10 @@ class Slack(Service):
         try:
             data = json.loads(result.stdout)
             if data.get("ok"):
-                return CredentialStatus.VALID
-            return CredentialStatus.INVALID
+                return ApiCredentialStatus.VALID
+            return ApiCredentialStatus.INVALID
         except json.JSONDecodeError:
-            return CredentialStatus.INVALID
+            return ApiCredentialStatus.INVALID
 
 
 SLACK = Slack()

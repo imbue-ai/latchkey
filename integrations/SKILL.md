@@ -7,7 +7,7 @@ description: Interact with third-party services (Slack, Discord, ...) on user's 
 
 ## Instructions
 
-Latchkey is a CLI tool that automatically injects credentials into curl commands for supported public APIs. Instead of manually managing API tokens, latchkey opens a browser for login, extracts credentials from the session, and injects them into your curl requests.
+Latchkey is a CLI tool that automatically injects API credentials into curl commands for supported public APIs. Instead of manually managing API tokens, latchkey opens a browser for login, extracts API credentials from the session, and injects them into your curl requests.
 
 Use this skill when the user asks you to work with third-party services like Slack, Discord and others on their behalf.
 
@@ -15,7 +15,7 @@ Usage:
 
 1. **Use `latchkey curl`** instead of regular `curl` for supported services
 2. **Pass through all regular curl arguments** - latchkey is a transparent wrapper
-3. **Use `latchkey clear <service_name>`** when you notice expired credentials, then retry the curl command
+3. **Use `latchkey clear <service_name>`** when you notice expired API credentials, then retry the curl command
 
 
 ## Examples
@@ -39,7 +39,7 @@ latchkey curl -X POST 'https://slack.com/api/conversations.create' \
 latchkey curl 'https://discord.com/api/v10/users/@me'
 ```
 
-### Clear credentials and force a new login to Discord
+### Clear API credentials and force a new login to Discord
 ```bash
 latchkey clear discord
 latchkey curl 'https://discord.com/api/v10/users/@me'

@@ -1,12 +1,12 @@
 from playwright.sync_api import Request
 
 from latchkey import curl
-from latchkey.credentials import CredentialStatus
-from latchkey.credentials import Credentials
+from latchkey.api_credentials import ApiCredentialStatus
+from latchkey.api_credentials import ApiCredentials
 from latchkey.services.base import Service
 
 
-class NotionCredentials(Credentials):
+class NotionApiCredentials(ApiCredentials):
     object_type: str = "notion"
     token: str
 
@@ -31,7 +31,7 @@ class Notion(Service):
             "After logging in, the token will be captured automatically.",
         )
 
-    def _get_credentials_from_outgoing_request(self, request: Request) -> Credentials | None:
+    def _get_api_credentials_from_outgoing_request(self, request: Request) -> ApiCredentials | None:
         url = request.url
         if not url.startswith("https://www.notion.so/api/") and not url.startswith("https://api.notion.com/"):
             return None
@@ -42,13 +42,13 @@ class Notion(Service):
             token = authorization
             if token.lower().startswith("bearer "):
                 token = token[7:]
-            return NotionCredentials(token=token)
+            return NotionApiCredentials(token=token)
 
         return None
 
-    def check_credentials(self, credentials: Credentials) -> CredentialStatus:
-        if not isinstance(credentials, NotionCredentials):
-            return CredentialStatus.INVALID
+    def check_api_credentials(self, api_credentials: ApiCredentials) -> ApiCredentialStatus:
+        if not isinstance(api_credentials, NotionApiCredentials):
+            return ApiCredentialStatus.INVALID
 
         result = curl.run_captured(
             [
@@ -57,15 +57,15 @@ class Notion(Service):
                 "/dev/null",
                 "-w",
                 "%{http_code}",
-                *credentials.as_curl_arguments(),
+                *api_credentials.as_curl_arguments(),
                 "https://api.notion.com/v1/users/me",
             ],
             timeout=10,
         )
 
         if result.stdout == "200":
-            return CredentialStatus.VALID
-        return CredentialStatus.INVALID
+            return ApiCredentialStatus.VALID
+        return ApiCredentialStatus.INVALID
 
 
 NOTION = Notion()

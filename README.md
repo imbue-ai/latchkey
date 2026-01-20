@@ -1,11 +1,11 @@
 # Latchkey
 
-A command-line tool that injects credentials to curl requests to known public APIs.
+A command-line tool that injects API credentials to curl requests to known public APIs.
 
 This is how it works:
 
 - Call `latchkey services` to get a list of known and supported third-party services.
-- Call `latchkey curl <arguments>` to retrieve and inject credentials to your otherwise standard curl calls to public APIs.
+- Call `latchkey curl <arguments>` to retrieve and inject API credentials to your otherwise standard curl calls to public APIs.
 - Call `latchkey match <curl arguments>` to check if a given curl invocation matches any supported service.
 
 
@@ -20,35 +20,35 @@ latchkey curl -X POST 'https://slack.com/api/conversations.create' \
 Notice that `-H 'Authorization: Bearer` is absent. This is because latchkey:
 
 - Opens the browser with a login screen.
-- After the user logs in, latchkey extracts the necessary credentials from the browser session.
-- The browser is closed, the credentials are injected into the arguments and curl is invoked.
+- After the user logs in, latchkey extracts the necessary API credentials from the browser session.
+- The browser is closed, the API credentials are injected into the arguments and curl is invoked.
 
 Otherwise, `latchkey curl` just directly passes your arguments
 through to `curl` so you can use the same interface you are used
 to. The return code, stdin and stdout are passed back from curl
 to the caller of `latchkey`.
 
-### Remembering credentials
+### Remembering API credentials
 
 You can optionally set the `LATCHKEY_STORE` environment variable
 to a path to a .json file that will be used to store the extracted
-credentials. Next time you invoke a `latchkey curl` command
-against the same service, the stored credentials will be reused.
+API credentials. Next time you invoke a `latchkey curl` command
+against the same service, the stored API credentials will be reused.
 While the file shouldn't contain any passwords (only tokens and
 cookies), you should still treat it as a sensitive file.
 
 ```
-export LATCHKEY_STORE=~/.latchkey/credentials.json
+export LATCHKEY_STORE=~/.latchkey/api_credentials.json
 latchkey curl 'https://discord.com/api/v10/users/@me'
 ```
 
 
-### Clearing credentials
+### Clearing API credentials
 
-Remembered credentials can be expired. The caller of `latchkey
+Remembered API credentials can be expired. The caller of `latchkey
 curl` will typically notice this because the calls will return
 HTTP 401 or 403. To force a new login in the next `latchkey
-curl` call, clear the stored credentials:
+curl` call, clear the stored API credentials:
 
 ```
 latchkey clear discord
@@ -96,7 +96,7 @@ invocations.
 
 ## Integrations
 
-Warning: giving AI agents access to your credentials is
+Warning: giving AI agents access to your API credentials is
 potentially dangerous. They will be able to do most of the
 actions you can do. Only do this if you're willing to accept the
 risk.
@@ -110,5 +110,5 @@ cp integrations/SKILL.md ~/.claude/skills/latchkey/SKILL.md
 Optionally, add the following line to your `.bashrc` to remember logins:
 
 ```
-export LATCHKEY_STORE=~/.latchkey/credentials.json
+export LATCHKEY_STORE=~/.latchkey/api_credentials.json
 ```
