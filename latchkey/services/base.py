@@ -1,5 +1,6 @@
 from abc import abstractmethod
 from concurrent.futures import Future
+from concurrent.futures import InvalidStateError
 from pathlib import Path
 
 from playwright._impl._errors import TargetClosedError
@@ -35,7 +36,10 @@ class Service(BaseModel):
             return
         api_credentials = self._get_api_credentials_from_outgoing_request(request, page)
         if api_credentials is not None:
-            api_credentials_future.set_result(api_credentials)
+            try:
+                api_credentials_future.set_result(api_credentials)
+            except InvalidStateError:
+                pass
 
     @abstractmethod
     def check_api_credentials(self, api_credentials: ApiCredentials) -> ApiCredentialStatus:

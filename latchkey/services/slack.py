@@ -1,6 +1,7 @@
 import json
 import re
 
+from playwright._impl._errors import Error as PlaywrightError
 from playwright.sync_api import Page
 from playwright.sync_api import Request
 
@@ -63,7 +64,10 @@ class Slack(Service):
             return None
         d_cookie = match.group(1)
 
-        token = page.evaluate(TOKEN_EXTRACTION_JS)
+        try:
+            token = page.evaluate(TOKEN_EXTRACTION_JS)
+        except PlaywrightError:
+            return None
         if token is None:
             return None
 
