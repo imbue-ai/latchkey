@@ -45,16 +45,16 @@ latchkey curl 'https://discord.com/api/v10/users/@me'
 
 ### Clearing credentials
 
-Remembered credentials can be expired. The caller of `latchkey curl` will
-typically notice this because the calls will return HTTP 401 or 403. To
-force a new login, first clear the stored credentials:
+Remembered credentials can be expired. The caller of `latchkey
+curl` will typically notice this because the calls will return
+HTTP 401 or 403. To force a new login in the next `latchkey
+curl` call, clear the stored credentials:
 
 ```
 latchkey clear discord
-latchkey curl 'https://discord.com/api/v10/users/@me'
 ```
 
-The next `latchkey curl` call will trigger a new login flow.
+The next `latchkey curl` call will then trigger a new login flow.
 
 ## Prerequisites
 
