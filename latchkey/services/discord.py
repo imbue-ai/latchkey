@@ -1,7 +1,12 @@
+import urllib.error
+import urllib.request
+
 from playwright.sync_api import Page
 from playwright.sync_api import Request
 
 from latchkey.credentials import AuthorizationBare
+from latchkey.credentials import CredentialStatus
+from latchkey.credentials import Credentials
 from latchkey.services.base import CredentialExtractionError
 from latchkey.services.base import Service
 
@@ -36,6 +41,27 @@ class Discord(Service):
             raise CredentialExtractionError("Could not capture Discord token from network requests")
 
         return AuthorizationBare(token=self._captured_token)
+
+    def check_credentials(self, credentials: Credentials) -> CredentialStatus:
+        if not isinstance(credentials, AuthorizationBare):
+            return CredentialStatus.INVALID
+
+        request = urllib.request.Request(
+            "https://discord.com/api/v9/users/@me",
+            headers={
+                "Authorization": credentials.token,
+            },
+        )
+
+        try:
+            with urllib.request.urlopen(request, timeout=10) as response:
+                if response.status == 200:
+                    return CredentialStatus.VALID
+                return CredentialStatus.INVALID
+        except urllib.error.HTTPError:
+            return CredentialStatus.INVALID
+        except urllib.error.URLError:
+            return CredentialStatus.INVALID
 
 
 DISCORD = Discord()

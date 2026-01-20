@@ -1,5 +1,10 @@
+import json
+import urllib.error
+import urllib.request
+
 from playwright.sync_api import Page
 
+from latchkey.credentials import CredentialStatus
 from latchkey.credentials import Credentials
 from latchkey.services.base import CredentialExtractionError
 from latchkey.services.base import Service
@@ -72,6 +77,27 @@ class Slack(Service):
             raise CredentialExtractionError("Could not extract Slack d cookie")
 
         return SlackCredentials(token=token, d_cookie=d_cookie)
+
+    def check_credentials(self, credentials: Credentials) -> CredentialStatus:
+        if not isinstance(credentials, SlackCredentials):
+            return CredentialStatus.INVALID
+
+        request = urllib.request.Request(
+            "https://slack.com/api/auth.test",
+            headers={
+                "Authorization": f"Bearer {credentials.token}",
+                "Cookie": f"d={credentials.d_cookie}",
+            },
+        )
+
+        try:
+            with urllib.request.urlopen(request, timeout=10) as response:
+                data = json.loads(response.read().decode())
+                if data.get("ok"):
+                    return CredentialStatus.VALID
+                return CredentialStatus.INVALID
+        except urllib.error.URLError:
+            return CredentialStatus.INVALID
 
 
 SLACK = Slack()

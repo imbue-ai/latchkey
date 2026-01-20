@@ -12,6 +12,7 @@ import typer
 import uncurl
 
 from latchkey.credential_store import CredentialStore
+from latchkey.credentials import CredentialStatus
 from latchkey.registry import REGISTRY
 from latchkey.services.base import LoginCancelledError
 
@@ -76,6 +77,40 @@ def services() -> None:
     """List known and supported third-party services."""
     service_names = [service.name for service in REGISTRY.services]
     typer.echo(service_names)
+
+
+@app.command()
+def status(
+    service_name: Annotated[
+        str,
+        typer.Argument(help="Name of the service to check status for."),
+    ],
+) -> None:
+    """Check the credential status for a service.
+
+    Returns one of: missing, valid, invalid.
+    Set LATCHKEY_STORE environment variable to specify the credential store location.
+    """
+    service = REGISTRY.get_by_name(service_name)
+    if service is None:
+        typer.echo(f"Error: Unknown service: {service_name}", err=True)
+        typer.echo("Use 'latchkey services' to see available services.", err=True)
+        raise typer.Exit(code=1)
+
+    latchkey_store = _get_latchkey_store_path()
+    if latchkey_store is None:
+        typer.echo(CredentialStatus.MISSING.value)
+        return
+
+    credential_store = CredentialStore(path=latchkey_store)
+    credentials = credential_store.get(service_name)
+
+    if credentials is None:
+        typer.echo(CredentialStatus.MISSING.value)
+        return
+
+    credential_status = service.check_credentials(credentials)
+    typer.echo(credential_status.value)
 
 
 @app.command(

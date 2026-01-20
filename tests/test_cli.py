@@ -389,3 +389,88 @@ def test_curl_reads_credentials_from_latchkey_store_env_var(tmp_path: Path) -> N
         "Cookie: d=stored-cookie",
         "https://slack.com/api/conversations.list",
     ]
+
+
+# Tests for status command
+
+
+def test_status_returns_missing_when_no_latchkey_store_set() -> None:
+    """Test that status returns missing when LATCHKEY_STORE is not set."""
+    result = runner.invoke(app, ["status", "slack"], env={})
+
+    assert result.exit_code == 0
+    assert result.stdout.strip() == "missing"
+
+
+def test_status_returns_missing_when_no_credentials_stored(tmp_path: Path) -> None:
+    """Test that status returns missing when credentials are not in store."""
+    store_path = tmp_path / "credentials.json"
+    store_path.write_text("{}")
+
+    result = runner.invoke(
+        app,
+        ["status", "slack"],
+        env={"LATCHKEY_STORE": str(store_path)},
+    )
+
+    assert result.exit_code == 0
+    assert result.stdout.strip() == "missing"
+
+
+def test_status_returns_valid_when_credentials_are_valid(tmp_path: Path) -> None:
+    """Test that status returns valid when credentials are valid."""
+    store_path = tmp_path / "credentials.json"
+    store_path.write_text('{"slack": {"object_type": "slack", "token": "test-token", "d_cookie": "test-cookie"}}')
+
+    with patch("latchkey.cli.REGISTRY") as mock_registry:
+        mock_service = MagicMock()
+        mock_service.name = "slack"
+        mock_service.check_credentials.return_value = MagicMock(value="valid")
+        mock_registry.get_by_name.return_value = mock_service
+
+        result = runner.invoke(
+            app,
+            ["status", "slack"],
+            env={"LATCHKEY_STORE": str(store_path)},
+        )
+
+        mock_registry.get_by_name.assert_called_once_with("slack")
+        mock_service.check_credentials.assert_called_once()
+
+    assert result.exit_code == 0
+    assert result.stdout.strip() == "valid"
+
+
+def test_status_returns_invalid_when_credentials_are_invalid(tmp_path: Path) -> None:
+    """Test that status returns invalid when credentials are invalid."""
+    store_path = tmp_path / "credentials.json"
+    store_path.write_text('{"slack": {"object_type": "slack", "token": "test-token", "d_cookie": "test-cookie"}}')
+
+    with patch("latchkey.cli.REGISTRY") as mock_registry:
+        mock_service = MagicMock()
+        mock_service.name = "slack"
+        mock_service.check_credentials.return_value = MagicMock(value="invalid")
+        mock_registry.get_by_name.return_value = mock_service
+
+        result = runner.invoke(
+            app,
+            ["status", "slack"],
+            env={"LATCHKEY_STORE": str(store_path)},
+        )
+
+        mock_service.check_credentials.assert_called_once()
+
+    assert result.exit_code == 0
+    assert result.stdout.strip() == "invalid"
+
+
+def test_status_returns_error_for_unknown_service() -> None:
+    """Test that status returns error for unknown service."""
+    with patch("latchkey.cli.REGISTRY") as mock_registry:
+        mock_registry.get_by_name.return_value = None
+
+        result = runner.invoke(app, ["status", "unknown-service"])
+
+        mock_registry.get_by_name.assert_called_once_with("unknown-service")
+
+    assert result.exit_code == 1

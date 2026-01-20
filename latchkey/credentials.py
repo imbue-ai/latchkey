@@ -1,8 +1,15 @@
 from abc import ABC
 from abc import abstractmethod
+from enum import StrEnum
 
 from pydantic import BaseModel
 from pydantic import ConfigDict
+
+
+class CredentialStatus(StrEnum):
+    MISSING = "missing"
+    VALID = "valid"
+    INVALID = "invalid"
 
 
 class Credentials(BaseModel, ABC):

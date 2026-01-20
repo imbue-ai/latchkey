@@ -7,6 +7,7 @@ from playwright.sync_api import sync_playwright
 from pydantic import BaseModel
 from pydantic import ConfigDict
 
+from latchkey.credentials import CredentialStatus
 from latchkey.credentials import Credentials
 
 
@@ -33,6 +34,10 @@ class Service(BaseModel):
 
     @abstractmethod
     def extract_credentials(self, page: Page) -> Credentials:
+        pass
+
+    @abstractmethod
+    def check_credentials(self, credentials: Credentials) -> CredentialStatus:
         pass
 
     def on_request(self, request: Request) -> None:
