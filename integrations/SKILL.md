@@ -15,6 +15,7 @@ Usage:
 
 1. **Use `latchkey curl`** instead of regular `curl` for supported services
 2. **Pass through all regular curl arguments** - latchkey is a transparent wrapper
+3. **Use the `--latchkey-force-login` flag** when you notice expired credentials
 
 
 ## Examples
@@ -37,6 +38,13 @@ latchkey curl -X POST 'https://slack.com/api/conversations.create' \
 ```bash
 latchkey curl 'https://discord.com/api/v10/users/@me'
 ```
+
+### Force a new login to Discord
+```bash
+latchkey curl --latchkey-force-login 'https://discord.com/api/v10/users/@me'
+```
+
+Only do this when you notice that your previous call ended up not being authenticated. Omit the flag in subsequent calls again.
 
 ### List supported services
 ```bash

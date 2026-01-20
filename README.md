@@ -42,6 +42,17 @@ export LATCHKEY_STORE=~/.latchkey/credentials.json
 latchkey curl 'https://discord.com/api/v10/users/@me'
 ```
 
+
+### Forcing a new login
+
+Remembered credentials can be expired. The caller of `latchkey curl` will
+typically notice this because the calls will return HTTP 401 or 403 and can
+force a new login by using the `--latchkey-force-login` flag, like this:
+
+```
+latchkey curl --latchkey-force-login 'https://discord.com/api/v10/users/@me'
+```
+
 ## Prerequisites
 
 - `curl` needs to be installed in your system.
