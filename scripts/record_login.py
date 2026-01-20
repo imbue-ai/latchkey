@@ -81,8 +81,11 @@ def _handle_request(
         "resource_type": request.resource_type,
     }
 
-    # Include POST data if present
-    post_data = request.post_data
+    # Include POST data if present and decodable / non-compressed.
+    try:
+        post_data = request.post_data
+    except UnicodeDecodeError:
+        post_data = None
     if post_data is not None:
         request_data["post_data"] = post_data
 
