@@ -42,6 +42,22 @@ export LATCHKEY_STORE=~/.latchkey/api_credentials.json
 latchkey curl 'https://discord.com/api/v10/users/@me'
 ```
 
+### Reusing browser state
+
+You can optionally set the `LATCHKEY_BROWSER_STATE` environment
+variable to a path to a .json file that will be used to persist
+browser state (cookies, local storage) across Playwright sessions.
+This can speed up subsequent logins by reusing authentication
+state from previous browser sessions.
+
+```
+export LATCHKEY_BROWSER_STATE=~/.latchkey/browser_state.json
+latchkey curl 'https://discord.com/api/v10/users/@me'
+```
+
+The browser state is loaded when the login browser opens and saved
+after a successful login.
+
 
 ### Clearing credentials
 
@@ -108,8 +124,9 @@ mkdir -p ~/.claude/skills/latchkey
 cp integrations/SKILL.md ~/.claude/skills/latchkey/SKILL.md
 ```
 
-Optionally, add the following line to your `.bashrc` to remember logins:
+Optionally, add the following lines to your `.bashrc` to remember logins and browser state:
 
 ```
 export LATCHKEY_STORE=~/.latchkey/api_credentials.json
+export LATCHKEY_BROWSER_STATE=~/.latchkey/browser_state.json
 ```

@@ -635,3 +635,103 @@ def test_clear_preserves_other_services(tmp_path: Path) -> None:
     assert "slack" not in stored_data
     assert "discord" in stored_data
     assert stored_data["discord"]["token"] == "discord-token"
+
+
+# Tests for curl with LATCHKEY_BROWSER_STATE environment variable
+
+
+def test_curl_passes_browser_state_to_login(tmp_path: Path) -> None:
+    """Test that LATCHKEY_BROWSER_STATE environment variable is passed to login."""
+    captured_args: list[str] = []
+
+    def mock_runner(args: Sequence[str]) -> subprocess.CompletedProcess[bytes]:
+        captured_args.extend(args)
+        return subprocess.CompletedProcess(args=args, returncode=0)
+
+    set_subprocess_runner(mock_runner)
+
+    browser_state_path = tmp_path / "browser_state.json"
+    browser_state_path.write_text("{}")
+
+    mock_api_credentials = SlackApiCredentials(token="xoxc-test-token", d_cookie="test-cookie")
+
+    with patch("latchkey.cli.REGISTRY") as mock_registry:
+        mock_service = MagicMock()
+        mock_service.name = "slack"
+        mock_service.login.return_value = mock_api_credentials
+        mock_registry.get_by_url.return_value = mock_service
+
+        result = runner.invoke(
+            app,
+            ["curl", "https://slack.com/api/conversations.list"],
+            env={"LATCHKEY_BROWSER_STATE": str(browser_state_path)},
+        )
+
+        mock_service.login.assert_called_once_with(browser_state_path=browser_state_path)
+
+    assert result.exit_code == 0
+
+
+def test_curl_passes_none_browser_state_when_env_not_set() -> None:
+    """Test that browser_state_path is None when LATCHKEY_BROWSER_STATE is not set."""
+    captured_args: list[str] = []
+
+    def mock_runner(args: Sequence[str]) -> subprocess.CompletedProcess[bytes]:
+        captured_args.extend(args)
+        return subprocess.CompletedProcess(args=args, returncode=0)
+
+    set_subprocess_runner(mock_runner)
+
+    mock_api_credentials = SlackApiCredentials(token="xoxc-test-token", d_cookie="test-cookie")
+
+    with patch("latchkey.cli.REGISTRY") as mock_registry:
+        mock_service = MagicMock()
+        mock_service.name = "slack"
+        mock_service.login.return_value = mock_api_credentials
+        mock_registry.get_by_url.return_value = mock_service
+
+        result = runner.invoke(
+            app,
+            ["curl", "https://slack.com/api/conversations.list"],
+            env={},
+        )
+
+        mock_service.login.assert_called_once_with(browser_state_path=None)
+
+    assert result.exit_code == 0
+
+
+def test_curl_does_not_call_login_when_api_credentials_exist_in_store(tmp_path: Path) -> None:
+    """Test that browser state is not used when API credentials already exist in store."""
+    captured_args: list[str] = []
+
+    def mock_runner(args: Sequence[str]) -> subprocess.CompletedProcess[bytes]:
+        captured_args.extend(args)
+        return subprocess.CompletedProcess(args=args, returncode=0)
+
+    set_subprocess_runner(mock_runner)
+
+    store_path = tmp_path / "api_credentials.json"
+    store_path.write_text('{"slack": {"object_type": "slack", "token": "stored-token", "d_cookie": "stored-cookie"}}')
+
+    browser_state_path = tmp_path / "browser_state.json"
+    browser_state_path.write_text("{}")
+
+    with patch("latchkey.cli.REGISTRY") as mock_registry:
+        mock_service = MagicMock()
+        mock_service.name = "slack"
+        mock_registry.get_by_url.return_value = mock_service
+
+        result = runner.invoke(
+            app,
+            ["curl", "https://slack.com/api/conversations.list"],
+            env={
+                "LATCHKEY_STORE": str(store_path),
+                "LATCHKEY_BROWSER_STATE": str(browser_state_path),
+            },
+        )
+
+        # login() should NOT be called because API credentials were loaded from store
+        mock_service.login.assert_not_called()
+
+    assert result.exit_code == 0

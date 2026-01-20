@@ -1,5 +1,6 @@
 from abc import abstractmethod
 from concurrent.futures import Future
+from pathlib import Path
 
 from playwright._impl._errors import TargetClosedError
 from playwright.sync_api import Page
@@ -114,10 +115,10 @@ class Service(BaseModel):
         page.set_content(instructions_html)
         page.wait_for_function("window.loginContinue === true")
 
-    def login(self) -> ApiCredentials:
+    def login(self, browser_state_path: Path | None = None) -> ApiCredentials:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=False)
-            context = browser.new_context()
+            context = browser.new_context(storage_state=str(browser_state_path) if browser_state_path else None)
             page = context.new_page()
 
             api_credentials_future: Future[ApiCredentials] = Future()
@@ -129,6 +130,9 @@ class Service(BaseModel):
                 api_credentials = self.wait_for_api_credentials(page, api_credentials_future)
             except TargetClosedError as error:
                 raise LoginCancelledError("Login was cancelled because the browser was closed.") from error
+
+            if browser_state_path:
+                context.storage_state(path=str(browser_state_path))
 
             browser.close()
 

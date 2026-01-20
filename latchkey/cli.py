@@ -16,6 +16,7 @@ from latchkey.registry import REGISTRY
 from latchkey.services.base import LoginCancelledError
 
 LATCHKEY_STORE_ENV_VAR = "LATCHKEY_STORE"
+LATCHKEY_BROWSER_STATE_ENV_VAR = "LATCHKEY_BROWSER_STATE"
 
 app = typer.Typer(
     help="A command-line tool that injects API credentials to curl requests to known public APIs.",
@@ -53,6 +54,14 @@ def _collect_curl_arguments(curl_arguments: list[str] | None, context: typer.Con
 def _get_latchkey_store_path() -> Path | None:
     """Get the API credential store path from environment variable."""
     env_value = os.environ.get(LATCHKEY_STORE_ENV_VAR)
+    if env_value:
+        return Path(env_value).expanduser()
+    return None
+
+
+def _get_browser_state_path() -> Path | None:
+    """Get the browser state path from environment variable."""
+    env_value = os.environ.get(LATCHKEY_BROWSER_STATE_ENV_VAR)
     if env_value:
         return Path(env_value).expanduser()
     return None
@@ -193,8 +202,9 @@ def curl(
                 api_credentials = api_credential_store.get(service.name)
 
             if api_credentials is None:
+                browser_state_path = _get_browser_state_path()
                 try:
-                    api_credentials = service.login()
+                    api_credentials = service.login(browser_state_path=browser_state_path)
                 except LoginCancelledError:
                     typer.echo("Login cancelled.", err=True)
                     raise typer.Exit(code=1)
