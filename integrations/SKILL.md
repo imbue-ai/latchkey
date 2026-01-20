@@ -63,5 +63,3 @@ latchkey match [curl arguments]
 
 - All curl arguments are passed through unchanged
 - Return codes, stdin, and stdout are passed back from curl
-- Set `LATCHKEY_STORE` env var to persist API credentials across sessions
-- Set `LATCHKEY_BROWSER_STATE` env var to persist browser state (cookies, local storage) across login sessions
