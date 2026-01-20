@@ -50,6 +50,7 @@ class Discord(Service):
             "https://discord.com/api/v9/users/@me",
             headers={
                 "Authorization": credentials.token,
+                "User-Agent": "curl/8.14.1",
             },
         )
 
