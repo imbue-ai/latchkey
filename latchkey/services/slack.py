@@ -42,8 +42,8 @@ class Slack(Service):
     @property
     def login_instructions(self) -> tuple[str, ...]:
         return (
-            "(!) Accept all cookies if prompted.",
-            "(!) Launch Slack in your browser (not the desktop app).",
+            "Accept all cookies if prompted.",
+            "Launch Slack in your browser (not the desktop app).",
         )
 
     def wait_for_login_completed(self, page: Page) -> None:
