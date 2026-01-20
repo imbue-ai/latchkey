@@ -49,7 +49,8 @@ class Slack(Service):
 
     def _get_api_credentials_from_outgoing_request(self, request: Request, page: Page) -> ApiCredentials | None:
         url = request.url
-        if not url.startswith("https://slack.com/api/") and not url.startswith("https://edgeapi.slack.com/"):
+        # Check if the domain is under slack.com:
+        if not re.match(r"https://([a-z0-9-]+\.)?slack\.com/", url):
             return None
 
         headers = request.headers
