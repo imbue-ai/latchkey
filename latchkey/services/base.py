@@ -26,13 +26,13 @@ class Service(BaseModel):
     login_url: str
 
     @abstractmethod
-    def _get_api_credentials_from_outgoing_request(self, request: Request) -> ApiCredentials | None:
+    def _get_api_credentials_from_outgoing_request(self, request: Request, page: Page) -> ApiCredentials | None:
         pass
 
-    def on_request(self, request: Request, api_credentials_future: Future[ApiCredentials]) -> None:
+    def on_request(self, request: Request, page: Page, api_credentials_future: Future[ApiCredentials]) -> None:
         if api_credentials_future.done():
             return
-        api_credentials = self._get_api_credentials_from_outgoing_request(request)
+        api_credentials = self._get_api_credentials_from_outgoing_request(request, page)
         if api_credentials is not None:
             api_credentials_future.set_result(api_credentials)
 
@@ -121,7 +121,7 @@ class Service(BaseModel):
             page = context.new_page()
 
             api_credentials_future: Future[ApiCredentials] = Future()
-            page.on("request", lambda request: self.on_request(request, api_credentials_future))
+            page.on("request", lambda request: self.on_request(request, page, api_credentials_future))
 
             try:
                 self._show_login_instructions(page)

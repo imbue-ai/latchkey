@@ -1,8 +1,8 @@
 """Integration tests for the CLI."""
 
+import json
 import subprocess
 from collections.abc import Sequence
-import json
 from pathlib import Path
 from unittest.mock import MagicMock
 from unittest.mock import patch

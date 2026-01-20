@@ -1,6 +1,7 @@
 import json
 import re
 
+from playwright.sync_api import Page
 from playwright.sync_api import Request
 
 from latchkey import curl
@@ -23,6 +24,17 @@ class SlackApiCredentials(ApiCredentials):
         )
 
 
+TOKEN_EXTRACTION_JS: str = """
+    () => {
+        const localConfig = JSON.parse(localStorage.getItem('localConfig_v2'));
+        if (localConfig && localConfig.teams && localConfig.lastActiveTeamId) {
+            return localConfig.teams[localConfig.lastActiveTeamId].token;
+        }
+        return null;
+    }
+"""
+
+
 class Slack(Service):
     name: str = "slack"
     base_api_urls: tuple[str, ...] = ("https://slack.com/api/",)
@@ -35,19 +47,12 @@ class Slack(Service):
             "Launch Slack in your browser (not the desktop app).",
         )
 
-    def _get_api_credentials_from_outgoing_request(self, request: Request) -> ApiCredentials | None:
+    def _get_api_credentials_from_outgoing_request(self, request: Request, page: Page) -> ApiCredentials | None:
         url = request.url
         if not url.startswith("https://slack.com/api/") and not url.startswith("https://edgeapi.slack.com/"):
             return None
 
         headers = request.headers
-
-        authorization = headers.get("authorization")
-        if authorization is None or authorization.strip() == "":
-            return None
-        token = authorization
-        if token.lower().startswith("bearer "):
-            token = token[7:]
 
         cookie_header = headers.get("cookie")
         if cookie_header is None:
@@ -56,6 +61,10 @@ class Slack(Service):
         if not match:
             return None
         d_cookie = match.group(1)
+
+        token = page.evaluate(TOKEN_EXTRACTION_JS)
+        if token is None:
+            return None
 
         return SlackApiCredentials(token=token, d_cookie=d_cookie)
 
