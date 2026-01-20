@@ -12,9 +12,9 @@ method. This validates that the service can correctly identify and extract
 credentials from outgoing browser requests.
 
 Usage:
-    uv run pytest tests/test_recordings.py           # Test all recordings
-    uv run pytest tests/test_recordings.py -v        # Verbose output
-    uv run pytest tests/test_recordings.py -k slack  # Test only Slack
+    uv run pytest tests/test_services_against_recordings.py           # Test all recordings
+    uv run pytest tests/test_services_against_recordings.py -v        # Verbose output
+    uv run pytest tests/test_services_against_recordings.py -k slack  # Test only Slack
 """
 
 import json
