@@ -55,6 +55,7 @@ import typer
 from playwright.sync_api import Request
 from playwright.sync_api import sync_playwright
 
+from latchkey.browser_state import get_browser_state_path
 from latchkey.registry import REGISTRY
 
 # Recordings directory relative to this script
@@ -105,9 +106,13 @@ def _record(service_name: str) -> None:
     output_directory.mkdir(parents=True, exist_ok=True)
     requests_path = output_directory / "requests.json"
 
+    browser_state_path = get_browser_state_path()
+
     typer.echo(f"Recording login for service: {service.name}")
     typer.echo(f"Login URL: {service.login_url}")
     typer.echo(f"Output directory: {output_directory}")
+    if browser_state_path:
+        typer.echo(f"Browser state: {browser_state_path}")
     typer.echo("\nClose the browser window when you're done to save the recording.")
 
     recorded_requests: list[dict[str, Any]] = []
@@ -115,7 +120,9 @@ def _record(service_name: str) -> None:
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=False)
-        context = browser.new_context()
+        context = browser.new_context(
+            storage_state=str(browser_state_path) if browser_state_path and browser_state_path.exists() else None
+        )
         page = context.new_page()
 
         # Register request handler to capture all outgoing requests
@@ -133,6 +140,14 @@ def _record(service_name: str) -> None:
         except Exception:
             # Browser was closed, this is expected
             pass
+
+        # Save browser state if path is configured
+        if browser_state_path:
+            try:
+                context.storage_state(path=str(browser_state_path))
+            except Exception:
+                # Context may already be closed
+                pass
 
         context.close()
         browser.close()
