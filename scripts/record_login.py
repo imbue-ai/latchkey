@@ -81,7 +81,7 @@ def _handle_request(
         "timestamp_ms": timestamp_ms,
         "method": request.method,
         "url": request.url,
-        "headers": dict(request.headers),
+        "headers": request.all_headers(),
         "resource_type": request.resource_type,
     }
 
