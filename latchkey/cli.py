@@ -2,8 +2,6 @@
 
 import os
 import shlex
-import subprocess
-from collections.abc import Callable
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Annotated
@@ -11,6 +9,7 @@ from typing import Annotated
 import typer
 import uncurl
 
+from latchkey import curl as curl_module
 from latchkey.credential_store import CredentialStore
 from latchkey.credentials import CredentialStatus
 from latchkey.registry import REGISTRY
@@ -21,30 +20,6 @@ LATCHKEY_STORE_ENV_VAR = "LATCHKEY_STORE"
 app = typer.Typer(
     help="A command-line tool that injects credentials to curl requests to known public APIs.",
 )
-
-# Type alias for the subprocess runner function
-SubprocessRunner = Callable[[Sequence[str]], subprocess.CompletedProcess[bytes]]
-
-
-def _default_subprocess_runner(args: Sequence[str]) -> subprocess.CompletedProcess[bytes]:
-    """Default subprocess runner that calls the real subprocess.run."""
-    return subprocess.run(args, capture_output=False)
-
-
-# Global subprocess runner that can be replaced for testing
-_subprocess_runner: SubprocessRunner = _default_subprocess_runner
-
-
-def set_subprocess_runner(runner: SubprocessRunner) -> None:
-    """Set the subprocess runner function. Used for testing."""
-    global _subprocess_runner
-    _subprocess_runner = runner
-
-
-def reset_subprocess_runner() -> None:
-    """Reset the subprocess runner to the default. Used for testing."""
-    global _subprocess_runner
-    _subprocess_runner = _default_subprocess_runner
 
 
 # Curl flags that don't affect the HTTP request semantics but aren't supported by uncurl.
@@ -201,7 +176,7 @@ def curl(
 
             all_arguments = list(credentials.as_curl_arguments()) + all_arguments
 
-    result = _subprocess_runner(["curl", *all_arguments])
+    result = curl_module.run(all_arguments)
     raise typer.Exit(code=result.returncode)
 
 

@@ -1,9 +1,7 @@
-import urllib.error
-import urllib.request
-
 from playwright.sync_api import Page
 from playwright.sync_api import Request
 
+from latchkey import curl
 from latchkey.credentials import AuthorizationBare
 from latchkey.credentials import CredentialStatus
 from latchkey.credentials import Credentials
@@ -46,23 +44,22 @@ class Discord(Service):
         if not isinstance(credentials, AuthorizationBare):
             return CredentialStatus.INVALID
 
-        request = urllib.request.Request(
-            "https://discord.com/api/v9/users/@me",
-            headers={
-                "Authorization": credentials.token,
-                "User-Agent": "curl/8.14.1",
-            },
+        result = curl.run_captured(
+            [
+                "-s",
+                "-o",
+                "/dev/null",
+                "-w",
+                "%{http_code}",
+                *credentials.as_curl_arguments(),
+                "https://discord.com/api/v9/users/@me",
+            ],
+            timeout=10,
         )
 
-        try:
-            with urllib.request.urlopen(request, timeout=10) as response:
-                if response.status == 200:
-                    return CredentialStatus.VALID
-                return CredentialStatus.INVALID
-        except urllib.error.HTTPError:
-            return CredentialStatus.INVALID
-        except urllib.error.URLError:
-            return CredentialStatus.INVALID
+        if result.stdout == "200":
+            return CredentialStatus.VALID
+        return CredentialStatus.INVALID
 
 
 DISCORD = Discord()

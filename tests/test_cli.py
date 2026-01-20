@@ -11,8 +11,8 @@ from typer.testing import CliRunner
 
 from latchkey.cli import _extract_url_from_curl_arguments
 from latchkey.cli import app
-from latchkey.cli import reset_subprocess_runner
-from latchkey.cli import set_subprocess_runner
+from latchkey.curl import reset_subprocess_runner
+from latchkey.curl import set_subprocess_runner
 from latchkey.services.slack import SlackCredentials
 
 runner = CliRunner()

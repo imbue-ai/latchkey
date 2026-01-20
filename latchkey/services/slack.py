@@ -1,9 +1,8 @@
 import json
-import urllib.error
-import urllib.request
 
 from playwright.sync_api import Page
 
+from latchkey import curl
 from latchkey.credentials import CredentialStatus
 from latchkey.credentials import Credentials
 from latchkey.services.base import CredentialExtractionError
@@ -82,21 +81,21 @@ class Slack(Service):
         if not isinstance(credentials, SlackCredentials):
             return CredentialStatus.INVALID
 
-        request = urllib.request.Request(
-            "https://slack.com/api/auth.test",
-            headers={
-                "Authorization": f"Bearer {credentials.token}",
-                "Cookie": f"d={credentials.d_cookie}",
-            },
+        result = curl.run_captured(
+            [
+                "-s",
+                *credentials.as_curl_arguments(),
+                "https://slack.com/api/auth.test",
+            ],
+            timeout=10,
         )
 
         try:
-            with urllib.request.urlopen(request, timeout=10) as response:
-                data = json.loads(response.read().decode())
-                if data.get("ok"):
-                    return CredentialStatus.VALID
-                return CredentialStatus.INVALID
-        except urllib.error.URLError:
+            data = json.loads(result.stdout)
+            if data.get("ok"):
+                return CredentialStatus.VALID
+            return CredentialStatus.INVALID
+        except json.JSONDecodeError:
             return CredentialStatus.INVALID
 
 
