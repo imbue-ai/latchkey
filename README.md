@@ -1,11 +1,11 @@
 # Latchkey
 
-A command-line tool that injects API credentials to curl requests to known public APIs.
+A command-line tool that injects credentials to curl requests to known public APIs.
 
 This is how it works:
 
 - Call `latchkey services` to get a list of known and supported third-party services.
-- Call `latchkey curl <arguments>` to retrieve and inject API credentials to your otherwise standard curl calls to public APIs.
+- Call `latchkey curl <arguments>` to retrieve and inject credentials to your otherwise standard curl calls to public APIs.
 - Call `latchkey match <curl arguments>` to check if a given curl invocation matches any supported service.
 
 
@@ -21,7 +21,7 @@ Notice that `-H 'Authorization: Bearer` is absent. This is because latchkey:
 
 - Opens the browser with a login screen.
 - After the user logs in, latchkey extracts the necessary API credentials from the browser session.
-- The browser is closed, the API credentials are injected into the arguments and curl is invoked.
+- The browser is closed, the credentials are injected into the arguments and curl is invoked.
 
 Otherwise, `latchkey curl` just directly passes your arguments
 through to `curl` so you can use the same interface you are used
@@ -33,7 +33,7 @@ to the caller of `latchkey`.
 You can optionally set the `LATCHKEY_STORE` environment variable
 to a path to a .json file that will be used to store the extracted
 API credentials. Next time you invoke a `latchkey curl` command
-against the same service, the stored API credentials will be reused.
+against the same service, the stored credentials will be reused.
 While the file shouldn't contain any passwords (only tokens and
 cookies), you should still treat it as a sensitive file.
 
@@ -43,12 +43,13 @@ latchkey curl 'https://discord.com/api/v10/users/@me'
 ```
 
 
-### Clearing API credentials
+### Clearing credentials
 
-Remembered API credentials can be expired. The caller of `latchkey
+Remembered API credentials can expire. The caller of `latchkey
 curl` will typically notice this because the calls will return
 HTTP 401 or 403. To force a new login in the next `latchkey
-curl` call, clear the stored API credentials:
+curl` call, clear the remembered API credentials for the service
+in question, e.g.:
 
 ```
 latchkey clear discord
