@@ -1,3 +1,5 @@
+from concurrent.futures import Future
+
 from playwright.sync_api import Request
 
 from latchkey import curl
@@ -12,8 +14,8 @@ class Discord(Service):
     base_api_urls: tuple[str, ...] = ("https://discord.com/api/",)
     login_url: str = "https://discord.com/login"
 
-    def on_request(self, request: Request) -> None:
-        if self._credentials is not None:
+    def on_request(self, request: Request, credentials_future: Future[Credentials]) -> None:
+        if credentials_future.done():
             return
 
         url = request.url
@@ -23,7 +25,7 @@ class Discord(Service):
         headers = request.headers
         authorization = headers.get("authorization")
         if authorization is not None and authorization.strip() != "":
-            self._credentials = AuthorizationBare(token=authorization)
+            credentials_future.set_result(AuthorizationBare(token=authorization))
 
     def check_credentials(self, credentials: Credentials) -> CredentialStatus:
         if not isinstance(credentials, AuthorizationBare):

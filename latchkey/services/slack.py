@@ -1,5 +1,6 @@
 import json
 import re
+from concurrent.futures import Future
 
 from playwright.sync_api import Request
 
@@ -35,8 +36,8 @@ class Slack(Service):
             "Launch Slack in your browser (not the desktop app).",
         )
 
-    def on_request(self, request: Request) -> None:
-        if self._credentials is not None:
+    def on_request(self, request: Request, credentials_future: Future[Credentials]) -> None:
+        if credentials_future.done():
             return
 
         url = request.url
@@ -60,7 +61,7 @@ class Slack(Service):
             return
         d_cookie = match.group(1)
 
-        self._credentials = SlackCredentials(token=token, d_cookie=d_cookie)
+        credentials_future.set_result(SlackCredentials(token=token, d_cookie=d_cookie))
 
     def check_credentials(self, credentials: Credentials) -> CredentialStatus:
         if not isinstance(credentials, SlackCredentials):

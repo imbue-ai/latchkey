@@ -1,4 +1,5 @@
 from abc import abstractmethod
+from concurrent.futures import Future
 
 from playwright._impl._errors import TargetClosedError
 from playwright.sync_api import Page
@@ -24,20 +25,18 @@ class Service(BaseModel):
     base_api_urls: tuple[str, ...]
     login_url: str
 
-    _credentials: Credentials | None = None
-
     @abstractmethod
-    def on_request(self, request: Request) -> None:
+    def on_request(self, request: Request, credentials_future: Future[Credentials]) -> None:
         pass
 
     @abstractmethod
     def check_credentials(self, credentials: Credentials) -> CredentialStatus:
         pass
 
-    def wait_for_credentials(self, page: Page) -> Credentials:
-        while self._credentials is None:
+    def wait_for_credentials(self, page: Page, credentials_future: Future[Credentials]) -> Credentials:
+        while not credentials_future.done():
             page.wait_for_timeout(100)
-        return self._credentials
+        return credentials_future.result()
 
     @property
     def login_instructions(self) -> tuple[str, ...] | None:
@@ -114,12 +113,13 @@ class Service(BaseModel):
             context = browser.new_context()
             page = context.new_page()
 
-            page.on("request", self.on_request)
+            credentials_future: Future[Credentials] = Future()
+            page.on("request", lambda request: self.on_request(request, credentials_future))
 
             try:
                 self._show_login_instructions(page)
                 page.goto(self.login_url)
-                credentials = self.wait_for_credentials(page)
+                credentials = self.wait_for_credentials(page, credentials_future)
             except TargetClosedError as error:
                 raise LoginCancelledError("Login was cancelled because the browser was closed.") from error
 
