@@ -141,7 +141,7 @@ def curl(
     context: typer.Context,
     force_login: Annotated[
         bool,
-        typer.Option("--latchkey-force-login", help="Force re-authentication even if credentials exist."),
+        typer.Option("--latchkey-force-new-login", help="Force re-authentication even if credentials exist."),
     ] = False,
     curl_arguments: Annotated[
         list[str] | None,

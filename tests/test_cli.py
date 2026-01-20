@@ -522,11 +522,11 @@ def test_status_returns_error_for_unknown_service() -> None:
     assert result.exit_code == 1
 
 
-# Tests for --latchkey-force-login flag
+# Tests for --latchkey-force-new-login flag
 
 
 def test_curl_force_login_triggers_login_even_with_stored_credentials(tmp_path: Path) -> None:
-    """Test that --latchkey-force-login forces re-authentication even when credentials exist."""
+    """Test that --latchkey-force-new-login forces re-authentication even when credentials exist."""
     captured_args: list[str] = []
 
     def mock_runner(args: Sequence[str]) -> subprocess.CompletedProcess[bytes]:
@@ -549,7 +549,7 @@ def test_curl_force_login_triggers_login_even_with_stored_credentials(tmp_path: 
 
         result = runner.invoke(
             app,
-            ["curl", "--latchkey-force-login", "https://slack.com/api/conversations.list"],
+            ["curl", "--latchkey-force-new-login", "https://slack.com/api/conversations.list"],
             env={"LATCHKEY_STORE": str(store_path)},
         )
 
@@ -569,7 +569,7 @@ def test_curl_force_login_triggers_login_even_with_stored_credentials(tmp_path: 
 
 
 def test_curl_force_login_saves_new_credentials_to_store(tmp_path: Path) -> None:
-    """Test that --latchkey-force-login saves new credentials to the store."""
+    """Test that --latchkey-force-new-login saves new credentials to the store."""
 
     def mock_runner(args: Sequence[str]) -> subprocess.CompletedProcess[bytes]:
         return subprocess.CompletedProcess(args=args, returncode=0)
@@ -590,7 +590,7 @@ def test_curl_force_login_saves_new_credentials_to_store(tmp_path: Path) -> None
 
         result = runner.invoke(
             app,
-            ["curl", "--latchkey-force-login", "https://slack.com/api/conversations.list"],
+            ["curl", "--latchkey-force-new-login", "https://slack.com/api/conversations.list"],
             env={"LATCHKEY_STORE": str(store_path)},
         )
 
@@ -605,7 +605,7 @@ def test_curl_force_login_saves_new_credentials_to_store(tmp_path: Path) -> None
 
 
 def test_curl_force_login_works_without_stored_credentials(tmp_path: Path) -> None:
-    """Test that --latchkey-force-login works when no credentials are stored."""
+    """Test that --latchkey-force-new-login works when no credentials are stored."""
     captured_args: list[str] = []
 
     def mock_runner(args: Sequence[str]) -> subprocess.CompletedProcess[bytes]:
@@ -628,7 +628,7 @@ def test_curl_force_login_works_without_stored_credentials(tmp_path: Path) -> No
 
         result = runner.invoke(
             app,
-            ["curl", "--latchkey-force-login", "https://slack.com/api/conversations.list"],
+            ["curl", "--latchkey-force-new-login", "https://slack.com/api/conversations.list"],
             env={"LATCHKEY_STORE": str(store_path)},
         )
 
@@ -646,7 +646,7 @@ def test_curl_force_login_works_without_stored_credentials(tmp_path: Path) -> No
 
 
 def test_curl_force_login_works_without_latchkey_store() -> None:
-    """Test that --latchkey-force-login works when LATCHKEY_STORE is not set."""
+    """Test that --latchkey-force-new-login works when LATCHKEY_STORE is not set."""
     captured_args: list[str] = []
 
     def mock_runner(args: Sequence[str]) -> subprocess.CompletedProcess[bytes]:
@@ -665,7 +665,7 @@ def test_curl_force_login_works_without_latchkey_store() -> None:
 
         result = runner.invoke(
             app,
-            ["curl", "--latchkey-force-login", "https://slack.com/api/conversations.list"],
+            ["curl", "--latchkey-force-new-login", "https://slack.com/api/conversations.list"],
             env={},
         )
 
