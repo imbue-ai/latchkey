@@ -6,6 +6,9 @@ HTTP requests (including their headers and timing). When you close the browser,
 the recording is saved. This is useful for recording login flows that can be
 replayed later for testing credentials extraction.
 
+(NOTE: this only works for a subset of services.
+ Some services need additional credentials extraction steps.)
+
 Usage:
     uv run scripts/record_login.py <SERVICE_NAME>
 
