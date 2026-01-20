@@ -9,7 +9,7 @@ from typing import Annotated
 import typer
 import uncurl
 
-from latchkey import curl as curl_module
+from latchkey.curl import run as run_curl
 from latchkey.credential_store import CredentialStore
 from latchkey.credentials import CredentialStatus
 from latchkey.registry import REGISTRY
@@ -176,7 +176,7 @@ def curl(
 
             all_arguments = list(credentials.as_curl_arguments()) + all_arguments
 
-    result = curl_module.run(all_arguments)
+    result = run_curl(all_arguments)
     raise typer.Exit(code=result.returncode)
 
 
