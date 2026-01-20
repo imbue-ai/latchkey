@@ -9,9 +9,9 @@ from typing import Annotated
 import typer
 import uncurl
 
-from latchkey.curl import run as run_curl
 from latchkey.credential_store import CredentialStore
 from latchkey.credentials import CredentialStatus
+from latchkey.curl import run as run_curl
 from latchkey.registry import REGISTRY
 from latchkey.services.base import LoginCancelledError
 

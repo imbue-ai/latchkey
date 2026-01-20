@@ -206,6 +206,7 @@ def test_curl_injects_credentials_for_slack_api() -> None:
 
     with patch("latchkey.cli.REGISTRY") as mock_registry:
         mock_service = MagicMock()
+        mock_service.name = "slack"
         mock_service.login.return_value = mock_credentials
         mock_registry.get_by_url.return_value = mock_service
 
@@ -239,6 +240,7 @@ def test_curl_injects_credentials_with_verbose_flag() -> None:
 
     with patch("latchkey.cli.REGISTRY") as mock_registry:
         mock_service = MagicMock()
+        mock_service.name = "slack"
         mock_service.login.return_value = mock_credentials
         mock_registry.get_by_url.return_value = mock_service
 
@@ -442,7 +444,7 @@ def test_curl_reads_credentials_from_latchkey_store_env_var(tmp_path: Path) -> N
 
 def test_status_returns_missing_when_no_latchkey_store_set() -> None:
     """Test that status returns missing when LATCHKEY_STORE is not set."""
-    result = runner.invoke(app, ["status", "slack"], env={})
+    result = runner.invoke(app, ["status", "slack"])
 
     assert result.exit_code == 0
     assert result.stdout.strip() == "missing"
