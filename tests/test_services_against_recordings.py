@@ -51,9 +51,17 @@ def _create_mock_request(request_data: dict[str, Any]) -> Mock:
     mock_request.url = request_data["url"]
     mock_request.method = request_data["method"]
     mock_request.headers = request_data["headers"]
+    mock_request.all_headers.return_value = request_data["headers"]
     mock_request.resource_type = request_data.get("resource_type", "other")
     mock_request.post_data = request_data.get("post_data")
     return mock_request
+
+
+def _create_mock_page() -> Mock:
+    """Create a mock Playwright Page object for testing."""
+    mock_page = Mock()
+    mock_page.evaluate.return_value = None
+    return mock_page
 
 
 def _test_service_with_recording(
@@ -74,10 +82,12 @@ def _test_service_with_recording(
     if not recorded_requests:
         raise InvalidRecordingError("No requests recorded")
 
+    mock_page = _create_mock_page()
+
     # Try to extract API credentials from each recorded request
     for request_data in recorded_requests:
         mock_request = _create_mock_request(request_data)
-        api_credentials = service._get_api_credentials_from_outgoing_request(mock_request)
+        api_credentials = service._get_api_credentials_from_outgoing_request(mock_request, mock_page)
         if api_credentials is not None:
             return api_credentials
 
