@@ -27,6 +27,7 @@ import pytest
 from latchkey.api_credentials import ApiCredentials
 from latchkey.registry import REGISTRY
 from latchkey.services import Service
+from scripts.record_browser_session import DEFAULT_RECORDING_NAME
 
 RECORDINGS_DIRECTORY = Path(__file__).parent.parent / "scripts" / "recordings"
 
@@ -81,7 +82,7 @@ def _test_service_with_recording(
     Loads recorded HTTP request/response pairs and tests that the service can
     extract API credentials from them using _get_api_credentials_from_response().
     """
-    requests_path = recording_directory / "requests.json"
+    requests_path = recording_directory / DEFAULT_RECORDING_NAME
 
     if not requests_path.exists():
         raise InvalidRecordingError(f"Requests file not found: {requests_path}")
@@ -118,7 +119,7 @@ def _discover_recordings() -> list[tuple[str, Path]]:
 
     for item in sorted(RECORDINGS_DIRECTORY.iterdir()):
         if item.is_dir() and not item.name.startswith("."):
-            requests_path = item / "requests.json"
+            requests_path = item / DEFAULT_RECORDING_NAME
             if requests_path.exists():
                 recordings.append((item.name, item))
 

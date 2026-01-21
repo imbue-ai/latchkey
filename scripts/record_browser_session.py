@@ -10,13 +10,14 @@ can be replayed later for testing credentials extraction.
  Some services need additional credentials extraction steps.)
 
 Usage:
-    uv run scripts/record_login.py <SERVICE_NAME>
+    uv run scripts/record_browser_session.py <SERVICE_NAME> [RECORDING_NAME]
 
 Example:
-    uv run scripts/record_login.py slack
+    uv run scripts/record_browser_session.py slack
+    uv run scripts/record_browser_session.py slack custom_session.json
 
 The recording is saved to scripts/recordings/<service_name>/ with:
-- requests.json: HTTP requests and responses with headers and timing
+- login_session.json (or custom name): HTTP requests and responses with headers and timing
 
 
 Recordings Directory Structure
@@ -28,9 +29,9 @@ latchkey/registry.py). For example:
 
     recordings/
         slack/
-            requests.json
+            login_session.json
         discord/
-            requests.json
+            login_session.json
 
 
 Recording Format
@@ -69,6 +70,9 @@ from latchkey.registry import REGISTRY
 
 # Recordings directory relative to this script
 RECORDINGS_DIRECTORY = Path(__file__).parent / "recordings"
+
+# Default recording filename
+DEFAULT_RECORDING_NAME = "login_session.json"
 
 
 class UnknownServiceError(Exception):
@@ -181,7 +185,7 @@ def _handle_response(
     )
 
 
-def _record(service_name: str) -> None:
+def _record(service_name: str, recording_name: str) -> None:
     """Record browser requests and responses during a login session."""
     service = REGISTRY.get_by_name(service_name)
     if service is None:
@@ -189,7 +193,7 @@ def _record(service_name: str) -> None:
 
     output_directory = RECORDINGS_DIRECTORY / service_name
     output_directory.mkdir(parents=True, exist_ok=True)
-    requests_path = output_directory / "requests.json"
+    requests_path = output_directory / recording_name
 
     browser_state_path = get_browser_state_path()
 
@@ -254,6 +258,10 @@ def main(
         str,
         typer.Argument(help="Name of the service to record login for (e.g., 'slack', 'discord')."),
     ],
+    recording_name: Annotated[
+        str,
+        typer.Argument(help="Name of the recording file (default: login_session.json)."),
+    ] = DEFAULT_RECORDING_NAME,
 ) -> None:
     """Record browser requests and responses during a login session.
 
@@ -263,9 +271,9 @@ def main(
 
     The recording is saved to scripts/recordings/<service_name>/ with:
 
-    - requests.json: HTTP requests and responses with headers and timing
+    - login_session.json (or custom name): HTTP requests and responses with headers and timing
     """
-    _record(service_name=service_name)
+    _record(service_name=service_name, recording_name=recording_name)
 
 
 if __name__ == "__main__":
