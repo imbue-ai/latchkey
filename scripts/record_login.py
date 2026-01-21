@@ -58,6 +58,7 @@ import time
 from pathlib import Path
 from typing import Annotated
 from typing import Any
+from urllib.parse import urlparse
 
 import typer
 from playwright.sync_api import Response
@@ -85,16 +86,56 @@ SKIPPED_RESOURCE_TYPES = frozenset(
 )
 
 
+def _extract_base_domain(url: str) -> str:
+    """Extract the base domain from a URL.
+
+    For example:
+        https://discord.com/login -> discord.com
+        https://api.discord.com/v9/users -> discord.com
+        https://www.example.co.uk/page -> example.co.uk
+    """
+    hostname = urlparse(url).hostname or ""
+
+    # Split the hostname into parts
+    parts = hostname.split(".")
+
+    # Handle common multi-part TLDs (e.g., co.uk, com.au)
+    # For simplicity, we'll assume the base domain is the last two parts
+    # unless it's a known multi-part TLD
+    multi_part_tlds = {"co.uk", "com.au", "co.nz", "co.jp", "com.br", "co.in"}
+
+    if len(parts) >= 3:
+        potential_tld = ".".join(parts[-2:])
+        if potential_tld in multi_part_tlds:
+            return ".".join(parts[-3:])
+
+    if len(parts) >= 2:
+        return ".".join(parts[-2:])
+
+    return hostname
+
+
+def _is_same_base_domain(request_url: str, base_domain: str) -> bool:
+    """Check if a request URL belongs to the same base domain."""
+    request_hostname = urlparse(request_url).hostname or ""
+    return request_hostname == base_domain or request_hostname.endswith("." + base_domain)
+
+
 def _handle_response(
     response: Response,
     recorded_entries: list[dict[str, Any]],
     start_time: list[float],
+    base_domain: str,
 ) -> None:
     """Handle a response and record both request and response details."""
     request = response.request
 
     # Skip CSS, images, fonts, and multimedia
     if request.resource_type in SKIPPED_RESOURCE_TYPES:
+        return
+
+    # Skip requests to external domains
+    if not _is_same_base_domain(request.url, base_domain):
         return
 
     if start_time[0] == 0.0:
@@ -152,8 +193,11 @@ def _record(service_name: str) -> None:
 
     browser_state_path = get_browser_state_path()
 
+    base_domain = _extract_base_domain(service.login_url)
+
     typer.echo(f"Recording login for service: {service.name}")
     typer.echo(f"Login URL: {service.login_url}")
+    typer.echo(f"Recording requests to: {base_domain} (and subdomains)")
     typer.echo(f"Output directory: {output_directory}")
     if browser_state_path:
         typer.echo(f"Browser state: {browser_state_path}")
@@ -172,7 +216,7 @@ def _record(service_name: str) -> None:
         # Register response handler to capture all requests and responses
         page.on(
             "response",
-            lambda response: _handle_response(response, recorded_entries, start_time),
+            lambda response: _handle_response(response, recorded_entries, start_time, base_domain),
         )
 
         page.goto(service.login_url)
