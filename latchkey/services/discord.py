@@ -1,4 +1,3 @@
-from playwright.sync_api import Page
 from playwright.sync_api import Response
 
 from latchkey import curl
@@ -13,7 +12,7 @@ class Discord(Service):
     base_api_urls: tuple[str, ...] = ("https://discord.com/api/",)
     login_url: str = "https://discord.com/login"
 
-    def _get_api_credentials_from_response(self, response: Response, page: Page) -> ApiCredentials | None:
+    def _get_api_credentials_from_response(self, response: Response) -> ApiCredentials | None:
         request = response.request
         url = request.url
         if not url.startswith("https://discord.com/api/"):

@@ -3,7 +3,6 @@ TODO: This is still WIP.
 
 """
 
-from playwright.sync_api import Page
 from playwright.sync_api import Response
 
 from latchkey import curl
@@ -37,7 +36,7 @@ class Notion(Service):
             "After logging in, the token will be captured automatically.",
         )
 
-    def _get_api_credentials_from_response(self, response: Response, page: Page) -> ApiCredentials | None:
+    def _get_api_credentials_from_response(self, response: Response) -> ApiCredentials | None:
         request = response.request
         url = request.url
         if not url.startswith("https://www.notion.so/api/") and not url.startswith("https://api.notion.com/"):

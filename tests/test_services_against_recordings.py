@@ -72,13 +72,6 @@ def _create_mock_response(response_data: dict[str, Any], mock_request: Mock) -> 
     return mock_response
 
 
-def _create_mock_page() -> Mock:
-    """Create a mock Playwright Page object for testing."""
-    mock_page = Mock()
-    mock_page.evaluate.return_value = None
-    return mock_page
-
-
 def _test_service_with_recording(
     service: Service,
     recording_directory: Path,
@@ -97,15 +90,13 @@ def _test_service_with_recording(
     if not recording_entries:
         raise InvalidRecordingError("No requests recorded")
 
-    mock_page = _create_mock_page()
-
     # Try to extract API credentials from each recorded request/response pair
     for entry in recording_entries:
         request_data = entry["request"]
         response_data = entry.get("response", {})
         mock_request = _create_mock_request(request_data)
         mock_response = _create_mock_response(response_data, mock_request)
-        api_credentials = service._get_api_credentials_from_response(mock_response, mock_page)
+        api_credentials = service._get_api_credentials_from_response(mock_response)
         if api_credentials is not None:
             return api_credentials
 

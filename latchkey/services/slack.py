@@ -1,7 +1,6 @@
 import json
 import re
 
-from playwright.sync_api import Page
 from playwright.sync_api import Response
 
 from latchkey import curl
@@ -36,7 +35,7 @@ class Slack(Service):
             "Launch Slack in your browser (not the desktop app).",
         )
 
-    def _get_api_credentials_from_response(self, response: Response, page: Page) -> ApiCredentials | None:
+    def _get_api_credentials_from_response(self, response: Response) -> ApiCredentials | None:
         request = response.request
         url = request.url
         # Check if the domain is under slack.com:
