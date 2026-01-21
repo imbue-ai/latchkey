@@ -85,6 +85,42 @@ class DropboxServiceSession(BrowserFollowupServiceSession):
 
         page.wait_for_url(re.compile(r"https://www\.dropbox\.com/developers/apps/info/"), timeout=DEFAULT_TIMEOUT_MS)
 
+        # Configure permissions before generating token
+        permissions_tab = page.locator('a.c-tabs__label[data-hash="permissions"]')
+        permissions_tab.wait_for(timeout=DEFAULT_TIMEOUT_MS)
+        permissions_tab.click()
+
+        # Enable all necessary permissions
+        permission_ids = [
+            "files.metadata.write",
+            "files.metadata.read",
+            "files.content.write",
+            "files.content.read",
+            "sharing.write",
+            "sharing.read",
+            "file_requests.write",
+            "file_requests.read",
+            "contacts.write",
+            "contacts.read",
+        ]
+        for permission_id in permission_ids:
+            checkbox = page.locator(f"input#{permission_id}")
+            checkbox.wait_for(timeout=DEFAULT_TIMEOUT_MS)
+            checkbox.click()
+
+        # Submit permissions
+        submit_button = page.locator("button.permissions-submit-button")
+        submit_button.wait_for(timeout=DEFAULT_TIMEOUT_MS)
+        submit_button.click()
+
+        # Wait for permissions to be saved
+        page.wait_for_timeout(1000)
+
+        # Return to Settings tab to generate token
+        settings_tab = page.locator('a.c-tabs__label[data-hash="settings"]')
+        settings_tab.wait_for(timeout=DEFAULT_TIMEOUT_MS)
+        settings_tab.click()
+
         generate_button = page.locator("input#generate-token-button")
         generate_button.wait_for(timeout=DEFAULT_TIMEOUT_MS)
         generate_button.click()
