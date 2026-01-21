@@ -34,15 +34,16 @@ class DropboxServiceSession(BrowserFollowupServiceSession):
             return
 
         headers = request.all_headers()
-        cookie_header = headers.get("cookie")
-        if cookie_header is None:
+
+        # Check for the x-dropbox-uid header which contains the user ID.
+        # When logged out, this header is either absent or set to "-1".
+        # When logged in, it contains the actual positive user ID.
+        uid_header = headers.get("x-dropbox-uid")
+        if uid_header is None:
             return
 
-        # Check for session cookies that indicate the user is logged in.
-        # Both 'jar' (session data) and 'lid' (logged-in identifier) cookies
-        # must be present. The 'lid' cookie is only set on successful login,
-        # while 'jar' alone could be a stale cookie from a previous session.
-        if "jar=" not in cookie_header or "lid=" not in cookie_header:
+        # A value of "-1" indicates not logged in
+        if uid_header == "-1":
             return
 
         self._is_logged_in = True
