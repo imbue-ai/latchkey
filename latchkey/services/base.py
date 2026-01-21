@@ -1,4 +1,3 @@
-import tempfile
 from abc import ABC
 from abc import abstractmethod
 from pathlib import Path
@@ -198,44 +197,38 @@ class SimpleServiceSession(ServiceSession):
 
 class BrowserFollowupServiceSession(ServiceSession):
     """
-    A session that requires a headless browser followup step to finalize credentials.
+    A session that requires a browser followup step to finalize credentials.
 
-    The headful browser login phase captures login state. After the headful browser
-    closes, a headless browser is launched with the same browser state to perform
-    arbitrary in-browser actions (e.g., navigating to a settings page and creating
-    an API key).
+    The headful browser login phase captures login state. After login completes,
+    the browser window is minimized and the same session is used for followup
+    actions (e.g., navigating to a settings page and creating an API key).
 
     Subclasses must implement:
     - on_response: Handle responses during the headful login phase
     - _is_headful_login_complete: Return True when the user has logged in
-    - _perform_browser_followup: Perform actions in the headless browser to get credentials
+    - _perform_browser_followup: Perform actions in the browser to get credentials
     """
 
-    _temporary_state_path: Path | None = PrivateAttr(default=None)
-
-    def login(self, browser_state_path: Path | None = None) -> ApiCredentials:
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            self._temporary_state_path = Path(temporary_directory) / "browser_state.json"
-            return super().login(browser_state_path)
+    _browser_context: BrowserContext | None = PrivateAttr(default=None)
+    _browser_page: Page | None = PrivateAttr(default=None)
 
     def _on_headful_login_complete(self, context: BrowserContext) -> None:
-        if self._temporary_state_path is None:
-            return
-        context.storage_state(path=str(self._temporary_state_path))
+        self._browser_context = context
+        # Get the page so we can minimize it
+        pages = context.pages
+        if pages:
+            self._browser_page = pages[0]
 
     def _finalize_credentials(self, playwright: Playwright) -> ApiCredentials | None:
-        if self._temporary_state_path is None or not self._temporary_state_path.exists():
+        if self._browser_context is None:
             return None
 
-        browser = playwright.chromium.launch(headless=True)
-        context = browser.new_context(storage_state=str(self._temporary_state_path))
+        # Minimize the browser window to hide it from the user during followup
+        if self._browser_page is not None:
+            cdp_session = self._browser_context.new_cdp_session(self._browser_page)
+            cdp_session.send("Browser.setWindowBounds", {"windowId": 1, "bounds": {"windowState": "minimized"}})
 
-        try:
-            api_credentials = self._perform_browser_followup(context)
-        finally:
-            browser.close()
-
-        return api_credentials
+        return self._perform_browser_followup(self._browser_context)
 
     @abstractmethod
     def _perform_browser_followup(self, context: BrowserContext) -> ApiCredentials | None:
