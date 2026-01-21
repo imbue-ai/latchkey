@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Record outgoing browser requests during a login session.
+"""Record browser requests and responses during a login session.
 
-This script opens a browser at a service's login URL and records all outgoing
-HTTP requests (including their headers and timing). When you close the browser,
-the recording is saved. This is useful for recording login flows that can be
-replayed later for testing credentials extraction.
+This script opens a browser at a service's login URL and records all HTTP
+requests and responses (including their headers and timing). When you close the
+browser, the recording is saved. This is useful for recording login flows that
+can be replayed later for testing credentials extraction.
 
 (NOTE: this only works for a subset of services.
  Some services need additional credentials extraction steps.)
@@ -16,7 +16,7 @@ Example:
     uv run scripts/record_login.py slack
 
 The recording is saved to scripts/recordings/<service_name>/ with:
-- requests.json: Outgoing HTTP requests with headers and timing
+- requests.json: HTTP requests and responses with headers and timing
 
 
 Recordings Directory Structure
@@ -33,16 +33,24 @@ latchkey/registry.py). For example:
             requests.json
 
 
-Request Recording Format
-------------------------
+Recording Format
+----------------
 
-Each request is recorded as a JSON object with:
-- timestamp_ms: Milliseconds since recording started
-- method: HTTP method (GET, POST, etc.)
-- url: Full request URL
-- headers: Dictionary of request headers
-- post_data: POST body if present (for POST/PUT/PATCH requests)
-- resource_type: Type of resource (document, xhr, fetch, etc.)
+Each entry is recorded as a JSON object with:
+- request: The HTTP request details
+  - timestamp_ms: Milliseconds since recording started
+  - method: HTTP method (GET, POST, etc.)
+  - url: Full request URL
+  - headers: Dictionary of request headers
+  - post_data: POST body if present (for POST/PUT/PATCH requests)
+  - resource_type: Type of resource (document, xhr, fetch, etc.)
+- response: The HTTP response details
+  - status: HTTP status code
+  - status_text: HTTP status text
+  - headers: Dictionary of response headers
+  - body: Response body (text only, omitted for binary content)
+
+Note: Requests for CSS, images, fonts, and multimedia are skipped.
 """
 
 import json
@@ -52,7 +60,7 @@ from typing import Annotated
 from typing import Any
 
 import typer
-from playwright.sync_api import Request
+from playwright.sync_api import Response
 from playwright.sync_api import sync_playwright
 
 from latchkey.browser_state import get_browser_state_path
@@ -66,12 +74,29 @@ class UnknownServiceError(Exception):
     pass
 
 
-def _handle_request(
-    request: Request,
-    recorded_requests: list[dict[str, Any]],
+# Resource types to skip (CSS, images, fonts, multimedia)
+SKIPPED_RESOURCE_TYPES = frozenset(
+    {
+        "stylesheet",
+        "image",
+        "media",
+        "font",
+    }
+)
+
+
+def _handle_response(
+    response: Response,
+    recorded_entries: list[dict[str, Any]],
     start_time: list[float],
 ) -> None:
-    """Handle a single outgoing request and record its details."""
+    """Handle a response and record both request and response details."""
+    request = response.request
+
+    # Skip CSS, images, fonts, and multimedia
+    if request.resource_type in SKIPPED_RESOURCE_TYPES:
+        return
+
     if start_time[0] == 0.0:
         start_time[0] = time.time()
 
@@ -93,11 +118,30 @@ def _handle_request(
     if post_data is not None:
         request_data["post_data"] = post_data
 
-    recorded_requests.append(request_data)
+    response_data: dict[str, Any] = {
+        "status": response.status,
+        "status_text": response.status_text,
+        "headers": response.all_headers(),
+    }
+
+    # Try to get response body as text (skip binary content)
+    try:
+        body = response.text()
+        response_data["body"] = body
+    except Exception:
+        # Binary content or other error - skip body
+        pass
+
+    recorded_entries.append(
+        {
+            "request": request_data,
+            "response": response_data,
+        }
+    )
 
 
 def _record(service_name: str) -> None:
-    """Record outgoing browser requests during a login session."""
+    """Record browser requests and responses during a login session."""
     service = REGISTRY.get_by_name(service_name)
     if service is None:
         raise UnknownServiceError(f"Unknown service: {service_name}")
@@ -115,7 +159,7 @@ def _record(service_name: str) -> None:
         typer.echo(f"Browser state: {browser_state_path}")
     typer.echo("\nClose the browser window when you're done to save the recording.")
 
-    recorded_requests: list[dict[str, Any]] = []
+    recorded_entries: list[dict[str, Any]] = []
     start_time: list[float] = [0.0]
 
     with sync_playwright() as playwright:
@@ -125,10 +169,10 @@ def _record(service_name: str) -> None:
         )
         page = context.new_page()
 
-        # Register request handler to capture all outgoing requests
+        # Register response handler to capture all requests and responses
         page.on(
-            "request",
-            lambda request: _handle_request(request, recorded_requests, start_time),
+            "response",
+            lambda response: _handle_response(response, recorded_entries, start_time),
         )
 
         page.goto(service.login_url)
@@ -152,13 +196,13 @@ def _record(service_name: str) -> None:
         context.close()
         browser.close()
 
-    # Save recorded requests
+    # Save recorded entries
     with open(requests_path, "w") as file:
-        json.dump(recorded_requests, file, indent=2)
+        json.dump(recorded_entries, file, indent=2)
 
     typer.echo("\nRecording saved successfully!")
     typer.echo(f"  Requests file: {requests_path}")
-    typer.echo(f"  Recorded {len(recorded_requests)} requests")
+    typer.echo(f"  Recorded {len(recorded_entries)} request/response pairs")
 
 
 def main(
@@ -167,15 +211,15 @@ def main(
         typer.Argument(help="Name of the service to record login for (e.g., 'slack', 'discord')."),
     ],
 ) -> None:
-    """Record outgoing browser requests during a login session.
+    """Record browser requests and responses during a login session.
 
-    Opens a browser at the service's login URL and records all outgoing HTTP
-    requests including their headers and timing. When you close the browser,
-    the recording is saved.
+    Opens a browser at the service's login URL and records all HTTP requests
+    and responses including their headers and timing. When you close the
+    browser, the recording is saved.
 
     The recording is saved to scripts/recordings/<service_name>/ with:
 
-    - requests.json: Outgoing HTTP requests with headers and timing
+    - requests.json: HTTP requests and responses with headers and timing
     """
     _record(service_name=service_name)
 

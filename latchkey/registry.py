@@ -2,7 +2,6 @@ from pydantic import BaseModel
 from pydantic import ConfigDict
 
 from latchkey.services import DISCORD
-from latchkey.services import NOTION
 from latchkey.services import SLACK
 from latchkey.services import Service
 

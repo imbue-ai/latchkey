@@ -2,6 +2,7 @@
 TODO: This is still WIP.
 
 """
+
 from playwright.sync_api import Page
 from playwright.sync_api import Request
 

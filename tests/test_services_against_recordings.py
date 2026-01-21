@@ -6,8 +6,8 @@ scripts/recordings/<service_name>/ and verifies that the service's
 _get_api_credentials_from_outgoing_request() method can extract valid API credentials
 from the recorded requests.
 
-The tests work by loading recorded HTTP requests from requests.json and
-creating mock Request objects to pass to the service's API credential extraction
+The tests work by loading recorded HTTP request/response pairs from requests.json
+and creating mock Request objects to pass to the service's API credential extraction
 method. This validates that the service can correctly identify and extract
 API credentials from outgoing browser requests.
 
@@ -39,8 +39,8 @@ class ApiCredentialExtractionError(Exception):
     pass
 
 
-def _load_requests(requests_path: Path) -> list[dict[str, Any]]:
-    """Load recorded requests from JSON file."""
+def _load_recording_entries(requests_path: Path) -> list[dict[str, Any]]:
+    """Load recorded request/response entries from JSON file."""
     with open(requests_path) as file:
         return json.load(file)
 
@@ -70,29 +70,30 @@ def _test_service_with_recording(
 ) -> ApiCredentials:
     """Test a service's API credential extraction using a recorded session.
 
-    Loads recorded HTTP requests and tests that the service can extract
-    API credentials from them using _get_api_credentials_from_outgoing_request().
+    Loads recorded HTTP request/response pairs and tests that the service can
+    extract API credentials from them using _get_api_credentials_from_outgoing_request().
     """
     requests_path = recording_directory / "requests.json"
 
     if not requests_path.exists():
         raise InvalidRecordingError(f"Requests file not found: {requests_path}")
 
-    recorded_requests = _load_requests(requests_path)
-    if not recorded_requests:
+    recording_entries = _load_recording_entries(requests_path)
+    if not recording_entries:
         raise InvalidRecordingError("No requests recorded")
 
     mock_page = _create_mock_page()
 
     # Try to extract API credentials from each recorded request
-    for request_data in recorded_requests:
+    for entry in recording_entries:
+        request_data = entry["request"]
         mock_request = _create_mock_request(request_data)
         api_credentials = service._get_api_credentials_from_outgoing_request(mock_request, mock_page)
         if api_credentials is not None:
             return api_credentials
 
     raise ApiCredentialExtractionError(
-        f"No API credentials could be extracted from {len(recorded_requests)} recorded requests"
+        f"No API credentials could be extracted from {len(recording_entries)} recorded requests"
     )
 
 
