@@ -161,9 +161,9 @@ class ServiceSession(ABC, BaseModel):
 
             self._on_headful_login_complete(context)
 
-            browser.close()
-
             api_credentials = self._finalize_credentials(playwright)
+
+            browser.close()
 
         if api_credentials is None:
             raise LoginFailedError("Login failed: no credentials were extracted.")
