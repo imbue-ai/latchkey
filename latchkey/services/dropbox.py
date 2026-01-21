@@ -38,9 +38,11 @@ class DropboxServiceSession(BrowserFollowupServiceSession):
         if cookie_header is None:
             return
 
-        # Check for session cookies that indicate the user is logged in
-        # The 'jar' cookie contains session info and is present when logged in
-        if "jar=" not in cookie_header:
+        # Check for session cookies that indicate the user is logged in.
+        # Both 'jar' (session data) and 'lid' (logged-in identifier) cookies
+        # must be present. The 'lid' cookie is only set on successful login,
+        # while 'jar' alone could be a stale cookie from a previous session.
+        if "jar=" not in cookie_header or "lid=" not in cookie_header:
             return
 
         self._is_logged_in = True
