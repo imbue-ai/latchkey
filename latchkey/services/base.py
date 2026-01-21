@@ -1,8 +1,10 @@
+import tempfile
 from abc import ABC
 from abc import abstractmethod
 from pathlib import Path
 
 from playwright._impl._errors import TargetClosedError
+from playwright.sync_api import BrowserContext
 from playwright.sync_api import Page
 from playwright.sync_api import Response
 from playwright.sync_api import sync_playwright
@@ -133,6 +135,10 @@ class ServiceSession(ABC, BaseModel):
         page.set_content(instructions_html)
         page.wait_for_function("window.loginContinue === true")
 
+    def _on_headful_login_complete(self, context: BrowserContext) -> None:
+        """Called after headful login completes but before the browser closes."""
+        pass
+
     def login(self, browser_state_path: Path | None = None) -> ApiCredentials:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=False)
@@ -152,6 +158,8 @@ class ServiceSession(ABC, BaseModel):
 
             if browser_state_path:
                 context.storage_state(path=str(browser_state_path))
+
+            self._on_headful_login_complete(context)
 
             browser.close()
 
@@ -185,3 +193,68 @@ class SimpleServiceSession(ServiceSession):
 
     def _finalize_credentials(self) -> ApiCredentials | None:
         return self._api_credentials
+
+
+class BrowserFollowupServiceSession(ServiceSession):
+    """
+    A session that requires a headless browser followup step to finalize credentials.
+
+    The headful browser login phase captures login state. After the headful browser
+    closes, a headless browser is launched with the same browser state to perform
+    arbitrary in-browser actions (e.g., navigating to a settings page and creating
+    an API key).
+
+    Subclasses must implement:
+    - on_response: Handle responses during the headful login phase
+    - _is_headful_login_complete: Return True when the user has logged in
+    - _perform_browser_followup: Perform actions in the headless browser to get credentials
+    """
+
+    _temporary_state_path: Path | None = PrivateAttr(default=None)
+
+    def login(self, browser_state_path: Path | None = None) -> ApiCredentials:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            self._temporary_state_path = Path(temporary_directory) / "browser_state.json"
+            return super().login(browser_state_path)
+
+    def _on_headful_login_complete(self, context: BrowserContext) -> None:
+        if self._temporary_state_path is None:
+            return
+        context.storage_state(path=str(self._temporary_state_path))
+
+    def _finalize_credentials(self) -> ApiCredentials | None:
+        if self._temporary_state_path is None or not self._temporary_state_path.exists():
+            return None
+
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True)
+            context = browser.new_context(storage_state=str(self._temporary_state_path))
+
+            try:
+                api_credentials = self._perform_browser_followup(context)
+            finally:
+                browser.close()
+
+        return api_credentials
+
+    @abstractmethod
+    def _perform_browser_followup(self, context: BrowserContext) -> ApiCredentials | None:
+        """
+        Perform actions in a headless browser to finalize and extract API credentials.
+
+        This method is called after the headful login phase completes. The browser
+        context is initialized with the same state (cookies, localStorage, etc.)
+        from the headful session, so the user is already authenticated.
+
+        Typical actions include:
+        - Navigating to an API key management page
+        - Clicking buttons to create a new API key
+        - Extracting the generated key from the page
+
+        Args:
+            context: A Playwright BrowserContext with the authenticated session state.
+
+        Returns:
+            The extracted API credentials, or None if extraction failed.
+        """
+        pass
