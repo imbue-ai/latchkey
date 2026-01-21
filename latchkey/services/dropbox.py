@@ -191,13 +191,6 @@ class Dropbox(Service):
     base_api_urls: tuple[str, ...] = ("https://api.dropboxapi.com/",)
     login_url: str = "https://www.dropbox.com/login"
 
-    @property
-    def login_instructions(self) -> tuple[str, ...]:
-        return (
-            "Log in to your Dropbox account.",
-            "Once logged in, wait for the token generation to complete.",
-        )
-
     def get_session(self) -> DropboxServiceSession:
         return DropboxServiceSession(service=self)
 
