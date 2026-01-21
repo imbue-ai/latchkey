@@ -1,7 +1,10 @@
+import random
 import re
 import uuid
 
 from playwright.sync_api import BrowserContext
+from playwright.sync_api import Locator
+from playwright.sync_api import Page
 from playwright.sync_api import Response
 from pydantic import PrivateAttr
 
@@ -13,6 +16,23 @@ from latchkey.services.base import BrowserFollowupServiceSession
 from latchkey.services.base import Service
 
 DEFAULT_TIMEOUT_MS = 8000
+
+# Typing delay range in milliseconds (min, max) to simulate human-like typing
+TYPING_DELAY_MIN_MS = 30
+TYPING_DELAY_MAX_MS = 100
+
+
+def type_like_human(page: Page, locator: Locator, text: str) -> None:
+    """Type text character by character with random delays to simulate human typing.
+
+    This triggers proper JavaScript input events that some websites require,
+    unlike fill() which sets the value directly.
+    """
+    locator.click()
+    for character in text:
+        locator.press_sequentially(character)
+        delay = random.randint(TYPING_DELAY_MIN_MS, TYPING_DELAY_MAX_MS)
+        page.wait_for_timeout(delay)
 
 
 class DropboxTokenGenerationError(Exception):
@@ -28,19 +48,12 @@ class DropboxServiceSession(BrowserFollowupServiceSession):
 
         request = response.request
         url = request.url
-
-        # Check if this is a request to www.dropbox.com
         if not url.startswith("https://www.dropbox.com/"):
             return
 
         headers = request.all_headers()
-        cookie_header = headers.get("cookie")
-        if cookie_header is None:
-            return
-
-        # Check for session cookies that indicate the user is logged in
-        # The 'jar' cookie contains session info and is present when logged in
-        if "jar=" not in cookie_header:
+        uid_header = headers.get("x-dropbox-uid")
+        if uid_header is None or uid_header == "-1":
             return
 
         self._is_logged_in = True
@@ -51,39 +64,31 @@ class DropboxServiceSession(BrowserFollowupServiceSession):
     def _perform_browser_followup(self, context: BrowserContext) -> ApiCredentials | None:
         page = context.new_page()
 
-        # Step 1: Go to app creation page
         page.goto("https://www.dropbox.com/developers/apps/create")
 
-        # Step 2: Wait for and select "Scoped access"
         scoped_input = page.locator("input#scoped")
         scoped_input.wait_for(timeout=DEFAULT_TIMEOUT_MS)
         scoped_input.click()
 
-        # Step 3: Wait for and select "Full Dropbox" access
         full_permissions_input = page.locator("input#full_permissions")
         full_permissions_input.wait_for(timeout=DEFAULT_TIMEOUT_MS)
         full_permissions_input.click()
 
-        # Step 4: Wait for and fill the app name input
         app_name = f"Latchkey-{uuid.uuid4().hex[:8]}"
         app_name_input = page.locator("input#app-name")
         app_name_input.wait_for(timeout=DEFAULT_TIMEOUT_MS)
-        app_name_input.fill(app_name)
+        type_like_human(page, app_name_input, app_name)
 
-        # Step 5: Wait for and click the "Create app" button
-        create_button = page.locator("button#create-button")
+        create_button = page.get_by_role("button", name="Create app")
         create_button.wait_for(timeout=DEFAULT_TIMEOUT_MS)
         create_button.click()
 
-        # Step 6: Wait for navigation to the app info page
         page.wait_for_url(re.compile(r"https://www\.dropbox\.com/developers/apps/info/"), timeout=DEFAULT_TIMEOUT_MS)
 
-        # Step 7: Wait for and click the "Generate" button to create an access token
         generate_button = page.locator("input#generate-token-button")
         generate_button.wait_for(timeout=DEFAULT_TIMEOUT_MS)
         generate_button.click()
 
-        # Step 8: Wait for the token to appear and retrieve it
         token_input = page.locator("input#generated-token[data-token]")
         token_input.wait_for(timeout=DEFAULT_TIMEOUT_MS)
 
@@ -115,10 +120,10 @@ class Dropbox(Service):
                 "/dev/null",
                 "-w",
                 "%{http_code}",
+                "-X",
+                "POST",
                 *api_credentials.as_curl_arguments(),
-                "https://api.dropboxapi.com/2/check/user",
-                "-d",
-                "null",
+                "https://api.dropboxapi.com/2/users/get_current_account",
             ],
             timeout=10,
         )
