@@ -91,13 +91,15 @@ def _test_service_with_recording(
     if not recording_entries:
         raise InvalidRecordingError("No requests recorded")
 
+    session = service.get_session()
+
     # Try to extract API credentials from each recorded request/response pair
     for entry in recording_entries:
         request_data = entry["request"]
         response_data = entry.get("response", {})
         mock_request = _create_mock_request(request_data)
         mock_response = _create_mock_response(response_data, mock_request)
-        api_credentials = service._get_api_credentials_from_response(mock_response)
+        api_credentials = session._get_api_credentials_from_response(mock_response)
         if api_credentials is not None:
             return api_credentials
 
