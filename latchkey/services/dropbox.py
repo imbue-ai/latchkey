@@ -104,7 +104,8 @@ class DropboxServiceSession(BrowserFollowupServiceSession):
             "contacts.read",
         ]
         for permission_id in permission_ids:
-            checkbox = page.locator(f"input#{permission_id}")
+            escaped_permission_id = permission_id.replace(".", r"\.")
+            checkbox = page.locator(f"input#{escaped_permission_id}")
             checkbox.wait_for(timeout=DEFAULT_TIMEOUT_MS)
             checkbox.click()
 
