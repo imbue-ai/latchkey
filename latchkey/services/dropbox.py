@@ -136,7 +136,11 @@ class DropboxServiceSession(BrowserFollowupServiceSession):
 
 class Dropbox(Service):
     name: str = "dropbox"
-    base_api_urls: tuple[str, ...] = ("https://api.dropboxapi.com/",)
+    base_api_urls: tuple[str, ...] = (
+        "https://api.dropboxapi.com/",
+        "https://content.dropboxapi.com/",
+        "https://notify.dropboxapi.com/",
+    )
     login_url: str = "https://www.dropbox.com/login"
 
     def get_session(self) -> DropboxServiceSession:
