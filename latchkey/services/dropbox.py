@@ -118,10 +118,10 @@ class Dropbox(Service):
                 "/dev/null",
                 "-w",
                 "%{http_code}",
+                "-X",
+                "POST",
                 *api_credentials.as_curl_arguments(),
-                "https://api.dropboxapi.com/2/check/user",
-                "-d",
-                "null",
+                "https://api.dropboxapi.com/2/users/get_current_account",
             ],
             timeout=10,
         )
