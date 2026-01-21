@@ -1,6 +1,6 @@
 ---
 name: latchkey
-description: Interact with third-party services (Slack, Discord, ...) on user's behalf using their public APIs.
+description: Interact with third-party services (Slack, Discord, Dropbox, ...) on user's behalf using their public APIs.
 ---
 
 # Latchkey
@@ -9,7 +9,7 @@ description: Interact with third-party services (Slack, Discord, ...) on user's 
 
 Latchkey is a CLI tool that automatically injects credentials into curl commands for supported public APIs. Instead of manually managing API tokens, latchkey opens a browser for login, extracts credentials from the session, and injects them into your curl requests.
 
-Use this skill when the user asks you to work with third-party services like Slack, Discord and others on their behalf.
+Use this skill when the user asks you to work with third-party services like Slack, Discord, Dropbox and others on their behalf.
 
 Usage:
 
