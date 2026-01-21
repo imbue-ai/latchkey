@@ -7,6 +7,7 @@ from latchkey import curl
 from latchkey.api_credentials import ApiCredentialStatus
 from latchkey.api_credentials import ApiCredentials
 from latchkey.services.base import Service
+from latchkey.services.base import ServiceSession
 
 
 class SlackApiCredentials(ApiCredentials):
@@ -23,18 +24,7 @@ class SlackApiCredentials(ApiCredentials):
         )
 
 
-class Slack(Service):
-    name: str = "slack"
-    base_api_urls: tuple[str, ...] = ("https://slack.com/api/",)
-    login_url: str = "https://slack.com/signin"
-
-    @property
-    def login_instructions(self) -> tuple[str, ...]:
-        return (
-            "Accept all cookies if prompted.",
-            "Launch Slack in your browser (not the desktop app).",
-        )
-
+class SlackServiceSession(ServiceSession):
     def _get_api_credentials_from_response(self, response: Response) -> ApiCredentials | None:
         request = response.request
         url = request.url
@@ -64,6 +54,22 @@ class Slack(Service):
         token = token_match.group(1)
 
         return SlackApiCredentials(token=token, d_cookie=d_cookie)
+
+
+class Slack(Service):
+    name: str = "slack"
+    base_api_urls: tuple[str, ...] = ("https://slack.com/api/",)
+    login_url: str = "https://slack.com/signin"
+
+    @property
+    def login_instructions(self) -> tuple[str, ...]:
+        return (
+            "Accept all cookies if prompted.",
+            "Launch Slack in your browser (not the desktop app).",
+        )
+
+    def get_session(self) -> SlackServiceSession:
+        return SlackServiceSession(service=self)
 
     def check_api_credentials(self, api_credentials: ApiCredentials) -> ApiCredentialStatus:
         if not isinstance(api_credentials, SlackApiCredentials):

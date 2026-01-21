@@ -196,7 +196,7 @@ def curl(
             if api_credentials is None:
                 browser_state_path = get_browser_state_path()
                 try:
-                    api_credentials = service.login(browser_state_path=browser_state_path)
+                    api_credentials = service.get_session().login(browser_state_path=browser_state_path)
                 except LoginCancelledError:
                     typer.echo("Login cancelled.", err=True)
                     raise typer.Exit(code=1)

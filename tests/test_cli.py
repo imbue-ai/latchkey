@@ -206,15 +206,18 @@ def test_curl_injects_api_credentials_for_slack_api() -> None:
     mock_api_credentials = SlackApiCredentials(token="xoxc-test-token", d_cookie="test-cookie")
 
     with patch("latchkey.cli.REGISTRY") as mock_registry:
+        mock_session = MagicMock()
+        mock_session.login.return_value = mock_api_credentials
         mock_service = MagicMock()
         mock_service.name = "slack"
-        mock_service.login.return_value = mock_api_credentials
+        mock_service.get_session.return_value = mock_session
         mock_registry.get_by_url.return_value = mock_service
 
         result = runner.invoke(app, ["curl", "https://slack.com/api/conversations.list"])
 
         mock_registry.get_by_url.assert_called_once_with("https://slack.com/api/conversations.list")
-        mock_service.login.assert_called_once()
+        mock_service.get_session.assert_called_once()
+        mock_session.login.assert_called_once()
 
     assert result.exit_code == 0
     assert captured_args == [
@@ -240,15 +243,18 @@ def test_curl_injects_api_credentials_with_verbose_flag() -> None:
     mock_api_credentials = SlackApiCredentials(token="xoxc-test-token", d_cookie="test-cookie")
 
     with patch("latchkey.cli.REGISTRY") as mock_registry:
+        mock_session = MagicMock()
+        mock_session.login.return_value = mock_api_credentials
         mock_service = MagicMock()
         mock_service.name = "slack"
-        mock_service.login.return_value = mock_api_credentials
+        mock_service.get_session.return_value = mock_session
         mock_registry.get_by_url.return_value = mock_service
 
         result = runner.invoke(app, ["curl", "--", "-v", "https://slack.com/api/conversations.list"])
 
         mock_registry.get_by_url.assert_called_once_with("https://slack.com/api/conversations.list")
-        mock_service.login.assert_called_once()
+        mock_service.get_session.assert_called_once()
+        mock_session.login.assert_called_once()
 
     assert result.exit_code == 0
     assert captured_args == [
@@ -656,9 +662,11 @@ def test_curl_passes_browser_state_to_login(tmp_path: Path) -> None:
     mock_api_credentials = SlackApiCredentials(token="xoxc-test-token", d_cookie="test-cookie")
 
     with patch("latchkey.cli.REGISTRY") as mock_registry:
+        mock_session = MagicMock()
+        mock_session.login.return_value = mock_api_credentials
         mock_service = MagicMock()
         mock_service.name = "slack"
-        mock_service.login.return_value = mock_api_credentials
+        mock_service.get_session.return_value = mock_session
         mock_registry.get_by_url.return_value = mock_service
 
         result = runner.invoke(
@@ -667,7 +675,8 @@ def test_curl_passes_browser_state_to_login(tmp_path: Path) -> None:
             env={"LATCHKEY_BROWSER_STATE": str(browser_state_path)},
         )
 
-        mock_service.login.assert_called_once_with(browser_state_path=browser_state_path)
+        mock_service.get_session.assert_called_once()
+        mock_session.login.assert_called_once_with(browser_state_path=browser_state_path)
 
     assert result.exit_code == 0
 
@@ -685,9 +694,11 @@ def test_curl_passes_none_browser_state_when_env_not_set() -> None:
     mock_api_credentials = SlackApiCredentials(token="xoxc-test-token", d_cookie="test-cookie")
 
     with patch("latchkey.cli.REGISTRY") as mock_registry:
+        mock_session = MagicMock()
+        mock_session.login.return_value = mock_api_credentials
         mock_service = MagicMock()
         mock_service.name = "slack"
-        mock_service.login.return_value = mock_api_credentials
+        mock_service.get_session.return_value = mock_session
         mock_registry.get_by_url.return_value = mock_service
 
         result = runner.invoke(
@@ -696,7 +707,8 @@ def test_curl_passes_none_browser_state_when_env_not_set() -> None:
             env={},
         )
 
-        mock_service.login.assert_called_once_with(browser_state_path=None)
+        mock_service.get_session.assert_called_once()
+        mock_session.login.assert_called_once_with(browser_state_path=None)
 
     assert result.exit_code == 0
 

@@ -9,6 +9,7 @@ from latchkey import curl
 from latchkey.api_credentials import ApiCredentialStatus
 from latchkey.api_credentials import ApiCredentials
 from latchkey.services.base import Service
+from latchkey.services.base import ServiceSession
 
 
 class NotionApiCredentials(ApiCredentials):
@@ -24,18 +25,7 @@ class NotionApiCredentials(ApiCredentials):
         )
 
 
-class Notion(Service):
-    name: str = "notion"
-    base_api_urls: tuple[str, ...] = ("https://api.notion.com/",)
-    login_url: str = "https://www.notion.so/login"
-
-    @property
-    def login_instructions(self) -> tuple[str, ...]:
-        return (
-            "Log in to your Notion account.",
-            "After logging in, the token will be captured automatically.",
-        )
-
+class NotionServiceSession(ServiceSession):
     def _get_api_credentials_from_response(self, response: Response) -> ApiCredentials | None:
         request = response.request
         url = request.url
@@ -51,6 +41,22 @@ class Notion(Service):
             return NotionApiCredentials(token=token)
 
         return None
+
+
+class Notion(Service):
+    name: str = "notion"
+    base_api_urls: tuple[str, ...] = ("https://api.notion.com/",)
+    login_url: str = "https://www.notion.so/login"
+
+    @property
+    def login_instructions(self) -> tuple[str, ...]:
+        return (
+            "Log in to your Notion account.",
+            "After logging in, the token will be captured automatically.",
+        )
+
+    def get_session(self) -> NotionServiceSession:
+        return NotionServiceSession(service=self)
 
     def check_api_credentials(self, api_credentials: ApiCredentials) -> ApiCredentialStatus:
         if not isinstance(api_credentials, NotionApiCredentials):

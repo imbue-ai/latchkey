@@ -1,6 +1,4 @@
 from abc import abstractmethod
-from concurrent.futures import Future
-from concurrent.futures import InvalidStateError
 from pathlib import Path
 
 from playwright._impl._errors import TargetClosedError
@@ -9,6 +7,7 @@ from playwright.sync_api import Response
 from playwright.sync_api import sync_playwright
 from pydantic import BaseModel
 from pydantic import ConfigDict
+from pydantic import PrivateAttr
 
 from latchkey.api_credentials import ApiCredentialStatus
 from latchkey.api_credentials import ApiCredentials
@@ -28,34 +27,41 @@ class Service(BaseModel):
     login_url: str
 
     @abstractmethod
-    def _get_api_credentials_from_response(self, response: Response) -> ApiCredentials | None:
-        pass
-
-    def on_response(self, response: Response, api_credentials_future: Future[ApiCredentials]) -> None:
-        if api_credentials_future.done():
-            return
-        api_credentials = self._get_api_credentials_from_response(response)
-        if api_credentials is not None:
-            try:
-                api_credentials_future.set_result(api_credentials)
-            except InvalidStateError:
-                pass
-
-    @abstractmethod
     def check_api_credentials(self, api_credentials: ApiCredentials) -> ApiCredentialStatus:
         pass
-
-    def wait_for_api_credentials(self, page: Page, api_credentials_future: Future[ApiCredentials]) -> ApiCredentials:
-        while not api_credentials_future.done():
-            page.wait_for_timeout(100)
-        return api_credentials_future.result()
 
     @property
     def login_instructions(self) -> tuple[str, ...] | None:
         return None
 
+    @abstractmethod
+    def get_session(self) -> "ServiceSession":
+        pass
+
+
+class ServiceSession(BaseModel):
+    model_config = ConfigDict(frozen=False, arbitrary_types_allowed=True)
+
+    service: Service
+
+    _api_credentials: ApiCredentials | None = PrivateAttr(default=None)
+
+    @abstractmethod
+    def _get_api_credentials_from_response(self, response: Response) -> ApiCredentials | None:
+        pass
+
+    def on_response(self, response: Response) -> None:
+        if self._api_credentials is not None:
+            return
+        self._api_credentials = self._get_api_credentials_from_response(response)
+
+    def _wait_for_api_credentials(self, page: Page) -> ApiCredentials:
+        while self._api_credentials is None:
+            page.wait_for_timeout(100)
+        return self._api_credentials
+
     def _show_login_instructions(self, page: Page) -> None:
-        instructions = self.login_instructions
+        instructions = self.service.login_instructions
         if instructions is None:
             return
 
@@ -107,7 +113,7 @@ class Service(BaseModel):
         </head>
         <body>
             <div class="container">
-                <h1>Log in to {self.name}</h1>
+                <h1>Log in to {self.service.name}</h1>
                 <ul>
                     {instructions_list}
                 </ul>
@@ -127,13 +133,12 @@ class Service(BaseModel):
             )
             page = context.new_page()
 
-            api_credentials_future: Future[ApiCredentials] = Future()
-            page.on("response", lambda response: self.on_response(response, api_credentials_future))
+            page.on("response", lambda response: self.on_response(response))
 
             try:
                 self._show_login_instructions(page)
-                page.goto(self.login_url)
-                api_credentials = self.wait_for_api_credentials(page, api_credentials_future)
+                page.goto(self.service.login_url)
+                api_credentials = self._wait_for_api_credentials(page)
             except TargetClosedError as error:
                 raise LoginCancelledError("Login was cancelled because the browser was closed.") from error
 

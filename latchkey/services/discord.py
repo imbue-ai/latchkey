@@ -5,13 +5,10 @@ from latchkey.api_credentials import ApiCredentialStatus
 from latchkey.api_credentials import ApiCredentials
 from latchkey.api_credentials import AuthorizationBare
 from latchkey.services.base import Service
+from latchkey.services.base import ServiceSession
 
 
-class Discord(Service):
-    name: str = "discord"
-    base_api_urls: tuple[str, ...] = ("https://discord.com/api/",)
-    login_url: str = "https://discord.com/login"
-
+class DiscordServiceSession(ServiceSession):
     def _get_api_credentials_from_response(self, response: Response) -> ApiCredentials | None:
         request = response.request
         url = request.url
@@ -24,6 +21,15 @@ class Discord(Service):
             return AuthorizationBare(token=authorization)
 
         return None
+
+
+class Discord(Service):
+    name: str = "discord"
+    base_api_urls: tuple[str, ...] = ("https://discord.com/api/",)
+    login_url: str = "https://discord.com/login"
+
+    def get_session(self) -> DiscordServiceSession:
+        return DiscordServiceSession(service=self)
 
     def check_api_credentials(self, api_credentials: ApiCredentials) -> ApiCredentialStatus:
         if not isinstance(api_credentials, AuthorizationBare):
