@@ -114,7 +114,7 @@ class DropboxServiceSession(BrowserFollowupServiceSession):
         submit_button.click()
 
         # Wait for permissions to be saved
-        page.wait_for_timeout(1000)
+        page.wait_for_timeout(512)
 
         # Return to Settings tab to generate token
         settings_tab = page.locator('a.c-tabs__label[data-hash="settings"]')
