@@ -9,7 +9,7 @@ from latchkey import curl
 from latchkey.api_credentials import ApiCredentialStatus
 from latchkey.api_credentials import ApiCredentials
 from latchkey.services.base import Service
-from latchkey.services.base import ServiceSession
+from latchkey.services.base import SimpleServiceSession
 
 
 class NotionApiCredentials(ApiCredentials):
@@ -25,7 +25,7 @@ class NotionApiCredentials(ApiCredentials):
         )
 
 
-class NotionServiceSession(ServiceSession):
+class NotionServiceSession(SimpleServiceSession):
     def _get_api_credentials_from_response(self, response: Response) -> ApiCredentials | None:
         request = response.request
         url = request.url

@@ -5,10 +5,10 @@ from latchkey.api_credentials import ApiCredentialStatus
 from latchkey.api_credentials import ApiCredentials
 from latchkey.api_credentials import AuthorizationBare
 from latchkey.services.base import Service
-from latchkey.services.base import ServiceSession
+from latchkey.services.base import SimpleServiceSession
 
 
-class DiscordServiceSession(ServiceSession):
+class DiscordServiceSession(SimpleServiceSession):
     def _get_api_credentials_from_response(self, response: Response) -> ApiCredentials | None:
         request = response.request
         url = request.url

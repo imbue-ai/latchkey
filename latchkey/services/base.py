@@ -1,9 +1,9 @@
+from abc import ABC
 from abc import abstractmethod
 from pathlib import Path
 
 from playwright._impl._errors import TargetClosedError
 from playwright.sync_api import Page
-from playwright.sync_api import Playwright
 from playwright.sync_api import Response
 from playwright.sync_api import sync_playwright
 from pydantic import BaseModel
@@ -26,7 +26,7 @@ class LoginFailedError(Exception):
     pass
 
 
-class Service(BaseModel):
+class Service(ABC, BaseModel):
     model_config = ConfigDict(frozen=True)
 
     name: str
@@ -46,58 +46,29 @@ class Service(BaseModel):
         pass
 
 
-class ServiceSession(BaseModel):
+class ServiceSession(ABC, BaseModel):
     model_config = ConfigDict(frozen=False, arbitrary_types_allowed=True)
 
     service: Service
 
     _api_credentials: ApiCredentials | None = PrivateAttr(default=None)
 
-    @abstractmethod
-    def _get_api_credentials_from_response(self, response: Response) -> ApiCredentials | None:
-        pass
-
-    def on_response(self, response: Response) -> None:
-        if self._api_credentials is not None:
-            return
-        self._api_credentials = self._get_api_credentials_from_response(response)
-
-    def _is_headful_login_complete(self) -> bool:
-        """Return True when the headful browser login phase is complete.
-
-        By default, this returns True when credentials have been extracted.
-        Subclasses can override this to use different completion criteria
-        (e.g., if credentials will be extracted during the followup step).
-        """
-        return self._api_credentials is not None
-
     def _wait_for_headful_login_complete(self, page: Page) -> None:
         """Wait until the headful browser login phase is complete."""
         while not self._is_headful_login_complete():
             page.wait_for_timeout(100)
 
-    def _perform_followup(
-        self,
-        playwright: Playwright,
-        api_credentials: ApiCredentials | None,
-        browser_state_path: Path | None,
-    ) -> ApiCredentials | None:
-        """Perform a followup step after the headful browser login.
+    @abstractmethod
+    def on_response(self, response: Response) -> None:
+        pass
 
-        This method is called after the headful browser is closed. Subclasses can
-        override this to perform additional steps (e.g., headless requests) to
-        complete credential extraction.
+    @abstractmethod
+    def _is_headful_login_complete(self) -> bool:
+        pass
 
-        Args:
-            playwright: The Playwright instance (still active after headful browser closes).
-            api_credentials: The credentials extracted during the headful login, or None
-                if no credentials were extracted yet.
-            browser_state_path: Path to the saved browser state from the headful session.
-
-        Returns:
-            The final ApiCredentials, or None if credentials are still incomplete.
-        """
-        return api_credentials
+    @abstractmethod
+    def _finalize_credentials(self) -> ApiCredentials | None:
+        pass
 
     def _show_login_instructions(self, page: Page) -> None:
         instructions = self.service.login_instructions
@@ -186,9 +157,31 @@ class ServiceSession(BaseModel):
 
             browser.close()
 
-            api_credentials = self._perform_followup(playwright, self._api_credentials, browser_state_path)
+            api_credentials = self._finalize_credentials()
 
         if api_credentials is None:
             raise LoginFailedError("Login failed: no credentials were extracted.")
 
         return api_credentials
+
+
+class SimpleServiceSession(ServiceSession):
+    """
+    The common case where API credentials are extracted simply by observing requests during the headful login phase.
+
+    """
+
+    @abstractmethod
+    def _get_api_credentials_from_response(self, response: Response) -> ApiCredentials | None:
+        pass
+
+    def on_response(self, response: Response) -> None:
+        if self._api_credentials is not None:
+            return
+        self._api_credentials = self._get_api_credentials_from_response(response)
+
+    def _is_headful_login_complete(self) -> bool:
+        return self._api_credentials is not None
+
+    def _finalize_credentials(self) -> ApiCredentials | None:
+        return self._api_credentials
