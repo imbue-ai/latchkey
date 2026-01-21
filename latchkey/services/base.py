@@ -51,8 +51,6 @@ class ServiceSession(ABC, BaseModel):
 
     service: Service
 
-    _api_credentials: ApiCredentials | None = PrivateAttr(default=None)
-
     def _wait_for_headful_login_complete(self, page: Page) -> None:
         """Wait until the headful browser login phase is complete."""
         while not self._is_headful_login_complete():
@@ -170,6 +168,8 @@ class SimpleServiceSession(ServiceSession):
     The common case where API credentials are extracted simply by observing requests during the headful login phase.
 
     """
+
+    _api_credentials: ApiCredentials | None = PrivateAttr(default=None)
 
     @abstractmethod
     def _get_api_credentials_from_response(self, response: Response) -> ApiCredentials | None:
