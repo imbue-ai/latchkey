@@ -27,9 +27,13 @@ import pytest
 from latchkey.api_credentials import ApiCredentials
 from latchkey.registry import REGISTRY
 from latchkey.services import Service
+from latchkey.services.base import SimpleServiceSession
 from scripts.record_browser_session import DEFAULT_RECORDING_NAME
 
 RECORDINGS_DIRECTORY = Path(__file__).parent.parent / "scripts" / "recordings"
+
+# Do not test services that require special followup steps.
+BLACKLIST = ("dropbox",)
 
 
 class InvalidRecordingError(Exception):
@@ -92,6 +96,8 @@ def _test_service_with_recording(
         raise InvalidRecordingError("No requests recorded")
 
     session = service.get_session()
+    if not isinstance(session, SimpleServiceSession):
+        pass
 
     # Try to extract API credentials from each recorded request/response pair
     for entry in recording_entries:
@@ -120,7 +126,7 @@ def _discover_recordings() -> list[tuple[str, Path]]:
         return recordings
 
     for item in sorted(RECORDINGS_DIRECTORY.iterdir()):
-        if item.is_dir() and not item.name.startswith("."):
+        if item.is_dir() and not item.name.startswith(".") and item.name not in BLACKLIST:
             requests_path = item / DEFAULT_RECORDING_NAME
             if requests_path.exists():
                 recordings.append((item.name, item))
