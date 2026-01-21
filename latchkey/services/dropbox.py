@@ -1,7 +1,10 @@
+import random
 import re
 import uuid
 
 from playwright.sync_api import BrowserContext
+from playwright.sync_api import Locator
+from playwright.sync_api import Page
 from playwright.sync_api import Response
 from pydantic import PrivateAttr
 
@@ -13,6 +16,23 @@ from latchkey.services.base import BrowserFollowupServiceSession
 from latchkey.services.base import Service
 
 DEFAULT_TIMEOUT_MS = 8000
+
+# Typing delay range in milliseconds (min, max) to simulate human-like typing
+TYPING_DELAY_MIN_MS = 30
+TYPING_DELAY_MAX_MS = 100
+
+
+def type_like_human(page: Page, locator: Locator, text: str) -> None:
+    """Type text character by character with random delays to simulate human typing.
+
+    This triggers proper JavaScript input events that some websites require,
+    unlike fill() which sets the value directly.
+    """
+    locator.click()
+    for character in text:
+        locator.press_sequentially(character)
+        delay = random.randint(TYPING_DELAY_MIN_MS, TYPING_DELAY_MAX_MS)
+        page.wait_for_timeout(delay)
 
 
 class DropboxTokenGenerationError(Exception):
@@ -67,11 +87,12 @@ class DropboxServiceSession(BrowserFollowupServiceSession):
         full_permissions_input.wait_for(timeout=DEFAULT_TIMEOUT_MS)
         full_permissions_input.click()
 
-        # Step 4: Wait for and fill the app name input
+        # Step 4: Wait for and fill the app name input (typing character by character
+        # to trigger proper JavaScript events that the "Create app" button relies on)
         app_name = f"Latchkey-{uuid.uuid4().hex[:8]}"
         app_name_input = page.locator("input#app-name")
         app_name_input.wait_for(timeout=DEFAULT_TIMEOUT_MS)
-        app_name_input.fill(app_name)
+        type_like_human(page, app_name_input, app_name)
 
         # Step 5: Wait for and click the "Create app" button
         create_button = page.get_by_role("button", name="Create app")
