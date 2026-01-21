@@ -5,7 +5,7 @@ from pathlib import Path
 
 from playwright._impl._errors import TargetClosedError
 from playwright.sync_api import Page
-from playwright.sync_api import Request
+from playwright.sync_api import Response
 from playwright.sync_api import sync_playwright
 from pydantic import BaseModel
 from pydantic import ConfigDict
@@ -28,13 +28,13 @@ class Service(BaseModel):
     login_url: str
 
     @abstractmethod
-    def _get_api_credentials_from_outgoing_request(self, request: Request, page: Page) -> ApiCredentials | None:
+    def _get_api_credentials_from_response(self, response: Response, page: Page) -> ApiCredentials | None:
         pass
 
-    def on_request(self, request: Request, page: Page, api_credentials_future: Future[ApiCredentials]) -> None:
+    def on_response(self, response: Response, page: Page, api_credentials_future: Future[ApiCredentials]) -> None:
         if api_credentials_future.done():
             return
-        api_credentials = self._get_api_credentials_from_outgoing_request(request, page)
+        api_credentials = self._get_api_credentials_from_response(response, page)
         if api_credentials is not None:
             try:
                 api_credentials_future.set_result(api_credentials)
@@ -128,7 +128,7 @@ class Service(BaseModel):
             page = context.new_page()
 
             api_credentials_future: Future[ApiCredentials] = Future()
-            page.on("request", lambda request: self.on_request(request, page, api_credentials_future))
+            page.on("response", lambda response: self.on_response(response, page, api_credentials_future))
 
             try:
                 self._show_login_instructions(page)

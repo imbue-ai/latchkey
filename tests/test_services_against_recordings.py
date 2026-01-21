@@ -57,6 +57,21 @@ def _create_mock_request(request_data: dict[str, Any]) -> Mock:
     return mock_request
 
 
+def _create_mock_response(response_data: dict[str, Any], mock_request: Mock) -> Mock:
+    """Create a mock Playwright Response object from recorded response data."""
+    mock_response = Mock()
+    mock_response.status = response_data.get("status", 200)
+    mock_response.status_text = response_data.get("status_text", "OK")
+    mock_response.headers = response_data.get("headers", {})
+    mock_response.all_headers.return_value = response_data.get("headers", {})
+    mock_response.request = mock_request
+
+    body = response_data.get("body")
+    mock_response.text.return_value = body if body is not None else ""
+
+    return mock_response
+
+
 def _create_mock_page() -> Mock:
     """Create a mock Playwright Page object for testing."""
     mock_page = Mock()
@@ -71,7 +86,7 @@ def _test_service_with_recording(
     """Test a service's API credential extraction using a recorded session.
 
     Loads recorded HTTP request/response pairs and tests that the service can
-    extract API credentials from them using _get_api_credentials_from_outgoing_request().
+    extract API credentials from them using _get_api_credentials_from_response().
     """
     requests_path = recording_directory / "requests.json"
 
@@ -84,16 +99,18 @@ def _test_service_with_recording(
 
     mock_page = _create_mock_page()
 
-    # Try to extract API credentials from each recorded request
+    # Try to extract API credentials from each recorded request/response pair
     for entry in recording_entries:
         request_data = entry["request"]
+        response_data = entry.get("response", {})
         mock_request = _create_mock_request(request_data)
-        api_credentials = service._get_api_credentials_from_outgoing_request(mock_request, mock_page)
+        mock_response = _create_mock_response(response_data, mock_request)
+        api_credentials = service._get_api_credentials_from_response(mock_response, mock_page)
         if api_credentials is not None:
             return api_credentials
 
     raise ApiCredentialExtractionError(
-        f"No API credentials could be extracted from {len(recording_entries)} recorded requests"
+        f"No API credentials could be extracted from {len(recording_entries)} recorded entries"
     )
 
 

@@ -3,7 +3,7 @@ import re
 
 from playwright._impl._errors import Error as PlaywrightError
 from playwright.sync_api import Page
-from playwright.sync_api import Request
+from playwright.sync_api import Response
 
 from latchkey import curl
 from latchkey.api_credentials import ApiCredentialStatus
@@ -48,7 +48,8 @@ class Slack(Service):
             "Launch Slack in your browser (not the desktop app).",
         )
 
-    def _get_api_credentials_from_outgoing_request(self, request: Request, page: Page) -> ApiCredentials | None:
+    def _get_api_credentials_from_response(self, response: Response, page: Page) -> ApiCredentials | None:
+        request = response.request
         url = request.url
         # Check if the domain is under slack.com:
         if not re.match(r"https://([a-z0-9-]+\.)?slack\.com/", url):
