@@ -14,7 +14,6 @@ from pydantic import TypeAdapter
 from latchkey.api_credentials import ApiCredentials
 from latchkey.api_credentials import AuthorizationBare
 from latchkey.api_credentials import AuthorizationBearer
-from latchkey.services.notion import NotionApiCredentials
 from latchkey.services.slack import SlackApiCredentials
 
 
@@ -27,7 +26,6 @@ def _get_api_credential_type(value: dict[str, object] | object) -> str:
 ApiCredentialType = Annotated[
     Annotated[AuthorizationBearer, Tag("authorization_bearer")]
     | Annotated[AuthorizationBare, Tag("authorization_bare")]
-    | Annotated[NotionApiCredentials, Tag("notion")]
     | Annotated[SlackApiCredentials, Tag("slack")],
     Discriminator(_get_api_credential_type),
 ]
