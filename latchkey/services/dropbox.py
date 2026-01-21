@@ -74,7 +74,7 @@ class DropboxServiceSession(BrowserFollowupServiceSession):
         app_name_input.fill(app_name)
 
         # Step 5: Wait for and click the "Create app" button
-        create_button = page.locator("button#create-button")
+        create_button = page.get_by_role("button", name="Create app")
         create_button.wait_for(timeout=DEFAULT_TIMEOUT_MS)
         create_button.click()
 
