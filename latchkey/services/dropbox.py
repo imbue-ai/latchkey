@@ -93,15 +93,11 @@ class DropboxServiceSession(BrowserFollowupServiceSession):
         # Enable all necessary permissions
         permission_ids = [
             "files.metadata.write",
-            "files.metadata.read",
             "files.content.write",
             "files.content.read",
             "sharing.write",
-            "sharing.read",
             "file_requests.write",
-            "file_requests.read",
             "contacts.write",
-            "contacts.read",
         ]
         for permission_id in permission_ids:
             escaped_permission_id = permission_id.replace(".", r"\.")
