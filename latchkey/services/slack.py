@@ -1,7 +1,6 @@
 import json
 import re
 
-from playwright._impl._errors import Error as PlaywrightError
 from playwright.sync_api import Page
 from playwright.sync_api import Response
 
@@ -23,17 +22,6 @@ class SlackApiCredentials(ApiCredentials):
             "-H",
             f"Cookie: d={self.d_cookie}",
         )
-
-
-TOKEN_EXTRACTION_JS: str = """
-    () => {
-        const localConfig = JSON.parse(localStorage.getItem('localConfig_v2'));
-        if (localConfig && localConfig.teams && localConfig.lastActiveTeamId) {
-            return localConfig.teams[localConfig.lastActiveTeamId].token;
-        }
-        return null;
-    }
-"""
 
 
 class Slack(Service):
@@ -60,17 +48,21 @@ class Slack(Service):
         cookie_header = headers.get("cookie")
         if cookie_header is None:
             return None
-        match = re.search(r"\bd=([^;]+)", cookie_header)
-        if not match:
+        cookie_match = re.search(r"\bd=([^;]+)", cookie_header)
+        if not cookie_match:
             return None
-        d_cookie = match.group(1)
+        d_cookie = cookie_match.group(1)
 
+        # Extract token from response body (JSON embedded in HTML or raw JSON)
         try:
-            token = page.evaluate(TOKEN_EXTRACTION_JS)
-        except PlaywrightError:
+            response_body = response.text()
+        except Exception:
             return None
-        if token is None:
+
+        token_match = re.search(r'"api_token":"(xoxc-[a-zA-Z0-9-]+)"', response_body)
+        if not token_match:
             return None
+        token = token_match.group(1)
 
         return SlackApiCredentials(token=token, d_cookie=d_cookie)
 
