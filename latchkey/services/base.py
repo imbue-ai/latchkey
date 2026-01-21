@@ -6,6 +6,7 @@ from pathlib import Path
 from playwright._impl._errors import TargetClosedError
 from playwright.sync_api import BrowserContext
 from playwright.sync_api import Page
+from playwright.sync_api import Playwright
 from playwright.sync_api import Response
 from playwright.sync_api import sync_playwright
 from pydantic import BaseModel
@@ -67,7 +68,7 @@ class ServiceSession(ABC, BaseModel):
         pass
 
     @abstractmethod
-    def _finalize_credentials(self) -> ApiCredentials | None:
+    def _finalize_credentials(self, playwright: Playwright) -> ApiCredentials | None:
         pass
 
     def _show_login_instructions(self, page: Page) -> None:
@@ -163,7 +164,7 @@ class ServiceSession(ABC, BaseModel):
 
             browser.close()
 
-            api_credentials = self._finalize_credentials()
+            api_credentials = self._finalize_credentials(playwright)
 
         if api_credentials is None:
             raise LoginFailedError("Login failed: no credentials were extracted.")
@@ -191,7 +192,7 @@ class SimpleServiceSession(ServiceSession):
     def _is_headful_login_complete(self) -> bool:
         return self._api_credentials is not None
 
-    def _finalize_credentials(self) -> ApiCredentials | None:
+    def _finalize_credentials(self, playwright: Playwright) -> ApiCredentials | None:
         return self._api_credentials
 
 
@@ -222,18 +223,17 @@ class BrowserFollowupServiceSession(ServiceSession):
             return
         context.storage_state(path=str(self._temporary_state_path))
 
-    def _finalize_credentials(self) -> ApiCredentials | None:
+    def _finalize_credentials(self, playwright: Playwright) -> ApiCredentials | None:
         if self._temporary_state_path is None or not self._temporary_state_path.exists():
             return None
 
-        with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(headless=True)
-            context = browser.new_context(storage_state=str(self._temporary_state_path))
+        browser = playwright.chromium.launch(headless=True)
+        context = browser.new_context(storage_state=str(self._temporary_state_path))
 
-            try:
-                api_credentials = self._perform_browser_followup(context)
-            finally:
-                browser.close()
+        try:
+            api_credentials = self._perform_browser_followup(context)
+        finally:
+            browser.close()
 
         return api_credentials
 
