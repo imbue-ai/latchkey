@@ -124,6 +124,14 @@ class Dropbox(Service):
     def get_session(self) -> DropboxServiceSession:
         return DropboxServiceSession(service=self)
 
+    @property
+    def credential_check_curl_arguments(self) -> tuple[str, ...]:
+        return (
+            "-X",
+            "POST",
+            "https://api.dropboxapi.com/2/users/get_current_account",
+        )
+
     def check_api_credentials(self, api_credentials: ApiCredentials) -> ApiCredentialStatus:
         if not isinstance(api_credentials, AuthorizationBearer):
             return ApiCredentialStatus.INVALID
@@ -135,10 +143,8 @@ class Dropbox(Service):
                 "/dev/null",
                 "-w",
                 "%{http_code}",
-                "-X",
-                "POST",
                 *api_credentials.as_curl_arguments(),
-                "https://api.dropboxapi.com/2/users/get_current_account",
+                *self.credential_check_curl_arguments,
             ],
             timeout=10,
         )

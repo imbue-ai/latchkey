@@ -181,6 +181,52 @@ def status(
     typer.echo(api_credential_status.value)
 
 
+@app.command()
+def login(
+    service_name: Annotated[
+        str,
+        typer.Argument(help="Name of the service to login to."),
+    ],
+) -> None:
+    """Login to a service and test credentials with a curl request.
+
+    This is equivalent to calling 'latchkey curl' with the credential check
+    arguments for the given service. Useful for testing the login flow.
+
+    Set LATCHKEY_STORE environment variable to persist API credentials to a file.
+    """
+    service = REGISTRY.get_by_name(service_name)
+    if service is None:
+        typer.echo(f"Error: Unknown service: {service_name}", err=True)
+        typer.echo("Use 'latchkey services' to see available services.", err=True)
+        raise typer.Exit(code=1)
+
+    latchkey_store = _get_latchkey_store_path()
+
+    api_credentials = None
+    api_credential_store = ApiCredentialStore(path=latchkey_store) if latchkey_store else None
+
+    if api_credential_store is not None:
+        api_credentials = api_credential_store.get(service.name)
+
+    if api_credentials is None:
+        browser_state_path = get_browser_state_path()
+        try:
+            api_credentials = service.get_session().login(browser_state_path=browser_state_path)
+        except LoginCancelledError:
+            typer.echo("Login cancelled.", err=True)
+            raise typer.Exit(code=1)
+        except LoginFailedError as error:
+            typer.echo(str(error), err=True)
+            raise typer.Exit(code=1)
+        if api_credential_store is not None:
+            api_credential_store.save(service.name, api_credentials)
+
+    curl_arguments = list(api_credentials.as_curl_arguments()) + list(service.credential_check_curl_arguments)
+    result = run_curl(curl_arguments)
+    raise typer.Exit(code=result.returncode)
+
+
 @app.command(
     context_settings={
         "allow_extra_args": True,

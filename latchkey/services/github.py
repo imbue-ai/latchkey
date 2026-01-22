@@ -101,6 +101,10 @@ class Github(Service):
     def get_session(self) -> GithubServiceSession:
         return GithubServiceSession(service=self)
 
+    @property
+    def credential_check_curl_arguments(self) -> tuple[str, ...]:
+        return ("https://api.github.com/user",)
+
     def check_api_credentials(self, api_credentials: ApiCredentials) -> ApiCredentialStatus:
         if not isinstance(api_credentials, AuthorizationBearer):
             return ApiCredentialStatus.INVALID
@@ -113,7 +117,7 @@ class Github(Service):
                 "-w",
                 "%{http_code}",
                 *api_credentials.as_curl_arguments(),
-                "https://api.github.com/user",
+                *self.credential_check_curl_arguments,
             ],
             timeout=10,
         )

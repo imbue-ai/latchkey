@@ -41,6 +41,18 @@ class Service(ABC, BaseModel):
         pass
 
     @property
+    @abstractmethod
+    def credential_check_curl_arguments(self) -> tuple[str, ...]:
+        """Return curl arguments for checking credentials (excluding auth headers).
+
+        These arguments should include the URL and any necessary curl flags
+        like -X POST, -H Content-Type, or -d for request body, but should
+        NOT include the -s, -o /dev/null, -w flags used for silent checking.
+        Authentication headers are injected separately.
+        """
+        pass
+
+    @property
     def login_instructions(self) -> tuple[str, ...] | None:
         return None
 

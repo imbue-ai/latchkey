@@ -31,6 +31,10 @@ class Discord(Service):
     def get_session(self) -> DiscordServiceSession:
         return DiscordServiceSession(service=self)
 
+    @property
+    def credential_check_curl_arguments(self) -> tuple[str, ...]:
+        return ("https://discord.com/api/v9/users/@me",)
+
     def check_api_credentials(self, api_credentials: ApiCredentials) -> ApiCredentialStatus:
         if not isinstance(api_credentials, AuthorizationBare):
             return ApiCredentialStatus.INVALID
@@ -43,7 +47,7 @@ class Discord(Service):
                 "-w",
                 "%{http_code}",
                 *api_credentials.as_curl_arguments(),
-                "https://discord.com/api/v9/users/@me",
+                *self.credential_check_curl_arguments,
             ],
             timeout=10,
         )

@@ -78,6 +78,18 @@ class Linear(Service):
     def get_session(self) -> LinearServiceSession:
         return LinearServiceSession(service=self)
 
+    @property
+    def credential_check_curl_arguments(self) -> tuple[str, ...]:
+        return (
+            "-X",
+            "POST",
+            "-H",
+            "Content-Type: application/json",
+            "-d",
+            '{"query": "{ viewer { id } }"}',
+            "https://api.linear.app/graphql",
+        )
+
     def check_api_credentials(self, api_credentials: ApiCredentials) -> ApiCredentialStatus:
         if not isinstance(api_credentials, AuthorizationBearer):
             return ApiCredentialStatus.INVALID
@@ -90,14 +102,8 @@ class Linear(Service):
                 "/dev/null",
                 "-w",
                 "%{http_code}",
-                "-X",
-                "POST",
-                "-H",
-                "Content-Type: application/json",
                 *api_credentials.as_curl_arguments(),
-                "-d",
-                '{"query": "{ viewer { id } }"}',
-                "https://api.linear.app/graphql",
+                *self.credential_check_curl_arguments,
             ],
             timeout=10,
         )

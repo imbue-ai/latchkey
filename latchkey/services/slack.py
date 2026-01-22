@@ -71,6 +71,10 @@ class Slack(Service):
     def get_session(self) -> SlackServiceSession:
         return SlackServiceSession(service=self)
 
+    @property
+    def credential_check_curl_arguments(self) -> tuple[str, ...]:
+        return ("https://slack.com/api/auth.test",)
+
     def check_api_credentials(self, api_credentials: ApiCredentials) -> ApiCredentialStatus:
         if not isinstance(api_credentials, SlackApiCredentials):
             return ApiCredentialStatus.INVALID
@@ -79,7 +83,7 @@ class Slack(Service):
             [
                 "-s",
                 *api_credentials.as_curl_arguments(),
-                "https://slack.com/api/auth.test",
+                *self.credential_check_curl_arguments,
             ],
             timeout=10,
         )
