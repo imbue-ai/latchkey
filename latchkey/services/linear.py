@@ -7,7 +7,7 @@ from pydantic import PrivateAttr
 from latchkey import curl
 from latchkey.api_credentials import ApiCredentialStatus
 from latchkey.api_credentials import ApiCredentials
-from latchkey.api_credentials import AuthorizationBearer
+from latchkey.api_credentials import AuthorizationBare
 from latchkey.services.base import BrowserFollowupServiceSession
 from latchkey.services.base import LoginFailedError
 from latchkey.services.base import Service
@@ -68,7 +68,7 @@ class LinearServiceSession(BrowserFollowupServiceSession):
 
         page.close()
 
-        return AuthorizationBearer(token=token)
+        return AuthorizationBare(token=token)
 
 
 class Linear(Service):
@@ -92,7 +92,7 @@ class Linear(Service):
         )
 
     def check_api_credentials(self, api_credentials: ApiCredentials) -> ApiCredentialStatus:
-        if not isinstance(api_credentials, AuthorizationBearer):
+        if not isinstance(api_credentials, AuthorizationBare):
             return ApiCredentialStatus.INVALID
 
         # Linear uses GraphQL API - check credentials with a simple query
