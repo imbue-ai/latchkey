@@ -232,6 +232,12 @@ class BrowserFollowupServiceSession(ServiceSession):
 
         try:
             api_credentials = self._perform_browser_followup(context)
+        except LoginFailedError:
+            browser.close()
+            raise
+        except Exception as error:
+            browser.close()
+            raise LoginFailedError(f"Login failed: {error}") from error
         finally:
             browser.close()
 

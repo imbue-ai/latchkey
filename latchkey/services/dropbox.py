@@ -10,14 +10,11 @@ from latchkey.api_credentials import ApiCredentialStatus
 from latchkey.api_credentials import ApiCredentials
 from latchkey.api_credentials import AuthorizationBearer
 from latchkey.services.base import BrowserFollowupServiceSession
+from latchkey.services.base import LoginFailedError
 from latchkey.services.base import Service
 from latchkey.services.playwright_utils import type_like_human
 
 DEFAULT_TIMEOUT_MS = 8000
-
-
-class DropboxTokenGenerationError(Exception):
-    pass
 
 
 class DropboxServiceSession(BrowserFollowupServiceSession):
@@ -108,7 +105,7 @@ class DropboxServiceSession(BrowserFollowupServiceSession):
 
         token = token_input.get_attribute("data-token")
         if token is None or token == "":
-            raise DropboxTokenGenerationError("Failed to extract token from data-token attribute")
+            raise LoginFailedError("Failed to extract token from Dropbox.")
 
         page.close()
 

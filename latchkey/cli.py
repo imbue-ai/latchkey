@@ -15,6 +15,7 @@ from latchkey.browser_state import get_browser_state_path
 from latchkey.curl import run as run_curl
 from latchkey.registry import REGISTRY
 from latchkey.services.base import LoginCancelledError
+from latchkey.services.base import LoginFailedError
 
 LATCHKEY_STORE_ENV_VAR = "LATCHKEY_STORE"
 
@@ -248,6 +249,9 @@ def curl(
                     api_credentials = service.get_session().login(browser_state_path=browser_state_path)
                 except LoginCancelledError:
                     typer.echo("Login cancelled.", err=True)
+                    raise typer.Exit(code=1)
+                except LoginFailedError as error:
+                    typer.echo(str(error), err=True)
                     raise typer.Exit(code=1)
                 if api_credential_store is not None:
                     api_credential_store.save(service.name, api_credentials)
