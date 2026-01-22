@@ -13,6 +13,9 @@ from latchkey.services.playwright_utils import type_like_human
 
 DEFAULT_TIMEOUT_MS = 8000
 
+# URL for creating a new personal access token (also used as login URL to trigger sudo)
+GITHUB_NEW_TOKEN_URL = "https://github.com/settings/tokens/new"
+
 # GitHub personal access token scopes to enable
 GITHUB_TOKEN_SCOPES = [
     "repo",
@@ -44,16 +47,14 @@ class GithubServiceSession(BrowserFollowupServiceSession):
             return
 
         request = response.request
-        url = request.url
-        if not url.startswith("https://github.com/"):
-            return
-
-        # Detect login by checking for logged-in user indicator in responses
-        headers = request.all_headers()
-        # GitHub sets a logged_in cookie after successful authentication
-        cookies = headers.get("cookie", "")
-        if "logged_in=yes" in cookies:
-            self._is_logged_in = True
+        # Detect login by checking for a successful POST to the sudo endpoint.
+        # When accessing /settings/tokens/new, GitHub requires sudo mode and
+        # redirects to /sessions/sudo. A successful POST (200 or 3xx redirect)
+        # indicates the user has completed sudo authentication.
+        if request.method == "POST" and request.url == "https://github.com/sessions/sudo":
+            status = response.status
+            if 200 <= status < 400:
+                self._is_logged_in = True
 
     def _is_headful_login_complete(self) -> bool:
         return self._is_logged_in
@@ -61,7 +62,7 @@ class GithubServiceSession(BrowserFollowupServiceSession):
     def _perform_browser_followup(self, context: BrowserContext) -> ApiCredentials | None:
         page = context.new_page()
 
-        page.goto("https://github.com/settings/tokens/new")
+        page.goto(GITHUB_NEW_TOKEN_URL)
 
         # Add a note for the token
         note_input = page.locator('//*[@id="oauth_access_description"]')
@@ -95,7 +96,7 @@ class GithubServiceSession(BrowserFollowupServiceSession):
 class Github(Service):
     name: str = "github"
     base_api_urls: tuple[str, ...] = ("https://api.github.com/",)
-    login_url: str = "https://github.com/login"
+    login_url: str = GITHUB_NEW_TOKEN_URL
 
     def get_session(self) -> GithubServiceSession:
         return GithubServiceSession(service=self)
