@@ -28,16 +28,17 @@ class LinearServiceSession(BrowserFollowupServiceSession):
 
         request = response.request
         # Empirically, Linear always sends this request. When not logged in,
-        # the response only contains "organizationMeta". Otherwise it can
+        # the response only contains "data.organizationMeta". Otherwise it can
         # contain different things based on how exactly the user authenticated.
         if request.url == "https://client-api.linear.app/graphql" and request.method == "POST":
             if response.status == 200:
                 try:
                     json_data = response.json()
-                    if isinstance(json_data, dict) and any(key != "organizationMeta" for key in json_data.keys()):
-                        self._is_logged_in = True
-                except Exception:
-                    pass
+                except Exception as e:
+                    return
+                data = json_data.get("data", {})
+                if any(key != "organizationMeta" for key in data.keys()):
+                    self._is_logged_in = True
 
     def _is_headful_login_complete(self) -> bool:
         return self._is_logged_in
