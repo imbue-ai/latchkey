@@ -73,6 +73,13 @@ latchkey clear discord
 
 The next `latchkey curl` call will then trigger a new login flow.
 
+To clear all stored data (both the credentials store and browser
+state file), run:
+
+```
+latchkey clear
+```
+
 ## Prerequisites
 
 - `curl` needs to be installed in your system.

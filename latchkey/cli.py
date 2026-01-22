@@ -66,17 +66,41 @@ def services() -> None:
     typer.echo(service_names)
 
 
-@app.command()
-def clear(
-    service_name: Annotated[
-        str,
-        typer.Argument(help="Name of the service to clear API credentials for."),
-    ],
-) -> None:
-    """Clear stored API credentials for a service.
+def _clear_all(yes: bool) -> None:
+    """Clear the entire credentials store and browser state file."""
+    latchkey_store = _get_latchkey_store_path()
+    browser_state = get_browser_state_path()
 
-    Set LATCHKEY_STORE environment variable to specify the API credential store location.
-    """
+    files_to_delete: list[Path] = []
+    if latchkey_store is not None and latchkey_store.exists():
+        files_to_delete.append(latchkey_store)
+    if browser_state is not None and browser_state.exists():
+        files_to_delete.append(browser_state)
+
+    if not files_to_delete:
+        typer.echo("No files to delete.")
+        return
+
+    if not yes:
+        typer.echo("This will delete the following files:")
+        for file_path in files_to_delete:
+            typer.echo(f"  {file_path}")
+
+        confirmed = typer.confirm("Are you sure you want to continue?")
+        if not confirmed:
+            typer.echo("Aborted.")
+            raise typer.Exit(code=1)
+
+    for file_path in files_to_delete:
+        file_path.unlink()
+        if file_path == latchkey_store:
+            typer.echo(f"Deleted credentials store: {file_path}")
+        else:
+            typer.echo(f"Deleted browser state: {file_path}")
+
+
+def _clear_service(service_name: str) -> None:
+    """Clear credentials for a specific service."""
     service = REGISTRY.get_by_name(service_name)
     if service is None:
         typer.echo(f"Error: Unknown service: {service_name}", err=True)
@@ -95,6 +119,31 @@ def clear(
         typer.echo(f"API credentials for {service_name} have been cleared.")
     else:
         typer.echo(f"No API credentials found for {service_name}.")
+
+
+@app.command()
+def clear(
+    service_name: Annotated[
+        str | None,
+        typer.Argument(help="Name of the service to clear API credentials for. If omitted, clears all data."),
+    ] = None,
+    yes: Annotated[
+        bool,
+        typer.Option("--yes", "-y", help="Skip confirmation prompt when clearing all data."),
+    ] = False,
+) -> None:
+    """Clear stored API credentials.
+
+    If a service name is provided, clears credentials for that service only.
+    If no service name is provided, deletes the entire credentials store and browser state file.
+
+    Set LATCHKEY_STORE environment variable to specify the API credential store location.
+    Set LATCHKEY_BROWSER_STATE environment variable to specify the browser state location.
+    """
+    if service_name is None:
+        _clear_all(yes)
+    else:
+        _clear_service(service_name)
 
 
 @app.command()

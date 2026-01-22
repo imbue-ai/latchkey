@@ -643,6 +643,154 @@ def test_clear_preserves_other_services(tmp_path: Path) -> None:
     assert stored_data["discord"]["token"] == "discord-token"
 
 
+def test_clear_without_arguments_deletes_store_and_browser_state(tmp_path: Path) -> None:
+    """Test that clear without arguments deletes both credentials store and browser state."""
+    store_path = tmp_path / "api_credentials.json"
+    store_path.write_text('{"slack": {"object_type": "slack", "token": "test", "d_cookie": "test"}}')
+
+    browser_state_path = tmp_path / "browser_state.json"
+    browser_state_path.write_text("{}")
+
+    result = runner.invoke(
+        app,
+        ["clear"],
+        input="y\n",
+        env={
+            "LATCHKEY_STORE": str(store_path),
+            "LATCHKEY_BROWSER_STATE": str(browser_state_path),
+        },
+    )
+
+    assert result.exit_code == 0
+    assert not store_path.exists()
+    assert not browser_state_path.exists()
+    assert f"Deleted credentials store: {store_path}" in result.stdout
+    assert f"Deleted browser state: {browser_state_path}" in result.stdout
+
+
+def test_clear_without_arguments_aborts_on_no_confirmation(tmp_path: Path) -> None:
+    """Test that clear without arguments aborts when user does not confirm."""
+    store_path = tmp_path / "api_credentials.json"
+    store_path.write_text('{"slack": {"object_type": "slack", "token": "test", "d_cookie": "test"}}')
+
+    browser_state_path = tmp_path / "browser_state.json"
+    browser_state_path.write_text("{}")
+
+    result = runner.invoke(
+        app,
+        ["clear"],
+        input="n\n",
+        env={
+            "LATCHKEY_STORE": str(store_path),
+            "LATCHKEY_BROWSER_STATE": str(browser_state_path),
+        },
+    )
+
+    assert result.exit_code == 1
+    assert "Aborted" in result.stdout
+    # Files should still exist
+    assert store_path.exists()
+    assert browser_state_path.exists()
+
+
+def test_clear_without_arguments_deletes_only_existing_files(tmp_path: Path) -> None:
+    """Test that clear without arguments only reports on files that exist."""
+    store_path = tmp_path / "api_credentials.json"
+    store_path.write_text("{}")
+
+    browser_state_path = tmp_path / "browser_state.json"
+    # browser_state_path does not exist
+
+    result = runner.invoke(
+        app,
+        ["clear"],
+        input="y\n",
+        env={
+            "LATCHKEY_STORE": str(store_path),
+            "LATCHKEY_BROWSER_STATE": str(browser_state_path),
+        },
+    )
+
+    assert result.exit_code == 0
+    assert not store_path.exists()
+    assert f"Deleted credentials store: {store_path}" in result.stdout
+    assert "browser state" not in result.stdout.lower()
+
+
+def test_clear_without_arguments_reports_no_files_to_delete(tmp_path: Path) -> None:
+    """Test that clear without arguments reports when no files exist."""
+    store_path = tmp_path / "nonexistent_store.json"
+    browser_state_path = tmp_path / "nonexistent_browser_state.json"
+
+    result = runner.invoke(
+        app,
+        ["clear"],
+        env={
+            "LATCHKEY_STORE": str(store_path),
+            "LATCHKEY_BROWSER_STATE": str(browser_state_path),
+        },
+    )
+
+    assert result.exit_code == 0
+    assert "No files to delete" in result.stdout
+
+
+def test_clear_without_arguments_works_with_no_env_vars() -> None:
+    """Test that clear without arguments works even when env vars are not set."""
+    result = runner.invoke(
+        app,
+        ["clear"],
+        env={},
+    )
+
+    assert result.exit_code == 0
+    assert "No files to delete" in result.stdout
+
+
+def test_clear_without_arguments_skips_confirmation_with_yes_flag(tmp_path: Path) -> None:
+    """Test that clear -y skips the confirmation prompt."""
+    store_path = tmp_path / "api_credentials.json"
+    store_path.write_text('{"slack": {"object_type": "slack", "token": "test", "d_cookie": "test"}}')
+
+    browser_state_path = tmp_path / "browser_state.json"
+    browser_state_path.write_text("{}")
+
+    result = runner.invoke(
+        app,
+        ["clear", "-y"],
+        env={
+            "LATCHKEY_STORE": str(store_path),
+            "LATCHKEY_BROWSER_STATE": str(browser_state_path),
+        },
+    )
+
+    assert result.exit_code == 0
+    assert not store_path.exists()
+    assert not browser_state_path.exists()
+    assert f"Deleted credentials store: {store_path}" in result.stdout
+    assert f"Deleted browser state: {browser_state_path}" in result.stdout
+    # Should not show confirmation prompt
+    assert "Are you sure" not in result.stdout
+
+
+def test_clear_without_arguments_skips_confirmation_with_long_yes_flag(tmp_path: Path) -> None:
+    """Test that clear --yes skips the confirmation prompt."""
+    store_path = tmp_path / "api_credentials.json"
+    store_path.write_text("{}")
+
+    result = runner.invoke(
+        app,
+        ["clear", "--yes"],
+        env={
+            "LATCHKEY_STORE": str(store_path),
+        },
+    )
+
+    assert result.exit_code == 0
+    assert not store_path.exists()
+    assert "Are you sure" not in result.stdout
+
+
 # Tests for curl with LATCHKEY_BROWSER_STATE environment variable
 
 
