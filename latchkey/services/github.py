@@ -47,13 +47,9 @@ class GithubServiceSession(BrowserFollowupServiceSession):
             return
 
         request = response.request
-        # Detect login by checking for a successful POST to the sudo endpoint.
-        # When accessing /settings/tokens/new, GitHub requires sudo mode and
-        # redirects to /sessions/sudo. A successful POST (200 or 3xx redirect)
-        # indicates the user has completed sudo authentication.
-        if request.method == "POST" and request.url == "https://github.com/sessions/sudo":
-            status = response.status
-            if 200 <= status < 400:
+        # Detect login (and github's sudo) by seeing if github allows us to access the new token page.
+        if request.url == GITHUB_NEW_TOKEN_URL:
+            if response.status == 200:
                 self._is_logged_in = True
 
     def _is_headful_login_complete(self) -> bool:
