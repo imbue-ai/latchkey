@@ -14,8 +14,9 @@ Use this skill when the user asks you to work with third-party services like Sla
 Usage:
 
 1. **Use `latchkey curl`** instead of regular `curl` for supported services
-2. **Pass through all regular curl arguments** - latchkey is a transparent wrapper
-3. **Use `latchkey clear <service_name>`** when you notice expired credentials, then retry the curl command
+2. **Look for the newest documentation of the desired public API online.***
+3. **Pass through all regular curl arguments** - latchkey is a transparent wrapper
+4. **Use `latchkey clear <service_name>`** when you notice expired credentials, then retry the curl command
 
 
 ## Examples
