@@ -3,9 +3,10 @@ from pydantic import ConfigDict
 
 from latchkey.services import DISCORD
 from latchkey.services import DROPBOX
+from latchkey.services import GITHUB
+from latchkey.services import LINEAR
 from latchkey.services import SLACK
 from latchkey.services import Service
-from latchkey.services.github import GITHUB
 
 
 class Registry(BaseModel):
@@ -27,4 +28,4 @@ class Registry(BaseModel):
         return None
 
 
-REGISTRY = Registry(services=(SLACK, DISCORD, DROPBOX, GITHUB))
+REGISTRY = Registry(services=(SLACK, DISCORD, DROPBOX, GITHUB, LINEAR))
