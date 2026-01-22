@@ -142,25 +142,11 @@ class ServiceSession(ABC, BaseModel):
 
     def login(self, browser_state_path: Path | None = None) -> ApiCredentials:
         with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(headless=False, args=["--app=about:blank"])
+            browser = playwright.chromium.launch(headless=False)
             context = browser.new_context(
                 storage_state=str(browser_state_path) if browser_state_path and browser_state_path.exists() else None
             )
             page = context.new_page()
-
-            # Block middle-click and ctrl+click to prevent opening new tabs/windows
-            page.add_init_script("""
-                document.addEventListener('click', (e) => {
-                    if (e.button === 1 || e.ctrlKey || e.metaKey) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                    }
-                }, true);
-                document.addEventListener('auxclick', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                }, true);
-            """)
 
             page.on("response", lambda response: self.on_response(response))
 
