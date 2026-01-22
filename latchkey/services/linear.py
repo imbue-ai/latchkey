@@ -27,16 +27,17 @@ class LinearServiceSession(BrowserFollowupServiceSession):
             return
 
         request = response.request
-        url = request.url
-        if not url.startswith("https://linear.app/"):
-            return
-
-        # Detect login by checking for authenticated API requests
-        headers = request.all_headers()
-        # Linear sets authentication cookies after successful login
-        cookies = headers.get("cookie", "")
-        if "linear-session" in cookies or "linear_session" in cookies:
-            self._is_logged_in = True
+        # Empirically, Linear always sends this request. When not logged in,
+        # the response only contains "organizationMeta". Otherwise it can
+        # contain different things based on how exactly the user authenticated.
+        if request.url == "https://client-api.linear.app/graphql" and request.method == "POST":
+            if response.status == 200:
+                try:
+                    json_data = response.json()
+                    if isinstance(json_data, dict) and any(key != "organizationMeta" for key in json_data.keys()):
+                        self._is_logged_in = True
+                except Exception:
+                    pass
 
     def _is_headful_login_complete(self) -> bool:
         return self._is_logged_in
