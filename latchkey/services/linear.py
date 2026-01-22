@@ -1,3 +1,5 @@
+import uuid
+
 from playwright.sync_api import BrowserContext
 from playwright.sync_api import Response
 from pydantic import PrivateAttr
@@ -7,7 +9,14 @@ from latchkey.api_credentials import ApiCredentialStatus
 from latchkey.api_credentials import ApiCredentials
 from latchkey.api_credentials import AuthorizationBearer
 from latchkey.services.base import BrowserFollowupServiceSession
+from latchkey.services.base import LoginFailedError
 from latchkey.services.base import Service
+from latchkey.services.playwright_utils import type_like_human
+
+DEFAULT_TIMEOUT_MS = 8000
+
+# URL for creating a new personal API key (also used as login URL)
+LINEAR_NEW_API_KEY_URL = "https://linear.app/imbue/settings/account/security/api-keys/new"
 
 
 class LinearServiceSession(BrowserFollowupServiceSession):
@@ -33,16 +42,38 @@ class LinearServiceSession(BrowserFollowupServiceSession):
         return self._is_logged_in
 
     def _perform_browser_followup(self, context: BrowserContext) -> ApiCredentials | None:
-        # TODO: Implement browser automation to create a personal API key
-        # This will navigate to https://linear.app/settings/api and
-        # create a new personal API key
-        return None
+        page = context.new_page()
+
+        page.goto(LINEAR_NEW_API_KEY_URL)
+
+        # Fill in the key name
+        key_name = f"Latchkey-{uuid.uuid4().hex[:8]}"
+        key_name_input = page.get_by_role("textbox", name="Key name")
+        key_name_input.wait_for(timeout=DEFAULT_TIMEOUT_MS)
+        type_like_human(page, key_name_input, key_name)
+
+        # Click the Create button
+        create_button = page.get_by_role("button", name="Create")
+        create_button.wait_for(timeout=DEFAULT_TIMEOUT_MS)
+        create_button.click()
+
+        # Wait for and extract the token from span element containing lin_api_ prefix
+        token_element = page.locator("span:text-matches('^lin_api_')")
+        token_element.wait_for(timeout=DEFAULT_TIMEOUT_MS)
+
+        token = token_element.text_content()
+        if token is None or token == "":
+            raise LoginFailedError("Failed to extract token from Linear.")
+
+        page.close()
+
+        return AuthorizationBearer(token=token)
 
 
 class Linear(Service):
     name: str = "linear"
     base_api_urls: tuple[str, ...] = ("https://api.linear.app/",)
-    login_url: str = "https://linear.app/login"
+    login_url: str = LINEAR_NEW_API_KEY_URL
 
     def get_session(self) -> LinearServiceSession:
         return LinearServiceSession(service=self)
