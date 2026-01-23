@@ -188,7 +188,9 @@ def login(
         typer.Argument(help="Name of the service to login to."),
     ],
 ) -> None:
-    """Login to a service and store API credentials.
+    """Login to a service and optionally store the API credentials.
+
+    Useful for testing the login flow.
 
     Set LATCHKEY_STORE environment variable to persist API credentials to a file.
     """
