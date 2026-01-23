@@ -2,3 +2,6 @@ build/
 __pycache__/
 *.egg-info/
 scripts/recordings/*/
+
+node_modules/
+dist/

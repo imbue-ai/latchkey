@@ -1,0 +1,139 @@
+/**
+ * Linear service implementation.
+ */
+
+import { randomUUID } from "node:crypto";
+import type { Response, BrowserContext } from "playwright";
+import {
+  ApiCredentialStatus,
+  ApiCredentials,
+  AuthorizationBare,
+} from "../apiCredentials.js";
+import { runCaptured } from "../curl.js";
+import { typeLikeHuman } from "../playwrightUtils.js";
+import { Service, BrowserFollowupServiceSession, LoginFailedError } from "./base.js";
+
+const DEFAULT_TIMEOUT_MS = 8000;
+
+// URL for creating a new personal API key (also used as login URL)
+const LINEAR_NEW_API_KEY_URL =
+  "https://linear.app/imbue/settings/account/security/api-keys/new";
+
+class LinearServiceSession extends BrowserFollowupServiceSession {
+  private isLoggedIn = false;
+
+  onResponse(response: Response): void {
+    if (this.isLoggedIn) {
+      return;
+    }
+
+    const request = response.request();
+    // Empirically, Linear always sends this request. When not logged in,
+    // the response only contains "data.organizationMeta". Otherwise it can
+    // contain different things based on how exactly the user authenticated.
+    if (
+      request.url() === "https://client-api.linear.app/graphql" &&
+      request.method() === "POST"
+    ) {
+      if (response.status() === 200) {
+        try {
+          // Note: response.json() returns a Promise in Playwright
+          response.json().then((jsonData: unknown) => {
+            const data = (jsonData as { data?: Record<string, unknown> })?.data ?? {};
+            if (Object.keys(data).some((key) => key !== "organizationMeta")) {
+              this.isLoggedIn = true;
+            }
+          }).catch(() => {
+            // Ignore JSON parse errors
+          });
+        } catch {
+          // Ignore errors
+        }
+      }
+    }
+  }
+
+  protected isHeadfulLoginComplete(): boolean {
+    return this.isLoggedIn;
+  }
+
+  protected async performBrowserFollowup(
+    context: BrowserContext
+  ): Promise<ApiCredentials | null> {
+    const page = await context.newPage();
+
+    await page.goto(LINEAR_NEW_API_KEY_URL);
+
+    // Fill in the key name
+    const keyName = `Latchkey-${randomUUID().slice(0, 8)}`;
+    const keyNameInput = page.getByRole("textbox", { name: "Key name" });
+    await keyNameInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+    await typeLikeHuman(page, keyNameInput, keyName);
+
+    // Click the Create button
+    const createButton = page.getByRole("button", { name: "Create" });
+    await createButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+    await createButton.click();
+
+    // Wait for and extract the token from span element containing lin_api_ prefix
+    const tokenElement = page.locator("span:text-matches('^lin_api_')");
+    await tokenElement.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+
+    const token = await tokenElement.textContent();
+    if (token === null || token === "") {
+      throw new LoginFailedError("Failed to extract token from Linear.");
+    }
+
+    await page.close();
+
+    return new AuthorizationBare(token);
+  }
+}
+
+export class Linear implements Service {
+  readonly name = "linear";
+  readonly baseApiUrls = ["https://api.linear.app/"] as const;
+  readonly loginUrl = LINEAR_NEW_API_KEY_URL;
+  readonly loginInstructions = null;
+
+  readonly credentialCheckCurlArguments = [
+    "-X",
+    "POST",
+    "-H",
+    "Content-Type: application/json",
+    "-d",
+    '{"query": "{ viewer { id } }"}',
+    "https://api.linear.app/graphql",
+  ] as const;
+
+  getSession(): LinearServiceSession {
+    return new LinearServiceSession(this);
+  }
+
+  checkApiCredentials(apiCredentials: ApiCredentials): ApiCredentialStatus {
+    if (!(apiCredentials instanceof AuthorizationBare)) {
+      return ApiCredentialStatus.Invalid;
+    }
+
+    // Linear uses GraphQL API - check credentials with a simple query
+    const result = runCaptured(
+      [
+        "-s",
+        "-o",
+        "/dev/null",
+        "-w",
+        "%{http_code}",
+        ...apiCredentials.asCurlArguments(),
+        ...this.credentialCheckCurlArguments,
+      ],
+      10
+    );
+
+    if (result.stdout === "200") {
+      return ApiCredentialStatus.Valid;
+    }
+    return ApiCredentialStatus.Invalid;
+  }
+}
+
+export const LINEAR = new Linear();
