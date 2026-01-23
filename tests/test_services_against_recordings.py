@@ -33,7 +33,7 @@ from scripts.record_browser_session import DEFAULT_RECORDING_NAME
 RECORDINGS_DIRECTORY = Path(__file__).parent.parent / "scripts" / "recordings"
 
 # Do not test services that require special followup steps.
-BLACKLIST = ("dropbox",)
+BLACKLIST = ("dropbox", "github", "linear",)
 
 
 class InvalidRecordingError(Exception):
