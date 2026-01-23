@@ -225,37 +225,6 @@ def login(
         "ignore_unknown_options": True,
     },
 )
-def match(
-    context: typer.Context,
-    curl_arguments: Annotated[
-        list[str] | None,
-        typer.Argument(help="Arguments to pass to curl (for URL extraction)."),
-    ] = None,
-) -> None:
-    """Print the name of the service that matches the given curl invocation."""
-    all_arguments = _collect_curl_arguments(curl_arguments, context)
-
-    url = _extract_url_from_curl_arguments(all_arguments)
-    if url is None:
-        typer.echo("Error: Could not extract URL from curl arguments.", err=True)
-        raise typer.Exit(code=1)
-
-    service = REGISTRY.get_by_url(url)
-    if service is None:
-        typer.echo(f"Error: No service matches URL: {url}", err=True)
-        typer.echo("Use 'latchkey services' to see available services.", err=True)
-        raise typer.Exit(code=1)
-
-    typer.echo(service.name)
-
-
-@app.command(
-    context_settings={
-        "allow_extra_args": True,
-        "allow_interspersed_args": False,
-        "ignore_unknown_options": True,
-    },
-)
 def curl(
     context: typer.Context,
     curl_arguments: Annotated[
@@ -271,29 +240,35 @@ def curl(
     latchkey_store = _get_latchkey_store_path()
 
     url = _extract_url_from_curl_arguments(all_arguments)
-    if url is not None:
-        service = REGISTRY.get_by_url(url)
-        if service is not None:
-            api_credentials = None
-            api_credential_store = ApiCredentialStore(path=latchkey_store) if latchkey_store else None
+    if url is None:
+        typer.echo("Error: Could not extract URL from curl arguments.", err=True)
+        raise typer.Exit(code=1)
 
-            if api_credential_store is not None:
-                api_credentials = api_credential_store.get(service.name)
+    service = REGISTRY.get_by_url(url)
+    if service is None:
+        typer.echo(f"Error: No service matches URL: {url}", err=True)
+        raise typer.Exit(code=1)
 
-            if api_credentials is None:
-                browser_state_path = get_browser_state_path()
-                try:
-                    api_credentials = service.get_session().login(browser_state_path=browser_state_path)
-                except LoginCancelledError:
-                    typer.echo("Login cancelled.", err=True)
-                    raise typer.Exit(code=1)
-                except LoginFailedError as error:
-                    typer.echo(str(error), err=True)
-                    raise typer.Exit(code=1)
-                if api_credential_store is not None:
-                    api_credential_store.save(service.name, api_credentials)
+    api_credentials = None
+    api_credential_store = ApiCredentialStore(path=latchkey_store) if latchkey_store else None
 
-            all_arguments = list(api_credentials.as_curl_arguments()) + all_arguments
+    if api_credential_store is not None:
+        api_credentials = api_credential_store.get(service.name)
+
+    if api_credentials is None:
+        browser_state_path = get_browser_state_path()
+        try:
+            api_credentials = service.get_session().login(browser_state_path=browser_state_path)
+        except LoginCancelledError:
+            typer.echo("Login cancelled.", err=True)
+            raise typer.Exit(code=1)
+        except LoginFailedError as error:
+            typer.echo(str(error), err=True)
+            raise typer.Exit(code=1)
+        if api_credential_store is not None:
+            api_credential_store.save(service.name, api_credentials)
+
+    all_arguments = list(api_credentials.as_curl_arguments()) + all_arguments
 
     result = run_curl(all_arguments)
     raise typer.Exit(code=result.returncode)

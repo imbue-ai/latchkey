@@ -53,13 +53,6 @@ Only do this when you notice that your previous call ended up not being authenti
 latchkey services
 ```
 
-### Check if a URL is supported
-```bash
-latchkey match [curl arguments]
-```
-
-(Useful for debugging.)
-
 ## Notes
 
 - All curl arguments are passed through unchanged

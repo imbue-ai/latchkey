@@ -36,9 +36,26 @@ def test_curl_passes_arguments_to_subprocess() -> None:
 
     set_subprocess_runner(mock_runner)
 
-    result = runner.invoke(app, ["curl", "https://example.com"])
+    mock_api_credentials = SlackApiCredentials(token="xoxc-test-token", d_cookie="test-cookie")
 
-    assert captured_args == ["curl", "https://example.com"]
+    with patch("latchkey.cli.REGISTRY") as mock_registry:
+        mock_session = MagicMock()
+        mock_session.login.return_value = mock_api_credentials
+        mock_service = MagicMock()
+        mock_service.name = "slack"
+        mock_service.get_session.return_value = mock_session
+        mock_registry.get_by_url.return_value = mock_service
+
+        result = runner.invoke(app, ["curl", "https://slack.com/api/test"])
+
+    assert captured_args == [
+        "curl",
+        "-H",
+        "Authorization: Bearer xoxc-test-token",
+        "-H",
+        "Cookie: d=test-cookie",
+        "https://slack.com/api/test",
+    ]
     assert result.exit_code == 0
 
 
@@ -52,12 +69,33 @@ def test_curl_passes_multiple_arguments() -> None:
 
     set_subprocess_runner(mock_runner)
 
-    # Use -- to separate curl arguments from latchkey options
-    result = runner.invoke(
-        app, ["curl", "--", "-X", "POST", "-H", "Content-Type: application/json", "https://api.example.com"]
-    )
+    mock_api_credentials = SlackApiCredentials(token="xoxc-test-token", d_cookie="test-cookie")
 
-    assert captured_args == ["curl", "-X", "POST", "-H", "Content-Type: application/json", "https://api.example.com"]
+    with patch("latchkey.cli.REGISTRY") as mock_registry:
+        mock_session = MagicMock()
+        mock_session.login.return_value = mock_api_credentials
+        mock_service = MagicMock()
+        mock_service.name = "slack"
+        mock_service.get_session.return_value = mock_session
+        mock_registry.get_by_url.return_value = mock_service
+
+        # Use -- to separate curl arguments from latchkey options
+        result = runner.invoke(
+            app, ["curl", "--", "-X", "POST", "-H", "Content-Type: application/json", "https://slack.com/api/test"]
+        )
+
+    assert captured_args == [
+        "curl",
+        "-H",
+        "Authorization: Bearer xoxc-test-token",
+        "-H",
+        "Cookie: d=test-cookie",
+        "-X",
+        "POST",
+        "-H",
+        "Content-Type: application/json",
+        "https://slack.com/api/test",
+    ]
     assert result.exit_code == 0
 
 
@@ -69,7 +107,17 @@ def test_curl_returns_subprocess_exit_code() -> None:
 
     set_subprocess_runner(mock_runner)
 
-    result = runner.invoke(app, ["curl", "https://example.com"])
+    mock_api_credentials = SlackApiCredentials(token="xoxc-test-token", d_cookie="test-cookie")
+
+    with patch("latchkey.cli.REGISTRY") as mock_registry:
+        mock_session = MagicMock()
+        mock_session.login.return_value = mock_api_credentials
+        mock_service = MagicMock()
+        mock_service.name = "slack"
+        mock_service.get_session.return_value = mock_session
+        mock_registry.get_by_url.return_value = mock_service
+
+        result = runner.invoke(app, ["curl", "https://slack.com/api/test"])
 
     assert result.exit_code == 42
 
@@ -82,25 +130,27 @@ def test_curl_returns_nonzero_exit_code() -> None:
 
     set_subprocess_runner(mock_runner)
 
-    result = runner.invoke(app, ["curl", "https://example.com"])
+    mock_api_credentials = SlackApiCredentials(token="xoxc-test-token", d_cookie="test-cookie")
+
+    with patch("latchkey.cli.REGISTRY") as mock_registry:
+        mock_session = MagicMock()
+        mock_session.login.return_value = mock_api_credentials
+        mock_service = MagicMock()
+        mock_service.name = "slack"
+        mock_service.get_session.return_value = mock_session
+        mock_registry.get_by_url.return_value = mock_service
+
+        result = runner.invoke(app, ["curl", "https://slack.com/api/test"])
 
     assert result.exit_code == 1
 
 
 def test_curl_with_no_arguments() -> None:
-    """Test curl command with no arguments."""
-    captured_args: list[str] = []
-
-    def mock_runner(args: Sequence[str]) -> subprocess.CompletedProcess[bytes]:
-        captured_args.extend(args)
-        return subprocess.CompletedProcess(args=args, returncode=0)
-
-    set_subprocess_runner(mock_runner)
-
+    """Test curl command with no arguments returns an error."""
     result = runner.invoke(app, ["curl"])
 
-    assert captured_args == ["curl"]
-    assert result.exit_code == 0
+    assert result.exit_code == 1
+    assert "Could not extract URL" in result.stderr
 
 
 def test_curl_with_extra_args_via_context() -> None:
@@ -113,11 +163,21 @@ def test_curl_with_extra_args_via_context() -> None:
 
     set_subprocess_runner(mock_runner)
 
-    result = runner.invoke(app, ["curl", "--", "-v", "https://example.com"])
+    mock_api_credentials = SlackApiCredentials(token="xoxc-test-token", d_cookie="test-cookie")
+
+    with patch("latchkey.cli.REGISTRY") as mock_registry:
+        mock_session = MagicMock()
+        mock_session.login.return_value = mock_api_credentials
+        mock_service = MagicMock()
+        mock_service.name = "slack"
+        mock_service.get_session.return_value = mock_session
+        mock_registry.get_by_url.return_value = mock_service
+
+        result = runner.invoke(app, ["curl", "--", "-v", "https://slack.com/api/test"])
 
     assert "curl" in captured_args
     assert "-v" in captured_args
-    assert "https://example.com" in captured_args
+    assert "https://slack.com/api/test" in captured_args
     assert result.exit_code == 0
 
 
@@ -268,15 +328,7 @@ def test_curl_injects_api_credentials_with_verbose_flag() -> None:
     ]
 
 
-def test_curl_does_not_inject_api_credentials_for_unknown_service() -> None:
-    captured_args: list[str] = []
-
-    def mock_runner(args: Sequence[str]) -> subprocess.CompletedProcess[bytes]:
-        captured_args.extend(args)
-        return subprocess.CompletedProcess(args=args, returncode=0)
-
-    set_subprocess_runner(mock_runner)
-
+def test_curl_returns_error_for_unknown_service() -> None:
     with patch("latchkey.cli.REGISTRY") as mock_registry:
         mock_registry.get_by_url.return_value = None
 
@@ -284,123 +336,16 @@ def test_curl_does_not_inject_api_credentials_for_unknown_service() -> None:
 
         mock_registry.get_by_url.assert_called_once_with("https://unknown-api.example.com")
 
-    assert result.exit_code == 0
-    assert captured_args == ["curl", "https://unknown-api.example.com"]
-
-
-def test_curl_does_not_inject_api_credentials_when_no_url_found() -> None:
-    captured_args: list[str] = []
-
-    def mock_runner(args: Sequence[str]) -> subprocess.CompletedProcess[bytes]:
-        captured_args.extend(args)
-        return subprocess.CompletedProcess(args=args, returncode=0)
-
-    set_subprocess_runner(mock_runner)
-
-    with patch("latchkey.cli.REGISTRY") as mock_registry:
-        result = runner.invoke(app, ["curl", "--", "-X", "POST"])
-
-        mock_registry.get_by_url.assert_not_called()
-
-    assert result.exit_code == 0
-    assert captured_args == ["curl", "-X", "POST"]
-
-
-# Tests for match command
-
-
-def test_match_prints_service_name_for_slack_url() -> None:
-    with patch("latchkey.cli.REGISTRY") as mock_registry:
-        mock_service = MagicMock()
-        mock_service.name = "slack"
-        mock_registry.get_by_url.return_value = mock_service
-
-        result = runner.invoke(app, ["match", "https://slack.com/api/conversations.list"])
-
-        mock_registry.get_by_url.assert_called_once_with("https://slack.com/api/conversations.list")
-
-    assert result.exit_code == 0
-    assert result.stdout.strip() == "slack"
-
-
-def test_match_returns_error_for_unknown_service() -> None:
-    with patch("latchkey.cli.REGISTRY") as mock_registry:
-        mock_registry.get_by_url.return_value = None
-
-        result = runner.invoke(app, ["match", "https://unknown-api.example.com"])
-
-        mock_registry.get_by_url.assert_called_once_with("https://unknown-api.example.com")
-
     assert result.exit_code == 1
     assert "No service matches URL" in result.stderr
     assert "https://unknown-api.example.com" in result.stderr
-    assert "latchkey services" in result.stderr
 
 
-def test_match_returns_error_when_no_url_found() -> None:
-    result = runner.invoke(app, ["match", "--", "-X", "POST"])
-
-    assert result.exit_code == 1
-    assert "Could not extract URL" in result.stderr
-
-
-def test_match_works_with_complex_curl_arguments() -> None:
-    with patch("latchkey.cli.REGISTRY") as mock_registry:
-        mock_service = MagicMock()
-        mock_service.name = "slack"
-        mock_registry.get_by_url.return_value = mock_service
-
-        result = runner.invoke(
-            app,
-            [
-                "match",
-                "--",
-                "-X",
-                "POST",
-                "-H",
-                "Content-Type: application/json",
-                "https://slack.com/api/chat.postMessage",
-            ],
-        )
-
-        mock_registry.get_by_url.assert_called_once_with("https://slack.com/api/chat.postMessage")
-
-    assert result.exit_code == 0
-    assert result.stdout.strip() == "slack"
-
-
-def test_match_with_no_arguments() -> None:
-    result = runner.invoke(app, ["match"])
+def test_curl_returns_error_when_no_url_found() -> None:
+    result = runner.invoke(app, ["curl", "--", "-X", "POST"])
 
     assert result.exit_code == 1
     assert "Could not extract URL" in result.stderr
-
-
-def test_match_works_with_curl_options_without_double_dash() -> None:
-    """Test that match works with curl options like -X without requiring --."""
-    with patch("latchkey.cli.REGISTRY") as mock_registry:
-        mock_service = MagicMock()
-        mock_service.name = "slack"
-        mock_registry.get_by_url.return_value = mock_service
-
-        result = runner.invoke(
-            app,
-            [
-                "match",
-                "-X",
-                "POST",
-                "https://slack.com/api/conversations.create",
-                "-H",
-                "Content-Type: application/json",
-                "-d",
-                '{"name":"test-conversation"}',
-            ],
-        )
-
-        mock_registry.get_by_url.assert_called_once_with("https://slack.com/api/conversations.create")
-
-    assert result.exit_code == 0
-    assert result.stdout.strip() == "slack"
 
 
 # Tests for curl with LATCHKEY_STORE environment variable
