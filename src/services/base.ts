@@ -5,7 +5,7 @@
 import { existsSync } from 'node:fs';
 import type { Browser, BrowserContext, Page, Response } from 'playwright';
 import { ApiCredentialStatus, ApiCredentials } from '../apiCredentials.js';
-import { showSpinnerOverlay } from '../playwrightUtils.js';
+import { showSpinnerPage } from '../playwrightUtils.js';
 
 export class LoginCancelledError extends Error {
   constructor(message = 'Login was cancelled because the browser was closed.') {
@@ -264,7 +264,7 @@ export abstract class BrowserFollowupServiceSession extends ServiceSession {
     _browser: Browser,
     context: BrowserContext
   ): Promise<ApiCredentials | null> {
-    await showSpinnerOverlay(context);
+    await showSpinnerPage(context);
     return this.performBrowserFollowup(context);
   }
 }

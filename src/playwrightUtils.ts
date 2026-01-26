@@ -76,7 +76,7 @@ const SPINNER_OVERLAY_SCRIPT = `
  * Show a spinner overlay that hides page content from the user.
  * The overlay persists across page navigations within the browser context.
  */
-export async function showSpinnerOverlay(context: BrowserContext): Promise<void> {
+export async function showSpinnerPage(context: BrowserContext): Promise<void> {
   const spinnerPage = await context.newPage();
   await spinnerPage.evaluate(SPINNER_OVERLAY_SCRIPT);
   await spinnerPage.bringToFront();
