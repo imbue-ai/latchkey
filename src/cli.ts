@@ -25,7 +25,7 @@ function filterPassthroughFlags(args: string[]): string[] {
   return args.filter((arg) => !CURL_PASSTHROUGH_FLAGS.has(arg));
 }
 
-function extractUrlFromCurlArguments(args: string[]): string | null {
+export function extractUrlFromCurlArguments(args: string[]): string | null {
   const filteredArgs = filterPassthroughFlags(args);
 
   // Simple URL extraction: look for arguments that look like URLs
@@ -287,4 +287,7 @@ program
     process.exit(result.returncode);
   });
 
-program.parse();
+// Only run when executed directly, not when imported
+if (process.argv[1]?.endsWith('cli.js') || process.argv[1]?.endsWith('cli.ts')) {
+  program.parse();
+}
