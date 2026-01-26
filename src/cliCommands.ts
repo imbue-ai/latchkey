@@ -14,7 +14,6 @@ import type { CurlResult } from './curl.js';
 import { Registry, REGISTRY } from './registry.js';
 import { LoginCancelledError, LoginFailedError } from './services/index.js';
 import { run as curlRun } from './curl.js';
- 
 
 const LATCHKEY_STORE_ENV_VAR = 'LATCHKEY_STORE';
 
@@ -39,7 +38,6 @@ export interface CliDependencies {
  * Default implementation of CLI dependencies.
  */
 export function createDefaultDependencies(): CliDependencies {
-
   return {
     registry: REGISTRY,
     runCurl: curlRun,

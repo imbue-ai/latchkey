@@ -4,6 +4,12 @@
 
 import { spawnSync, SpawnSyncReturns } from 'node:child_process';
 
+const LATCHKEY_CURL_PATH_ENV_VAR = 'LATCHKEY_CURL_PATH';
+
+function getCurlPath(): string {
+  return process.env[LATCHKEY_CURL_PATH_ENV_VAR] ?? 'curl';
+}
+
 export interface CurlResult {
   readonly returncode: number;
   readonly stdout: string;
@@ -21,7 +27,7 @@ export type SubprocessRunner = (args: readonly string[]) => CurlResult;
 export type CapturingSubprocessRunner = (args: readonly string[], timeout: number) => CurlResult;
 
 function defaultSubprocessRunner(args: readonly string[]): CurlResult {
-  const result: SpawnSyncReturns<Buffer> = spawnSync('curl', args as string[], {
+  const result: SpawnSyncReturns<Buffer> = spawnSync(getCurlPath(), args as string[], {
     stdio: ['inherit', 'inherit', 'inherit'],
   });
   return {
@@ -32,7 +38,7 @@ function defaultSubprocessRunner(args: readonly string[]): CurlResult {
 }
 
 function defaultCapturingSubprocessRunner(args: readonly string[], timeout: number): CurlResult {
-  const result: SpawnSyncReturns<string> = spawnSync('curl', args as string[], {
+  const result: SpawnSyncReturns<string> = spawnSync(getCurlPath(), args as string[], {
     encoding: 'utf-8',
     timeout: timeout * 1000,
   });
