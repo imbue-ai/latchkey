@@ -46,6 +46,7 @@ const SPINNER_OVERLAY_SCRIPT = `
         align-items: center;
         z-index: 2147483647;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        pointer-events: none;
       }
       #latchkey-spinner-overlay .spinner {
         width: 50px;
