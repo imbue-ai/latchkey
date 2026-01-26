@@ -32,6 +32,23 @@ interface StoredCredentials {
   [key: string]: unknown;
 }
 
+function getCliPath(): string {
+  const projectRoot = join(__dirname, '..');
+  // Check both possible paths based on tsconfig setup
+  const pathWithSrc = join(projectRoot, 'dist', 'src', 'cli.js');
+  const pathWithoutSrc = join(projectRoot, 'dist', 'cli.js');
+
+  if (existsSync(pathWithSrc)) {
+    return pathWithSrc;
+  }
+  if (existsSync(pathWithoutSrc)) {
+    return pathWithoutSrc;
+  }
+  throw new Error(
+    `CLI not found. Run 'npm run build' first. Checked:\n  ${pathWithSrc}\n  ${pathWithoutSrc}`
+  );
+}
+
 function runCli(args: string[], env: Record<string, string> = {}): CliResult {
   const options: ExecSyncOptionsWithStringEncoding = {
     cwd: join(__dirname, '..'),
@@ -41,7 +58,8 @@ function runCli(args: string[], env: Record<string, string> = {}): CliResult {
   };
 
   try {
-    const stdout = execSync(`node dist/src/cli.js ${args.join(' ')}`, options);
+    const cliPath = getCliPath();
+    const stdout = execSync(`node ${cliPath} ${args.join(' ')}`, options);
     return { exitCode: 0, stdout, stderr: '' };
   } catch (error) {
     const execError = error as ExecError;
