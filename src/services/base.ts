@@ -179,7 +179,7 @@ export abstract class ServiceSession {
     });
 
     try {
-      await this.showLoginInstructions(page);
+      // await this.showLoginInstructions(page);
       await page.goto(this.service.loginUrl);
       await this.waitForHeadfulLoginComplete(page);
     } catch (error: unknown) {
