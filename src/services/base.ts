@@ -2,10 +2,8 @@
  * Base classes and interfaces for service implementations.
  */
 
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { mkdtempSync, rmSync, existsSync } from 'node:fs';
-import type { BrowserContext, Page, Response, BrowserType } from 'playwright';
+import { existsSync } from 'node:fs';
+import type { Browser, BrowserContext, Page, Response } from 'playwright';
 import { ApiCredentialStatus, ApiCredentials } from '../apiCredentials.js';
 
 export class LoginCancelledError extends Error {
@@ -69,9 +67,12 @@ export abstract class ServiceSession {
 
   /**
    * Finalize credentials after the headful login phase.
-   * May launch a headless browser for additional actions.
+   * Receives the browser and context from the login phase, which are still open.
    */
-  protected abstract finalizeCredentials(chromium: BrowserType): Promise<ApiCredentials | null>;
+  protected abstract finalizeCredentials(
+    browser: Browser,
+    context: BrowserContext
+  ): Promise<ApiCredentials | null>;
 
   /**
    * Wait until the headful browser login phase is complete.
@@ -197,15 +198,18 @@ export abstract class ServiceSession {
     }
 
     await this.onHeadfulLoginComplete(context);
-    await browser.close();
 
-    const apiCredentials = await this.finalizeCredentials(chromiumBrowser);
+    try {
+      const apiCredentials = await this.finalizeCredentials(browser, context);
 
-    if (apiCredentials === null) {
-      throw new LoginFailedError();
+      if (apiCredentials === null) {
+        throw new LoginFailedError();
+      }
+
+      return apiCredentials;
+    } finally {
+      await browser.close();
     }
-
-    return apiCredentials;
   }
 }
 
@@ -231,74 +235,34 @@ export abstract class SimpleServiceSession extends ServiceSession {
     return this.apiCredentials !== null;
   }
 
-  protected finalizeCredentials(_chromium: BrowserType): Promise<ApiCredentials | null> {
+  protected finalizeCredentials(
+    _browser: Browser,
+    _context: BrowserContext
+  ): Promise<ApiCredentials | null> {
     return Promise.resolve(this.apiCredentials);
   }
 }
 
 /**
- * Service session that requires a headless browser followup to finalize credentials.
+ * Service session that requires a browser followup to finalize credentials.
  *
- * The headful login phase captures login state. After the headful browser closes,
- * a headless browser is launched with the same state to perform additional actions
+ * The headful login phase captures login state. After login completes,
+ * the same browser session is reused to perform additional actions
  * (e.g., navigating to settings and creating an API key).
  */
 export abstract class BrowserFollowupServiceSession extends ServiceSession {
-  protected temporaryStatePath: string | null = null;
-  private temporaryDirectory: string | null = null;
-
   /**
-   * Perform actions in a headless browser to finalize and extract API credentials.
+   * Perform actions in the browser to finalize and extract API credentials.
+   * This runs in the same browser session used for login.
    */
   protected abstract performBrowserFollowup(
     context: BrowserContext
   ): Promise<ApiCredentials | null>;
 
-  override async login(browserStatePath: string | null): Promise<ApiCredentials> {
-    // Create temporary directory for browser state
-    this.temporaryDirectory = mkdtempSync(join(tmpdir(), 'latchkey-'));
-    this.temporaryStatePath = join(this.temporaryDirectory, 'browser_state.json');
-
-    try {
-      return await super.login(browserStatePath);
-    } finally {
-      // Clean up temporary directory
-      if (this.temporaryDirectory) {
-        rmSync(this.temporaryDirectory, { recursive: true, force: true });
-      }
-    }
-  }
-
-  protected override async onHeadfulLoginComplete(context: BrowserContext): Promise<void> {
-    if (this.temporaryStatePath !== null) {
-      await context.storageState({ path: this.temporaryStatePath });
-    }
-  }
-
   protected override async finalizeCredentials(
-    chromium: BrowserType
+    _browser: Browser,
+    context: BrowserContext
   ): Promise<ApiCredentials | null> {
-    if (this.temporaryStatePath === null || !existsSync(this.temporaryStatePath)) {
-      return null;
-    }
-
-    const browser = await chromium.launch({ headless: true });
-    const context = await browser.newContext({
-      storageState: this.temporaryStatePath,
-    });
-
-    try {
-      const apiCredentials = await this.performBrowserFollowup(context);
-      return apiCredentials;
-    } catch (error: unknown) {
-      if (error instanceof LoginFailedError) {
-        throw error;
-      }
-      throw new LoginFailedError(
-        `Login failed: ${error instanceof Error ? error.message : String(error)}`
-      );
-    } finally {
-      await browser.close();
-    }
+    return this.performBrowserFollowup(context);
   }
 }
