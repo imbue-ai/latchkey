@@ -90,7 +90,6 @@ latchkey clear
 1. Clone this repository to your local machine.
 2. Enter the repository's directory.
 3. `npm install -g .`
-4. `npx playwright install chromium`
 
 ## Tests
 
