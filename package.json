@@ -6,7 +6,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "latchkey": "./dist/cli.js"
+    "latchkey": "./dist/src/cli.js"
   },
   "scripts": {
     "build": "tsc",
