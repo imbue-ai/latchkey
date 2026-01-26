@@ -2,7 +2,7 @@
  * Playwright utility functions for browser automation.
  */
 
-import type { BrowserContext, CDPSession, Page, Locator } from 'playwright';
+import type { BrowserContext, Page, Locator } from 'playwright';
 
 // Typing delay range in milliseconds (min, max) to simulate human-like typing
 const TYPING_DELAY_MIN_MS = 30;
@@ -26,28 +26,57 @@ export async function typeLikeHuman(page: Page, locator: Locator, text: string):
 }
 
 /**
- * Minimize the browser window using CDP.
- * Only works for Chromium-based browsers.
+ * Show a spinner overlay that hides page content from the user.
+ * Used during automated browser followup actions.
  */
-export async function minimizeBrowserWindow(context: BrowserContext): Promise<void> {
+export async function showSpinnerOverlay(context: BrowserContext): Promise<void> {
   const page = context.pages()[0];
   if (!page) {
     return;
   }
 
-  let cdpSession: CDPSession | null = null;
-  try {
-    cdpSession = await context.newCDPSession(page);
-    const { windowId } = await cdpSession.send('Browser.getWindowForTarget');
-    await cdpSession.send('Browser.setWindowBounds', {
-      windowId,
-      bounds: { windowState: 'minimized' },
-    });
-  } catch {
-    // Silently ignore if CDP is not available (e.g., non-Chromium browsers)
-  } finally {
-    if (cdpSession) {
-      await cdpSession.detach();
-    }
-  }
+  // This code runs in the browser context via Playwright, not in Node.js
+  await page.evaluate(`
+    (() => {
+      const overlay = document.createElement('div');
+      overlay.id = 'latchkey-spinner-overlay';
+      overlay.innerHTML = \`
+        <style>
+          #latchkey-spinner-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #f5f5f5;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 2147483647;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          }
+          #latchkey-spinner-overlay .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid #e0e0e0;
+            border-top-color: #007bff;
+            border-radius: 50%;
+            animation: latchkey-spin 1s linear infinite;
+          }
+          #latchkey-spinner-overlay .message {
+            margin-top: 20px;
+            color: #555;
+            font-size: 16px;
+          }
+          @keyframes latchkey-spin {
+            to { transform: rotate(360deg); }
+          }
+        </style>
+        <div class="spinner"></div>
+        <div class="message">Finalizing credentials...</div>
+      \`;
+      document.body.appendChild(overlay);
+    })()
+  `);
 }
