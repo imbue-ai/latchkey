@@ -16,3 +16,11 @@ npm run typecheck
 # Install as CLI
 pm install && npm run build && npm link
 ```
+
+## Useful commands
+
+```
+npm run lint
+npm run lint:fix
+npm run format
+```

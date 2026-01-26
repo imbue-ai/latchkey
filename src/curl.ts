@@ -2,7 +2,7 @@
  * Curl subprocess utilities.
  */
 
-import { spawnSync, SpawnSyncReturns } from "node:child_process";
+import { spawnSync, SpawnSyncReturns } from 'node:child_process';
 
 export interface CurlResult {
   readonly returncode: number;
@@ -18,40 +18,33 @@ export type SubprocessRunner = (args: readonly string[]) => CurlResult;
 /**
  * Type for the capturing subprocess runner function (captures output).
  */
-export type CapturingSubprocessRunner = (
-  args: readonly string[],
-  timeout: number
-) => CurlResult;
+export type CapturingSubprocessRunner = (args: readonly string[], timeout: number) => CurlResult;
 
 function defaultSubprocessRunner(args: readonly string[]): CurlResult {
-  const result: SpawnSyncReturns<Buffer> = spawnSync("curl", args as string[], {
-    stdio: ["inherit", "inherit", "inherit"],
+  const result: SpawnSyncReturns<Buffer> = spawnSync('curl', args as string[], {
+    stdio: ['inherit', 'inherit', 'inherit'],
   });
   return {
     returncode: result.status ?? 1,
-    stdout: "",
-    stderr: "",
+    stdout: '',
+    stderr: '',
   };
 }
 
-function defaultCapturingSubprocessRunner(
-  args: readonly string[],
-  timeout: number
-): CurlResult {
-  const result: SpawnSyncReturns<string> = spawnSync("curl", args as string[], {
-    encoding: "utf-8",
+function defaultCapturingSubprocessRunner(args: readonly string[], timeout: number): CurlResult {
+  const result: SpawnSyncReturns<string> = spawnSync('curl', args as string[], {
+    encoding: 'utf-8',
     timeout: timeout * 1000,
   });
   return {
     returncode: result.status ?? 1,
-    stdout: result.stdout ?? "",
-    stderr: result.stderr ?? "",
+    stdout: result.stdout ?? '',
+    stderr: result.stderr ?? '',
   };
 }
 
 let subprocessRunner: SubprocessRunner = defaultSubprocessRunner;
-let capturingSubprocessRunner: CapturingSubprocessRunner =
-  defaultCapturingSubprocessRunner;
+let capturingSubprocessRunner: CapturingSubprocessRunner = defaultCapturingSubprocessRunner;
 
 export function setSubprocessRunner(runner: SubprocessRunner): void {
   subprocessRunner = runner;
@@ -61,9 +54,7 @@ export function resetSubprocessRunner(): void {
   subprocessRunner = defaultSubprocessRunner;
 }
 
-export function setCapturingSubprocessRunner(
-  runner: CapturingSubprocessRunner
-): void {
+export function setCapturingSubprocessRunner(runner: CapturingSubprocessRunner): void {
   capturingSubprocessRunner = runner;
 }
 
@@ -81,9 +72,6 @@ export function run(args: readonly string[]): CurlResult {
 /**
  * Run curl with output capture (for credential checking).
  */
-export function runCaptured(
-  args: readonly string[],
-  timeout: number = 10
-): CurlResult {
+export function runCaptured(args: readonly string[], timeout: number = 10): CurlResult {
   return capturingSubprocessRunner(args, timeout);
 }

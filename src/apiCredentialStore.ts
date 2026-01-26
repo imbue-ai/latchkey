@@ -2,19 +2,19 @@
  * API credential store for persisting and loading API credentials.
  */
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
-import { dirname } from "node:path";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { dirname } from 'node:path';
 import {
   ApiCredentials,
   ApiCredentialsSchema,
   deserializeCredentials,
   serializeCredentials,
-} from "./apiCredentials.js";
+} from './apiCredentials.js';
 
 export class ApiCredentialStoreError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "ApiCredentialStoreError";
+    this.name = 'ApiCredentialStoreError';
   }
 }
 
@@ -32,7 +32,7 @@ export class ApiCredentialStore {
       return {};
     }
     try {
-      const content = readFileSync(this.path, "utf-8");
+      const content = readFileSync(this.path, 'utf-8');
       return JSON.parse(content) as StoreData;
     } catch (error) {
       throw new ApiCredentialStoreError(
@@ -47,7 +47,7 @@ export class ApiCredentialStore {
       mkdirSync(dir, { recursive: true });
     }
     try {
-      writeFileSync(this.path, JSON.stringify(data, null, 2), "utf-8");
+      writeFileSync(this.path, JSON.stringify(data, null, 2), 'utf-8');
     } catch (error) {
       throw new ApiCredentialStoreError(
         `Failed to write credential store: ${error instanceof Error ? error.message : String(error)}`

@@ -15,47 +15,35 @@
  *   npx tsx scripts/recordBrowserSession.ts discord custom_session.json
  */
 
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { chromium, Response } from "playwright";
-import { getBrowserStatePath } from "../src/browserState.js";
-import { REGISTRY } from "../src/registry.js";
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { chromium, Response } from 'playwright';
+import { getBrowserStatePath } from '../src/browserState.js';
+import { REGISTRY } from '../src/registry.js';
 
 // Get the directory of this file
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Recordings directory relative to this script
-const RECORDINGS_DIRECTORY = resolve(__dirname, "recordings");
+const RECORDINGS_DIRECTORY = resolve(__dirname, 'recordings');
 
 // Default recording filename
-const DEFAULT_RECORDING_NAME = "login_session.json";
+const DEFAULT_RECORDING_NAME = 'login_session.json';
 
 class UnknownServiceError extends Error {
   constructor(serviceName: string) {
     super(`Unknown service: ${serviceName}`);
-    this.name = "UnknownServiceError";
+    this.name = 'UnknownServiceError';
   }
 }
 
 // Resource types to skip (CSS, images, fonts, multimedia)
-const SKIPPED_RESOURCE_TYPES = new Set([
-  "stylesheet",
-  "image",
-  "media",
-  "font",
-]);
+const SKIPPED_RESOURCE_TYPES = new Set(['stylesheet', 'image', 'media', 'font']);
 
 // Common multi-part TLDs
-const MULTI_PART_TLDS = new Set([
-  "co.uk",
-  "com.au",
-  "co.nz",
-  "co.jp",
-  "com.br",
-  "co.in",
-]);
+const MULTI_PART_TLDS = new Set(['co.uk', 'com.au', 'co.nz', 'co.jp', 'com.br', 'co.in']);
 
 interface RequestData {
   timestamp_ms: number;
@@ -91,22 +79,22 @@ function extractBaseDomain(url: string): string {
   try {
     hostname = new URL(url).hostname;
   } catch {
-    return "";
+    return '';
   }
 
   // Split the hostname into parts
-  const parts = hostname.split(".");
+  const parts = hostname.split('.');
 
   // Handle common multi-part TLDs (e.g., co.uk, com.au)
   if (parts.length >= 3) {
-    const potentialTld = parts.slice(-2).join(".");
+    const potentialTld = parts.slice(-2).join('.');
     if (MULTI_PART_TLDS.has(potentialTld)) {
-      return parts.slice(-3).join(".");
+      return parts.slice(-3).join('.');
     }
   }
 
   if (parts.length >= 2) {
-    return parts.slice(-2).join(".");
+    return parts.slice(-2).join('.');
   }
 
   return hostname;
@@ -122,7 +110,7 @@ function isSameBaseDomain(requestUrl: string, baseDomain: string): boolean {
   } catch {
     return false;
   }
-  return requestHostname === baseDomain || requestHostname.endsWith("." + baseDomain);
+  return requestHostname === baseDomain || requestHostname.endsWith('.' + baseDomain);
 }
 
 /**
@@ -231,7 +219,7 @@ async function record(
   const page = await context.newPage();
 
   // Register response handler to capture all requests and responses
-  page.on("response", (response) => {
+  page.on('response', (response) => {
     handleResponse(response, recordedEntries, startTime, baseDomain).catch(() => {
       // Ignore errors in response handling
     });
@@ -242,7 +230,7 @@ async function record(
   // Wait for user to close the browser
   try {
     // This will block until the page/context is closed
-    await page.waitForEvent("close", { timeout: 0 });
+    await page.waitForEvent('close', { timeout: 0 });
   } catch {
     // Browser was closed, this is expected
   }
@@ -262,7 +250,7 @@ async function record(
   // Save recorded entries
   writeFileSync(requestsPath, JSON.stringify(recordedEntries, null, 2));
 
-  console.log("\nRecording saved successfully!");
+  console.log('\nRecording saved successfully!');
   console.log(`  Requests file: ${requestsPath}`);
   console.log(`  Recorded ${recordedEntries.length} request/response pairs`);
 }
@@ -271,16 +259,18 @@ async function record(
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
-  if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
-    console.log("Usage: npx tsx scripts/recordBrowserSession.ts <service_name> [recording_name]");
-    console.log("");
-    console.log("Arguments:");
-    console.log("  service_name    Name of the service to record login for (e.g., 'slack', 'discord')");
-    console.log("  recording_name  Name of the recording file (default: login_session.json)");
-    console.log("");
-    console.log("Examples:");
-    console.log("  npx tsx scripts/recordBrowserSession.ts slack");
-    console.log("  npx tsx scripts/recordBrowserSession.ts discord custom_session.json");
+  if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
+    console.log('Usage: npx tsx scripts/recordBrowserSession.ts <service_name> [recording_name]');
+    console.log('');
+    console.log('Arguments:');
+    console.log(
+      "  service_name    Name of the service to record login for (e.g., 'slack', 'discord')"
+    );
+    console.log('  recording_name  Name of the recording file (default: login_session.json)');
+    console.log('');
+    console.log('Examples:');
+    console.log('  npx tsx scripts/recordBrowserSession.ts slack');
+    console.log('  npx tsx scripts/recordBrowserSession.ts discord custom_session.json');
     process.exit(0);
   }
 
@@ -292,7 +282,7 @@ async function main(): Promise<void> {
   } catch (error) {
     if (error instanceof UnknownServiceError) {
       console.error(`Error: ${error.message}`);
-      console.error("Available services:");
+      console.error('Available services:');
       for (const service of REGISTRY.services) {
         console.error(`  - ${service.name}`);
       }

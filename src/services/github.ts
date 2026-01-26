@@ -2,41 +2,37 @@
  * GitHub service implementation.
  */
 
-import type { Response, BrowserContext } from "playwright";
-import {
-  ApiCredentialStatus,
-  ApiCredentials,
-  AuthorizationBearer,
-} from "../apiCredentials.js";
-import { runCaptured } from "../curl.js";
-import { typeLikeHuman } from "../playwrightUtils.js";
-import { Service, BrowserFollowupServiceSession, LoginFailedError } from "./base.js";
+import type { Response, BrowserContext } from 'playwright';
+import { ApiCredentialStatus, ApiCredentials, AuthorizationBearer } from '../apiCredentials.js';
+import { runCaptured } from '../curl.js';
+import { typeLikeHuman } from '../playwrightUtils.js';
+import { Service, BrowserFollowupServiceSession, LoginFailedError } from './base.js';
 
 const DEFAULT_TIMEOUT_MS = 8000;
 
 // URL for creating a new personal access token (also used as login URL to trigger sudo)
-const GITHUB_NEW_TOKEN_URL = "https://github.com/settings/tokens/new";
+const GITHUB_NEW_TOKEN_URL = 'https://github.com/settings/tokens/new';
 
 // GitHub personal access token scopes to enable
 const GITHUB_TOKEN_SCOPES = [
-  "repo",
-  "workflow",
-  "write:packages",
-  "delete:packages",
-  "gist",
-  "notifications",
-  "admin:org",
-  "admin:repo_hook",
-  "admin:org_hook",
-  "user",
-  "delete_repo",
-  "write:discussion",
-  "admin:enterprise",
-  "read:audit_log",
-  "codespace",
-  "copilot",
-  "write:network_configurations",
-  "project",
+  'repo',
+  'workflow',
+  'write:packages',
+  'delete:packages',
+  'gist',
+  'notifications',
+  'admin:org',
+  'admin:repo_hook',
+  'admin:org_hook',
+  'user',
+  'delete_repo',
+  'write:discussion',
+  'admin:enterprise',
+  'read:audit_log',
+  'codespace',
+  'copilot',
+  'write:network_configurations',
+  'project',
 ] as const;
 
 class GithubServiceSession extends BrowserFollowupServiceSession {
@@ -60,9 +56,7 @@ class GithubServiceSession extends BrowserFollowupServiceSession {
     return this.isLoggedIn;
   }
 
-  protected async performBrowserFollowup(
-    context: BrowserContext
-  ): Promise<ApiCredentials | null> {
+  protected async performBrowserFollowup(context: BrowserContext): Promise<ApiCredentials | null> {
     const page = await context.newPage();
 
     await page.goto(GITHUB_NEW_TOKEN_URL);
@@ -70,13 +64,11 @@ class GithubServiceSession extends BrowserFollowupServiceSession {
     // Add a note for the token
     const noteInput = page.locator('//*[@id="oauth_access_description"]');
     await noteInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-    await typeLikeHuman(page, noteInput, "Latchkey");
+    await typeLikeHuman(page, noteInput, 'Latchkey');
 
     // Enable all necessary scopes
     for (const scope of GITHUB_TOKEN_SCOPES) {
-      const checkbox = page.locator(
-        `input[name="oauth_access[scopes][]"][value="${scope}"]`
-      );
+      const checkbox = page.locator(`input[name="oauth_access[scopes][]"][value="${scope}"]`);
       if (await checkbox.isVisible()) {
         await checkbox.check();
       }
@@ -94,8 +86,8 @@ class GithubServiceSession extends BrowserFollowupServiceSession {
     await tokenElement.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
 
     const token = await tokenElement.textContent();
-    if (token === null || token === "") {
-      throw new LoginFailedError("Failed to extract token from GitHub.");
+    if (token === null || token === '') {
+      throw new LoginFailedError('Failed to extract token from GitHub.');
     }
 
     await page.close();
@@ -105,12 +97,12 @@ class GithubServiceSession extends BrowserFollowupServiceSession {
 }
 
 export class Github implements Service {
-  readonly name = "github";
-  readonly baseApiUrls = ["https://api.github.com/"] as const;
+  readonly name = 'github';
+  readonly baseApiUrls = ['https://api.github.com/'] as const;
   readonly loginUrl = GITHUB_NEW_TOKEN_URL;
   readonly loginInstructions = null;
 
-  readonly credentialCheckCurlArguments = ["https://api.github.com/user"] as const;
+  readonly credentialCheckCurlArguments = ['https://api.github.com/user'] as const;
 
   getSession(): GithubServiceSession {
     return new GithubServiceSession(this);
@@ -123,18 +115,18 @@ export class Github implements Service {
 
     const result = runCaptured(
       [
-        "-s",
-        "-o",
-        "/dev/null",
-        "-w",
-        "%{http_code}",
+        '-s',
+        '-o',
+        '/dev/null',
+        '-w',
+        '%{http_code}',
         ...apiCredentials.asCurlArguments(),
         ...this.credentialCheckCurlArguments,
       ],
       10
     );
 
-    if (result.stdout === "200") {
+    if (result.stdout === '200') {
       return ApiCredentialStatus.Valid;
     }
     return ApiCredentialStatus.Invalid;

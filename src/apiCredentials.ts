@@ -2,12 +2,12 @@
  * API credentials types and utilities for authentication with various services.
  */
 
-import { z } from "zod";
+import { z } from 'zod';
 
 export enum ApiCredentialStatus {
-  Missing = "missing",
-  Valid = "valid",
-  Invalid = "invalid",
+  Missing = 'missing',
+  Valid = 'valid',
+  Invalid = 'invalid',
 }
 
 /**
@@ -23,14 +23,14 @@ export interface ApiCredentials {
  * Bearer token authentication (Authorization: Bearer <token>).
  */
 export const AuthorizationBearerSchema = z.object({
-  objectType: z.literal("authorization_bearer"),
+  objectType: z.literal('authorization_bearer'),
   token: z.string(),
 });
 
 export type AuthorizationBearerData = z.infer<typeof AuthorizationBearerSchema>;
 
 export class AuthorizationBearer implements ApiCredentials {
-  readonly objectType = "authorization_bearer" as const;
+  readonly objectType = 'authorization_bearer' as const;
   readonly token: string;
 
   constructor(token: string) {
@@ -38,7 +38,7 @@ export class AuthorizationBearer implements ApiCredentials {
   }
 
   asCurlArguments(): readonly string[] {
-    return ["-H", `Authorization: Bearer ${this.token}`];
+    return ['-H', `Authorization: Bearer ${this.token}`];
   }
 
   toJSON(): AuthorizationBearerData {
@@ -57,14 +57,14 @@ export class AuthorizationBearer implements ApiCredentials {
  * Raw authorization header (Authorization: <token>).
  */
 export const AuthorizationBareSchema = z.object({
-  objectType: z.literal("authorization_bare"),
+  objectType: z.literal('authorization_bare'),
   token: z.string(),
 });
 
 export type AuthorizationBareData = z.infer<typeof AuthorizationBareSchema>;
 
 export class AuthorizationBare implements ApiCredentials {
-  readonly objectType = "authorization_bare" as const;
+  readonly objectType = 'authorization_bare' as const;
   readonly token: string;
 
   constructor(token: string) {
@@ -72,7 +72,7 @@ export class AuthorizationBare implements ApiCredentials {
   }
 
   asCurlArguments(): readonly string[] {
-    return ["-H", `Authorization: ${this.token}`];
+    return ['-H', `Authorization: ${this.token}`];
   }
 
   toJSON(): AuthorizationBareData {
@@ -91,7 +91,7 @@ export class AuthorizationBare implements ApiCredentials {
  * Slack-specific credentials (token + d cookie).
  */
 export const SlackApiCredentialsSchema = z.object({
-  objectType: z.literal("slack"),
+  objectType: z.literal('slack'),
   token: z.string(),
   dCookie: z.string(),
 });
@@ -99,7 +99,7 @@ export const SlackApiCredentialsSchema = z.object({
 export type SlackApiCredentialsData = z.infer<typeof SlackApiCredentialsSchema>;
 
 export class SlackApiCredentials implements ApiCredentials {
-  readonly objectType = "slack" as const;
+  readonly objectType = 'slack' as const;
   readonly token: string;
   readonly dCookie: string;
 
@@ -109,12 +109,7 @@ export class SlackApiCredentials implements ApiCredentials {
   }
 
   asCurlArguments(): readonly string[] {
-    return [
-      "-H",
-      `Authorization: Bearer ${this.token}`,
-      "-H",
-      `Cookie: d=${this.dCookie}`,
-    ];
+    return ['-H', `Authorization: Bearer ${this.token}`, '-H', `Cookie: d=${this.dCookie}`];
   }
 
   toJSON(): SlackApiCredentialsData {
@@ -133,7 +128,7 @@ export class SlackApiCredentials implements ApiCredentials {
 /**
  * Union schema for all credential types.
  */
-export const ApiCredentialsSchema = z.discriminatedUnion("objectType", [
+export const ApiCredentialsSchema = z.discriminatedUnion('objectType', [
   AuthorizationBearerSchema,
   AuthorizationBareSchema,
   SlackApiCredentialsSchema,
@@ -146,11 +141,11 @@ export type ApiCredentialsData = z.infer<typeof ApiCredentialsSchema>;
  */
 export function deserializeCredentials(data: ApiCredentialsData): ApiCredentials {
   switch (data.objectType) {
-    case "authorization_bearer":
+    case 'authorization_bearer':
       return AuthorizationBearer.fromJSON(data);
-    case "authorization_bare":
+    case 'authorization_bare':
       return AuthorizationBare.fromJSON(data);
-    case "slack":
+    case 'slack':
       return SlackApiCredentials.fromJSON(data);
     default:
       throw new ApiCredentialsSerializationError(
@@ -162,9 +157,7 @@ export function deserializeCredentials(data: ApiCredentialsData): ApiCredentials
 /**
  * Serialize credentials to JSON data.
  */
-export function serializeCredentials(
-  credentials: ApiCredentials
-): ApiCredentialsData {
+export function serializeCredentials(credentials: ApiCredentials): ApiCredentialsData {
   if (credentials instanceof AuthorizationBearer) {
     return credentials.toJSON();
   }
@@ -174,14 +167,12 @@ export function serializeCredentials(
   if (credentials instanceof SlackApiCredentials) {
     return credentials.toJSON();
   }
-  throw new ApiCredentialsSerializationError(
-    `Unknown credential type: ${credentials.objectType}`
-  );
+  throw new ApiCredentialsSerializationError(`Unknown credential type: ${credentials.objectType}`);
 }
 
 export class ApiCredentialsSerializationError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "ApiCredentialsSerializationError";
+    this.name = 'ApiCredentialsSerializationError';
   }
 }

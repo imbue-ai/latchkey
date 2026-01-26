@@ -4,22 +4,22 @@
  * Command-line interface for latchkey.
  */
 
-import { program } from "commander";
-import { existsSync, unlinkSync } from "node:fs";
-import { homedir } from "node:os";
-import { resolve } from "node:path";
-import { createInterface } from "node:readline";
-import { ApiCredentialStore } from "./apiCredentialStore.js";
-import { ApiCredentialStatus } from "./apiCredentials.js";
-import { getBrowserStatePath } from "./browserState.js";
-import { run as runCurl } from "./curl.js";
-import { REGISTRY } from "./registry.js";
-import { LoginCancelledError, LoginFailedError } from "./services/index.js";
+import { program } from 'commander';
+import { existsSync, unlinkSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { resolve } from 'node:path';
+import { createInterface } from 'node:readline';
+import { ApiCredentialStore } from './apiCredentialStore.js';
+import { ApiCredentialStatus } from './apiCredentials.js';
+import { getBrowserStatePath } from './browserState.js';
+import { run as runCurl } from './curl.js';
+import { REGISTRY } from './registry.js';
+import { LoginCancelledError, LoginFailedError } from './services/index.js';
 
-const LATCHKEY_STORE_ENV_VAR = "LATCHKEY_STORE";
+const LATCHKEY_STORE_ENV_VAR = 'LATCHKEY_STORE';
 
 // Curl flags that don't affect the HTTP request semantics but may not be supported by URL extraction.
-const CURL_PASSTHROUGH_FLAGS = new Set(["-v", "--verbose"]);
+const CURL_PASSTHROUGH_FLAGS = new Set(['-v', '--verbose']);
 
 function filterPassthroughFlags(args: string[]): string[] {
   return args.filter((arg) => !CURL_PASSTHROUGH_FLAGS.has(arg));
@@ -35,18 +35,16 @@ function extractUrlFromCurlArguments(args: string[]): string | null {
     if (arg === undefined) continue;
 
     // Skip flags and their values
-    if (arg.startsWith("-")) {
+    if (arg.startsWith('-')) {
       // Skip flags that take a value
-      if (
-        ["-H", "-d", "-X", "-o", "-w", "-u", "-A", "-e", "-b", "-c", "-F", "-T"].includes(arg)
-      ) {
+      if (['-H', '-d', '-X', '-o', '-w', '-u', '-A', '-e', '-b', '-c', '-F', '-T'].includes(arg)) {
         i++; // Skip the next argument which is the value
       }
       continue;
     }
 
     // This looks like a URL
-    if (arg.startsWith("http://") || arg.startsWith("https://")) {
+    if (arg.startsWith('http://') || arg.startsWith('https://')) {
       return arg;
     }
   }
@@ -57,7 +55,7 @@ function extractUrlFromCurlArguments(args: string[]): string | null {
 function getLatchkeyStorePath(): string | null {
   const envValue = process.env[LATCHKEY_STORE_ENV_VAR];
   if (envValue) {
-    if (envValue.startsWith("~")) {
+    if (envValue.startsWith('~')) {
       return resolve(homedir(), envValue.slice(2));
     }
     return resolve(envValue);
@@ -74,7 +72,7 @@ async function confirm(message: string): Promise<boolean> {
   return new Promise((resolve) => {
     readline.question(`${message} (y/N) `, (answer) => {
       readline.close();
-      resolve(answer.toLowerCase() === "y" || answer.toLowerCase() === "yes");
+      resolve(answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes');
     });
   });
 }
@@ -92,19 +90,19 @@ async function clearAll(yes: boolean): Promise<void> {
   }
 
   if (filesToDelete.length === 0) {
-    console.log("No files to delete.");
+    console.log('No files to delete.');
     return;
   }
 
   if (!yes) {
-    console.log("This will delete the following files:");
+    console.log('This will delete the following files:');
     for (const filePath of filesToDelete) {
       console.log(`  ${filePath}`);
     }
 
-    const confirmed = await confirm("Are you sure you want to continue?");
+    const confirmed = await confirm('Are you sure you want to continue?');
     if (!confirmed) {
-      console.log("Aborted.");
+      console.log('Aborted.');
       process.exit(1);
     }
   }
@@ -144,25 +142,25 @@ function clearService(serviceName: string): void {
 }
 
 program
-  .name("latchkey")
+  .name('latchkey')
   .description(
-    "A command-line tool that injects API credentials to curl requests to known public APIs."
+    'A command-line tool that injects API credentials to curl requests to known public APIs.'
   )
-  .version("0.1.0");
+  .version('0.1.0');
 
 program
-  .command("services")
-  .description("List known and supported third-party services.")
+  .command('services')
+  .description('List known and supported third-party services.')
   .action(() => {
     const serviceNames = REGISTRY.services.map((service) => service.name);
     console.log(JSON.stringify(serviceNames));
   });
 
 program
-  .command("clear")
-  .description("Clear stored API credentials.")
-  .argument("[service_name]", "Name of the service to clear API credentials for")
-  .option("-y, --yes", "Skip confirmation prompt when clearing all data")
+  .command('clear')
+  .description('Clear stored API credentials.')
+  .argument('[service_name]', 'Name of the service to clear API credentials for')
+  .option('-y, --yes', 'Skip confirmation prompt when clearing all data')
   .action(async (serviceName: string | undefined, options: { yes?: boolean }) => {
     if (serviceName === undefined) {
       await clearAll(options.yes ?? false);
@@ -172,9 +170,9 @@ program
   });
 
 program
-  .command("status")
-  .description("Check the API credential status for a service.")
-  .argument("<service_name>", "Name of the service to check status for")
+  .command('status')
+  .description('Check the API credential status for a service.')
+  .argument('<service_name>', 'Name of the service to check status for')
   .action((serviceName: string) => {
     const service = REGISTRY.getByName(serviceName);
     if (service === null) {
@@ -202,9 +200,9 @@ program
   });
 
 program
-  .command("login")
-  .description("Login to a service and optionally store the API credentials.")
-  .argument("<service_name>", "Name of the service to login to")
+  .command('login')
+  .description('Login to a service and optionally store the API credentials.')
+  .argument('<service_name>', 'Name of the service to login to')
   .action(async (serviceName: string) => {
     const service = REGISTRY.getByName(serviceName);
     if (service === null) {
@@ -214,9 +212,7 @@ program
     }
 
     const latchkeyStore = getLatchkeyStorePath();
-    const apiCredentialStore = latchkeyStore
-      ? new ApiCredentialStore(latchkeyStore)
-      : null;
+    const apiCredentialStore = latchkeyStore ? new ApiCredentialStore(latchkeyStore) : null;
 
     const browserStatePath = getBrowserStatePath();
     try {
@@ -224,10 +220,10 @@ program
       if (apiCredentialStore !== null) {
         apiCredentialStore.save(service.name, apiCredentials);
       }
-      console.log("Done");
+      console.log('Done');
     } catch (error) {
       if (error instanceof LoginCancelledError) {
-        console.error("Login cancelled.");
+        console.error('Login cancelled.');
         process.exit(1);
       }
       if (error instanceof LoginFailedError) {
@@ -239,8 +235,8 @@ program
   });
 
 program
-  .command("curl")
-  .description("Run curl with API credential injection.")
+  .command('curl')
+  .description('Run curl with API credential injection.')
   .allowUnknownOption()
   .allowExcessArguments()
   .action(async (_options: unknown, command: { args: string[] }) => {
@@ -249,7 +245,7 @@ program
 
     const url = extractUrlFromCurlArguments(curlArguments);
     if (url === null) {
-      console.error("Error: Could not extract URL from curl arguments.");
+      console.error('Error: Could not extract URL from curl arguments.');
       process.exit(1);
     }
 
@@ -260,9 +256,7 @@ program
     }
 
     let apiCredentials = null;
-    const apiCredentialStore = latchkeyStore
-      ? new ApiCredentialStore(latchkeyStore)
-      : null;
+    const apiCredentialStore = latchkeyStore ? new ApiCredentialStore(latchkeyStore) : null;
 
     if (apiCredentialStore !== null) {
       apiCredentials = apiCredentialStore.get(service.name);
@@ -277,7 +271,7 @@ program
         }
       } catch (error) {
         if (error instanceof LoginCancelledError) {
-          console.error("Login cancelled.");
+          console.error('Login cancelled.');
           process.exit(1);
         }
         if (error instanceof LoginFailedError) {

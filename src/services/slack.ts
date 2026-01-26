@@ -2,14 +2,10 @@
  * Slack service implementation.
  */
 
-import type { Response } from "playwright";
-import {
-  ApiCredentialStatus,
-  ApiCredentials,
-  SlackApiCredentials,
-} from "../apiCredentials.js";
-import { runCaptured } from "../curl.js";
-import { Service, SimpleServiceSession } from "./base.js";
+import type { Response } from 'playwright';
+import { ApiCredentialStatus, ApiCredentials, SlackApiCredentials } from '../apiCredentials.js';
+import { runCaptured } from '../curl.js';
+import { Service, SimpleServiceSession } from './base.js';
 
 class SlackServiceSession extends SimpleServiceSession {
   protected getApiCredentialsFromResponse(response: Response): ApiCredentials | null {
@@ -22,7 +18,7 @@ class SlackServiceSession extends SimpleServiceSession {
     }
 
     const headers = request.headers();
-    const cookieHeader = headers["cookie"];
+    const cookieHeader = headers['cookie'];
     if (cookieHeader === undefined) {
       return null;
     }
@@ -52,16 +48,16 @@ class SlackServiceSession extends SimpleServiceSession {
 }
 
 export class Slack implements Service {
-  readonly name = "slack";
-  readonly baseApiUrls = ["https://slack.com/api/"] as const;
-  readonly loginUrl = "https://slack.com/signin";
+  readonly name = 'slack';
+  readonly baseApiUrls = ['https://slack.com/api/'] as const;
+  readonly loginUrl = 'https://slack.com/signin';
 
   readonly loginInstructions = [
-    "Accept all cookies if prompted.",
-    "Launch Slack in your browser (not the desktop app).",
+    'Accept all cookies if prompted.',
+    'Launch Slack in your browser (not the desktop app).',
   ] as const;
 
-  readonly credentialCheckCurlArguments = ["https://slack.com/api/auth.test"] as const;
+  readonly credentialCheckCurlArguments = ['https://slack.com/api/auth.test'] as const;
 
   getSession(): SlackServiceSession {
     return new SlackServiceSession(this);
@@ -73,11 +69,7 @@ export class Slack implements Service {
     }
 
     const result = runCaptured(
-      [
-        "-s",
-        ...apiCredentials.asCurlArguments(),
-        ...this.credentialCheckCurlArguments,
-      ],
+      ['-s', ...apiCredentials.asCurlArguments(), ...this.credentialCheckCurlArguments],
       10
     );
 

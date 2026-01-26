@@ -2,23 +2,23 @@
  * Base classes and interfaces for service implementations.
  */
 
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { mkdtempSync, rmSync, existsSync } from "node:fs";
-import type { BrowserContext, Page, Response, BrowserType } from "playwright";
-import { ApiCredentialStatus, ApiCredentials } from "../apiCredentials.js";
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import type { BrowserContext, Page, Response, BrowserType } from 'playwright';
+import { ApiCredentialStatus, ApiCredentials } from '../apiCredentials.js';
 
 export class LoginCancelledError extends Error {
-  constructor(message: string = "Login was cancelled because the browser was closed.") {
+  constructor(message: string = 'Login was cancelled because the browser was closed.') {
     super(message);
-    this.name = "LoginCancelledError";
+    this.name = 'LoginCancelledError';
   }
 }
 
 export class LoginFailedError extends Error {
-  constructor(message: string = "Login failed: no credentials were extracted.") {
+  constructor(message: string = 'Login failed: no credentials were extracted.') {
     super(message);
-    this.name = "LoginFailedError";
+    this.name = 'LoginFailedError';
   }
 }
 
@@ -71,9 +71,7 @@ export abstract class ServiceSession {
    * Finalize credentials after the headful login phase.
    * May launch a headless browser for additional actions.
    */
-  protected abstract finalizeCredentials(
-    chromium: BrowserType
-  ): Promise<ApiCredentials | null>;
+  protected abstract finalizeCredentials(chromium: BrowserType): Promise<ApiCredentials | null>;
 
   /**
    * Wait until the headful browser login phase is complete.
@@ -93,9 +91,7 @@ export abstract class ServiceSession {
       return;
     }
 
-    const instructionsList = instructions
-      .map((item) => `<li>${item}</li>`)
-      .join("\n");
+    const instructionsList = instructions.map((item) => `<li>${item}</li>`).join('\n');
 
     const instructionsHtml = `
     <!DOCTYPE html>
@@ -154,7 +150,7 @@ export abstract class ServiceSession {
     </html>
     `;
     await page.setContent(instructionsHtml);
-    await page.waitForFunction("window.loginContinue === true");
+    await page.waitForFunction('window.loginContinue === true');
   }
 
   /**
@@ -168,7 +164,7 @@ export abstract class ServiceSession {
    * Perform the login flow and return the extracted credentials.
    */
   async login(browserStatePath: string | null): Promise<ApiCredentials> {
-    const { chromium: chromiumBrowser } = await import("playwright");
+    const { chromium: chromiumBrowser } = await import('playwright');
     const browser = await chromiumBrowser.launch({ headless: false });
 
     const contextOptions: { storageState?: string } = {};
@@ -178,7 +174,7 @@ export abstract class ServiceSession {
     const context = await browser.newContext(contextOptions);
     const page = await context.newPage();
 
-    page.on("response", (response) => this.onResponse(response));
+    page.on('response', (response) => this.onResponse(response));
 
     try {
       await this.showLoginInstructions(page);
@@ -187,8 +183,7 @@ export abstract class ServiceSession {
     } catch (error: unknown) {
       if (
         error instanceof Error &&
-        (error.message.includes("Target closed") ||
-          error.message.includes("Browser closed"))
+        (error.message.includes('Target closed') || error.message.includes('Browser closed'))
       ) {
         throw new LoginCancelledError();
       }
@@ -221,9 +216,7 @@ export abstract class SimpleServiceSession extends ServiceSession {
   /**
    * Extract API credentials from a response during the headful login phase.
    */
-  protected abstract getApiCredentialsFromResponse(
-    response: Response
-  ): ApiCredentials | null;
+  protected abstract getApiCredentialsFromResponse(response: Response): ApiCredentials | null;
 
   onResponse(response: Response): void {
     if (this.apiCredentials !== null) {
@@ -236,9 +229,7 @@ export abstract class SimpleServiceSession extends ServiceSession {
     return this.apiCredentials !== null;
   }
 
-  protected async finalizeCredentials(
-    _chromium: BrowserType
-  ): Promise<ApiCredentials | null> {
+  protected async finalizeCredentials(_chromium: BrowserType): Promise<ApiCredentials | null> {
     return this.apiCredentials;
   }
 }
@@ -263,8 +254,8 @@ export abstract class BrowserFollowupServiceSession extends ServiceSession {
 
   override async login(browserStatePath: string | null): Promise<ApiCredentials> {
     // Create temporary directory for browser state
-    this.temporaryDirectory = mkdtempSync(join(tmpdir(), "latchkey-"));
-    this.temporaryStatePath = join(this.temporaryDirectory, "browser_state.json");
+    this.temporaryDirectory = mkdtempSync(join(tmpdir(), 'latchkey-'));
+    this.temporaryStatePath = join(this.temporaryDirectory, 'browser_state.json');
 
     try {
       return await super.login(browserStatePath);
@@ -276,9 +267,7 @@ export abstract class BrowserFollowupServiceSession extends ServiceSession {
     }
   }
 
-  protected override async onHeadfulLoginComplete(
-    context: BrowserContext
-  ): Promise<void> {
+  protected override async onHeadfulLoginComplete(context: BrowserContext): Promise<void> {
     if (this.temporaryStatePath !== null) {
       await context.storageState({ path: this.temporaryStatePath });
     }
@@ -287,10 +276,7 @@ export abstract class BrowserFollowupServiceSession extends ServiceSession {
   protected override async finalizeCredentials(
     chromium: BrowserType
   ): Promise<ApiCredentials | null> {
-    if (
-      this.temporaryStatePath === null ||
-      !existsSync(this.temporaryStatePath)
-    ) {
+    if (this.temporaryStatePath === null || !existsSync(this.temporaryStatePath)) {
       return null;
     }
 
