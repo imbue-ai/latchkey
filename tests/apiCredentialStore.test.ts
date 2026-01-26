@@ -103,7 +103,7 @@ describe('ApiCredentialStore', () => {
       store.save('github', new AuthorizationBearer('token'));
 
       const content = readFileSync(storePath, 'utf-8');
-      expect(() => JSON.parse(content)).not.toThrow();
+      expect(() => JSON.parse(content) as unknown).not.toThrow();
     });
   });
 

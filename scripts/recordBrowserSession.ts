@@ -252,7 +252,7 @@ async function record(
 
   console.log('\nRecording saved successfully!');
   console.log(`  Requests file: ${requestsPath}`);
-  console.log(`  Recorded ${recordedEntries.length} request/response pairs`);
+  console.log(`  Recorded ${String(recordedEntries.length)} request/response pairs`);
 }
 
 // Main entry point
@@ -292,4 +292,4 @@ async function main(): Promise<void> {
   }
 }
 
-main();
+void main();

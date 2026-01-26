@@ -147,10 +147,12 @@ export function deserializeCredentials(data: ApiCredentialsData): ApiCredentials
       return AuthorizationBare.fromJSON(data);
     case 'slack':
       return SlackApiCredentials.fromJSON(data);
-    default:
+    default: {
+      const exhaustiveCheck: never = data;
       throw new ApiCredentialsSerializationError(
-        `Unknown credential type: ${(data as any).objectType}`
+        `Unknown credential type: ${(exhaustiveCheck as { objectType: string }).objectType}`
       );
+    }
   }
 }
 

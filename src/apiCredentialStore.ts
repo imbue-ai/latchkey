@@ -83,8 +83,8 @@ export class ApiCredentialStore {
     if (!(serviceName in data)) {
       return false;
     }
-    delete data[serviceName];
-    this.saveStoreData(data);
+    const { [serviceName]: _, ...rest } = data;
+    this.saveStoreData(rest);
     return true;
   }
 }

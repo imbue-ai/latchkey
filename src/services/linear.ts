@@ -33,7 +33,7 @@ class LinearServiceSession extends BrowserFollowupServiceSession {
           response
             .json()
             .then((jsonData: unknown) => {
-              const data = (jsonData as { data?: Record<string, unknown> })?.data ?? {};
+              const data = (jsonData as { data?: Record<string, unknown> }).data ?? {};
               if (Object.keys(data).some((key) => key !== 'organizationMeta')) {
                 this.isLoggedIn = true;
               }

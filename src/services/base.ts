@@ -229,8 +229,8 @@ export abstract class SimpleServiceSession extends ServiceSession {
     return this.apiCredentials !== null;
   }
 
-  protected async finalizeCredentials(_chromium: BrowserType): Promise<ApiCredentials | null> {
-    return this.apiCredentials;
+  protected finalizeCredentials(_chromium: BrowserType): Promise<ApiCredentials | null> {
+    return Promise.resolve(this.apiCredentials);
   }
 }
 

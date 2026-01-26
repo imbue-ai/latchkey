@@ -38,8 +38,8 @@ function defaultCapturingSubprocessRunner(args: readonly string[], timeout: numb
   });
   return {
     returncode: result.status ?? 1,
-    stdout: result.stdout ?? '',
-    stderr: result.stderr ?? '',
+    stdout: result.stdout,
+    stderr: result.stderr,
   };
 }
 
