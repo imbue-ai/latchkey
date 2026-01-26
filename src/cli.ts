@@ -14,7 +14,7 @@ program
   )
   .version('0.1.0');
 
-const deps = await createDefaultDependencies();
+const deps = createDefaultDependencies();
 registerCommands(program, deps);
 
 program.parse();

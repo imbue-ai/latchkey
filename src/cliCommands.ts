@@ -13,6 +13,8 @@ import { getBrowserStatePath } from './browserState.js';
 import type { CurlResult } from './curl.js';
 import { Registry, REGISTRY } from './registry.js';
 import { LoginCancelledError, LoginFailedError } from './services/index.js';
+import { run as curlRun } from './curl.js';
+ 
 
 const LATCHKEY_STORE_ENV_VAR = 'LATCHKEY_STORE';
 
@@ -36,13 +38,11 @@ export interface CliDependencies {
 /**
  * Default implementation of CLI dependencies.
  */
-export async function createDefaultDependencies(): Promise<CliDependencies> {
-  // Import dynamically to avoid circular dependency issues
-  const curlModule = await import('./curl.js');
+export function createDefaultDependencies(): CliDependencies {
 
   return {
     registry: REGISTRY,
-    runCurl: curlModule.run,
+    runCurl: curlRun,
     getEnv: (name: string) => process.env[name],
     getBrowserStatePath,
     confirm: defaultConfirm,
