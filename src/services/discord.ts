@@ -17,7 +17,7 @@ class DiscordServiceSession extends SimpleServiceSession {
     }
 
     const headers = request.headers();
-    const authorization = headers['authorization'];
+    const authorization = headers.authorization;
     if (authorization !== undefined && authorization.trim() !== '') {
       return new AuthorizationBare(authorization);
     }

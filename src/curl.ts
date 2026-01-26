@@ -72,6 +72,6 @@ export function run(args: readonly string[]): CurlResult {
 /**
  * Run curl with output capture (for credential checking).
  */
-export function runCaptured(args: readonly string[], timeout: number = 10): CurlResult {
+export function runCaptured(args: readonly string[], timeout = 10): CurlResult {
   return capturingSubprocessRunner(args, timeout);
 }

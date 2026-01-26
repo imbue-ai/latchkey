@@ -18,7 +18,7 @@ class SlackServiceSession extends SimpleServiceSession {
     }
 
     const headers = request.headers();
-    const cookieHeader = headers['cookie'];
+    const cookieHeader = headers.cookie;
     if (cookieHeader === undefined) {
       return null;
     }

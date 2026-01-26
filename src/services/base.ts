@@ -9,14 +9,14 @@ import type { BrowserContext, Page, Response, BrowserType } from 'playwright';
 import { ApiCredentialStatus, ApiCredentials } from '../apiCredentials.js';
 
 export class LoginCancelledError extends Error {
-  constructor(message: string = 'Login was cancelled because the browser was closed.') {
+  constructor(message = 'Login was cancelled because the browser was closed.') {
     super(message);
     this.name = 'LoginCancelledError';
   }
 }
 
 export class LoginFailedError extends Error {
-  constructor(message: string = 'Login failed: no credentials were extracted.') {
+  constructor(message = 'Login failed: no credentials were extracted.') {
     super(message);
     this.name = 'LoginFailedError';
   }
@@ -174,7 +174,7 @@ export abstract class ServiceSession {
     const context = await browser.newContext(contextOptions);
     const page = await context.newPage();
 
-    page.on('response', (response) => this.onResponse(response));
+    page.on('response', (response) => { this.onResponse(response); });
 
     try {
       await this.showLoginInstructions(page);
