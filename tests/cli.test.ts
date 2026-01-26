@@ -201,12 +201,12 @@ describe('CLI commands with dependency injection', () => {
   });
 
   describe('services command', () => {
-    it('should list all services as JSON', async () => {
+    it('should list all services as space-separated names', async () => {
       const deps = createMockDependencies();
       await runCommand(['services'], deps);
 
       expect(logs).toHaveLength(1);
-      const services = JSON.parse(logs[0] ?? '') as string[];
+      const services = (logs[0] ?? '').split(' ');
       expect(services).toContain('slack');
     });
   });
@@ -741,11 +741,11 @@ describe('CLI integration tests (subprocess)', () => {
   });
 
   describe('services command', () => {
-    it('should list all services as JSON', () => {
+    it('should list all services as space-separated names', () => {
       const result = runCli(['services']);
       expect(result.exitCode).toBe(0);
 
-      const services = JSON.parse(result.stdout.trim()) as string[];
+      const services = result.stdout.trim().split(' ');
       expect(services).toContain('slack');
       expect(services).toContain('discord');
       expect(services).toContain('github');

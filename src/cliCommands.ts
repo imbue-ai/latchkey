@@ -183,7 +183,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .description('List known and supported third-party services.')
     .action(() => {
       const serviceNames = deps.registry.services.map((service) => service.name);
-      deps.log(JSON.stringify(serviceNames));
+      deps.log(serviceNames.join(' '));
     });
 
   program
