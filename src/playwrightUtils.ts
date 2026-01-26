@@ -77,12 +77,7 @@ const SPINNER_OVERLAY_SCRIPT = `
  * The overlay persists across page navigations within the browser context.
  */
 export async function showSpinnerOverlay(context: BrowserContext): Promise<void> {
-  // Register script to run on every new page load (persists across navigations)
-  await context.addInitScript(SPINNER_OVERLAY_SCRIPT);
-
-  // Also inject into the current page immediately
-  const page = context.pages()[0];
-  if (page) {
-    await page.evaluate(SPINNER_OVERLAY_SCRIPT);
-  }
+  const spinnerPage = await context.newPage();
+  await spinnerPage.evaluate(SPINNER_OVERLAY_SCRIPT);
+  await spinnerPage.bringToFront();
 }
