@@ -13,6 +13,6 @@ npm test
 # Type check
 npm run typecheck
 
-# Watch mode
-npm run dev
+# Install as CLI
+pm install && npm run build && npm link
 ```
