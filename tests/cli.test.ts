@@ -327,7 +327,7 @@ describe('CLI commands with dependency injection', () => {
         storePath,
         JSON.stringify({
           slack: { objectType: 'slack', token: 'slack-token', dCookie: 'slack-cookie' },
-          discord: { objectType: 'authorization_bare', token: 'discord-token' },
+          discord: { objectType: 'authorizationBare', token: 'discord-token' },
         })
       );
 
@@ -672,7 +672,7 @@ describe('CLI integration tests (subprocess)', () => {
         storePath,
         JSON.stringify({
           slack: { objectType: 'slack', token: 'slack-token', dCookie: 'slack-cookie' },
-          discord: { objectType: 'authorization_bare', token: 'discord-token' },
+          discord: { objectType: 'authorizationBare', token: 'discord-token' },
         })
       );
 

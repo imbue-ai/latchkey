@@ -23,14 +23,14 @@ export interface ApiCredentials {
  * Bearer token authentication (Authorization: Bearer <token>).
  */
 export const AuthorizationBearerSchema = z.object({
-  objectType: z.literal('authorization_bearer'),
+  objectType: z.literal('authorizationBearer'),
   token: z.string(),
 });
 
 export type AuthorizationBearerData = z.infer<typeof AuthorizationBearerSchema>;
 
 export class AuthorizationBearer implements ApiCredentials {
-  readonly objectType = 'authorization_bearer' as const;
+  readonly objectType = 'authorizationBearer' as const;
   readonly token: string;
 
   constructor(token: string) {
@@ -57,14 +57,14 @@ export class AuthorizationBearer implements ApiCredentials {
  * Raw authorization header (Authorization: <token>).
  */
 export const AuthorizationBareSchema = z.object({
-  objectType: z.literal('authorization_bare'),
+  objectType: z.literal('authorizationBare'),
   token: z.string(),
 });
 
 export type AuthorizationBareData = z.infer<typeof AuthorizationBareSchema>;
 
 export class AuthorizationBare implements ApiCredentials {
-  readonly objectType = 'authorization_bare' as const;
+  readonly objectType = 'authorizationBare' as const;
   readonly token: string;
 
   constructor(token: string) {
@@ -141,9 +141,9 @@ export type ApiCredentialsData = z.infer<typeof ApiCredentialsSchema>;
  */
 export function deserializeCredentials(data: ApiCredentialsData): ApiCredentials {
   switch (data.objectType) {
-    case 'authorization_bearer':
+    case 'authorizationBearer':
       return AuthorizationBearer.fromJSON(data);
-    case 'authorization_bare':
+    case 'authorizationBare':
       return AuthorizationBare.fromJSON(data);
     case 'slack':
       return SlackApiCredentials.fromJSON(data);

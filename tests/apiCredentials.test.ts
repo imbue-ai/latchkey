@@ -17,14 +17,14 @@ describe('AuthorizationBearer', () => {
   it('should serialize to JSON', () => {
     const credentials = new AuthorizationBearer('test-token-123');
     expect(credentials.toJSON()).toEqual({
-      objectType: 'authorization_bearer',
+      objectType: 'authorizationBearer',
       token: 'test-token-123',
     });
   });
 
   it('should deserialize from JSON', () => {
     const data = {
-      objectType: 'authorization_bearer' as const,
+      objectType: 'authorizationBearer' as const,
       token: 'test-token-123',
     };
     const credentials = AuthorizationBearer.fromJSON(data);
@@ -41,14 +41,14 @@ describe('AuthorizationBare', () => {
   it('should serialize to JSON', () => {
     const credentials = new AuthorizationBare('raw-token-456');
     expect(credentials.toJSON()).toEqual({
-      objectType: 'authorization_bare',
+      objectType: 'authorizationBare',
       token: 'raw-token-456',
     });
   });
 
   it('should deserialize from JSON', () => {
     const data = {
-      objectType: 'authorization_bare' as const,
+      objectType: 'authorizationBare' as const,
       token: 'raw-token-456',
     };
     const credentials = AuthorizationBare.fromJSON(data);
@@ -91,7 +91,7 @@ describe('SlackApiCredentials', () => {
 describe('deserializeCredentials', () => {
   it('should deserialize AuthorizationBearer', () => {
     const data = {
-      objectType: 'authorization_bearer' as const,
+      objectType: 'authorizationBearer' as const,
       token: 'bearer-token',
     };
     const credentials = deserializeCredentials(data);
@@ -101,7 +101,7 @@ describe('deserializeCredentials', () => {
 
   it('should deserialize AuthorizationBare', () => {
     const data = {
-      objectType: 'authorization_bare' as const,
+      objectType: 'authorizationBare' as const,
       token: 'bare-token',
     };
     const credentials = deserializeCredentials(data);
@@ -127,7 +127,7 @@ describe('serializeCredentials', () => {
     const credentials = new AuthorizationBearer('test-token');
     const data = serializeCredentials(credentials);
     expect(data).toEqual({
-      objectType: 'authorization_bearer',
+      objectType: 'authorizationBearer',
       token: 'test-token',
     });
   });
@@ -136,7 +136,7 @@ describe('serializeCredentials', () => {
     const credentials = new AuthorizationBare('test-token');
     const data = serializeCredentials(credentials);
     expect(data).toEqual({
-      objectType: 'authorization_bare',
+      objectType: 'authorizationBare',
       token: 'test-token',
     });
   });
@@ -155,7 +155,7 @@ describe('serializeCredentials', () => {
 describe('ApiCredentialsSchema', () => {
   it('should validate AuthorizationBearer', () => {
     const result = ApiCredentialsSchema.safeParse({
-      objectType: 'authorization_bearer',
+      objectType: 'authorizationBearer',
       token: 'test',
     });
     expect(result.success).toBe(true);
@@ -163,7 +163,7 @@ describe('ApiCredentialsSchema', () => {
 
   it('should validate AuthorizationBare', () => {
     const result = ApiCredentialsSchema.safeParse({
-      objectType: 'authorization_bare',
+      objectType: 'authorizationBare',
       token: 'test',
     });
     expect(result.success).toBe(true);
@@ -188,7 +188,7 @@ describe('ApiCredentialsSchema', () => {
 
   it('should reject missing token', () => {
     const result = ApiCredentialsSchema.safeParse({
-      objectType: 'authorization_bearer',
+      objectType: 'authorizationBearer',
     });
     expect(result.success).toBe(false);
   });
