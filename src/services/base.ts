@@ -264,7 +264,7 @@ export abstract class BrowserFollowupServiceSession extends ServiceSession {
     _browser: Browser,
     context: BrowserContext
   ): Promise<ApiCredentials | null> {
-    await showSpinnerPage(context);
+    await showSpinnerPage(context, this.service.name);
     return this.performBrowserFollowup(context);
   }
 }
