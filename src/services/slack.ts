@@ -10,7 +10,9 @@ import { Service, SimpleServiceSession } from './base.js';
 class SlackServiceSession extends SimpleServiceSession {
   private pendingDCookie: string | null = null;
 
-  protected getApiCredentialsFromResponse(response: Response): ApiCredentials | null {
+  protected async getApiCredentialsFromResponse(
+    response: Response
+  ): Promise<ApiCredentials | null> {
     const request = response.request();
     const url = request.url();
 
@@ -19,7 +21,7 @@ class SlackServiceSession extends SimpleServiceSession {
       return null;
     }
 
-    const headers = request.headers();
+    const headers = await request.allHeaders();
     const cookieHeader = headers.cookie;
     if (cookieHeader === undefined) {
       return null;
@@ -33,18 +35,15 @@ class SlackServiceSession extends SimpleServiceSession {
     this.pendingDCookie = dCookie;
 
     // Extract token from response body (JSON embedded in HTML or raw JSON)
-    // response.text() returns a Promise, so we handle it asynchronously
-    response
-      .text()
-      .then((responseBody: string) => {
-        const tokenMatch = /"api_token":"(xoxc-[a-zA-Z0-9-]+)"/.exec(responseBody);
-        if (tokenMatch?.[1] && this.pendingDCookie !== null) {
-          this.apiCredentials = new SlackApiCredentials(tokenMatch[1], this.pendingDCookie);
-        }
-      })
-      .catch(() => {
-        // Ignore errors reading response body
-      });
+    try {
+      const responseBody = await response.text();
+      const tokenMatch = /"api_token":"(xoxc-[a-zA-Z0-9-]+)"/.exec(responseBody);
+      if (tokenMatch?.[1]) {
+        return new SlackApiCredentials(tokenMatch[1], dCookie);
+      }
+    } catch {
+      // Ignore errors reading response body
+    }
 
     return null;
   }

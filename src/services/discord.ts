@@ -8,7 +8,9 @@ import { runCaptured } from '../curl.js';
 import { Service, SimpleServiceSession } from './base.js';
 
 class DiscordServiceSession extends SimpleServiceSession {
-  protected getApiCredentialsFromResponse(response: Response): ApiCredentials | null {
+  protected async getApiCredentialsFromResponse(
+    response: Response
+  ): Promise<ApiCredentials | null> {
     const request = response.request();
     const url = request.url();
 
@@ -16,7 +18,7 @@ class DiscordServiceSession extends SimpleServiceSession {
       return null;
     }
 
-    const headers = request.headers();
+    const headers = await request.allHeaders();
     const authorization = headers.authorization;
     if (authorization !== undefined && authorization.trim() !== '') {
       return new AuthorizationBare(authorization);

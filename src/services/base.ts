@@ -223,13 +223,23 @@ export abstract class SimpleServiceSession extends ServiceSession {
   /**
    * Extract API credentials from a response during the headful login phase.
    */
-  protected abstract getApiCredentialsFromResponse(response: Response): ApiCredentials | null;
+  protected abstract getApiCredentialsFromResponse(
+    response: Response
+  ): Promise<ApiCredentials | null>;
 
   onResponse(response: Response): void {
     if (this.apiCredentials !== null) {
       return;
     }
-    this.apiCredentials = this.getApiCredentialsFromResponse(response);
+    this.getApiCredentialsFromResponse(response)
+      .then((credentials) => {
+        if (this.apiCredentials === null && credentials !== null) {
+          this.apiCredentials = credentials;
+        }
+      })
+      .catch(() => {
+        // Ignore errors extracting credentials
+      });
   }
 
   protected isHeadfulLoginComplete(): boolean {
