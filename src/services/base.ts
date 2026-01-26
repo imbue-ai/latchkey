@@ -174,7 +174,9 @@ export abstract class ServiceSession {
     const context = await browser.newContext(contextOptions);
     const page = await context.newPage();
 
-    page.on('response', (response) => { this.onResponse(response); });
+    page.on('response', (response) => {
+      this.onResponse(response);
+    });
 
     try {
       await this.showLoginInstructions(page);
