@@ -57,7 +57,10 @@ class GithubServiceSession extends BrowserFollowupServiceSession {
   }
 
   protected async performBrowserFollowup(context: BrowserContext): Promise<ApiCredentials | null> {
-    const page = await context.newPage();
+    const page = context.pages()[0];
+    if (!page) {
+      throw new LoginFailedError('No page available in browser context.');
+    }
 
     await page.goto(GITHUB_NEW_TOKEN_URL);
 
