@@ -81,7 +81,7 @@ latchkey clear
 
 ## Prerequisites
 
-- `curl` needs to be installed in your system.
+- `curl` and `npm` need to be installed in your system.
 - A graphical environment is needed for the browser.
 
 
@@ -89,13 +89,13 @@ latchkey clear
 
 1. Clone this repository to your local machine.
 2. Enter the repository's directory.
-3. `uv cache clean latchkey && uv tool install --force latchkey@.`
-4. `uv run playwright install chromium`
+3. `npm install && npm run build && npm link`
+4. `npx playwright install chromium`
 
 ## Tests
 
 ```
-uv run pytest .
+npm test
 ```
 
 
