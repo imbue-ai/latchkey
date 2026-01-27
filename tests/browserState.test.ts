@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'no
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { BrowserStateStore, BrowserStateError } from '../src/browserState.js';
-import { EncryptedStorage, resetEncryptedStorage } from '../src/encryptedStorage.js';
+import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { generateKey } from '../src/encryption.js';
 
 describe('BrowserStateStore', () => {
@@ -14,7 +14,6 @@ describe('BrowserStateStore', () => {
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), 'latchkey-browser-state-test-'));
     testKey = generateKey();
-    resetEncryptedStorage();
     encryptedStorage = new EncryptedStorage({
       encryptionKeyOverride: testKey,
     });
@@ -22,7 +21,6 @@ describe('BrowserStateStore', () => {
 
   afterEach(() => {
     rmSync(tempDir, { recursive: true, force: true });
-    resetEncryptedStorage();
   });
 
   describe('prepare', () => {

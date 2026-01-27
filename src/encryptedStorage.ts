@@ -215,23 +215,3 @@ export class EncryptedStorage {
     return this.encryptionEnabled ? filePath + ENCRYPTED_FILE_SUFFIX : filePath;
   }
 }
-
-/**
- * Global singleton for encrypted storage.
- */
-let encryptedStorageInstance: EncryptedStorage | null = null;
-
-/**
- * Get the global encrypted storage instance.
- */
-export function getEncryptedStorage(options?: EncryptedStorageOptions): EncryptedStorage {
-  encryptedStorageInstance ??= new EncryptedStorage(options);
-  return encryptedStorageInstance;
-}
-
-/**
- * Reset the global encrypted storage instance (mainly for testing).
- */
-export function resetEncryptedStorage(): void {
-  encryptedStorageInstance = null;
-}

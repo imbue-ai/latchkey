@@ -12,7 +12,6 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
   EncryptedStorage,
-  resetEncryptedStorage,
   EncryptedStorageError,
   InsecureFilePermissionsError,
 } from '../src/encryptedStorage.js';
@@ -25,12 +24,10 @@ describe('EncryptedStorage', () => {
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), 'latchkey-encrypted-test-'));
     testKey = generateKey();
-    resetEncryptedStorage();
   });
 
   afterEach(() => {
     rmSync(tempDir, { recursive: true, force: true });
-    resetEncryptedStorage();
   });
 
   describe('with encryption key from Config', () => {
@@ -82,7 +79,6 @@ describe('EncryptedStorage', () => {
       storageWrite.writeFile(basePath, content);
 
       // Read with different key
-      resetEncryptedStorage();
       const storageRead = new EncryptedStorage({
         encryptionKeyOverride: key2,
       });
