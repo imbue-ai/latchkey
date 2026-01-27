@@ -10,6 +10,7 @@
 
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { DEFAULT_KEYRING_SERVICE_NAME, DEFAULT_KEYRING_ACCOUNT_NAME } from './config.js';
 import { encrypt, decrypt, generateKey, DecryptionError } from './encryption.js';
 import {
   isKeychainAvailable,
@@ -30,6 +31,8 @@ export class EncryptedStorageError extends Error {
 
 export interface EncryptedStorageOptions {
   encryptionKeyOverride?: string | null;
+  serviceName?: string;
+  accountName?: string;
 }
 
 /**
@@ -39,9 +42,13 @@ export class EncryptedStorage {
   private key: string | null;
   private encryptionEnabled = true;
   private keyInitialized = false;
+  private readonly serviceName: string;
+  private readonly accountName: string;
 
   constructor(options: EncryptedStorageOptions = {}) {
     this.key = options.encryptionKeyOverride ?? null;
+    this.serviceName = options.serviceName ?? DEFAULT_KEYRING_SERVICE_NAME;
+    this.accountName = options.accountName ?? DEFAULT_KEYRING_ACCOUNT_NAME;
   }
 
   /**
@@ -61,14 +68,14 @@ export class EncryptedStorage {
     }
 
     // Check if keychain is available
-    if (!isKeychainAvailable()) {
+    if (!isKeychainAvailable(this.serviceName, this.accountName)) {
       this.encryptionEnabled = false;
       return;
     }
 
     // Try to retrieve from keychain
     try {
-      const keychainKey = retrieveFromKeychain();
+      const keychainKey = retrieveFromKeychain(this.serviceName, this.accountName);
       if (keychainKey) {
         this.key = keychainKey;
         this.encryptionEnabled = true;
@@ -77,7 +84,7 @@ export class EncryptedStorage {
 
       // Generate new key and store in keychain
       const newKey = generateKey();
-      storeInKeychain(newKey);
+      storeInKeychain(this.serviceName, this.accountName, newKey);
       this.key = newKey;
       this.encryptionEnabled = true;
     } catch (error) {

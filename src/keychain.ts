@@ -6,9 +6,6 @@
 
 import { Entry } from '@napi-rs/keyring';
 
-const SERVICE_NAME = 'latchkey';
-const ACCOUNT_NAME = 'encryption-key';
-
 export class KeychainError extends Error {
   constructor(message: string) {
     super(message);
@@ -24,19 +21,19 @@ export class KeychainNotAvailableError extends KeychainError {
 }
 
 /**
- * Get a keyring entry for latchkey.
+ * Get a keyring entry.
  */
-function getEntry(): Entry {
-  return new Entry(SERVICE_NAME, ACCOUNT_NAME);
+function getEntry(serviceName: string, accountName: string): Entry {
+  return new Entry(serviceName, accountName);
 }
 
 /**
  * Store a password in the system keychain.
  * Throws KeychainNotAvailableError if the keychain is not accessible.
  */
-export function storeInKeychain(password: string): void {
+export function storeInKeychain(serviceName: string, accountName: string, password: string): void {
   try {
-    const entry = getEntry();
+    const entry = getEntry(serviceName, accountName);
     entry.setPassword(password);
   } catch (error) {
     throw new KeychainNotAvailableError(
@@ -50,9 +47,9 @@ export function storeInKeychain(password: string): void {
  * Returns null if the password is not found.
  * Throws KeychainNotAvailableError if the keychain is not accessible.
  */
-export function retrieveFromKeychain(): string | null {
+export function retrieveFromKeychain(serviceName: string, accountName: string): string | null {
   try {
-    const entry = getEntry();
+    const entry = getEntry(serviceName, accountName);
     const password = entry.getPassword();
     return password ?? null;
   } catch (error) {
@@ -76,9 +73,9 @@ export function retrieveFromKeychain(): string | null {
  * Returns true if deleted, false if not found.
  * Throws KeychainNotAvailableError if the keychain is not accessible.
  */
-export function deleteFromKeychain(): boolean {
+export function deleteFromKeychain(serviceName: string, accountName: string): boolean {
   try {
-    const entry = getEntry();
+    const entry = getEntry(serviceName, accountName);
     entry.deletePassword();
     return true;
   } catch (error) {
@@ -97,10 +94,10 @@ export function deleteFromKeychain(): boolean {
 /**
  * Check if the system keychain is available.
  */
-export function isKeychainAvailable(): boolean {
+export function isKeychainAvailable(serviceName: string, accountName: string): boolean {
   try {
     // Try to create an entry - this should work on all supported platforms
-    getEntry();
+    getEntry(serviceName, accountName);
     return true;
   } catch {
     return false;

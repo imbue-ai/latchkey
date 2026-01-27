@@ -29,7 +29,11 @@ export class ApiCredentialStore {
     this.path = path;
     this.encryptedStorage =
       encryptedStorage ??
-      getEncryptedStorage({ encryptionKeyOverride: CONFIG.encryptionKeyOverride });
+      getEncryptedStorage({
+        encryptionKeyOverride: CONFIG.encryptionKeyOverride,
+        serviceName: CONFIG.serviceName,
+        accountName: CONFIG.accountName,
+      });
   }
 
   private loadStoreData(): StoreData {

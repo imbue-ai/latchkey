@@ -31,7 +31,11 @@ export class BrowserStateStore {
     this.persistentPath = persistentPath;
     this.encryptedStorage =
       encryptedStorage ??
-      getEncryptedStorage({ encryptionKeyOverride: CONFIG.encryptionKeyOverride });
+      getEncryptedStorage({
+        encryptionKeyOverride: CONFIG.encryptionKeyOverride,
+        serviceName: CONFIG.serviceName,
+        accountName: CONFIG.accountName,
+      });
   }
 
   /**

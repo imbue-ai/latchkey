@@ -36,8 +36,8 @@ function getEncryptionKey(): string {
   }
 
   // 2. Check keychain
-  if (isKeychainAvailable()) {
-    const keychainKey = retrieveFromKeychain();
+  if (isKeychainAvailable(CONFIG.serviceName, CONFIG.accountName)) {
+    const keychainKey = retrieveFromKeychain(CONFIG.serviceName, CONFIG.accountName);
     if (keychainKey) {
       return keychainKey;
     }
@@ -66,7 +66,10 @@ function decryptCommand(filePath: string): void {
     process.exit(1);
   }
 
-  const storage = new EncryptedStorage();
+  const storage = new EncryptedStorage({
+    serviceName: CONFIG.serviceName,
+    accountName: CONFIG.accountName,
+  });
   const content = storage.readFile(filePath);
 
   if (content === null) {

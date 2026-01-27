@@ -9,6 +9,11 @@ const LATCHKEY_STORE_ENV_VAR = 'LATCHKEY_STORE';
 const LATCHKEY_BROWSER_STATE_ENV_VAR = 'LATCHKEY_BROWSER_STATE';
 const LATCHKEY_CURL_PATH_ENV_VAR = 'LATCHKEY_CURL_PATH';
 const LATCHKEY_ENCRYPTION_KEY_ENV_VAR = 'LATCHKEY_ENCRYPTION_KEY';
+const LATCHKEY_KEYRING_SERVICE_NAME_ENV_VAR = 'LATCHKEY_KEYRING_SERVICE_NAME';
+const LATCHKEY_KEYRING_ACCOUNT_NAME_ENV_VAR = 'LATCHKEY_KEYRING_ACCOUNT_NAME';
+
+export const DEFAULT_KEYRING_SERVICE_NAME = 'latchkey';
+export const DEFAULT_KEYRING_ACCOUNT_NAME = 'encryption-key';
 
 function getDefaultCredentialStorePath(): string {
   return join(homedir(), '.latchkey', 'credentials.json');
@@ -38,6 +43,8 @@ export class Config {
    * The key should be a base64-encoded 256-bit (32-byte) value.
    */
   readonly encryptionKeyOverride: string | null;
+  readonly serviceName: string;
+  readonly accountName: string;
 
   constructor(getEnv: (name: string) => string | undefined = (name) => process.env[name]) {
     const credentialStoreEnv = getEnv(LATCHKEY_STORE_ENV_VAR);
@@ -53,6 +60,11 @@ export class Config {
     this.curlCommand = getEnv(LATCHKEY_CURL_PATH_ENV_VAR) ?? 'curl';
 
     this.encryptionKeyOverride = getEnv(LATCHKEY_ENCRYPTION_KEY_ENV_VAR) ?? null;
+
+    this.serviceName =
+      getEnv(LATCHKEY_KEYRING_SERVICE_NAME_ENV_VAR) ?? DEFAULT_KEYRING_SERVICE_NAME;
+    this.accountName =
+      getEnv(LATCHKEY_KEYRING_ACCOUNT_NAME_ENV_VAR) ?? DEFAULT_KEYRING_ACCOUNT_NAME;
   }
 }
 
