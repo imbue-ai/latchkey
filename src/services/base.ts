@@ -2,9 +2,9 @@
  * Base classes and interfaces for service implementations.
  */
 
-import { existsSync } from 'node:fs';
 import type { Browser, BrowserContext, Page, Response } from 'playwright';
 import { ApiCredentialStatus, ApiCredentials } from '../apiCredentials.js';
+import { BrowserStateStore } from '../browserState.js';
 import { showSpinnerPage } from '../playwrightUtils.js';
 
 export class LoginCancelledError extends Error {
@@ -169,47 +169,65 @@ export abstract class ServiceSession {
     const { chromium: chromiumBrowser } = await import('playwright');
     const browser = await chromiumBrowser.launch({ headless: false });
 
+    // Use BrowserStateStore for encrypted browser state handling
+    let browserStateManager: BrowserStateStore | null = null;
     const contextOptions: { storageState?: string } = {};
-    if (browserStatePath && existsSync(browserStatePath)) {
-      contextOptions.storageState = browserStatePath;
-    }
-    const context = await browser.newContext(contextOptions);
-    const page = await context.newPage();
-
-    page.on('response', (response) => {
-      this.onResponse(response);
-    });
-
-    try {
-      // await this.showLoginInstructions(page);
-      await page.goto(this.service.loginUrl);
-      await this.waitForHeadfulLoginComplete(page);
-    } catch (error: unknown) {
-      if (
-        error instanceof Error &&
-        (error.message.includes('Target closed') || error.message.includes('Browser closed'))
-      ) {
-        throw new LoginCancelledError();
-      }
-      throw error;
-    }
 
     if (browserStatePath) {
-      await context.storageState({ path: browserStatePath });
+      browserStateManager = new BrowserStateStore(browserStatePath);
+      const tempPath = browserStateManager.prepare();
+      if (browserStateManager.hasState()) {
+        contextOptions.storageState = tempPath;
+      }
     }
 
-    await this.onHeadfulLoginComplete(context);
-
     try {
-      const apiCredentials = await this.finalizeCredentials(browser, context);
+      const context = await browser.newContext(contextOptions);
+      const page = await context.newPage();
 
-      if (apiCredentials === null) {
-        throw new LoginFailedError();
+      page.on('response', (response) => {
+        this.onResponse(response);
+      });
+
+      try {
+        // await this.showLoginInstructions(page);
+        await page.goto(this.service.loginUrl);
+        await this.waitForHeadfulLoginComplete(page);
+      } catch (error: unknown) {
+        if (
+          error instanceof Error &&
+          (error.message.includes('Target closed') || error.message.includes('Browser closed'))
+        ) {
+          throw new LoginCancelledError();
+        }
+        throw error;
       }
 
-      return apiCredentials;
+      if (browserStateManager) {
+        const tempPath = browserStateManager.getTempPath();
+        if (tempPath) {
+          await context.storageState({ path: tempPath });
+          browserStateManager.persist();
+        }
+      }
+
+      await this.onHeadfulLoginComplete(context);
+
+      try {
+        const apiCredentials = await this.finalizeCredentials(browser, context);
+
+        if (apiCredentials === null) {
+          throw new LoginFailedError();
+        }
+
+        return apiCredentials;
+      } finally {
+        await browser.close();
+      }
     } finally {
-      await browser.close();
+      if (browserStateManager) {
+        browserStateManager.cleanup();
+      }
     }
   }
 }

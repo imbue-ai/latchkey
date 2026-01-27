@@ -15,7 +15,27 @@ export {
 
 export { ApiCredentialStore, ApiCredentialStoreError } from './apiCredentialStore.js';
 
-export { Config, CONFIG } from './config.js';
+export { BrowserStateStore, BrowserStateError } from './browserState.js';
+
+export { Config, CONFIG, LATCHKEY_ENCRYPTION_KEY_ENV_VAR } from './config.js';
+
+export { encrypt, decrypt, generateKey, EncryptionError, DecryptionError } from './encryption.js';
+
+export {
+  EncryptedStorage,
+  EncryptedStorageError,
+  getEncryptedStorage,
+  resetEncryptedStorage,
+} from './encryptedStorage.js';
+
+export {
+  storeInKeychain,
+  retrieveFromKeychain,
+  deleteFromKeychain,
+  isKeychainAvailable,
+  KeychainError,
+  KeychainNotAvailableError,
+} from './keychain.js';
 
 export {
   run as runCurl,

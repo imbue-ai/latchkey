@@ -9,6 +9,13 @@ const LATCHKEY_STORE_ENV_VAR = 'LATCHKEY_STORE';
 const LATCHKEY_BROWSER_STATE_ENV_VAR = 'LATCHKEY_BROWSER_STATE';
 const LATCHKEY_CURL_PATH_ENV_VAR = 'LATCHKEY_CURL_PATH';
 
+/**
+ * Environment variable for overriding the encryption key.
+ * If set, this key will be used instead of the system keychain.
+ * The key should be a base64-encoded 256-bit (32-byte) value.
+ */
+export const LATCHKEY_ENCRYPTION_KEY_ENV_VAR = 'LATCHKEY_ENCRYPTION_KEY';
+
 function getDefaultCredentialStorePath(): string {
   return join(homedir(), '.latchkey', 'credentials.json');
 }
