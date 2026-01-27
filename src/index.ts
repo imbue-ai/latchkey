@@ -15,7 +15,7 @@ export {
 
 export { ApiCredentialStore, ApiCredentialStoreError } from './apiCredentialStore.js';
 
-export { getBrowserStatePath } from './browserState.js';
+export { Config, CONFIG } from './config.js';
 
 export {
   run as runCurl,

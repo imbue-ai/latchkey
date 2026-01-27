@@ -19,7 +19,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, Response } from 'playwright';
-import { getBrowserStatePath } from '../src/browserState.js';
+import { CONFIG } from '../src/config.js';
 import { REGISTRY } from '../src/registry.js';
 
 // Get the directory of this file
@@ -194,7 +194,7 @@ async function record(
   mkdirSync(outputDirectory, { recursive: true });
   const requestsPath = join(outputDirectory, recordingName);
 
-  const browserStatePath = getBrowserStatePath();
+  const browserStatePath = CONFIG.browserStatePath;
 
   const baseDomain = extractBaseDomain(service.loginUrl);
 
@@ -202,9 +202,7 @@ async function record(
   console.log(`Login URL: ${service.loginUrl}`);
   console.log(`Recording requests to: ${baseDomain} (and subdomains)`);
   console.log(`Output directory: ${outputDirectory}`);
-  if (browserStatePath) {
-    console.log(`Browser state: ${browserStatePath}`);
-  }
+  console.log(`Browser state: ${browserStatePath}`);
   console.log("\nClose the browser window when you're done to save the recording.");
 
   const recordedEntries: RecordedEntry[] = [];
@@ -212,9 +210,7 @@ async function record(
 
   const browser = await chromium.launch({ headless: false });
   const context = await browser.newContext(
-    browserStatePath && existsSync(browserStatePath)
-      ? { storageState: browserStatePath }
-      : undefined
+    existsSync(browserStatePath) ? { storageState: browserStatePath } : undefined
   );
   const page = await context.newPage();
 
@@ -235,13 +231,11 @@ async function record(
     // Browser was closed, this is expected
   }
 
-  // Save browser state if path is configured
-  if (browserStatePath) {
-    try {
-      await context.storageState({ path: browserStatePath });
-    } catch {
-      // Context may already be closed
-    }
+  // Save browser state
+  try {
+    await context.storageState({ path: browserStatePath });
+  } catch {
+    // Context may already be closed
   }
 
   await context.close();

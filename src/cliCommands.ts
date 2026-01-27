@@ -4,18 +4,14 @@
 
 import type { Command } from 'commander';
 import { existsSync, unlinkSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import { ApiCredentialStore } from './apiCredentialStore.js';
 import { ApiCredentialStatus, ApiCredentials } from './apiCredentials.js';
-import { getBrowserStatePath } from './browserState.js';
+import { Config, CONFIG } from './config.js';
 import type { CurlResult } from './curl.js';
 import { Registry, REGISTRY } from './registry.js';
 import { LoginCancelledError, LoginFailedError } from './services/index.js';
 import { run as curlRun } from './curl.js';
-
-const LATCHKEY_STORE_ENV_VAR = 'LATCHKEY_STORE';
 
 // Curl flags that don't affect the HTTP request semantics but may not be supported by URL extraction.
 const CURL_PASSTHROUGH_FLAGS = new Set(['-v', '--verbose']);
@@ -25,9 +21,8 @@ const CURL_PASSTHROUGH_FLAGS = new Set(['-v', '--verbose']);
  */
 export interface CliDependencies {
   readonly registry: Registry;
+  readonly config: Config;
   readonly runCurl: (args: readonly string[]) => CurlResult;
-  readonly getEnv: (name: string) => string | undefined;
-  readonly getBrowserStatePath: () => string | null;
   readonly confirm: (message: string) => Promise<boolean>;
   readonly exit: (code: number) => never;
   readonly log: (message: string) => void;
@@ -40,9 +35,8 @@ export interface CliDependencies {
 export function createDefaultDependencies(): CliDependencies {
   return {
     registry: REGISTRY,
+    config: CONFIG,
     runCurl: curlRun,
-    getEnv: (name: string) => process.env[name],
-    getBrowserStatePath,
     confirm: defaultConfirm,
     exit: (code: number) => process.exit(code),
     log: (message: string) => {
@@ -85,17 +79,6 @@ export function extractUrlFromCurlArguments(args: string[]): string | null {
   return null;
 }
 
-function getLatchkeyStorePath(getEnv: (name: string) => string | undefined): string | null {
-  const envValue = getEnv(LATCHKEY_STORE_ENV_VAR);
-  if (envValue) {
-    if (envValue.startsWith('~')) {
-      return resolve(homedir(), envValue.slice(2));
-    }
-    return resolve(envValue);
-  }
-  return null;
-}
-
 async function defaultConfirm(message: string): Promise<boolean> {
   const readline = createInterface({
     input: process.stdin,
@@ -111,14 +94,14 @@ async function defaultConfirm(message: string): Promise<boolean> {
 }
 
 async function clearAll(deps: CliDependencies, yes: boolean): Promise<void> {
-  const latchkeyStore = getLatchkeyStorePath(deps.getEnv);
-  const browserState = deps.getBrowserStatePath();
+  const latchkeyStore = deps.config.credentialStorePath;
+  const browserState = deps.config.browserStatePath;
 
   const filesToDelete: string[] = [];
-  if (latchkeyStore !== null && existsSync(latchkeyStore)) {
+  if (existsSync(latchkeyStore)) {
     filesToDelete.push(latchkeyStore);
   }
-  if (browserState !== null && existsSync(browserState)) {
+  if (existsSync(browserState)) {
     filesToDelete.push(browserState);
   }
 
@@ -158,13 +141,7 @@ function clearService(deps: CliDependencies, serviceName: string): void {
     deps.exit(1);
   }
 
-  const latchkeyStore = getLatchkeyStorePath(deps.getEnv);
-  if (latchkeyStore === null) {
-    deps.errorLog(`Error: ${LATCHKEY_STORE_ENV_VAR} environment variable is not set.`);
-    deps.exit(1);
-  }
-
-  const apiCredentialStore = new ApiCredentialStore(latchkeyStore);
+  const apiCredentialStore = new ApiCredentialStore(deps.config.credentialStorePath);
   const deleted = apiCredentialStore.delete(serviceName);
 
   if (deleted) {
@@ -211,13 +188,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         deps.exit(1);
       }
 
-      const latchkeyStore = getLatchkeyStorePath(deps.getEnv);
-      if (latchkeyStore === null) {
-        deps.log(ApiCredentialStatus.Missing);
-        return;
-      }
-
-      const apiCredentialStore = new ApiCredentialStore(latchkeyStore);
+      const apiCredentialStore = new ApiCredentialStore(deps.config.credentialStorePath);
       const apiCredentials = apiCredentialStore.get(serviceName);
 
       if (apiCredentials === null) {
@@ -241,15 +212,12 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         deps.exit(1);
       }
 
-      const latchkeyStore = getLatchkeyStorePath(deps.getEnv);
-      const apiCredentialStore = latchkeyStore ? new ApiCredentialStore(latchkeyStore) : null;
+      const apiCredentialStore = new ApiCredentialStore(deps.config.credentialStorePath);
 
-      const browserStatePath = deps.getBrowserStatePath();
+      const browserStatePath = deps.config.browserStatePath;
       try {
         const apiCredentials = await service.getSession().login(browserStatePath);
-        if (apiCredentialStore !== null) {
-          apiCredentialStore.save(service.name, apiCredentials);
-        }
+        apiCredentialStore.save(service.name, apiCredentials);
         deps.log('Done');
       } catch (error) {
         if (error instanceof LoginCancelledError) {
@@ -271,7 +239,6 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .allowExcessArguments()
     .action(async (_options: unknown, command: { args: string[] }) => {
       const curlArguments = command.args;
-      const latchkeyStore = getLatchkeyStorePath(deps.getEnv);
 
       const url = extractUrlFromCurlArguments(curlArguments);
       if (url === null) {
@@ -285,20 +252,14 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         deps.exit(1);
       }
 
-      let apiCredentials: ApiCredentials | null = null;
-      const apiCredentialStore = latchkeyStore ? new ApiCredentialStore(latchkeyStore) : null;
-
-      if (apiCredentialStore !== null) {
-        apiCredentials = apiCredentialStore.get(service.name);
-      }
+      const apiCredentialStore = new ApiCredentialStore(deps.config.credentialStorePath);
+      let apiCredentials: ApiCredentials | null = apiCredentialStore.get(service.name);
 
       if (apiCredentials === null) {
-        const browserStatePath = deps.getBrowserStatePath();
+        const browserStatePath = deps.config.browserStatePath;
         try {
           apiCredentials = await service.getSession().login(browserStatePath);
-          if (apiCredentialStore !== null) {
-            apiCredentialStore.save(service.name, apiCredentials);
-          }
+          apiCredentialStore.save(service.name, apiCredentials);
         } catch (error) {
           if (error instanceof LoginCancelledError) {
             deps.errorLog('Login cancelled.');
