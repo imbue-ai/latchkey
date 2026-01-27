@@ -44,19 +44,17 @@ export class BrowserStateStore {
     this.tempDir = mkdtempSync(join(tmpdir(), 'latchkey-browser-state-'));
     this.tempFilePath = join(this.tempDir, 'browser_state.json');
 
-    // If encrypted state exists, decrypt it to the temp file
-    if (existsSync(this.persistentPath)) {
-      try {
-        const content = this.encryptedStorage.readFile(this.persistentPath);
-        if (content !== null) {
-          // Write decrypted content to temp file (unencrypted for Playwright)
-          writeFileSync(this.tempFilePath, content, { encoding: 'utf-8', mode: 0o600 });
-        }
-      } catch (error) {
-        throw new BrowserStateError(
-          `Failed to prepare browser state: ${error instanceof Error ? error.message : String(error)}`
-        );
+    // If state exists, decrypt it to the temp file
+    try {
+      const content = this.encryptedStorage.readFile(this.persistentPath);
+      if (content !== null) {
+        // Write decrypted content to temp file (unencrypted for Playwright)
+        writeFileSync(this.tempFilePath, content, { encoding: 'utf-8', mode: 0o600 });
       }
+    } catch (error) {
+      throw new BrowserStateError(
+        `Failed to prepare browser state: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
 
     return this.tempFilePath;
@@ -119,6 +117,7 @@ export class BrowserStateStore {
    * Check if the persistent state exists.
    */
   hasState(): boolean {
-    return existsSync(this.persistentPath);
+    const actualPath = this.encryptedStorage.getActualPath(this.persistentPath);
+    return existsSync(actualPath);
   }
 }

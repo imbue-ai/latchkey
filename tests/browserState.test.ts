@@ -72,6 +72,7 @@ describe('BrowserStateStore', () => {
   describe('persist', () => {
     it('should encrypt temp file content back to persistent storage', () => {
       const persistentPath = join(tempDir, 'browser_state.json');
+      const encryptedPath = encryptedStorage.getActualPath(persistentPath);
       const manager = new BrowserStateStore(persistentPath, encryptedStorage);
 
       const tempPath = manager.prepare();
@@ -82,8 +83,8 @@ describe('BrowserStateStore', () => {
 
       manager.persist();
 
-      // Verify persistent file is encrypted
-      const rawContent = readFileSync(persistentPath, 'utf-8');
+      // Verify persistent file is encrypted (at the .enc path)
+      const rawContent = readFileSync(encryptedPath, 'utf-8');
       expect(rawContent).toMatch(/^LATCHKEY_ENCRYPTED:/);
 
       // Verify we can read back the content

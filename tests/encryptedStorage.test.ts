@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, readFileSync, existsSync, statSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
@@ -27,6 +27,7 @@ describe('EncryptedStorage', () => {
   describe('with encryption key from Config', () => {
     it('should encrypt data when encryptionKey is set', () => {
       const filePath = join(tempDir, 'test.json');
+      const encryptedPath = filePath + '.enc';
       const content = '{"token": "secret-value"}';
 
       const storage = new EncryptedStorage({
@@ -35,8 +36,12 @@ describe('EncryptedStorage', () => {
 
       storage.writeFile(filePath, content);
 
+      // Verify the file is written to the .enc path
+      expect(existsSync(encryptedPath)).toBe(true);
+      expect(existsSync(filePath)).toBe(false);
+
       // Verify the file is encrypted (starts with prefix)
-      const rawContent = readFileSync(filePath, 'utf-8');
+      const rawContent = readFileSync(encryptedPath, 'utf-8');
       expect(rawContent).toMatch(/^LATCHKEY_ENCRYPTED:/);
       expect(rawContent).not.toContain('secret-value');
     });
@@ -56,7 +61,7 @@ describe('EncryptedStorage', () => {
     });
 
     it('should fail to decrypt with wrong key', () => {
-      const filePath = join(tempDir, 'test.json');
+      const basePath = join(tempDir, 'test.json');
       const content = '{"token": "secret-value"}';
       const key1 = generateKey();
       const key2 = generateKey();
@@ -65,7 +70,7 @@ describe('EncryptedStorage', () => {
       const storageWrite = new EncryptedStorage({
         encryptionKeyOverride: key1,
       });
-      storageWrite.writeFile(filePath, content);
+      storageWrite.writeFile(basePath, content);
 
       // Read with different key
       resetEncryptedStorage();
@@ -73,7 +78,7 @@ describe('EncryptedStorage', () => {
         encryptionKeyOverride: key2,
       });
 
-      expect(() => storageRead.readFile(filePath)).toThrow(EncryptedStorageError);
+      expect(() => storageRead.readFile(basePath)).toThrow(EncryptedStorageError);
     });
 
     it('should report encryption is enabled', () => {
@@ -88,6 +93,7 @@ describe('EncryptedStorage', () => {
   describe('file permissions', () => {
     it('should set chmod 600 on written files', () => {
       const filePath = join(tempDir, 'test.json');
+      const encryptedPath = filePath + '.enc';
       const content = '{"token": "secret-value"}';
 
       const storage = new EncryptedStorage({
@@ -97,13 +103,14 @@ describe('EncryptedStorage', () => {
       storage.writeFile(filePath, content);
 
       // Check file permissions (600 = 0o600 = 384 in decimal)
-      const stats = statSync(filePath);
+      const stats = statSync(encryptedPath);
       const permissions = stats.mode & 0o777;
       expect(permissions).toBe(0o600);
     });
 
     it('should create parent directories with chmod 700', () => {
       const nestedPath = join(tempDir, 'nested', 'deep', 'test.json');
+      const encryptedPath = nestedPath + '.enc';
       const content = '{"token": "secret-value"}';
 
       const storage = new EncryptedStorage({
@@ -112,7 +119,7 @@ describe('EncryptedStorage', () => {
 
       storage.writeFile(nestedPath, content);
 
-      expect(existsSync(nestedPath)).toBe(true);
+      expect(existsSync(encryptedPath)).toBe(true);
     });
   });
 
@@ -126,25 +133,10 @@ describe('EncryptedStorage', () => {
 
       expect(storage.readFile(filePath)).toBeNull();
     });
-
-    it('should read unencrypted files (legacy support)', () => {
-      const filePath = join(tempDir, 'legacy.json');
-      const content = '{"token": "legacy-value"}';
-
-      // Write unencrypted content directly
-      writeFileSync(filePath, content, 'utf-8');
-
-      const storage = new EncryptedStorage({
-        encryptionKeyOverride: testKey,
-      });
-
-      const retrieved = storage.readFile(filePath);
-      expect(retrieved).toBe(content);
-    });
   });
 
   describe('isFileEncrypted', () => {
-    it('should return true for encrypted files', () => {
+    it('should return true for encrypted files with .enc suffix', () => {
       const filePath = join(tempDir, 'test.json');
       const content = '{"token": "secret-value"}';
 
@@ -154,20 +146,8 @@ describe('EncryptedStorage', () => {
 
       storage.writeFile(filePath, content);
 
+      // isFileEncrypted should find the .enc file when given the base path
       expect(storage.isFileEncrypted(filePath)).toBe(true);
-    });
-
-    it('should return false for unencrypted files', () => {
-      const filePath = join(tempDir, 'legacy.json');
-      const content = '{"token": "legacy-value"}';
-
-      writeFileSync(filePath, content, 'utf-8');
-
-      const storage = new EncryptedStorage({
-        encryptionKeyOverride: testKey,
-      });
-
-      expect(storage.isFileEncrypted(filePath)).toBe(false);
     });
 
     it('should return false for non-existent files', () => {
@@ -178,6 +158,18 @@ describe('EncryptedStorage', () => {
       });
 
       expect(storage.isFileEncrypted(filePath)).toBe(false);
+    });
+  });
+
+  describe('getActualPath', () => {
+    it('should return path with .enc suffix when encryption is enabled', () => {
+      const filePath = join(tempDir, 'test.json');
+
+      const storage = new EncryptedStorage({
+        encryptionKeyOverride: testKey,
+      });
+
+      expect(storage.getActualPath(filePath)).toBe(filePath + '.enc');
     });
   });
 });

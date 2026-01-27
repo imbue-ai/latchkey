@@ -19,6 +19,7 @@ import {
 } from './keychain.js';
 
 const ENCRYPTED_FILE_PREFIX = 'LATCHKEY_ENCRYPTED:';
+const ENCRYPTED_FILE_SUFFIX = '.enc';
 
 export class EncryptedStorageError extends Error {
   constructor(message: string) {
@@ -99,16 +100,17 @@ export class EncryptedStorage {
 
   /**
    * Read and decrypt a file.
-   * If the file is not encrypted (legacy or fallback), returns the content as-is.
+   * Uses the .enc suffix when encryption is enabled.
    */
   readFile(filePath: string): string | null {
     this.initializeKey();
 
-    if (!existsSync(filePath)) {
+    const actualPath = this.encryptionEnabled ? filePath + ENCRYPTED_FILE_SUFFIX : filePath;
+    if (!existsSync(actualPath)) {
       return null;
     }
 
-    const content = readFileSync(filePath, 'utf-8');
+    const content = readFileSync(actualPath, 'utf-8');
 
     // Check if the file is encrypted
     if (content.startsWith(ENCRYPTED_FILE_PREFIX)) {
@@ -132,18 +134,20 @@ export class EncryptedStorage {
       }
     }
 
-    // File is not encrypted (legacy or fallback mode)
+    // File is not encrypted (fallback mode when keychain unavailable)
     return content;
   }
 
   /**
    * Encrypt and write data to a file.
    * Creates parent directories and sets chmod 600.
+   * When encryption is enabled, the file is written with a .enc suffix.
    */
   writeFile(filePath: string, content: string): void {
     this.initializeKey();
 
-    const dir = dirname(filePath);
+    const actualPath = this.encryptionEnabled ? filePath + ENCRYPTED_FILE_SUFFIX : filePath;
+    const dir = dirname(actualPath);
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true, mode: 0o700 });
     }
@@ -157,21 +161,32 @@ export class EncryptedStorage {
       dataToWrite = content;
     }
 
-    writeFileSync(filePath, dataToWrite, { encoding: 'utf-8', mode: 0o600 });
+    writeFileSync(actualPath, dataToWrite, { encoding: 'utf-8', mode: 0o600 });
 
     // Ensure permissions are set even if file already existed
-    chmodSync(filePath, 0o600);
+    chmodSync(actualPath, 0o600);
   }
 
   /**
    * Check if a file exists and is encrypted.
    */
   isFileEncrypted(filePath: string): boolean {
-    if (!existsSync(filePath)) {
+    this.initializeKey();
+    const actualPath = this.encryptionEnabled ? filePath + ENCRYPTED_FILE_SUFFIX : filePath;
+    if (!existsSync(actualPath)) {
       return false;
     }
-    const content = readFileSync(filePath, 'utf-8');
+    const content = readFileSync(actualPath, 'utf-8');
     return content.startsWith(ENCRYPTED_FILE_PREFIX);
+  }
+
+  /**
+   * Get the actual file path where data is stored.
+   * Returns the encrypted path if encryption is enabled, otherwise the original path.
+   */
+  getActualPath(filePath: string): string {
+    this.initializeKey();
+    return this.encryptionEnabled ? filePath + ENCRYPTED_FILE_SUFFIX : filePath;
   }
 }
 
