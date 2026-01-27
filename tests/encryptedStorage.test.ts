@@ -24,13 +24,13 @@ describe('EncryptedStorage', () => {
     resetEncryptedStorage();
   });
 
-  describe('with encryption key from environment', () => {
-    it('should encrypt data when LATCHKEY_ENCRYPTION_KEY is set', () => {
+  describe('with encryption key from Config', () => {
+    it('should encrypt data when encryptionKey is set', () => {
       const filePath = join(tempDir, 'test.json');
       const content = '{"token": "secret-value"}';
 
       const storage = new EncryptedStorage({
-        getEnv: (name) => (name === 'LATCHKEY_ENCRYPTION_KEY' ? testKey : undefined),
+        encryptionKeyOverride: testKey,
       });
 
       storage.writeFile(filePath, content);
@@ -46,7 +46,7 @@ describe('EncryptedStorage', () => {
       const content = '{"token": "secret-value"}';
 
       const storage = new EncryptedStorage({
-        getEnv: (name) => (name === 'LATCHKEY_ENCRYPTION_KEY' ? testKey : undefined),
+        encryptionKeyOverride: testKey,
       });
 
       storage.writeFile(filePath, content);
@@ -63,14 +63,14 @@ describe('EncryptedStorage', () => {
 
       // Write with one key
       const storageWrite = new EncryptedStorage({
-        getEnv: (name) => (name === 'LATCHKEY_ENCRYPTION_KEY' ? key1 : undefined),
+        encryptionKeyOverride: key1,
       });
       storageWrite.writeFile(filePath, content);
 
       // Read with different key
       resetEncryptedStorage();
       const storageRead = new EncryptedStorage({
-        getEnv: (name) => (name === 'LATCHKEY_ENCRYPTION_KEY' ? key2 : undefined),
+        encryptionKeyOverride: key2,
       });
 
       expect(() => storageRead.readFile(filePath)).toThrow(EncryptedStorageError);
@@ -78,7 +78,7 @@ describe('EncryptedStorage', () => {
 
     it('should report encryption is enabled', () => {
       const storage = new EncryptedStorage({
-        getEnv: (name) => (name === 'LATCHKEY_ENCRYPTION_KEY' ? testKey : undefined),
+        encryptionKeyOverride: testKey,
       });
 
       expect(storage.isEncryptionEnabled()).toBe(true);
@@ -91,7 +91,7 @@ describe('EncryptedStorage', () => {
       const content = '{"token": "secret-value"}';
 
       const storage = new EncryptedStorage({
-        getEnv: (name) => (name === 'LATCHKEY_ENCRYPTION_KEY' ? testKey : undefined),
+        encryptionKeyOverride: testKey,
       });
 
       storage.writeFile(filePath, content);
@@ -107,7 +107,7 @@ describe('EncryptedStorage', () => {
       const content = '{"token": "secret-value"}';
 
       const storage = new EncryptedStorage({
-        getEnv: (name) => (name === 'LATCHKEY_ENCRYPTION_KEY' ? testKey : undefined),
+        encryptionKeyOverride: testKey,
       });
 
       storage.writeFile(nestedPath, content);
@@ -121,7 +121,7 @@ describe('EncryptedStorage', () => {
       const filePath = join(tempDir, 'nonexistent.json');
 
       const storage = new EncryptedStorage({
-        getEnv: (name) => (name === 'LATCHKEY_ENCRYPTION_KEY' ? testKey : undefined),
+        encryptionKeyOverride: testKey,
       });
 
       expect(storage.readFile(filePath)).toBeNull();
@@ -135,7 +135,7 @@ describe('EncryptedStorage', () => {
       writeFileSync(filePath, content, 'utf-8');
 
       const storage = new EncryptedStorage({
-        getEnv: (name) => (name === 'LATCHKEY_ENCRYPTION_KEY' ? testKey : undefined),
+        encryptionKeyOverride: testKey,
       });
 
       const retrieved = storage.readFile(filePath);
@@ -149,7 +149,7 @@ describe('EncryptedStorage', () => {
       const content = '{"token": "secret-value"}';
 
       const storage = new EncryptedStorage({
-        getEnv: (name) => (name === 'LATCHKEY_ENCRYPTION_KEY' ? testKey : undefined),
+        encryptionKeyOverride: testKey,
       });
 
       storage.writeFile(filePath, content);
@@ -164,7 +164,7 @@ describe('EncryptedStorage', () => {
       writeFileSync(filePath, content, 'utf-8');
 
       const storage = new EncryptedStorage({
-        getEnv: (name) => (name === 'LATCHKEY_ENCRYPTION_KEY' ? testKey : undefined),
+        encryptionKeyOverride: testKey,
       });
 
       expect(storage.isFileEncrypted(filePath)).toBe(false);
@@ -174,7 +174,7 @@ describe('EncryptedStorage', () => {
       const filePath = join(tempDir, 'nonexistent.json');
 
       const storage = new EncryptedStorage({
-        getEnv: (name) => (name === 'LATCHKEY_ENCRYPTION_KEY' ? testKey : undefined),
+        encryptionKeyOverride: testKey,
       });
 
       expect(storage.isFileEncrypted(filePath)).toBe(false);

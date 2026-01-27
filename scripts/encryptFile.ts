@@ -22,6 +22,7 @@
 
 import { program } from 'commander';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { CONFIG } from '../src/config.js';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { encrypt, generateKey } from '../src/encryption.js';
 import { isKeychainAvailable, retrieveFromKeychain } from '../src/keychain.js';
@@ -29,10 +30,9 @@ import { isKeychainAvailable, retrieveFromKeychain } from '../src/keychain.js';
 const ENCRYPTED_FILE_PREFIX = 'LATCHKEY_ENCRYPTED:';
 
 function getEncryptionKey(): string {
-  // 1. Check environment variable
-  const envKey = process.env.LATCHKEY_ENCRYPTION_KEY;
-  if (envKey) {
-    return envKey;
+  // 1. Check environment variable via Config
+  if (CONFIG.encryptionKeyOverride) {
+    return CONFIG.encryptionKeyOverride;
   }
 
   // 2. Check keychain

@@ -8,13 +8,7 @@ import { join, resolve } from 'node:path';
 const LATCHKEY_STORE_ENV_VAR = 'LATCHKEY_STORE';
 const LATCHKEY_BROWSER_STATE_ENV_VAR = 'LATCHKEY_BROWSER_STATE';
 const LATCHKEY_CURL_PATH_ENV_VAR = 'LATCHKEY_CURL_PATH';
-
-/**
- * Environment variable for overriding the encryption key.
- * If set, this key will be used instead of the system keychain.
- * The key should be a base64-encoded 256-bit (32-byte) value.
- */
-export const LATCHKEY_ENCRYPTION_KEY_ENV_VAR = 'LATCHKEY_ENCRYPTION_KEY';
+const LATCHKEY_ENCRYPTION_KEY_ENV_VAR = 'LATCHKEY_ENCRYPTION_KEY';
 
 function getDefaultCredentialStorePath(): string {
   return join(homedir(), '.latchkey', 'credentials.json');
@@ -38,6 +32,12 @@ export class Config {
   readonly credentialStorePath: string;
   readonly browserStatePath: string;
   readonly curlCommand: string;
+  /**
+   * Encryption key override from environment variable.
+   * If set, this key will be used instead of the system keychain.
+   * The key should be a base64-encoded 256-bit (32-byte) value.
+   */
+  readonly encryptionKeyOverride: string | null;
 
   constructor(getEnv: (name: string) => string | undefined = (name) => process.env[name]) {
     const credentialStoreEnv = getEnv(LATCHKEY_STORE_ENV_VAR);
@@ -51,6 +51,8 @@ export class Config {
       : getDefaultBrowserStatePath();
 
     this.curlCommand = getEnv(LATCHKEY_CURL_PATH_ENV_VAR) ?? 'curl';
+
+    this.encryptionKeyOverride = getEnv(LATCHKEY_ENCRYPTION_KEY_ENV_VAR) ?? null;
   }
 }
 

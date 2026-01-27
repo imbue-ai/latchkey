@@ -17,7 +17,7 @@ export { ApiCredentialStore, ApiCredentialStoreError } from './apiCredentialStor
 
 export { BrowserStateStore, BrowserStateError } from './browserState.js';
 
-export { Config, CONFIG, LATCHKEY_ENCRYPTION_KEY_ENV_VAR } from './config.js';
+export { Config, CONFIG } from './config.js';
 
 export { encrypt, decrypt, generateKey, EncryptionError, DecryptionError } from './encryption.js';
 

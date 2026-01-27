@@ -9,6 +9,7 @@ import {
   deserializeCredentials,
   serializeCredentials,
 } from './apiCredentials.js';
+import { CONFIG } from './config.js';
 import { EncryptedStorage, getEncryptedStorage } from './encryptedStorage.js';
 
 export class ApiCredentialStoreError extends Error {
@@ -26,7 +27,9 @@ export class ApiCredentialStore {
 
   constructor(path: string, encryptedStorage?: EncryptedStorage) {
     this.path = path;
-    this.encryptedStorage = encryptedStorage ?? getEncryptedStorage();
+    this.encryptedStorage =
+      encryptedStorage ??
+      getEncryptedStorage({ encryptionKeyOverride: CONFIG.encryptionKeyOverride });
   }
 
   private loadStoreData(): StoreData {

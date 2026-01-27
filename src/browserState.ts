@@ -6,6 +6,7 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { CONFIG } from './config.js';
 import { EncryptedStorage, getEncryptedStorage } from './encryptedStorage.js';
 
 export class BrowserStateError extends Error {
@@ -28,7 +29,9 @@ export class BrowserStateStore {
 
   constructor(persistentPath: string, encryptedStorage?: EncryptedStorage) {
     this.persistentPath = persistentPath;
-    this.encryptedStorage = encryptedStorage ?? getEncryptedStorage();
+    this.encryptedStorage =
+      encryptedStorage ??
+      getEncryptedStorage({ encryptionKeyOverride: CONFIG.encryptionKeyOverride });
   }
 
   /**

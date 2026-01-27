@@ -16,7 +16,7 @@ describe('BrowserStateStore', () => {
     testKey = generateKey();
     resetEncryptedStorage();
     encryptedStorage = new EncryptedStorage({
-      getEnv: (name) => (name === 'LATCHKEY_ENCRYPTION_KEY' ? testKey : undefined),
+      encryptionKeyOverride: testKey,
     });
   });
 

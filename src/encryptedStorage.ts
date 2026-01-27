@@ -1,7 +1,7 @@
 /**
  * Encrypted file storage with automatic key management.
  * Encryption keys are retrieved from:
- * 1. LATCHKEY_ENCRYPTION_KEY environment variable (if set)
+ * 1. Provided encryptionKeyOverride option
  * 2. System keychain
  * 3. Generated and stored in keychain (first run)
  *
@@ -18,7 +18,6 @@ import {
   KeychainNotAvailableError,
 } from './keychain.js';
 
-const LATCHKEY_ENCRYPTION_KEY_ENV_VAR = 'LATCHKEY_ENCRYPTION_KEY';
 const ENCRYPTED_FILE_PREFIX = 'LATCHKEY_ENCRYPTED:';
 
 export class EncryptedStorageError extends Error {
@@ -29,45 +28,44 @@ export class EncryptedStorageError extends Error {
 }
 
 export interface EncryptedStorageOptions {
-  getEnv?: (name: string) => string | undefined;
+  encryptionKeyOverride?: string | null;
 }
 
 /**
  * Manages encrypted file storage with automatic key handling.
  */
 export class EncryptedStorage {
-  private key: string | null = null;
+  private key: string | null;
   private encryptionEnabled = true;
-  private readonly getEnv: (name: string) => string | undefined;
+  private keyInitialized = false;
 
   constructor(options: EncryptedStorageOptions = {}) {
-    this.getEnv = options.getEnv ?? ((name) => process.env[name]);
+    this.key = options.encryptionKeyOverride ?? null;
   }
 
   /**
-   * Initialize the encryption key.
+   * Initialize the encryption key from keychain if not already set.
    * Must be called before read/write operations.
    */
   private initializeKey(): void {
-    if (this.key !== null) {
+    if (this.keyInitialized) {
       return;
     }
+    this.keyInitialized = true;
 
-    // 1. Check for environment variable override
-    const envKey = this.getEnv(LATCHKEY_ENCRYPTION_KEY_ENV_VAR);
-    if (envKey) {
-      this.key = envKey;
+    // If key was provided via override, use it
+    if (this.key !== null) {
       this.encryptionEnabled = true;
       return;
     }
 
-    // 2. Check if keychain is available
+    // Check if keychain is available
     if (!isKeychainAvailable()) {
       this.encryptionEnabled = false;
       return;
     }
 
-    // 3. Try to retrieve from keychain
+    // Try to retrieve from keychain
     try {
       const keychainKey = retrieveFromKeychain();
       if (keychainKey) {
@@ -76,7 +74,7 @@ export class EncryptedStorage {
         return;
       }
 
-      // 4. Generate new key and store in keychain
+      // Generate new key and store in keychain
       const newKey = generateKey();
       storeInKeychain(newKey);
       this.key = newKey;

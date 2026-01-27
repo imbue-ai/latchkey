@@ -145,6 +145,7 @@ describe('CLI commands with dependency injection', () => {
       credentialStorePath: overrides.credentialStorePath ?? join(tempDir, 'credentials.json'),
       browserStatePath: overrides.browserStatePath ?? join(tempDir, 'browser_state.json'),
       curlCommand: overrides.curlCommand ?? defaultConfig.curlCommand,
+      encryptionKeyOverride: overrides.encryptionKeyOverride ?? null,
     };
   }
 
