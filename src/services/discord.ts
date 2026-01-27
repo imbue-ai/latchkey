@@ -18,6 +18,12 @@ class DiscordServiceSession extends SimpleServiceSession {
       return null;
     }
 
+    // Require 2XX response to ensure the session is valid (not expired)
+    const status = response.status();
+    if (status < 200 || status >= 300) {
+      return null;
+    }
+
     const headers = await request.allHeaders();
     const authorization = headers.authorization;
     if (authorization !== undefined && authorization.trim() !== '') {
