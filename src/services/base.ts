@@ -5,7 +5,6 @@
 import type { Browser, BrowserContext, Page, Response } from 'playwright';
 import { ApiCredentialStatus, ApiCredentials } from '../apiCredentials.js';
 import { BrowserStateStore } from '../browserState.js';
-import { EncryptedStorage } from '../encryptedStorage.js';
 import { showSpinnerPage } from '../playwrightUtils.js';
 
 export class LoginCancelledError extends Error {
@@ -166,21 +165,15 @@ export abstract class ServiceSession {
   /**
    * Perform the login flow and return the extracted credentials.
    */
-  async login(
-    browserStatePath: string | null,
-    encryptedStorage: EncryptedStorage
-  ): Promise<ApiCredentials> {
+  async login(browserStateStore?: BrowserStateStore): Promise<ApiCredentials> {
     const { chromium: chromiumBrowser } = await import('playwright');
     const browser = await chromiumBrowser.launch({ headless: false });
 
-    // Use BrowserStateStore for encrypted browser state handling
-    let browserStateManager: BrowserStateStore | null = null;
     const contextOptions: { storageState?: string } = {};
 
-    if (browserStatePath) {
-      browserStateManager = new BrowserStateStore(browserStatePath, encryptedStorage);
-      const tempPath = browserStateManager.prepare();
-      if (browserStateManager.hasState()) {
+    if (browserStateStore) {
+      const tempPath = browserStateStore.prepare();
+      if (browserStateStore.hasState()) {
         contextOptions.storageState = tempPath;
       }
     }
@@ -207,11 +200,11 @@ export abstract class ServiceSession {
         throw error;
       }
 
-      if (browserStateManager) {
-        const tempPath = browserStateManager.getTempPath();
+      if (browserStateStore) {
+        const tempPath = browserStateStore.getTempPath();
         if (tempPath) {
           await context.storageState({ path: tempPath });
-          browserStateManager.persist();
+          browserStateStore.persist();
         }
       }
 
@@ -229,8 +222,8 @@ export abstract class ServiceSession {
         await browser.close();
       }
     } finally {
-      if (browserStateManager) {
-        browserStateManager.cleanup();
+      if (browserStateStore) {
+        browserStateStore.cleanup();
       }
     }
   }

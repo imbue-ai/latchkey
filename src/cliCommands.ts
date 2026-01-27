@@ -7,9 +7,10 @@ import { existsSync, unlinkSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { ApiCredentialStore } from './apiCredentialStore.js';
 import { ApiCredentialStatus, ApiCredentials } from './apiCredentials.js';
+import { BrowserStateStore } from './browserState.js';
 import { Config, CONFIG } from './config.js';
 import type { CurlResult } from './curl.js';
-import { getEncryptedStorage } from './encryptedStorage.js';
+import { EncryptedStorage } from './encryptedStorage.js';
 import { Registry, REGISTRY } from './registry.js';
 import { LoginCancelledError, LoginFailedError } from './services/index.js';
 import { run as curlRun } from './curl.js';
@@ -135,7 +136,7 @@ async function clearAll(deps: CliDependencies, yes: boolean): Promise<void> {
 }
 
 function createEncryptedStorageFromConfig(config: Config) {
-  return getEncryptedStorage({
+  return new EncryptedStorage({
     encryptionKeyOverride: config.encryptionKeyOverride,
     serviceName: config.serviceName,
     accountName: config.accountName,
@@ -234,10 +235,13 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         deps.config.credentialStorePath,
         encryptedStorage
       );
+      const browserStateStore = new BrowserStateStore(
+        deps.config.browserStatePath,
+        encryptedStorage
+      );
 
-      const browserStatePath = deps.config.browserStatePath;
       try {
-        const apiCredentials = await service.getSession().login(browserStatePath, encryptedStorage);
+        const apiCredentials = await service.getSession().login(browserStateStore);
         apiCredentialStore.save(service.name, apiCredentials);
         deps.log('Done');
       } catch (error) {
@@ -281,9 +285,12 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       let apiCredentials: ApiCredentials | null = apiCredentialStore.get(service.name);
 
       if (apiCredentials === null) {
-        const browserStatePath = deps.config.browserStatePath;
+        const browserStateStore = new BrowserStateStore(
+          deps.config.browserStatePath,
+          encryptedStorage
+        );
         try {
-          apiCredentials = await service.getSession().login(browserStatePath, encryptedStorage);
+          apiCredentials = await service.getSession().login(browserStateStore);
           apiCredentialStore.save(service.name, apiCredentials);
         } catch (error) {
           if (error instanceof LoginCancelledError) {
