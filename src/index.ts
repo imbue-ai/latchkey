@@ -24,6 +24,7 @@ export { encrypt, decrypt, generateKey, EncryptionError, DecryptionError } from 
 export {
   EncryptedStorage,
   EncryptedStorageError,
+  InsecureFilePermissionsError,
   getEncryptedStorage,
   resetEncryptedStorage,
 } from './encryptedStorage.js';

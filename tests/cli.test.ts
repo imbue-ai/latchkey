@@ -2,6 +2,10 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+
+function writeSecureFile(path: string, content: string): void {
+  writeFileSync(path, content, { mode: 0o600 });
+}
 import { execSync, ExecSyncOptionsWithStringEncoding } from 'node:child_process';
 import { Command } from 'commander';
 import {
@@ -229,7 +233,7 @@ describe('CLI commands with dependency injection', () => {
   describe('status command', () => {
     it('should return missing when no credentials are stored', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeFileSync(storePath, '{}');
+      writeSecureFile(storePath, '{}');
 
       const deps = createMockDependencies({
         config: createMockConfig({ credentialStorePath: storePath }),
@@ -242,7 +246,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should return valid when credentials are valid', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeFileSync(
+      writeSecureFile(
         storePath,
         JSON.stringify({
           slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
@@ -271,7 +275,7 @@ describe('CLI commands with dependency injection', () => {
   describe('clear command', () => {
     it('should delete credentials for a service', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeFileSync(
+      writeSecureFile(
         storePath,
         JSON.stringify({
           slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
@@ -291,7 +295,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should report no credentials found when service has no stored credentials', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeFileSync(storePath, '{}');
+      writeSecureFile(storePath, '{}');
 
       const deps = createMockDependencies({
         config: createMockConfig({ credentialStorePath: storePath }),
@@ -326,7 +330,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should preserve other services when clearing one', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeFileSync(
+      writeSecureFile(
         storePath,
         JSON.stringify({
           slack: { objectType: 'slack', token: 'slack-token', dCookie: 'slack-cookie' },
@@ -349,7 +353,7 @@ describe('CLI commands with dependency injection', () => {
     it('should delete both store and browser state with -y flag', async () => {
       const storePath = join(tempDir, 'credentials.json');
       const browserStatePath = join(tempDir, 'browser_state.json');
-      writeFileSync(
+      writeSecureFile(
         storePath,
         JSON.stringify({ slack: { objectType: 'slack', token: 'test', dCookie: 'test' } })
       );
@@ -384,7 +388,7 @@ describe('CLI commands with dependency injection', () => {
   describe('curl command', () => {
     it('should pass arguments to subprocess', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeFileSync(
+      writeSecureFile(
         storePath,
         JSON.stringify({
           slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
@@ -409,7 +413,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should pass multiple arguments correctly', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeFileSync(
+      writeSecureFile(
         storePath,
         JSON.stringify({
           slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
@@ -443,7 +447,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should return subprocess exit code', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeFileSync(
+      writeSecureFile(
         storePath,
         JSON.stringify({
           slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
@@ -480,7 +484,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should inject credentials with verbose flag', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeFileSync(
+      writeSecureFile(
         storePath,
         JSON.stringify({
           slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
@@ -500,7 +504,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should read credentials from store and not call login', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeFileSync(
+      writeSecureFile(
         storePath,
         JSON.stringify({
           slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
@@ -532,7 +536,7 @@ describe('CLI commands with dependency injection', () => {
     it('should call login when no credentials in store', async () => {
       const storePath = join(tempDir, 'credentials.json');
       const browserStatePath = join(tempDir, 'browser_state.json');
-      writeFileSync(storePath, '{}');
+      writeSecureFile(storePath, '{}');
 
       const mockLogin = vi
         .fn()
@@ -605,7 +609,7 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
 
     it('should return missing when no credentials are stored', () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeFileSync(storePath, '{}');
+      writeSecureFile(storePath, '{}');
 
       const result = runCli(['status', 'slack'], { LATCHKEY_STORE: storePath });
       expect(result.exitCode).toBe(0);
@@ -622,7 +626,7 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
   describe('clear command', () => {
     it('should delete credentials for a service', () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeFileSync(
+      writeSecureFile(
         storePath,
         JSON.stringify({
           slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
@@ -639,7 +643,7 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
 
     it('should report no credentials found when service has no stored credentials', () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeFileSync(storePath, '{}');
+      writeSecureFile(storePath, '{}');
 
       const result = runCli(['clear', 'slack'], { LATCHKEY_STORE: storePath });
       expect(result.exitCode).toBe(0);
@@ -655,7 +659,7 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
 
     it('should preserve other services when clearing one', () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeFileSync(
+      writeSecureFile(
         storePath,
         JSON.stringify({
           slack: { objectType: 'slack', token: 'slack-token', dCookie: 'slack-cookie' },
@@ -675,7 +679,7 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
     it('should delete both store and browser state with -y flag', () => {
       const storePath = join(tempDir, 'credentials.json');
       const browserStatePath = join(tempDir, 'browser_state.json');
-      writeFileSync(
+      writeSecureFile(
         storePath,
         JSON.stringify({ slack: { objectType: 'slack', token: 'test', dCookie: 'test' } })
       );
@@ -695,7 +699,7 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
     it('should delete only existing files with -y flag', () => {
       const storePath = join(tempDir, 'credentials.json');
       const browserStatePath = join(tempDir, 'browser_state.json');
-      writeFileSync(storePath, '{}');
+      writeSecureFile(storePath, '{}');
       // browser_state does not exist
 
       const result = runCli(['clear', '-y'], {

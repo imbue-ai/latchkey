@@ -1,11 +1,20 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, readFileSync, existsSync, statSync } from 'node:fs';
+import {
+  mkdtempSync,
+  rmSync,
+  readFileSync,
+  existsSync,
+  statSync,
+  writeFileSync,
+  chmodSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
   EncryptedStorage,
   resetEncryptedStorage,
   EncryptedStorageError,
+  InsecureFilePermissionsError,
 } from '../src/encryptedStorage.js';
 import { generateKey } from '../src/encryption.js';
 
@@ -120,6 +129,44 @@ describe('EncryptedStorage', () => {
       storage.writeFile(nestedPath, content);
 
       expect(existsSync(encryptedPath)).toBe(true);
+    });
+
+    it('should throw error when overwriting file with insecure permissions', () => {
+      const filePath = join(tempDir, 'insecure.json');
+      const encryptedPath = filePath + '.enc';
+      const content = '{"token": "secret-value"}';
+
+      // Create a file with insecure permissions (readable by group)
+      writeFileSync(encryptedPath, 'existing content', { encoding: 'utf-8' });
+      chmodSync(encryptedPath, 0o640);
+
+      const storage = new EncryptedStorage({
+        encryptionKeyOverride: testKey,
+      });
+
+      expect(() => {
+        storage.writeFile(filePath, content);
+      }).toThrow(InsecureFilePermissionsError);
+    });
+
+    it('should allow overwriting file with secure permissions', () => {
+      const filePath = join(tempDir, 'secure.json');
+      const encryptedPath = filePath + '.enc';
+      const content = '{"token": "secret-value"}';
+
+      // Create a file with secure permissions
+      writeFileSync(encryptedPath, 'existing content', { encoding: 'utf-8' });
+      chmodSync(encryptedPath, 0o600);
+
+      const storage = new EncryptedStorage({
+        encryptionKeyOverride: testKey,
+      });
+
+      // Should not throw
+      storage.writeFile(filePath, content);
+
+      const retrieved = storage.readFile(filePath);
+      expect(retrieved).toBe(content);
     });
   });
 

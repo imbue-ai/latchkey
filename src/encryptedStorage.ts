@@ -8,7 +8,7 @@
  * Falls back to unencrypted storage with chmod 600 if keychain is unavailable.
  */
 
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DEFAULT_KEYRING_SERVICE_NAME, DEFAULT_KEYRING_ACCOUNT_NAME } from './config.js';
 import { encrypt, decrypt, generateKey, DecryptionError } from './encryption.js';
@@ -26,6 +26,17 @@ export class EncryptedStorageError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'EncryptedStorageError';
+  }
+}
+
+export class InsecureFilePermissionsError extends Error {
+  constructor(filePath: string, permissions: number) {
+    const permissionsOctal = permissions.toString(8).padStart(3, '0');
+    super(
+      `File ${filePath} has insecure permissions (${permissionsOctal}). ` +
+        'Credentials files should not be readable by group or others.'
+    );
+    this.name = 'InsecureFilePermissionsError';
   }
 }
 
@@ -147,7 +158,8 @@ export class EncryptedStorage {
 
   /**
    * Encrypt and write data to a file.
-   * Creates parent directories and sets chmod 600.
+   * Creates parent directories. New files are created with chmod 600.
+   * Existing files must have restrictive permissions (no group/other access).
    * When encryption is enabled, the file is written with a .enc suffix.
    */
   writeFile(filePath: string, content: string): void {
@@ -157,6 +169,16 @@ export class EncryptedStorage {
     const dir = dirname(actualPath);
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true, mode: 0o700 });
+    }
+
+    // Check permissions if file already exists
+    if (existsSync(actualPath)) {
+      const stats = statSync(actualPath);
+      const permissions = stats.mode & 0o777;
+      // Reject if group or others have any access
+      if ((permissions & 0o077) !== 0) {
+        throw new InsecureFilePermissionsError(actualPath, permissions);
+      }
     }
 
     let dataToWrite: string;
@@ -169,9 +191,6 @@ export class EncryptedStorage {
     }
 
     writeFileSync(actualPath, dataToWrite, { encoding: 'utf-8', mode: 0o600 });
-
-    // Ensure permissions are set even if file already existed
-    chmodSync(actualPath, 0o600);
   }
 
   /**
