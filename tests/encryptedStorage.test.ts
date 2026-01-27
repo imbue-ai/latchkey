@@ -170,32 +170,6 @@ describe('EncryptedStorage', () => {
     });
   });
 
-  describe('isFileEncrypted', () => {
-    it('should return true for encrypted files with .enc suffix', () => {
-      const filePath = join(tempDir, 'test.json');
-      const content = '{"token": "secret-value"}';
-
-      const storage = new EncryptedStorage({
-        encryptionKeyOverride: testKey,
-      });
-
-      storage.writeFile(filePath, content);
-
-      // isFileEncrypted should find the .enc file when given the base path
-      expect(storage.isFileEncrypted(filePath)).toBe(true);
-    });
-
-    it('should return false for non-existent files', () => {
-      const filePath = join(tempDir, 'nonexistent.json');
-
-      const storage = new EncryptedStorage({
-        encryptionKeyOverride: testKey,
-      });
-
-      expect(storage.isFileEncrypted(filePath)).toBe(false);
-    });
-  });
-
   describe('getActualPath', () => {
     it('should return path with .enc suffix when encryption is enabled', () => {
       const filePath = join(tempDir, 'test.json');

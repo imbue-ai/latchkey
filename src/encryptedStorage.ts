@@ -110,7 +110,7 @@ export class EncryptedStorage {
     if (content.startsWith(ENCRYPTED_FILE_PREFIX)) {
       if (this.key === null) {
         throw new EncryptedStorageError(
-          'File is encrypted but encryption is not available. ' +
+          'File is encrypted but a key is not available. ' +
             'Set LATCHKEY_ENCRYPTION_KEY or ensure system keychain is accessible.'
         );
       }
@@ -165,18 +165,6 @@ export class EncryptedStorage {
     }
 
     writeFileSync(actualPath, dataToWrite, { encoding: 'utf-8', mode: 0o600 });
-  }
-
-  /**
-   * Check if a file exists and is encrypted.
-   */
-  isFileEncrypted(filePath: string): boolean {
-    const actualPath = this.isEncryptionEnabled() ? filePath + ENCRYPTED_FILE_SUFFIX : filePath;
-    if (!existsSync(actualPath)) {
-      return false;
-    }
-    const content = readFileSync(actualPath, 'utf-8');
-    return content.startsWith(ENCRYPTED_FILE_PREFIX);
   }
 
   /**
