@@ -85,14 +85,6 @@ describe('EncryptedStorage', () => {
 
       expect(() => storageRead.readFile(basePath)).toThrow(EncryptedStorageError);
     });
-
-    it('should report encryption is enabled', () => {
-      const storage = new EncryptedStorage({
-        encryptionKeyOverride: testKey,
-      });
-
-      expect(storage.isEncryptionEnabled()).toBe(true);
-    });
   });
 
   describe('file permissions', () => {

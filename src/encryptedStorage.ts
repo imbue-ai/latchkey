@@ -50,70 +50,48 @@ export interface EncryptedStorageOptions {
  * Manages encrypted file storage with automatic key handling.
  */
 export class EncryptedStorage {
-  private key: string | null;
-  private encryptionEnabled = true;
-  private keyInitialized = false;
-  private readonly serviceName: string;
-  private readonly accountName: string;
+  private readonly key: string | null;
 
   constructor(options: EncryptedStorageOptions = {}) {
-    this.key = options.encryptionKeyOverride ?? null;
-    this.serviceName = options.serviceName ?? DEFAULT_KEYRING_SERVICE_NAME;
-    this.accountName = options.accountName ?? DEFAULT_KEYRING_ACCOUNT_NAME;
+    this.key = EncryptedStorage.initializeKey(options);
   }
 
-  /**
-   * Initialize the encryption key from keychain if not already set.
-   * Must be called before read/write operations.
-   */
-  private initializeKey(): void {
-    if (this.keyInitialized) {
-      return;
-    }
-    this.keyInitialized = true;
-
+  private static initializeKey(options: EncryptedStorageOptions): string | null {
     // If key was provided via override, use it
-    if (this.key !== null) {
-      this.encryptionEnabled = true;
-      return;
+    if (options.encryptionKeyOverride !== undefined && options.encryptionKeyOverride !== null) {
+      return options.encryptionKeyOverride;
     }
+
+    const serviceName = options.serviceName ?? DEFAULT_KEYRING_SERVICE_NAME;
+    const accountName = options.accountName ?? DEFAULT_KEYRING_ACCOUNT_NAME;
 
     // Check if keychain is available
-    if (!isKeychainAvailable(this.serviceName, this.accountName)) {
-      this.encryptionEnabled = false;
-      return;
+    if (!isKeychainAvailable(serviceName, accountName)) {
+      return null;
     }
 
     // Try to retrieve from keychain
     try {
-      const keychainKey = retrieveFromKeychain(this.serviceName, this.accountName);
+      const keychainKey = retrieveFromKeychain(serviceName, accountName);
       if (keychainKey) {
-        this.key = keychainKey;
-        this.encryptionEnabled = true;
-        return;
+        return keychainKey;
       }
 
       // Generate new key and store in keychain
       const newKey = generateKey();
-      storeInKeychain(this.serviceName, this.accountName, newKey);
-      this.key = newKey;
-      this.encryptionEnabled = true;
+      storeInKeychain(serviceName, accountName, newKey);
+      return newKey;
     } catch (error) {
       if (error instanceof KeychainNotAvailableError) {
         // Fall back to unencrypted storage
-        this.encryptionEnabled = false;
-        return;
+        return null;
       }
       throw error;
     }
   }
 
-  /**
-   * Check if encryption is enabled.
-   */
-  isEncryptionEnabled(): boolean {
-    this.initializeKey();
-    return this.encryptionEnabled;
+  private isEncryptionEnabled(): boolean {
+    return this.key !== null;
   }
 
   /**
@@ -121,9 +99,7 @@ export class EncryptedStorage {
    * Uses the .enc suffix when encryption is enabled.
    */
   readFile(filePath: string): string | null {
-    this.initializeKey();
-
-    const actualPath = this.encryptionEnabled ? filePath + ENCRYPTED_FILE_SUFFIX : filePath;
+    const actualPath = this.isEncryptionEnabled() ? filePath + ENCRYPTED_FILE_SUFFIX : filePath;
     if (!existsSync(actualPath)) {
       return null;
     }
@@ -132,7 +108,7 @@ export class EncryptedStorage {
 
     // Check if the file is encrypted
     if (content.startsWith(ENCRYPTED_FILE_PREFIX)) {
-      if (!this.encryptionEnabled || this.key === null) {
+      if (this.key === null) {
         throw new EncryptedStorageError(
           'File is encrypted but encryption is not available. ' +
             'Set LATCHKEY_ENCRYPTION_KEY or ensure system keychain is accessible.'
@@ -163,9 +139,7 @@ export class EncryptedStorage {
    * When encryption is enabled, the file is written with a .enc suffix.
    */
   writeFile(filePath: string, content: string): void {
-    this.initializeKey();
-
-    const actualPath = this.encryptionEnabled ? filePath + ENCRYPTED_FILE_SUFFIX : filePath;
+    const actualPath = this.isEncryptionEnabled() ? filePath + ENCRYPTED_FILE_SUFFIX : filePath;
     const dir = dirname(actualPath);
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -182,7 +156,7 @@ export class EncryptedStorage {
     }
 
     let dataToWrite: string;
-    if (this.encryptionEnabled && this.key !== null) {
+    if (this.key !== null) {
       const encryptedData = encrypt(content, this.key);
       dataToWrite = ENCRYPTED_FILE_PREFIX + encryptedData;
     } else {
@@ -197,8 +171,7 @@ export class EncryptedStorage {
    * Check if a file exists and is encrypted.
    */
   isFileEncrypted(filePath: string): boolean {
-    this.initializeKey();
-    const actualPath = this.encryptionEnabled ? filePath + ENCRYPTED_FILE_SUFFIX : filePath;
+    const actualPath = this.isEncryptionEnabled() ? filePath + ENCRYPTED_FILE_SUFFIX : filePath;
     if (!existsSync(actualPath)) {
       return false;
     }
@@ -211,7 +184,6 @@ export class EncryptedStorage {
    * Returns the encrypted path if encryption is enabled, otherwise the original path.
    */
   getActualPath(filePath: string): string {
-    this.initializeKey();
-    return this.encryptionEnabled ? filePath + ENCRYPTED_FILE_SUFFIX : filePath;
+    return this.isEncryptionEnabled() ? filePath + ENCRYPTED_FILE_SUFFIX : filePath;
   }
 }
