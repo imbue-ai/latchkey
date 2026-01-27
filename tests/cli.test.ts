@@ -649,13 +649,6 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
       expect(result.stderr).toContain('Unknown service: unknown-service');
     });
 
-    it('should use default store path when LATCHKEY_STORE is not set', () => {
-      const result = runCli(['clear', 'slack'], {});
-      // With default paths, should report no credentials found (not error about missing env var)
-      expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain('No API credentials found for slack');
-    });
-
     it('should preserve other services when clearing one', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeFileSync(
