@@ -5,6 +5,7 @@
 import type { Browser, BrowserContext, Page, Response } from 'playwright';
 import { ApiCredentialStatus, ApiCredentials } from '../apiCredentials.js';
 import { BrowserStateStore } from '../browserState.js';
+import { EncryptedStorage } from '../encryptedStorage.js';
 import { showSpinnerPage } from '../playwrightUtils.js';
 
 export class LoginCancelledError extends Error {
@@ -165,7 +166,10 @@ export abstract class ServiceSession {
   /**
    * Perform the login flow and return the extracted credentials.
    */
-  async login(browserStatePath: string | null): Promise<ApiCredentials> {
+  async login(
+    browserStatePath: string | null,
+    encryptedStorage: EncryptedStorage
+  ): Promise<ApiCredentials> {
     const { chromium: chromiumBrowser } = await import('playwright');
     const browser = await chromiumBrowser.launch({ headless: false });
 
@@ -174,7 +178,7 @@ export abstract class ServiceSession {
     const contextOptions: { storageState?: string } = {};
 
     if (browserStatePath) {
-      browserStateManager = new BrowserStateStore(browserStatePath);
+      browserStateManager = new BrowserStateStore(browserStatePath, encryptedStorage);
       const tempPath = browserStateManager.prepare();
       if (browserStateManager.hasState()) {
         contextOptions.storageState = tempPath;

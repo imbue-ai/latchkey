@@ -9,6 +9,7 @@ import { ApiCredentialStore } from './apiCredentialStore.js';
 import { ApiCredentialStatus, ApiCredentials } from './apiCredentials.js';
 import { Config, CONFIG } from './config.js';
 import type { CurlResult } from './curl.js';
+import { getEncryptedStorage } from './encryptedStorage.js';
 import { Registry, REGISTRY } from './registry.js';
 import { LoginCancelledError, LoginFailedError } from './services/index.js';
 import { run as curlRun } from './curl.js';
@@ -133,6 +134,14 @@ async function clearAll(deps: CliDependencies, yes: boolean): Promise<void> {
   }
 }
 
+function createEncryptedStorageFromConfig(config: Config) {
+  return getEncryptedStorage({
+    encryptionKeyOverride: config.encryptionKeyOverride,
+    serviceName: config.serviceName,
+    accountName: config.accountName,
+  });
+}
+
 function clearService(deps: CliDependencies, serviceName: string): void {
   const service = deps.registry.getByName(serviceName);
   if (service === null) {
@@ -141,7 +150,11 @@ function clearService(deps: CliDependencies, serviceName: string): void {
     deps.exit(1);
   }
 
-  const apiCredentialStore = new ApiCredentialStore(deps.config.credentialStorePath);
+  const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
+  const apiCredentialStore = new ApiCredentialStore(
+    deps.config.credentialStorePath,
+    encryptedStorage
+  );
   const deleted = apiCredentialStore.delete(serviceName);
 
   if (deleted) {
@@ -188,7 +201,11 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         deps.exit(1);
       }
 
-      const apiCredentialStore = new ApiCredentialStore(deps.config.credentialStorePath);
+      const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
+      const apiCredentialStore = new ApiCredentialStore(
+        deps.config.credentialStorePath,
+        encryptedStorage
+      );
       const apiCredentials = apiCredentialStore.get(serviceName);
 
       if (apiCredentials === null) {
@@ -212,11 +229,15 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         deps.exit(1);
       }
 
-      const apiCredentialStore = new ApiCredentialStore(deps.config.credentialStorePath);
+      const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
+      const apiCredentialStore = new ApiCredentialStore(
+        deps.config.credentialStorePath,
+        encryptedStorage
+      );
 
       const browserStatePath = deps.config.browserStatePath;
       try {
-        const apiCredentials = await service.getSession().login(browserStatePath);
+        const apiCredentials = await service.getSession().login(browserStatePath, encryptedStorage);
         apiCredentialStore.save(service.name, apiCredentials);
         deps.log('Done');
       } catch (error) {
@@ -252,13 +273,17 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         deps.exit(1);
       }
 
-      const apiCredentialStore = new ApiCredentialStore(deps.config.credentialStorePath);
+      const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
+      const apiCredentialStore = new ApiCredentialStore(
+        deps.config.credentialStorePath,
+        encryptedStorage
+      );
       let apiCredentials: ApiCredentials | null = apiCredentialStore.get(service.name);
 
       if (apiCredentials === null) {
         const browserStatePath = deps.config.browserStatePath;
         try {
-          apiCredentials = await service.getSession().login(browserStatePath);
+          apiCredentials = await service.getSession().login(browserStatePath, encryptedStorage);
           apiCredentialStore.save(service.name, apiCredentials);
         } catch (error) {
           if (error instanceof LoginCancelledError) {

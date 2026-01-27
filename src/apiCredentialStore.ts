@@ -2,15 +2,13 @@
  * API credential store for persisting and loading API credentials.
  */
 
-import { existsSync } from 'node:fs';
 import {
   ApiCredentials,
   ApiCredentialsSchema,
   deserializeCredentials,
   serializeCredentials,
 } from './apiCredentials.js';
-import { CONFIG } from './config.js';
-import { EncryptedStorage, getEncryptedStorage } from './encryptedStorage.js';
+import { EncryptedStorage } from './encryptedStorage.js';
 
 export class ApiCredentialStoreError extends Error {
   constructor(message: string) {
@@ -25,21 +23,12 @@ export class ApiCredentialStore {
   readonly path: string;
   private readonly encryptedStorage: EncryptedStorage;
 
-  constructor(path: string, encryptedStorage?: EncryptedStorage) {
+  constructor(path: string, encryptedStorage: EncryptedStorage) {
     this.path = path;
-    this.encryptedStorage =
-      encryptedStorage ??
-      getEncryptedStorage({
-        encryptionKeyOverride: CONFIG.encryptionKeyOverride,
-        serviceName: CONFIG.serviceName,
-        accountName: CONFIG.accountName,
-      });
+    this.encryptedStorage = encryptedStorage;
   }
 
   private loadStoreData(): StoreData {
-    if (!existsSync(this.path)) {
-      return {};
-    }
     try {
       const content = this.encryptedStorage.readFile(this.path);
       if (content === null) {
