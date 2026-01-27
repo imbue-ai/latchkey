@@ -7,7 +7,6 @@ import { existsSync, unlinkSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { ApiCredentialStore } from './apiCredentialStore.js';
 import { ApiCredentialStatus, ApiCredentials } from './apiCredentials.js';
-import { BrowserStateStore } from './browserState.js';
 import { Config, CONFIG } from './config.js';
 import type { CurlResult } from './curl.js';
 import { EncryptedStorage } from './encryptedStorage.js';
@@ -235,13 +234,11 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         deps.config.credentialStorePath,
         encryptedStorage
       );
-      const browserStateStore = new BrowserStateStore(
-        deps.config.browserStatePath,
-        encryptedStorage
-      );
 
       try {
-        const apiCredentials = await service.getSession().login(browserStateStore);
+        const apiCredentials = await service
+          .getSession()
+          .login(encryptedStorage, deps.config.browserStatePath);
         apiCredentialStore.save(service.name, apiCredentials);
         deps.log('Done');
       } catch (error) {
@@ -285,12 +282,10 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       let apiCredentials: ApiCredentials | null = apiCredentialStore.get(service.name);
 
       if (apiCredentials === null) {
-        const browserStateStore = new BrowserStateStore(
-          deps.config.browserStatePath,
-          encryptedStorage
-        );
         try {
-          apiCredentials = await service.getSession().login(browserStateStore);
+          apiCredentials = await service
+            .getSession()
+            .login(encryptedStorage, deps.config.browserStatePath);
           apiCredentialStore.save(service.name, apiCredentials);
         } catch (error) {
           if (error instanceof LoginCancelledError) {

@@ -2,9 +2,12 @@
  * Base classes and interfaces for service implementations.
  */
 
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { Browser, BrowserContext, Page, Response } from 'playwright';
 import { ApiCredentialStatus, ApiCredentials } from '../apiCredentials.js';
-import { BrowserStateStore } from '../browserState.js';
+import { EncryptedStorage } from '../encryptedStorage.js';
 import { showSpinnerPage } from '../playwrightUtils.js';
 
 export class LoginCancelledError extends Error {
@@ -18,6 +21,45 @@ export class LoginFailedError extends Error {
   constructor(message = 'Login failed: no credentials were extracted.') {
     super(message);
     this.name = 'LoginFailedError';
+  }
+}
+
+interface TempBrowserState {
+  readonly tempFilePath: string;
+  readonly initialStorageState: string | null;
+}
+
+/**
+ * Run a callback with a temporary file for browser state, ensuring cleanup.
+ * Decrypts existing state to the temp file before the callback, and
+ * persists the temp file back to encrypted storage after.
+ */
+async function withTempBrowserState<T>(
+  encryptedStorage: EncryptedStorage,
+  browserStatePath: string,
+  callback: (state: TempBrowserState) => Promise<T>
+): Promise<T> {
+  const tempDir = mkdtempSync(join(tmpdir(), 'latchkey-browser-state-'));
+  const tempFilePath = join(tempDir, 'browser_state.json');
+
+  let initialStorageState: string | null = null;
+  const actualPath = encryptedStorage.getActualPath(browserStatePath);
+  if (existsSync(actualPath)) {
+    const content = encryptedStorage.readFile(browserStatePath);
+    if (content !== null) {
+      writeFileSync(tempFilePath, content, { encoding: 'utf-8', mode: 0o600 });
+      initialStorageState = tempFilePath;
+    }
+  }
+
+  try {
+    return await callback({ tempFilePath, initialStorageState });
+  } finally {
+    try {
+      rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
   }
 }
 
@@ -165,67 +207,63 @@ export abstract class ServiceSession {
   /**
    * Perform the login flow and return the extracted credentials.
    */
-  async login(browserStateStore?: BrowserStateStore): Promise<ApiCredentials> {
-    const { chromium: chromiumBrowser } = await import('playwright');
-    const browser = await chromiumBrowser.launch({ headless: false });
+  async login(
+    encryptedStorage: EncryptedStorage,
+    browserStatePath: string
+  ): Promise<ApiCredentials> {
+    return withTempBrowserState(
+      encryptedStorage,
+      browserStatePath,
+      async ({ tempFilePath, initialStorageState }) => {
+        const { chromium: chromiumBrowser } = await import('playwright');
+        const browser = await chromiumBrowser.launch({ headless: false });
 
-    const contextOptions: { storageState?: string } = {};
-
-    if (browserStateStore) {
-      const tempPath = browserStateStore.prepare();
-      if (browserStateStore.hasState()) {
-        contextOptions.storageState = tempPath;
-      }
-    }
-
-    try {
-      const context = await browser.newContext(contextOptions);
-      const page = await context.newPage();
-
-      page.on('response', (response) => {
-        this.onResponse(response);
-      });
-
-      try {
-        // await this.showLoginInstructions(page);
-        await page.goto(this.service.loginUrl);
-        await this.waitForHeadfulLoginComplete(page);
-      } catch (error: unknown) {
-        if (
-          error instanceof Error &&
-          (error.message.includes('Target closed') || error.message.includes('Browser closed'))
-        ) {
-          throw new LoginCancelledError();
-        }
-        throw error;
-      }
-
-      if (browserStateStore) {
-        const tempPath = browserStateStore.getTempPath();
-        if (tempPath) {
-          await context.storageState({ path: tempPath });
-          browserStateStore.persist();
-        }
-      }
-
-      await this.onHeadfulLoginComplete(context);
-
-      try {
-        const apiCredentials = await this.finalizeCredentials(browser, context);
-
-        if (apiCredentials === null) {
-          throw new LoginFailedError();
+        const contextOptions: { storageState?: string } = {};
+        if (initialStorageState !== null) {
+          contextOptions.storageState = initialStorageState;
         }
 
-        return apiCredentials;
-      } finally {
-        await browser.close();
+        try {
+          const context = await browser.newContext(contextOptions);
+          const page = await context.newPage();
+
+          page.on('response', (response) => {
+            this.onResponse(response);
+          });
+
+          try {
+            // await this.showLoginInstructions(page);
+            await page.goto(this.service.loginUrl);
+            await this.waitForHeadfulLoginComplete(page);
+          } catch (error: unknown) {
+            if (
+              error instanceof Error &&
+              (error.message.includes('Target closed') || error.message.includes('Browser closed'))
+            ) {
+              throw new LoginCancelledError();
+            }
+            throw error;
+          }
+
+          // Persist browser state back to encrypted storage
+          await context.storageState({ path: tempFilePath });
+          const content = readFileSync(tempFilePath, 'utf-8');
+          encryptedStorage.writeFile(browserStatePath, content);
+
+          await this.onHeadfulLoginComplete(context);
+
+          const apiCredentials = await this.finalizeCredentials(browser, context);
+
+          if (apiCredentials === null) {
+            throw new LoginFailedError();
+          }
+
+          return apiCredentials;
+        } finally {
+          await browser.close();
+        }
       }
-    } finally {
-      if (browserStateStore) {
-        browserStateStore.cleanup();
-      }
-    }
+    );
   }
 }
 

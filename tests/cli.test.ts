@@ -13,7 +13,7 @@ import {
   registerCommands,
   type CliDependencies,
 } from '../src/cliCommands.js';
-import { BrowserStateStore } from '../src/browserState.js';
+import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { Config } from '../src/config.js';
 import { Registry } from '../src/registry.js';
 import { SlackApiCredentials, ApiCredentialStatus } from '../src/apiCredentials.js';
@@ -558,7 +558,7 @@ describe('CLI commands with dependency injection', () => {
 
       await runCommand(['curl', 'https://slack.com/api/test'], deps);
 
-      expect(mockLogin).toHaveBeenCalledWith(expect.any(BrowserStateStore));
+      expect(mockLogin).toHaveBeenCalledWith(expect.any(EncryptedStorage), browserStatePath);
       expect(capturedArgs).toContain('Authorization: Bearer new-token');
     });
   });
