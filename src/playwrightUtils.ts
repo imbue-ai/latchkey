@@ -2,7 +2,66 @@
  * Playwright utility functions for browser automation.
  */
 
-import type { BrowserContext, Page, Locator } from 'playwright';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { Browser, BrowserContext, Page, Locator } from 'playwright';
+import { EncryptedStorage } from './encryptedStorage.js';
+
+export interface BrowserWithContext {
+  readonly browser: Browser;
+  readonly context: BrowserContext;
+}
+
+/**
+ * Run a callback with a browser context initialized from encrypted storage state.
+ * After the callback completes, persists browser state back to encrypted storage.
+ */
+export async function withTempBrowserContext<T>(
+  encryptedStorage: EncryptedStorage,
+  browserStatePath: string,
+  callback: (state: BrowserWithContext) => Promise<T>
+): Promise<T> {
+  const tempDir = mkdtempSync(join(tmpdir(), 'latchkey-browser-state-'));
+  const tempFilePath = join(tempDir, 'browser_state.json');
+
+  let initialStorageState: string | undefined;
+  const actualPath = encryptedStorage.getActualPath(browserStatePath);
+  if (existsSync(actualPath)) {
+    const content = encryptedStorage.readFile(browserStatePath);
+    if (content !== null) {
+      writeFileSync(tempFilePath, content, { encoding: 'utf-8', mode: 0o600 });
+      initialStorageState = tempFilePath;
+    }
+  }
+
+  const { chromium: chromiumBrowser } = await import('playwright');
+  const browser = await chromiumBrowser.launch({ headless: false });
+
+  try {
+    const contextOptions: { storageState?: string } = {};
+    if (initialStorageState !== undefined) {
+      contextOptions.storageState = initialStorageState;
+    }
+    const context = await browser.newContext(contextOptions);
+
+    const result = await callback({ browser, context });
+
+    // Persist browser state back to encrypted storage
+    await context.storageState({ path: tempFilePath });
+    const content = readFileSync(tempFilePath, 'utf-8');
+    encryptedStorage.writeFile(browserStatePath, content);
+
+    return result;
+  } finally {
+    await browser.close();
+    try {
+      rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+}
 
 // Typing delay range in milliseconds (min, max) to simulate human-like typing
 const TYPING_DELAY_MIN_MS = 30;
