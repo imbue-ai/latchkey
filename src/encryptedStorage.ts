@@ -20,7 +20,6 @@ import {
 } from './keychain.js';
 
 const ENCRYPTED_FILE_PREFIX = 'LATCHKEY_ENCRYPTED:';
-const ENCRYPTED_FILE_SUFFIX = '.enc';
 
 export class EncryptedStorageError extends Error {
   constructor(message: string) {
@@ -96,15 +95,13 @@ export class EncryptedStorage {
 
   /**
    * Read and decrypt a file.
-   * Uses the .enc suffix when encryption is enabled.
    */
   readFile(filePath: string): string | null {
-    const actualPath = this.isEncryptionEnabled() ? filePath + ENCRYPTED_FILE_SUFFIX : filePath;
-    if (!existsSync(actualPath)) {
+    if (!existsSync(filePath)) {
       return null;
     }
 
-    const content = readFileSync(actualPath, 'utf-8');
+    const content = readFileSync(filePath, 'utf-8');
 
     // Check if the file is encrypted
     if (content.startsWith(ENCRYPTED_FILE_PREFIX)) {
@@ -136,22 +133,20 @@ export class EncryptedStorage {
    * Encrypt and write data to a file.
    * Creates parent directories. New files are created with chmod 600.
    * Existing files must have restrictive permissions (no group/other access).
-   * When encryption is enabled, the file is written with a .enc suffix.
    */
   writeFile(filePath: string, content: string): void {
-    const actualPath = this.isEncryptionEnabled() ? filePath + ENCRYPTED_FILE_SUFFIX : filePath;
-    const dir = dirname(actualPath);
+    const dir = dirname(filePath);
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true, mode: 0o700 });
     }
 
     // Check permissions if file already exists
-    if (existsSync(actualPath)) {
-      const stats = statSync(actualPath);
+    if (existsSync(filePath)) {
+      const stats = statSync(filePath);
       const permissions = stats.mode & 0o777;
       // Reject if group or others have any access
       if ((permissions & 0o077) !== 0) {
-        throw new InsecureFilePermissionsError(actualPath, permissions);
+        throw new InsecureFilePermissionsError(filePath, permissions);
       }
     }
 
@@ -164,14 +159,6 @@ export class EncryptedStorage {
       dataToWrite = content;
     }
 
-    writeFileSync(actualPath, dataToWrite, { encoding: 'utf-8', mode: 0o600 });
-  }
-
-  /**
-   * Get the actual file path where data is stored.
-   * Returns the encrypted path if encryption is enabled, otherwise the original path.
-   */
-  getActualPath(filePath: string): string {
-    return this.isEncryptionEnabled() ? filePath + ENCRYPTED_FILE_SUFFIX : filePath;
+    writeFileSync(filePath, dataToWrite, { encoding: 'utf-8', mode: 0o600 });
   }
 }

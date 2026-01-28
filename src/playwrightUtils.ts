@@ -26,8 +26,7 @@ export async function withTempBrowserContext<T>(
   const tempFilePath = join(tempDir, 'browser_state.json');
 
   let initialStorageState: string | undefined;
-  const actualPath = encryptedStorage.getActualPath(browserStatePath);
-  if (existsSync(actualPath)) {
+  if (existsSync(browserStatePath)) {
     const content = encryptedStorage.readFile(browserStatePath);
     if (content !== null) {
       writeFileSync(tempFilePath, content, { encoding: 'utf-8', mode: 0o600 });

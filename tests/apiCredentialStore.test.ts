@@ -74,14 +74,14 @@ describe('ApiCredentialStore', () => {
     it('should create the store file if it does not exist', () => {
       const store = new ApiCredentialStore(storePath, encryptedStorage);
       store.save('github', new AuthorizationBearer('token'));
-      expect(existsSync(encryptedStorage.getActualPath(storePath))).toBe(true);
+      expect(existsSync(storePath)).toBe(true);
     });
 
     it('should create parent directories if they do not exist', () => {
       const nestedPath = join(tempDir, 'nested', 'deep', 'credentials.json');
       const store = new ApiCredentialStore(nestedPath, encryptedStorage);
       store.save('github', new AuthorizationBearer('token'));
-      expect(existsSync(encryptedStorage.getActualPath(nestedPath))).toBe(true);
+      expect(existsSync(nestedPath)).toBe(true);
     });
 
     it('should overwrite existing credentials for the same service', () => {
@@ -106,8 +106,7 @@ describe('ApiCredentialStore', () => {
       const store = new ApiCredentialStore(storePath, encryptedStorage);
       store.save('github', new AuthorizationBearer('token'));
 
-      const actualPath = encryptedStorage.getActualPath(storePath);
-      const content = readFileSync(actualPath, 'utf-8');
+      const content = readFileSync(storePath, 'utf-8');
       // When encrypted, content starts with prefix, followed by encrypted JSON
       expect(content.startsWith('LATCHKEY_ENCRYPTED:')).toBe(true);
     });
