@@ -582,6 +582,7 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
 
     delete process.env.LATCHKEY_STORE;
     delete process.env.LATCHKEY_BROWSER_STATE;
+    delete process.env.LATCHKEY_ENCRYPTION_KEY;
   });
 
   afterEach(() => {
