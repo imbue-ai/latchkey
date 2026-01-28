@@ -39,6 +39,13 @@ export class InsecureFilePermissionsError extends Error {
   }
 }
 
+export class PathIsDirectoryError extends Error {
+  constructor(filePath: string) {
+    super(`Path is a directory, not a file: ${filePath}`);
+    this.name = 'PathIsDirectoryError';
+  }
+}
+
 export interface EncryptedStorageOptions {
   encryptionKeyOverride?: string | null;
   serviceName?: string;
@@ -101,6 +108,11 @@ export class EncryptedStorage {
       return null;
     }
 
+    const stats = statSync(filePath);
+    if (stats.isDirectory()) {
+      throw new PathIsDirectoryError(filePath);
+    }
+
     const content = readFileSync(filePath, 'utf-8');
 
     // Check if the file is encrypted
@@ -143,6 +155,9 @@ export class EncryptedStorage {
     // Check permissions if file already exists
     if (existsSync(filePath)) {
       const stats = statSync(filePath);
+      if (stats.isDirectory()) {
+        throw new PathIsDirectoryError(filePath);
+      }
       const permissions = stats.mode & 0o777;
       // Reject if group or others have any access
       if ((permissions & 0o077) !== 0) {

@@ -14,6 +14,7 @@ import {
   EncryptedStorage,
   EncryptedStorageError,
   InsecureFilePermissionsError,
+  PathIsDirectoryError,
 } from '../src/encryptedStorage.js';
 import { generateKey } from '../src/encryption.js';
 
@@ -161,6 +162,30 @@ describe('EncryptedStorage', () => {
       });
 
       expect(storage.readFile(filePath)).toBeNull();
+    });
+
+    it('should throw PathIsDirectoryError when path is a directory', () => {
+      const storage = new EncryptedStorage({
+        encryptionKeyOverride: testKey,
+      });
+
+      expect(() => storage.readFile(tempDir)).toThrow(PathIsDirectoryError);
+      expect(() => storage.readFile(tempDir)).toThrow('Path is a directory, not a file');
+    });
+  });
+
+  describe('writeFile', () => {
+    it('should throw PathIsDirectoryError when path is a directory', () => {
+      const storage = new EncryptedStorage({
+        encryptionKeyOverride: testKey,
+      });
+
+      expect(() => {
+        storage.writeFile(tempDir, 'content');
+      }).toThrow(PathIsDirectoryError);
+      expect(() => {
+        storage.writeFile(tempDir, 'content');
+      }).toThrow('Path is a directory, not a file');
     });
   });
 });
