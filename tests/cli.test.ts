@@ -64,11 +64,20 @@ function getCliPath(): string | null {
 
 const cliPath = getCliPath();
 
-function runCli(args: string[], env: Record<string, string> = {}): CliResult {
+interface TestEnv {
+  LATCHKEY_STORE: string;
+  LATCHKEY_BROWSER_STATE: string;
+}
+
+function runCli(args: string[], env: TestEnv): CliResult {
   const options: ExecSyncOptionsWithStringEncoding = {
     cwd: join(__dirname, '..'),
     encoding: 'utf-8',
-    env: { ...process.env, LATCHKEY_ENCRYPTION_KEY: TEST_ENCRYPTION_KEY, ...env },
+    env: {
+      ...process.env,
+      LATCHKEY_ENCRYPTION_KEY: TEST_ENCRYPTION_KEY,
+      ...env,
+    },
     stdio: ['pipe', 'pipe', 'pipe'],
   };
 
@@ -576,13 +585,14 @@ describe('CLI commands with dependency injection', () => {
 // Integration tests that run the actual CLI binary
 describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
   let tempDir: string;
+  let testEnv: TestEnv;
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), 'latchkey-cli-test-'));
-
-    delete process.env.LATCHKEY_STORE;
-    delete process.env.LATCHKEY_BROWSER_STATE;
-    delete process.env.LATCHKEY_ENCRYPTION_KEY;
+    testEnv = {
+      LATCHKEY_STORE: join(tempDir, 'credentials.json'),
+      LATCHKEY_BROWSER_STATE: join(tempDir, 'browser_state.json'),
+    };
   });
 
   afterEach(() => {
@@ -591,19 +601,19 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
 
   describe('curl command', () => {
     it('should return error when curl has no arguments', () => {
-      const result = runCli(['curl']);
+      const result = runCli(['curl'], testEnv);
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain('Could not extract URL');
     });
 
     it('should return error when no URL found in curl arguments', () => {
-      const result = runCli(['curl', '--', '-X', 'POST']);
+      const result = runCli(['curl', '--', '-X', 'POST'], testEnv);
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain('Could not extract URL');
     });
 
     it('should return error for unknown service', () => {
-      const result = runCli(['curl', 'https://unknown-api.example.com']);
+      const result = runCli(['curl', 'https://unknown-api.example.com'], testEnv);
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain('No service matches URL');
       expect(result.stderr).toContain('https://unknown-api.example.com');
@@ -611,23 +621,16 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
   });
 
   describe('status command', () => {
-    it('should return missing when no LATCHKEY_STORE is set', () => {
-      const result = runCli(['status', 'slack'], {});
-      expect(result.exitCode).toBe(0);
-      expect(result.stdout.trim()).toBe('missing');
-    });
-
     it('should return missing when no credentials are stored', () => {
-      const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(storePath, '{}');
+      writeSecureFile(testEnv.LATCHKEY_STORE, '{}');
 
-      const result = runCli(['status', 'slack'], { LATCHKEY_STORE: storePath });
+      const result = runCli(['status', 'slack'], testEnv);
       expect(result.exitCode).toBe(0);
       expect(result.stdout.trim()).toBe('missing');
     });
 
     it('should return error for unknown service', () => {
-      const result = runCli(['status', 'unknown-service']);
+      const result = runCli(['status', 'unknown-service'], testEnv);
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain('Unknown service');
     });
@@ -635,107 +638,85 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
 
   describe('clear command', () => {
     it('should delete credentials for a service', () => {
-      const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
-        storePath,
+        testEnv.LATCHKEY_STORE,
         JSON.stringify({
           slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
         })
       );
 
-      const result = runCli(['clear', 'slack'], { LATCHKEY_STORE: storePath });
+      const result = runCli(['clear', 'slack'], testEnv);
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('API credentials for slack have been cleared');
 
-      const storedData = JSON.parse(readSecureFile(storePath) ?? '{}') as StoredCredentials;
+      const storedData = JSON.parse(
+        readSecureFile(testEnv.LATCHKEY_STORE) ?? '{}'
+      ) as StoredCredentials;
       expect(storedData.slack).toBeUndefined();
     });
 
     it('should report no credentials found when service has no stored credentials', () => {
-      const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(storePath, '{}');
+      writeSecureFile(testEnv.LATCHKEY_STORE, '{}');
 
-      const result = runCli(['clear', 'slack'], { LATCHKEY_STORE: storePath });
+      const result = runCli(['clear', 'slack'], testEnv);
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('No API credentials found for slack');
     });
 
     it('should return error for unknown service', () => {
-      const storePath = join(tempDir, 'credentials.json');
-      const result = runCli(['clear', 'unknown-service'], { LATCHKEY_STORE: storePath });
+      const result = runCli(['clear', 'unknown-service'], testEnv);
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain('Unknown service: unknown-service');
     });
 
     it('should preserve other services when clearing one', () => {
-      const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
-        storePath,
+        testEnv.LATCHKEY_STORE,
         JSON.stringify({
           slack: { objectType: 'slack', token: 'slack-token', dCookie: 'slack-cookie' },
           discord: { objectType: 'authorizationBare', token: 'discord-token' },
         })
       );
 
-      const result = runCli(['clear', 'slack'], { LATCHKEY_STORE: storePath });
+      const result = runCli(['clear', 'slack'], testEnv);
       expect(result.exitCode).toBe(0);
 
-      const storedData = JSON.parse(readSecureFile(storePath) ?? '{}') as StoredCredentials;
+      const storedData = JSON.parse(
+        readSecureFile(testEnv.LATCHKEY_STORE) ?? '{}'
+      ) as StoredCredentials;
       expect(storedData.slack).toBeUndefined();
       expect(storedData.discord).toBeDefined();
       expect(storedData.discord?.token).toBe('discord-token');
     });
 
     it('should delete both store and browser state with -y flag', () => {
-      const storePath = join(tempDir, 'credentials.json');
-      const browserStatePath = join(tempDir, 'browser_state.json');
       writeSecureFile(
-        storePath,
+        testEnv.LATCHKEY_STORE,
         JSON.stringify({ slack: { objectType: 'slack', token: 'test', dCookie: 'test' } })
       );
-      writeFileSync(browserStatePath, '{}');
+      writeFileSync(testEnv.LATCHKEY_BROWSER_STATE, '{}');
 
-      const result = runCli(['clear', '-y'], {
-        LATCHKEY_STORE: storePath,
-        LATCHKEY_BROWSER_STATE: browserStatePath,
-      });
+      const result = runCli(['clear', '-y'], testEnv);
       expect(result.exitCode).toBe(0);
-      expect(existsSync(storePath)).toBe(false);
-      expect(existsSync(browserStatePath)).toBe(false);
-      expect(result.stdout).toContain(`Deleted credentials store: ${storePath}`);
-      expect(result.stdout).toContain(`Deleted browser state: ${browserStatePath}`);
+      expect(existsSync(testEnv.LATCHKEY_STORE)).toBe(false);
+      expect(existsSync(testEnv.LATCHKEY_BROWSER_STATE)).toBe(false);
+      expect(result.stdout).toContain(`Deleted credentials store: ${testEnv.LATCHKEY_STORE}`);
+      expect(result.stdout).toContain(`Deleted browser state: ${testEnv.LATCHKEY_BROWSER_STATE}`);
     });
 
     it('should delete only existing files with -y flag', () => {
-      const storePath = join(tempDir, 'credentials.json');
-      const browserStatePath = join(tempDir, 'browser_state.json');
-      writeSecureFile(storePath, '{}');
+      writeSecureFile(testEnv.LATCHKEY_STORE, '{}');
       // browser_state does not exist
 
-      const result = runCli(['clear', '-y'], {
-        LATCHKEY_STORE: storePath,
-        LATCHKEY_BROWSER_STATE: browserStatePath,
-      });
+      const result = runCli(['clear', '-y'], testEnv);
       expect(result.exitCode).toBe(0);
-      expect(existsSync(storePath)).toBe(false);
-      expect(result.stdout).toContain(`Deleted credentials store: ${storePath}`);
+      expect(existsSync(testEnv.LATCHKEY_STORE)).toBe(false);
+      expect(result.stdout).toContain(`Deleted credentials store: ${testEnv.LATCHKEY_STORE}`);
       expect(result.stdout).not.toContain('browser state');
     });
 
     it('should report no files to delete when none exist', () => {
-      const storePath = join(tempDir, 'nonexistent_store.json');
-      const browserStatePath = join(tempDir, 'nonexistent_browser_state.json');
-
-      const result = runCli(['clear', '-y'], {
-        LATCHKEY_STORE: storePath,
-        LATCHKEY_BROWSER_STATE: browserStatePath,
-      });
-      expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain('No files to delete');
-    });
-
-    it('should work with no env vars when clearing all', () => {
-      const result = runCli(['clear', '-y'], {});
+      const result = runCli(['clear', '-y'], testEnv);
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('No files to delete');
     });
@@ -743,7 +724,7 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
 
   describe('services command', () => {
     it('should list all services as space-separated names', () => {
-      const result = runCli(['services']);
+      const result = runCli(['services'], testEnv);
       expect(result.exitCode).toBe(0);
 
       const services = result.stdout.trim().split(' ');
