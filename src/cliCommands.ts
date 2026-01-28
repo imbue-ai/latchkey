@@ -95,7 +95,8 @@ async function defaultConfirm(message: string): Promise<boolean> {
 }
 
 async function clearAll(deps: CliDependencies, yes: boolean): Promise<void> {
-  const latchkeyStore = deps.config.credentialStorePath;
+  const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
+  const latchkeyStore = encryptedStorage.getActualPath(deps.config.credentialStorePath);
   const browserState = deps.config.browserStatePath;
 
   const filesToDelete: string[] = [];

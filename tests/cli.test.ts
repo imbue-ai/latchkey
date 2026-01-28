@@ -1,11 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-
-function writeSecureFile(path: string, content: string): void {
-  writeFileSync(path, content, { mode: 0o600 });
-}
 import { execSync, ExecSyncOptionsWithStringEncoding } from 'node:child_process';
 import { Command } from 'commander';
 import {
@@ -19,6 +15,19 @@ import { Registry } from '../src/registry.js';
 import { SlackApiCredentials, ApiCredentialStatus } from '../src/apiCredentials.js';
 import type { Service } from '../src/services/base.js';
 import type { CurlResult } from '../src/curl.js';
+
+// Use a fixed test key for deterministic test behavior (32 bytes = 256 bits, base64 encoded)
+const TEST_ENCRYPTION_KEY = 'dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q=';
+
+function writeSecureFile(path: string, content: string): void {
+  const storage = new EncryptedStorage({ encryptionKeyOverride: TEST_ENCRYPTION_KEY });
+  storage.writeFile(path, content);
+}
+
+function readSecureFile(path: string): string | null {
+  const storage = new EncryptedStorage({ encryptionKeyOverride: TEST_ENCRYPTION_KEY });
+  return storage.readFile(path);
+}
 
 interface CliResult {
   exitCode: number | null;
@@ -59,7 +68,7 @@ function runCli(args: string[], env: Record<string, string> = {}): CliResult {
   const options: ExecSyncOptionsWithStringEncoding = {
     cwd: join(__dirname, '..'),
     encoding: 'utf-8',
-    env: { ...process.env, ...env },
+    env: { ...process.env, LATCHKEY_ENCRYPTION_KEY: TEST_ENCRYPTION_KEY, ...env },
     stdio: ['pipe', 'pipe', 'pipe'],
   };
 
@@ -150,7 +159,7 @@ describe('CLI commands with dependency injection', () => {
       credentialStorePath: overrides.credentialStorePath ?? join(tempDir, 'credentials.json'),
       browserStatePath: overrides.browserStatePath ?? join(tempDir, 'browser_state.json'),
       curlCommand: overrides.curlCommand ?? defaultConfig.curlCommand,
-      encryptionKeyOverride: overrides.encryptionKeyOverride ?? null,
+      encryptionKeyOverride: overrides.encryptionKeyOverride ?? TEST_ENCRYPTION_KEY,
       serviceName: overrides.serviceName ?? defaultConfig.serviceName,
       accountName: overrides.accountName ?? defaultConfig.accountName,
     };
@@ -289,7 +298,7 @@ describe('CLI commands with dependency injection', () => {
       await runCommand(['clear', 'slack'], deps);
 
       expect(logs.some((log) => log.includes('have been cleared'))).toBe(true);
-      const storedData = JSON.parse(readFileSync(storePath, 'utf-8')) as StoredCredentials;
+      const storedData = JSON.parse(readSecureFile(storePath) ?? '{}') as StoredCredentials;
       expect(storedData.slack).toBeUndefined();
     });
 
@@ -344,7 +353,7 @@ describe('CLI commands with dependency injection', () => {
 
       await runCommand(['clear', 'slack'], deps);
 
-      const storedData = JSON.parse(readFileSync(storePath, 'utf-8')) as StoredCredentials;
+      const storedData = JSON.parse(readSecureFile(storePath) ?? '{}') as StoredCredentials;
       expect(storedData.slack).toBeUndefined();
       expect(storedData.discord).toBeDefined();
       expect(storedData.discord?.token).toBe('discord-token');
@@ -637,7 +646,7 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('API credentials for slack have been cleared');
 
-      const storedData = JSON.parse(readFileSync(storePath, 'utf-8')) as StoredCredentials;
+      const storedData = JSON.parse(readSecureFile(storePath) ?? '{}') as StoredCredentials;
       expect(storedData.slack).toBeUndefined();
     });
 
@@ -670,7 +679,7 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
       const result = runCli(['clear', 'slack'], { LATCHKEY_STORE: storePath });
       expect(result.exitCode).toBe(0);
 
-      const storedData = JSON.parse(readFileSync(storePath, 'utf-8')) as StoredCredentials;
+      const storedData = JSON.parse(readSecureFile(storePath) ?? '{}') as StoredCredentials;
       expect(storedData.slack).toBeUndefined();
       expect(storedData.discord).toBeDefined();
       expect(storedData.discord?.token).toBe('discord-token');
