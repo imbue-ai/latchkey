@@ -21,6 +21,17 @@ export class LoginFailedError extends Error {
   }
 }
 
+function isBrowserClosedError(error: Error): boolean {
+  const message = error.message.toLowerCase();
+  return (
+    message.includes('target closed') ||
+    message.includes('browser closed') ||
+    message.includes('browser has been closed') ||
+    message.includes('context has been closed') ||
+    message.includes('page has been closed')
+  );
+}
+
 /**
  * Base interface for a service that latchkey can authenticate with.
  */
@@ -184,10 +195,7 @@ export abstract class ServiceSession {
           await page.goto(this.service.loginUrl);
           await this.waitForHeadfulLoginComplete(page);
         } catch (error: unknown) {
-          if (
-            error instanceof Error &&
-            (error.message.includes('Target closed') || error.message.includes('Browser closed'))
-          ) {
+          if (error instanceof Error && isBrowserClosedError(error)) {
             throw new LoginCancelledError();
           }
           throw error;
