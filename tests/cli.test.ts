@@ -288,6 +288,39 @@ describe('CLI commands with dependency injection', () => {
       expect(exitCode).toBe(1);
       expect(errorLogs.some((log) => log.includes('Unknown service'))).toBe(true);
     });
+
+    it('should return status for all services when no service name provided', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(storePath, '{}');
+
+      const deps = createMockDependencies({
+        config: createMockConfig({ credentialStorePath: storePath }),
+      });
+
+      await runCommand(['status'], deps);
+
+      expect(logs).toHaveLength(1);
+      expect(logs[0]).toBe('slack: missing');
+    });
+
+    it('should return status for all services with mixed statuses', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(
+        storePath,
+        JSON.stringify({
+          slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
+        })
+      );
+
+      const deps = createMockDependencies({
+        config: createMockConfig({ credentialStorePath: storePath }),
+      });
+
+      await runCommand(['status'], deps);
+
+      expect(logs).toHaveLength(1);
+      expect(logs[0]).toBe('slack: valid');
+    });
   });
 
   describe('clear command', () => {
@@ -633,6 +666,35 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
       const result = runCli(['status', 'unknown-service'], testEnv);
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain('Unknown service');
+    });
+
+    it('should return status for all services when no service name provided', () => {
+      writeSecureFile(testEnv.LATCHKEY_STORE, '{}');
+
+      const result = runCli(['status'], testEnv);
+      expect(result.exitCode).toBe(0);
+
+      const lines = result.stdout.trim().split('\n');
+      expect(lines.length).toBeGreaterThan(0);
+      expect(lines.some((line) => line.includes('slack: missing'))).toBe(true);
+      expect(lines.some((line) => line.includes('discord: missing'))).toBe(true);
+      expect(lines.some((line) => line.includes('github: missing'))).toBe(true);
+    });
+
+    it('should return status for all services with mixed statuses', () => {
+      writeSecureFile(
+        testEnv.LATCHKEY_STORE,
+        JSON.stringify({
+          slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
+        })
+      );
+
+      const result = runCli(['status'], testEnv);
+      expect(result.exitCode).toBe(0);
+
+      const lines = result.stdout.trim().split('\n');
+      expect(lines.some((line) => line.includes('slack: valid'))).toBe(true);
+      expect(lines.some((line) => line.includes('discord: missing'))).toBe(true);
     });
   });
 

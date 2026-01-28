@@ -192,8 +192,27 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
   program
     .command('status')
     .description('Check the API credential status for a service.')
-    .argument('<service_name>', 'Name of the service to check status for')
-    .action((serviceName: string) => {
+    .argument('[service_name]', 'Name of the service to check status for')
+    .action((serviceName: string | undefined) => {
+      const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
+      const apiCredentialStore = new ApiCredentialStore(
+        deps.config.credentialStorePath,
+        encryptedStorage
+      );
+
+      if (serviceName === undefined) {
+        for (const service of deps.registry.services) {
+          const apiCredentials = apiCredentialStore.get(service.name);
+          if (apiCredentials === null) {
+            deps.log(`${service.name}: ${ApiCredentialStatus.Missing}`);
+          } else {
+            const status = service.checkApiCredentials(apiCredentials);
+            deps.log(`${service.name}: ${status}`);
+          }
+        }
+        return;
+      }
+
       const service = deps.registry.getByName(serviceName);
       if (service === null) {
         deps.errorLog(`Error: Unknown service: ${serviceName}`);
@@ -201,11 +220,6 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         deps.exit(1);
       }
 
-      const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
-      const apiCredentialStore = new ApiCredentialStore(
-        deps.config.credentialStorePath,
-        encryptedStorage
-      );
       const apiCredentials = apiCredentialStore.get(serviceName);
 
       if (apiCredentials === null) {
