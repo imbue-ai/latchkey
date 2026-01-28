@@ -178,6 +178,21 @@ export abstract class ServiceSession {
   }
 
   /**
+   * Optionally diagnose a timeout error that occurred during credential finalization.
+   *
+   * Services can override this to inspect the page state and return a more
+   * specific error (e.g., checking for permission denied messages).
+   * If this returns an error, it will be thrown instead of the generic
+   * LoginFailedError. If it returns null, the original timeout error message is used.
+   */
+  protected diagnoseTimeoutError(
+    _context: BrowserContext,
+    _originalError: Error
+  ): Promise<Error | null> {
+    return Promise.resolve(null);
+  }
+
+  /**
    * Perform the login flow and return the extracted credentials.
    */
   async login(
@@ -215,6 +230,10 @@ export abstract class ServiceSession {
             throw new LoginCancelledError();
           }
           if (error instanceof Error && isTimeoutError(error)) {
+            const diagnosedError = await this.diagnoseTimeoutError(context, error);
+            if (diagnosedError !== null) {
+              throw diagnosedError;
+            }
             throw new LoginFailedError(`Login failed: ${error.message}`);
           }
           throw error;
