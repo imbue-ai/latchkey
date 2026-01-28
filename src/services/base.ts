@@ -24,25 +24,24 @@ export class LoginFailedError extends Error {
   }
 }
 
-interface TempBrowserState {
-  readonly tempFilePath: string;
-  readonly initialStorageState: string | null;
+interface BrowserWithContext {
+  readonly browser: Browser;
+  readonly context: BrowserContext;
 }
 
 /**
- * Run a callback with a temporary file for browser state, ensuring cleanup.
- * Decrypts existing state to the temp file before the callback, and
- * persists the temp file back to encrypted storage after.
+ * Run a callback with a browser context initialized from encrypted storage state.
+ * After the callback completes, persists browser state back to encrypted storage.
  */
-async function withTempBrowserState<T>(
+async function withTempBrowserContext<T>(
   encryptedStorage: EncryptedStorage,
   browserStatePath: string,
-  callback: (state: TempBrowserState) => Promise<T>
+  callback: (state: BrowserWithContext) => Promise<T>
 ): Promise<T> {
   const tempDir = mkdtempSync(join(tmpdir(), 'latchkey-browser-state-'));
   const tempFilePath = join(tempDir, 'browser_state.json');
 
-  let initialStorageState: string | null = null;
+  let initialStorageState: string | undefined;
   const actualPath = encryptedStorage.getActualPath(browserStatePath);
   if (existsSync(actualPath)) {
     const content = encryptedStorage.readFile(browserStatePath);
@@ -52,9 +51,26 @@ async function withTempBrowserState<T>(
     }
   }
 
+  const { chromium: chromiumBrowser } = await import('playwright');
+  const browser = await chromiumBrowser.launch({ headless: false });
+
   try {
-    return await callback({ tempFilePath, initialStorageState });
+    const contextOptions: { storageState?: string } = {};
+    if (initialStorageState !== undefined) {
+      contextOptions.storageState = initialStorageState;
+    }
+    const context = await browser.newContext(contextOptions);
+
+    const result = await callback({ browser, context });
+
+    // Persist browser state back to encrypted storage
+    await context.storageState({ path: tempFilePath });
+    const content = readFileSync(tempFilePath, 'utf-8');
+    encryptedStorage.writeFile(browserStatePath, content);
+
+    return result;
   } finally {
+    await browser.close();
     try {
       rmSync(tempDir, { recursive: true, force: true });
     } catch {
@@ -211,57 +227,39 @@ export abstract class ServiceSession {
     encryptedStorage: EncryptedStorage,
     browserStatePath: string
   ): Promise<ApiCredentials> {
-    return withTempBrowserState(
+    return withTempBrowserContext(
       encryptedStorage,
       browserStatePath,
-      async ({ tempFilePath, initialStorageState }) => {
-        const { chromium: chromiumBrowser } = await import('playwright');
-        const browser = await chromiumBrowser.launch({ headless: false });
+      async ({ browser, context }) => {
+        const page = await context.newPage();
 
-        const contextOptions: { storageState?: string } = {};
-        if (initialStorageState !== null) {
-          contextOptions.storageState = initialStorageState;
-        }
+        page.on('response', (response) => {
+          this.onResponse(response);
+        });
 
         try {
-          const context = await browser.newContext(contextOptions);
-          const page = await context.newPage();
-
-          page.on('response', (response) => {
-            this.onResponse(response);
-          });
-
-          try {
-            // await this.showLoginInstructions(page);
-            await page.goto(this.service.loginUrl);
-            await this.waitForHeadfulLoginComplete(page);
-          } catch (error: unknown) {
-            if (
-              error instanceof Error &&
-              (error.message.includes('Target closed') || error.message.includes('Browser closed'))
-            ) {
-              throw new LoginCancelledError();
-            }
-            throw error;
+          // await this.showLoginInstructions(page);
+          await page.goto(this.service.loginUrl);
+          await this.waitForHeadfulLoginComplete(page);
+        } catch (error: unknown) {
+          if (
+            error instanceof Error &&
+            (error.message.includes('Target closed') || error.message.includes('Browser closed'))
+          ) {
+            throw new LoginCancelledError();
           }
-
-          // Persist browser state back to encrypted storage
-          await context.storageState({ path: tempFilePath });
-          const content = readFileSync(tempFilePath, 'utf-8');
-          encryptedStorage.writeFile(browserStatePath, content);
-
-          await this.onHeadfulLoginComplete(context);
-
-          const apiCredentials = await this.finalizeCredentials(browser, context);
-
-          if (apiCredentials === null) {
-            throw new LoginFailedError();
-          }
-
-          return apiCredentials;
-        } finally {
-          await browser.close();
+          throw error;
         }
+
+        await this.onHeadfulLoginComplete(context);
+
+        const apiCredentials = await this.finalizeCredentials(browser, context);
+
+        if (apiCredentials === null) {
+          throw new LoginFailedError();
+        }
+
+        return apiCredentials;
       }
     );
   }
