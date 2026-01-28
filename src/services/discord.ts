@@ -38,7 +38,6 @@ export class Discord implements Service {
   readonly name = 'discord';
   readonly baseApiUrls = ['https://discord.com/api/'] as const;
   readonly loginUrl = 'https://discord.com/login';
-  readonly loginInstructions = null;
 
   readonly credentialCheckCurlArguments = ['https://discord.com/api/v9/users/@me'] as const;
 

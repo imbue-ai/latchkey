@@ -90,7 +90,6 @@ export class Linear implements Service {
   readonly name = 'linear';
   readonly baseApiUrls = ['https://api.linear.app/'] as const;
   readonly loginUrl = LINEAR_NEW_API_KEY_URL;
-  readonly loginInstructions = null;
 
   readonly credentialCheckCurlArguments = [
     '-X',

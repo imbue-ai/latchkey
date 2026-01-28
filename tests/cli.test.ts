@@ -179,7 +179,6 @@ describe('CLI commands with dependency injection', () => {
       name: 'slack',
       baseApiUrls: ['https://slack.com/api/'],
       loginUrl: 'https://slack.com/signin',
-      loginInstructions: null,
       credentialCheckCurlArguments: ['https://slack.com/api/auth.test'],
       checkApiCredentials: vi.fn().mockReturnValue(ApiCredentialStatus.Valid),
       getSession: vi.fn().mockReturnValue({
@@ -567,7 +566,6 @@ describe('CLI commands with dependency injection', () => {
         name: 'slack',
         baseApiUrls: ['https://slack.com/api/'],
         loginUrl: 'https://slack.com/signin',
-        loginInstructions: null,
         credentialCheckCurlArguments: [],
         checkApiCredentials: vi.fn(),
         getSession: vi.fn().mockReturnValue({ login: mockLogin }),
@@ -596,7 +594,6 @@ describe('CLI commands with dependency injection', () => {
         name: 'slack',
         baseApiUrls: ['https://slack.com/api/'],
         loginUrl: 'https://slack.com/signin',
-        loginInstructions: null,
         credentialCheckCurlArguments: [],
         checkApiCredentials: vi.fn(),
         getSession: vi.fn().mockReturnValue({ login: mockLogin }),

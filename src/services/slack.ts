@@ -54,11 +54,6 @@ export class Slack implements Service {
   readonly baseApiUrls = ['https://slack.com/api/'] as const;
   readonly loginUrl = 'https://slack.com/signin';
 
-  readonly loginInstructions = [
-    'Accept all cookies if prompted.',
-    'Launch Slack in your browser (not the desktop app).',
-  ] as const;
-
   readonly credentialCheckCurlArguments = ['https://slack.com/api/auth.test'] as const;
 
   getSession(): SlackServiceSession {

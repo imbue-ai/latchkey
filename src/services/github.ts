@@ -104,7 +104,6 @@ export class Github implements Service {
   readonly name = 'github';
   readonly baseApiUrls = ['https://api.github.com/'] as const;
   readonly loginUrl = GITHUB_NEW_TOKEN_URL;
-  readonly loginInstructions = null;
 
   readonly credentialCheckCurlArguments = ['https://api.github.com/user'] as const;
 

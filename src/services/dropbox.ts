@@ -134,7 +134,6 @@ export class Dropbox implements Service {
     'https://notify.dropboxapi.com/',
   ] as const;
   readonly loginUrl = 'https://www.dropbox.com/login';
-  readonly loginInstructions = null;
 
   readonly credentialCheckCurlArguments = [
     '-X',

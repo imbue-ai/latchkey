@@ -43,7 +43,6 @@ export interface Service {
   readonly name: string;
   readonly baseApiUrls: readonly string[];
   readonly loginUrl: string;
-  readonly loginInstructions: readonly string[] | null;
 
   /**
    * Check if the given API credentials are valid for this service.
@@ -100,77 +99,6 @@ export abstract class ServiceSession {
   }
 
   /**
-   * Show login instructions to the user before redirecting to the login page.
-   */
-  protected async showLoginInstructions(page: Page): Promise<void> {
-    const instructions = this.service.loginInstructions;
-    if (instructions === null) {
-      return;
-    }
-
-    const instructionsList = instructions.map((item) => `<li>${item}</li>`).join('\n');
-
-    const instructionsHtml = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>Latchkey - Login Instructions</title>
-      <style>
-        body {
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          min-height: 100vh;
-          margin: 0;
-          background: #f5f5f5;
-        }
-        .container {
-          background: white;
-          padding: 40px;
-          border-radius: 8px;
-          box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-          max-width: 500px;
-        }
-        h1 {
-          margin-top: 0;
-          color: #333;
-        }
-        ul {
-          line-height: 1.8;
-          color: #555;
-        }
-        button {
-          background: #007bff;
-          color: white;
-          border: none;
-          padding: 12px 24px;
-          font-size: 16px;
-          border-radius: 4px;
-          cursor: pointer;
-          margin-top: 20px;
-        }
-        button:hover {
-          background: #0056b3;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <h1>Log in to ${this.service.name}</h1>
-        <ul>
-          ${instructionsList}
-        </ul>
-        <button onclick="window.loginContinue = true">Continue to Login</button>
-      </div>
-    </body>
-    </html>
-    `;
-    await page.setContent(instructionsHtml);
-    await page.waitForFunction('window.loginContinue === true');
-  }
-
-  /**
    * Called after headful login completes but before the browser closes.
    */
   protected async onHeadfulLoginComplete(_context: BrowserContext): Promise<void> {
@@ -210,7 +138,6 @@ export abstract class ServiceSession {
         });
 
         try {
-          // await this.showLoginInstructions(page);
           await page.goto(this.service.loginUrl);
           await this.waitForHeadfulLoginComplete(page);
         } catch (error: unknown) {
