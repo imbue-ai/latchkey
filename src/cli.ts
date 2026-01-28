@@ -6,6 +6,19 @@
 
 import { program } from 'commander';
 import { registerCommands, createDefaultDependencies } from './cliCommands.js';
+import { InsecureFilePermissionsError } from './config.js';
+
+const deps = createDefaultDependencies();
+
+try {
+  deps.config.checkSensitiveFilePermissions();
+} catch (error) {
+  if (error instanceof InsecureFilePermissionsError) {
+    console.error(`Error: ${error.message}`);
+    process.exit(1);
+  }
+  throw error;
+}
 
 program
   .name('latchkey')
@@ -14,7 +27,6 @@ program
   )
   .version('0.1.0');
 
-const deps = createDefaultDependencies();
 registerCommands(program, deps);
 
 program.parse();

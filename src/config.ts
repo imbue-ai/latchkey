@@ -2,9 +2,20 @@
  * Configuration management for Latchkey.
  */
 
+import { existsSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { isKeychainAvailable } from './keychain.js';
+
+export class InsecureFilePermissionsError extends Error {
+  constructor(filePath: string, permissions: number) {
+    const permissionsOctal = permissions.toString(8).padStart(3, '0');
+    super(
+      `File ${filePath} has insecure permissions (${permissionsOctal}). Run: chmod 600 ${filePath}`
+    );
+    this.name = 'InsecureFilePermissionsError';
+  }
+}
 
 const LATCHKEY_STORE_ENV_VAR = 'LATCHKEY_STORE';
 const LATCHKEY_BROWSER_STATE_ENV_VAR = 'LATCHKEY_BROWSER_STATE';
@@ -71,6 +82,30 @@ export class Config {
     this.browserStatePath = browserStateEnv
       ? resolvePathWithTildeExpansion(browserStateEnv)
       : getDefaultBrowserStatePath(encryptionEnabled);
+  }
+
+  /**
+   * Check that sensitive files have secure permissions.
+   * Throws InsecureFilePermissionsError if any file is readable by group or others.
+   */
+  checkSensitiveFilePermissions(): void {
+    const filesToCheck = [this.credentialStorePath, this.browserStatePath];
+
+    for (const filePath of filesToCheck) {
+      if (!existsSync(filePath)) {
+        continue;
+      }
+
+      const stats = statSync(filePath);
+      if (stats.isDirectory()) {
+        continue;
+      }
+
+      const permissions = stats.mode & 0o777;
+      if ((permissions & 0o077) !== 0) {
+        throw new InsecureFilePermissionsError(filePath, permissions);
+      }
+    }
   }
 }
 
