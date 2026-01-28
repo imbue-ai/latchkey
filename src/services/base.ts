@@ -215,7 +215,7 @@ export abstract class ServiceSession {
             throw new LoginCancelledError();
           }
           if (error instanceof Error && isTimeoutError(error)) {
-            throw new LoginFailedError();
+            throw new LoginFailedError(`Login failed: ${error.message}`);
           }
           throw error;
         }
