@@ -6,16 +6,16 @@
  * credential and browser state files.
  *
  * Usage:
- *   npx tsx scripts/encryptFile.ts decrypt <file>     # Decrypt file to stdout
- *   npx tsx scripts/encryptFile.ts encrypt <file>     # Encrypt file in place
+ *   npx tsx scripts/cryptFile.ts decrypt <file>     # Decrypt file in place
+ *   npx tsx scripts/cryptFile.ts encrypt <file>     # Encrypt file in place
  *
  * The encryption key is sourced from:
  *   1. LATCHKEY_ENCRYPTION_KEY environment variable
  *   2. System keychain
  *
  * Examples:
- *   npx tsx scripts/encryptFile.ts decrypt ~/.latchkey/credentials.json
- *   npx tsx scripts/encryptFile.ts encrypt ~/.latchkey/credentials.json
+ *   npx tsx scripts/cryptFile.ts decrypt ~/.latchkey/credentials.json
+ *   npx tsx scripts/cryptFile.ts encrypt ~/.latchkey/credentials.json
  */
 
 import { program } from 'commander';
@@ -56,6 +56,12 @@ function decryptCommand(filePath: string): void {
     process.exit(1);
   }
 
+  const rawContent = readFileSync(filePath, 'utf-8');
+  if (!rawContent.startsWith(ENCRYPTED_FILE_PREFIX)) {
+    console.error(`Error: File is not encrypted: ${filePath}`);
+    process.exit(1);
+  }
+
   const storage = new EncryptedStorage({
     serviceName: CONFIG.serviceName,
     accountName: CONFIG.accountName,
@@ -67,8 +73,8 @@ function decryptCommand(filePath: string): void {
     process.exit(1);
   }
 
-  // Output to stdout
-  process.stdout.write(content);
+  writeFileSync(filePath, content, { encoding: 'utf-8', mode: 0o600 });
+  console.error(`Decrypted: ${filePath}`);
 }
 
 function encryptCommand(filePath: string): void {
@@ -91,7 +97,7 @@ function encryptCommand(filePath: string): void {
   console.error(`Encrypted: ${filePath}`);
 }
 
-program.name('encryptFile').description(`\
+program.name('cryptFile').description(`\
 CLI tool for encrypting and decrypting latchkey files.
 
 The encryption key is sourced from:
@@ -100,7 +106,7 @@ The encryption key is sourced from:
 
 program
   .command('decrypt')
-  .description('Decrypt file and print to stdout')
+  .description('Decrypt file in place')
   .argument('<file>', 'Path to the encrypted file')
   .action((filePath: string) => {
     decryptCommand(filePath);
