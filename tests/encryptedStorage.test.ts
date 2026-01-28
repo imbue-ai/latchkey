@@ -13,7 +13,6 @@ import { tmpdir } from 'node:os';
 import {
   EncryptedStorage,
   EncryptedStorageError,
-  InsecureFilePermissionsError,
   PathIsDirectoryError,
 } from '../src/encryptedStorage.js';
 import { generateKey } from '../src/encryption.js';
@@ -114,23 +113,6 @@ describe('EncryptedStorage', () => {
       storage.writeFile(filePath, content);
 
       expect(existsSync(filePath)).toBe(true);
-    });
-
-    it('should throw error when overwriting file with insecure permissions', () => {
-      const filePath = join(tempDir, 'insecure.json.enc');
-      const content = '{"token": "secret-value"}';
-
-      // Create a file with insecure permissions (readable by group)
-      writeFileSync(filePath, 'existing content', { encoding: 'utf-8' });
-      chmodSync(filePath, 0o640);
-
-      const storage = new EncryptedStorage({
-        encryptionKeyOverride: testKey,
-      });
-
-      expect(() => {
-        storage.writeFile(filePath, content);
-      }).toThrow(InsecureFilePermissionsError);
     });
 
     it('should allow overwriting file with secure permissions', () => {

@@ -28,17 +28,6 @@ export class EncryptedStorageError extends Error {
   }
 }
 
-export class InsecureFilePermissionsError extends Error {
-  constructor(filePath: string, permissions: number) {
-    const permissionsOctal = permissions.toString(8).padStart(3, '0');
-    super(
-      `File ${filePath} has insecure permissions (${permissionsOctal}). ` +
-        'Credentials files should not be readable by group or others.'
-    );
-    this.name = 'InsecureFilePermissionsError';
-  }
-}
-
 export class PathIsDirectoryError extends Error {
   constructor(filePath: string) {
     super(`Path is a directory, not a file: ${filePath}`);
@@ -144,7 +133,6 @@ export class EncryptedStorage {
   /**
    * Encrypt and write data to a file.
    * Creates parent directories. New files are created with chmod 600.
-   * Existing files must have restrictive permissions (no group/other access).
    */
   writeFile(filePath: string, content: string): void {
     const dir = dirname(filePath);
@@ -152,16 +140,10 @@ export class EncryptedStorage {
       mkdirSync(dir, { recursive: true, mode: 0o700 });
     }
 
-    // Check permissions if file already exists
     if (existsSync(filePath)) {
       const stats = statSync(filePath);
       if (stats.isDirectory()) {
         throw new PathIsDirectoryError(filePath);
-      }
-      const permissions = stats.mode & 0o777;
-      // Reject if group or others have any access
-      if ((permissions & 0o077) !== 0) {
-        throw new InsecureFilePermissionsError(filePath, permissions);
       }
     }
 
