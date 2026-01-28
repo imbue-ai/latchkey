@@ -2,14 +2,13 @@
  * API credential store for persisting and loading API credentials.
  */
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
-import { dirname } from 'node:path';
 import {
   ApiCredentials,
   ApiCredentialsSchema,
   deserializeCredentials,
   serializeCredentials,
 } from './apiCredentials.js';
+import { EncryptedStorage } from './encryptedStorage.js';
 
 export class ApiCredentialStoreError extends Error {
   constructor(message: string) {
@@ -22,17 +21,19 @@ type StoreData = Record<string, unknown>;
 
 export class ApiCredentialStore {
   readonly path: string;
+  private readonly encryptedStorage: EncryptedStorage;
 
-  constructor(path: string) {
+  constructor(path: string, encryptedStorage: EncryptedStorage) {
     this.path = path;
+    this.encryptedStorage = encryptedStorage;
   }
 
   private loadStoreData(): StoreData {
-    if (!existsSync(this.path)) {
-      return {};
-    }
     try {
-      const content = readFileSync(this.path, 'utf-8');
+      const content = this.encryptedStorage.readFile(this.path);
+      if (content === null) {
+        return {};
+      }
       return JSON.parse(content) as StoreData;
     } catch (error) {
       throw new ApiCredentialStoreError(
@@ -42,12 +43,8 @@ export class ApiCredentialStore {
   }
 
   private saveStoreData(data: StoreData): void {
-    const dir = dirname(this.path);
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
-    }
     try {
-      writeFileSync(this.path, JSON.stringify(data, null, 2), 'utf-8');
+      this.encryptedStorage.writeFile(this.path, JSON.stringify(data, null, 2));
     } catch (error) {
       throw new ApiCredentialStoreError(
         `Failed to write credential store: ${error instanceof Error ? error.message : String(error)}`

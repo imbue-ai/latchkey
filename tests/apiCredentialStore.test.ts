@@ -8,14 +8,18 @@ import {
   AuthorizationBare,
   SlackApiCredentials,
 } from '../src/apiCredentials.js';
+import { EncryptedStorage } from '../src/encryptedStorage.js';
+import { generateKey } from '../src/encryption.js';
 
 describe('ApiCredentialStore', () => {
   let tempDir: string;
   let storePath: string;
+  let encryptedStorage: EncryptedStorage;
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), 'latchkey-test-'));
     storePath = join(tempDir, 'credentials.json');
+    encryptedStorage = new EncryptedStorage({ encryptionKeyOverride: generateKey() });
   });
 
   afterEach(() => {
@@ -24,18 +28,18 @@ describe('ApiCredentialStore', () => {
 
   describe('get', () => {
     it('should return null for non-existent store file', () => {
-      const store = new ApiCredentialStore(storePath);
+      const store = new ApiCredentialStore(storePath, encryptedStorage);
       expect(store.get('slack')).toBeNull();
     });
 
     it('should return null for non-existent service', () => {
-      const store = new ApiCredentialStore(storePath);
+      const store = new ApiCredentialStore(storePath, encryptedStorage);
       store.save('discord', new AuthorizationBare('token'));
       expect(store.get('slack')).toBeNull();
     });
 
     it('should retrieve saved AuthorizationBearer credentials', () => {
-      const store = new ApiCredentialStore(storePath);
+      const store = new ApiCredentialStore(storePath, encryptedStorage);
       const credentials = new AuthorizationBearer('test-token');
       store.save('github', credentials);
 
@@ -45,7 +49,7 @@ describe('ApiCredentialStore', () => {
     });
 
     it('should retrieve saved AuthorizationBare credentials', () => {
-      const store = new ApiCredentialStore(storePath);
+      const store = new ApiCredentialStore(storePath, encryptedStorage);
       const credentials = new AuthorizationBare('discord-token');
       store.save('discord', credentials);
 
@@ -55,7 +59,7 @@ describe('ApiCredentialStore', () => {
     });
 
     it('should retrieve saved SlackApiCredentials', () => {
-      const store = new ApiCredentialStore(storePath);
+      const store = new ApiCredentialStore(storePath, encryptedStorage);
       const credentials = new SlackApiCredentials('xoxc-token', 'd-cookie');
       store.save('slack', credentials);
 
@@ -68,20 +72,20 @@ describe('ApiCredentialStore', () => {
 
   describe('save', () => {
     it('should create the store file if it does not exist', () => {
-      const store = new ApiCredentialStore(storePath);
+      const store = new ApiCredentialStore(storePath, encryptedStorage);
       store.save('github', new AuthorizationBearer('token'));
       expect(existsSync(storePath)).toBe(true);
     });
 
     it('should create parent directories if they do not exist', () => {
       const nestedPath = join(tempDir, 'nested', 'deep', 'credentials.json');
-      const store = new ApiCredentialStore(nestedPath);
+      const store = new ApiCredentialStore(nestedPath, encryptedStorage);
       store.save('github', new AuthorizationBearer('token'));
       expect(existsSync(nestedPath)).toBe(true);
     });
 
     it('should overwrite existing credentials for the same service', () => {
-      const store = new ApiCredentialStore(storePath);
+      const store = new ApiCredentialStore(storePath, encryptedStorage);
       store.save('github', new AuthorizationBearer('old-token'));
       store.save('github', new AuthorizationBearer('new-token'));
 
@@ -90,7 +94,7 @@ describe('ApiCredentialStore', () => {
     });
 
     it('should preserve other services when saving', () => {
-      const store = new ApiCredentialStore(storePath);
+      const store = new ApiCredentialStore(storePath, encryptedStorage);
       store.save('github', new AuthorizationBearer('github-token'));
       store.save('discord', new AuthorizationBare('discord-token'));
 
@@ -98,35 +102,36 @@ describe('ApiCredentialStore', () => {
       expect(store.get('discord')).not.toBeNull();
     });
 
-    it('should write valid JSON', () => {
-      const store = new ApiCredentialStore(storePath);
+    it('should write valid JSON (encrypted)', () => {
+      const store = new ApiCredentialStore(storePath, encryptedStorage);
       store.save('github', new AuthorizationBearer('token'));
 
       const content = readFileSync(storePath, 'utf-8');
-      expect(() => JSON.parse(content) as unknown).not.toThrow();
+      // When encrypted, content starts with prefix, followed by encrypted JSON
+      expect(content.startsWith('LATCHKEY_ENCRYPTED:')).toBe(true);
     });
   });
 
   describe('delete', () => {
     it('should return false for non-existent service', () => {
-      const store = new ApiCredentialStore(storePath);
+      const store = new ApiCredentialStore(storePath, encryptedStorage);
       expect(store.delete('github')).toBe(false);
     });
 
     it('should return false for non-existent store file', () => {
-      const store = new ApiCredentialStore(storePath);
+      const store = new ApiCredentialStore(storePath, encryptedStorage);
       expect(store.delete('github')).toBe(false);
     });
 
     it('should delete existing credentials and return true', () => {
-      const store = new ApiCredentialStore(storePath);
+      const store = new ApiCredentialStore(storePath, encryptedStorage);
       store.save('github', new AuthorizationBearer('token'));
       expect(store.delete('github')).toBe(true);
       expect(store.get('github')).toBeNull();
     });
 
     it('should preserve other services when deleting', () => {
-      const store = new ApiCredentialStore(storePath);
+      const store = new ApiCredentialStore(storePath, encryptedStorage);
       store.save('github', new AuthorizationBearer('github-token'));
       store.save('discord', new AuthorizationBare('discord-token'));
 
@@ -139,7 +144,7 @@ describe('ApiCredentialStore', () => {
 
   describe('multiple credential types', () => {
     it('should store and retrieve different credential types', () => {
-      const store = new ApiCredentialStore(storePath);
+      const store = new ApiCredentialStore(storePath, encryptedStorage);
 
       store.save('github', new AuthorizationBearer('github-token'));
       store.save('discord', new AuthorizationBare('discord-token'));

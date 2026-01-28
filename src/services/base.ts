@@ -2,10 +2,10 @@
  * Base classes and interfaces for service implementations.
  */
 
-import { existsSync } from 'node:fs';
 import type { Browser, BrowserContext, Page, Response } from 'playwright';
 import { ApiCredentialStatus, ApiCredentials } from '../apiCredentials.js';
-import { showSpinnerPage } from '../playwrightUtils.js';
+import { EncryptedStorage } from '../encryptedStorage.js';
+import { showSpinnerPage, withTempBrowserContext } from '../playwrightUtils.js';
 
 export class LoginCancelledError extends Error {
   constructor(message = 'Login was cancelled because the browser was closed.') {
@@ -165,52 +165,45 @@ export abstract class ServiceSession {
   /**
    * Perform the login flow and return the extracted credentials.
    */
-  async login(browserStatePath: string | null): Promise<ApiCredentials> {
-    const { chromium: chromiumBrowser } = await import('playwright');
-    const browser = await chromiumBrowser.launch({ headless: false });
+  async login(
+    encryptedStorage: EncryptedStorage,
+    browserStatePath: string
+  ): Promise<ApiCredentials> {
+    return withTempBrowserContext(
+      encryptedStorage,
+      browserStatePath,
+      async ({ browser, context }) => {
+        const page = await context.newPage();
 
-    const contextOptions: { storageState?: string } = {};
-    if (browserStatePath && existsSync(browserStatePath)) {
-      contextOptions.storageState = browserStatePath;
-    }
-    const context = await browser.newContext(contextOptions);
-    const page = await context.newPage();
+        page.on('response', (response) => {
+          this.onResponse(response);
+        });
 
-    page.on('response', (response) => {
-      this.onResponse(response);
-    });
+        try {
+          // await this.showLoginInstructions(page);
+          await page.goto(this.service.loginUrl);
+          await this.waitForHeadfulLoginComplete(page);
+        } catch (error: unknown) {
+          if (
+            error instanceof Error &&
+            (error.message.includes('Target closed') || error.message.includes('Browser closed'))
+          ) {
+            throw new LoginCancelledError();
+          }
+          throw error;
+        }
 
-    try {
-      // await this.showLoginInstructions(page);
-      await page.goto(this.service.loginUrl);
-      await this.waitForHeadfulLoginComplete(page);
-    } catch (error: unknown) {
-      if (
-        error instanceof Error &&
-        (error.message.includes('Target closed') || error.message.includes('Browser closed'))
-      ) {
-        throw new LoginCancelledError();
+        await this.onHeadfulLoginComplete(context);
+
+        const apiCredentials = await this.finalizeCredentials(browser, context);
+
+        if (apiCredentials === null) {
+          throw new LoginFailedError();
+        }
+
+        return apiCredentials;
       }
-      throw error;
-    }
-
-    if (browserStatePath) {
-      await context.storageState({ path: browserStatePath });
-    }
-
-    await this.onHeadfulLoginComplete(context);
-
-    try {
-      const apiCredentials = await this.finalizeCredentials(browser, context);
-
-      if (apiCredentials === null) {
-        throw new LoginFailedError();
-      }
-
-      return apiCredentials;
-    } finally {
-      await browser.close();
-    }
+    );
   }
 }
 

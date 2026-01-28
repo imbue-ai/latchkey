@@ -25,6 +25,12 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
       return;
     }
 
+    // Require 2XX response to ensure the session is valid (not expired)
+    const status = response.status();
+    if (status < 200 || status >= 300) {
+      return;
+    }
+
     const headers = request.headers();
     const uidHeader = headers['x-dropbox-uid'];
     if (uidHeader === undefined || uidHeader === '-1') {
