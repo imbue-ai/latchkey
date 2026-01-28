@@ -29,41 +29,37 @@ to the caller of `latchkey`.
 
 ### Remembering API credentials
 
-You can optionally set the `LATCHKEY_STORE` environment variable
-to a path to a .json file that will be used to store the extracted
-API credentials. Next time you invoke a `latchkey curl` command
-against the same service, the stored credentials will be reused.
-While the file shouldn't contain any passwords (only tokens and
-cookies), you should still treat it as a sensitive file.
+Your API credentials and browser state are stored for later
+reuse, by default under `~/.latchkey.` You can override the
+individual locations by setting the `LATCHKEY_STORE` and
+`LATCHKEY_BROWSER_STATE` environment variables. When easily
+possible (a functioning keyring is detected, which should be
+true on most systems), the data is stored in an encrypted form.
 
-```
-export LATCHKEY_STORE=~/.latchkey/api_credentials.json
-latchkey curl 'https://discord.com/api/v10/users/@me'
-```
 
-### Reusing browser state
+### Inspecting the status of remembered credentials
 
-You can optionally set the `LATCHKEY_BROWSER_STATE` environment
-variable to a path to a .json file that will be used to persist
-browser state (cookies, local storage) across Playwright sessions.
-This can speed up subsequent logins by reusing authentication
-state from previous browser sessions.
+Calling `latchkey status <service_name>` will give you
+information about the status of remembered credentials for the
+given service. It can be one of:
 
-```
-export LATCHKEY_BROWSER_STATE=~/.latchkey/browser_state.json
-latchkey curl 'https://discord.com/api/v10/users/@me'
-```
-
-The browser state is loaded when the login browser opens and saved
-after a successful login.
-
+- missing
+- invalid
+- valid
 
 ### Clearing credentials
 
 Remembered API credentials can expire. The caller of `latchkey
 curl` will typically notice this because the calls will return
-HTTP 401 or 403. To force a new login in the next `latchkey
-curl` call, clear the remembered API credentials for the service
+HTTP 401 or 403. To double-check that, first call `latchkey
+status`, e.g.:
+
+```
+latchkey status discord
+```
+
+If the answer is `invalid`, force a new login in the next `latchkey
+curl` call by clearing the remembered API credentials for the service
 in question, e.g.:
 
 ```
@@ -127,11 +123,4 @@ risk.
 ```
 mkdir -p ~/.claude/skills/latchkey
 cp integrations/SKILL.md ~/.claude/skills/latchkey/SKILL.md
-```
-
-Optionally, add the following lines to your `.bashrc` to remember logins and browser state:
-
-```
-export LATCHKEY_STORE=~/.latchkey/api_credentials.json
-export LATCHKEY_BROWSER_STATE=~/.latchkey/browser_state.json
 ```

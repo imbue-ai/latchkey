@@ -13,10 +13,11 @@ Use this skill when the user asks you to work with third-party services like Sla
 
 Usage:
 
-1. **Use `latchkey curl`** instead of regular `curl` for supported services
+1. **Use `latchkey curl`** instead of regular `curl` for supported services.
 2. **Look for the newest documentation of the desired public API online.***
 3. **Pass through all regular curl arguments** - latchkey is a transparent wrapper
-4. **Use `latchkey clear <service_name>`** when you notice expired credentials, then retry the curl command
+4. **Use `latchkey status <service_name>`** when you notice potentially expired credentials.
+5. When the status is `invalid`, **force a new login by calling `latchkey clear <service_name>`**, then retry the curl command
 
 
 ## Examples
@@ -42,6 +43,7 @@ latchkey curl 'https://discord.com/api/v10/users/@me'
 
 ### Clear expired credentials and force a new login to Discord
 ```bash
+latchkey status discord  # Returns "invalid"
 latchkey clear discord
 latchkey curl 'https://discord.com/api/v10/users/@me'
 ```
