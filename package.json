@@ -19,7 +19,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "start": "node dist/cli.js"
+    "start": "node dist/cli.js",
+    "bun-compile": "bun build ./src/cli.ts --compile --external chromium-bidi --external electron --outfile latchkey"
   },
   "keywords": [
     "cli",

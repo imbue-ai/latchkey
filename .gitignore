@@ -2,3 +2,5 @@ scripts/recordings/*/
 
 node_modules/
 dist/
+# bun-compiled binary
+/latchkey
