@@ -233,7 +233,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
 
   program
     .command('login')
-    .description('Login to a service and optionally store the API credentials.')
+    .description('Login to a service and store the API credentials.')
     .argument('<service_name>', 'Name of the service to login to')
     .action(async (serviceName: string) => {
       const service = deps.registry.getByName(serviceName);
