@@ -32,6 +32,10 @@ function isBrowserClosedError(error: Error): boolean {
   );
 }
 
+function isTimeoutError(error: Error): boolean {
+  return error.name === 'TimeoutError';
+}
+
 /**
  * Base interface for a service that latchkey can authenticate with.
  */
@@ -203,7 +207,18 @@ export abstract class ServiceSession {
 
         await this.onHeadfulLoginComplete(context);
 
-        const apiCredentials = await this.finalizeCredentials(browser, context);
+        let apiCredentials: ApiCredentials | null;
+        try {
+          apiCredentials = await this.finalizeCredentials(browser, context);
+        } catch (error: unknown) {
+          if (error instanceof Error && isBrowserClosedError(error)) {
+            throw new LoginCancelledError();
+          }
+          if (error instanceof Error && isTimeoutError(error)) {
+            throw new LoginFailedError();
+          }
+          throw error;
+        }
 
         if (apiCredentials === null) {
           throw new LoginFailedError();
