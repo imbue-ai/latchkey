@@ -73,3 +73,13 @@ To do that, you can use `scripts/cryptFile.ts`. For example:
 ```
 npx tsx scripts/cryptFile.ts decrypt ~/.latchkey/credentials.json.enc
 ```
+
+
+#### Browser automation recorder
+
+When automating the browser login follow-up, you can sometimes
+use Playwright's codegen functionality, for example:
+
+```
+npx playwright codegen --target=javascript https://login-page.example.com/
+```
