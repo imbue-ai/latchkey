@@ -1,37 +1,74 @@
-TODO: Make this readable.
+# Developing Latchkey
 
-## Development
+Thank you for considering contributing to Latchkey!
 
-```bash
-# Install dependencies
-npm install
+## Setting up your environment
 
-# Build
-npm run build
+The easiest way to set up your system so that you can invoke Latchkey while working on it is to:
 
-# Run tests
-npm test
+1. Clone this repository.
+2. And then run:
+  ```
+  npm install && playwright install chromium && npm run build && npm link
+  ```
 
-# Type check
-npm run typecheck
+After that, every time you make a change to the code and run
+`npm run rebuild`, invoking `latchkey` in your terminal should
+invoke the version you just built.
 
-# Install as CLI
-pm install && npm run build && npm link
+## Before you submit a PR
+
+- Run `npm lint` and `npm test` to validate your changes.
+- Run `npm format` to apply autoformatting.
+
+
+## Adding a new service
+
+Each third-party service needs to be approached slightly
+differently. When adding support for a new service, you need to
+start by asking yourself the following question:
+
+
+_Can an API token can be extracted from the network traffic that flows between the browser and the service's website during or after login?_
+
+If the answer is yes, see how the Discord service is implemented and try to do it similarly.
+
+Otherwise, ask yourself the following question:
+
+_Can an API token be created in the user's account (e.g. in Developer settings)?_
+
+If you reply with a positive answer, see how the Linear service is implemented and try to do it similarly.
+
+When possible, the first option (extracting the token from the network traffic) is always preferable because it's simpler, more robust and less invasive.
+If the answer is "no" in both cases, it's a special case and you're on your own!
+
+
+### Potentially useful helpers
+
+#### Request / response recorder
+
+Use this to record the request / response pairs of your browser
+login sequence as plaintext JSON. The resulting recording can be inspected,
+either manually or using AI, to see if you can extract an API token
+or something similar from there.
+
+```
+npx tsx scripts/recordBrowserSession.ts <service_name>
 ```
 
-## Useful commands
+If you have `jq` installed on your system, you can then get
+start exploring for instance like this:
 
 ```
-npm run lint
-npm run lint:fix
-npm run format
+cat path/to/recording/login_session.json | jq -C | less -R
 ```
 
+#### File encryptor / decryptor
 
-## Useful environment variables
+Sometimes, while developing, it may be necessary to inspect the credentials stored in ~/.latchkey/credentials.json.enc.
 
-- `LATCHKEY_STORE`
-- `LATCHKEY_BROWSER_STATE`
-- `LATCHKEY_CURL_PATH`
-- `LATCHKEY_KEYRING_SERVICE_NAME`
-- `LATCHKEY_KEYRING_ACCOUNT_NAME`
+To do that, you can use `scripts/cryptFile.ts`. For example:
+
+```
+npx tsx scripts/cryptFile.ts decrypt ~/.latchkey/credentials.json.enc
+```

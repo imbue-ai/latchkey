@@ -99,11 +99,10 @@ to the caller of `latchkey`.
 
 ### Remembering API credentials
 
-Your API credentials and browser state are stored by default under
-`~/.latchkey`. You can override the storage locations by setting the
-`LATCHKEY_STORE` and `LATCHKEY_BROWSER_STATE` environment variables. When a
-functioning keyring is detected (which is the case on most systems), the
-data is properly encrypted.
+Your API credentials and browser state are stored by default
+under `~/.latchkey`. When a functioning keyring is detected
+(which is the case on most systems), the data is properly
+encrypted.
 
 
 ### Inspecting the status of stored credentials
@@ -143,6 +142,19 @@ state file), run:
 ```
 latchkey clear
 ```
+
+### Advanced configuration
+
+You can set these environment variables to override certain
+defaults:
+
+- `LATCHKEY_STORE`: path to the (typically encrypted) file
+containing stored API credentials.
+- `LATCHKEY_BROWSER_STATE`: path to the (typically encrypted) file
+containing the state (cookies, local storage, ...) of
+the login popup browser.
+- `LATCHKEY_CURL_PATH`: path to a curl binary
+- `LATCHKEY_KEYRING_SERVICE_NAME`, `LATCHKEY_KEYRING_ACCOUNT_NAME`: identifiers used to store the encryption password in your keyring.
 
 
 ## Disclaimers
