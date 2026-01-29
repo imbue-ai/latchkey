@@ -40,14 +40,16 @@ for details.
 ### Prerequisites
 
 - `curl` and `npm` need to be present on your system.
+- Node.js >= 22.9.0 and npm >= 11.6.0 (upgrade with `npm install -g npm@latest`)
 - The browser requires a graphical environment.
-
 
 ### Steps
 
 1. Clone this repository to your local machine.
 2. Enter the repository's directory.
 3. `npm install -g .`
+
+**nvm users**: Global packages are per node version. If you switch versions, reinstall with `npm install -g .`
 
 ## Integrations
 
