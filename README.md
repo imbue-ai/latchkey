@@ -27,8 +27,8 @@ credentials required.
 
 Unlike OAuth-based flows or typical MCP-style integrations, Latchkey does not
 introduce an intermediary between the agent and the service. Requests are made
-directly on the user’s behalf, which enables greater flexibility and fidelity,
-at the cost of formal delegation: agents authenticate as the user.
+directly on the user’s behalf, which enables greater flexibility at the cost of
+formal delegation: agents authenticate as the user.
 
 If a service you need isn’t supported yet, contributions are welcome. Adding
 support typically involves writing a small browser automation class that
@@ -51,10 +51,16 @@ for details.
 
 ## Integrations
 
-Warning: giving AI agents access to your API credentials is
-potentially dangerous. They will be able to do most of the
-actions you can do. Only do this if you're willing to accept the
-risk.
+Warning: giving AI agents access to your API credentials is potentially
+dangerous. They will be able to do most of the actions you can do. Only do this if
+you're willing to accept the risks.
+
+
+### OpenCode
+```
+mkdir -p ~/.opencode/skills/latchkey
+cp integrations/SKILL.md ~/.opencode/skills/latchkey/SKILL.md
+```
 
 ### Claude Code
 ```
@@ -62,8 +68,14 @@ mkdir -p ~/.claude/skills/latchkey
 cp integrations/SKILL.md ~/.claude/skills/latchkey/SKILL.md
 ```
 
+### Codex
+```
+mkdir -p ~/.codex/skills/latchkey
+cp integrations/SKILL.md ~/.codex/skills/latchkey/SKILL.md
+```
 
-## Usage
+
+## Direct usage
 
 Let's revisit the initial example:
 
@@ -94,15 +106,15 @@ functioning keyring is detected (which should be true on most systems), the
 data is properly encrypted.
 
 
-### Inspecting the status of remembered credentials
+### Inspecting the status of stored credentials
 
 Calling `latchkey status <service_name>` will give you
 information about the status of remembered credentials for the
 given service. It can be one of:
 
-- missing
-- invalid
-- valid
+- `missing`
+- `invalid`
+- `valid`
 
 ### Clearing credentials
 
@@ -133,3 +145,10 @@ state file), run:
 ```
 latchkey clear
 ```
+
+
+## Disclaimers
+
+- Invoking `latchkey curl ...` can sometimes have side effects in the form of
+  new API keys being created under your accounts (through browser automation).
+- Using agents for automated access may be prohibited by some services' ToS.
