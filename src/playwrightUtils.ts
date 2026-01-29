@@ -5,12 +5,19 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Browser, BrowserContext, Page, Locator } from 'playwright';
+import type { Browser, BrowserContext, Page, Locator, LaunchOptions } from 'playwright';
 import { EncryptedStorage } from './encryptedStorage.js';
 
 export interface BrowserWithContext {
   readonly browser: Browser;
   readonly context: BrowserContext;
+}
+
+export interface BrowserLaunchOptions {
+  /** Path to the browser executable. If not provided, Playwright's default is used. */
+  executablePath?: string;
+  /** Path to the encrypted browser state file for persisting cookies/storage. */
+  browserStatePath?: string;
 }
 
 /**
@@ -19,15 +26,15 @@ export interface BrowserWithContext {
  */
 export async function withTempBrowserContext<T>(
   encryptedStorage: EncryptedStorage,
-  browserStatePath: string,
+  options: BrowserLaunchOptions,
   callback: (state: BrowserWithContext) => Promise<T>
 ): Promise<T> {
   const tempDir = mkdtempSync(join(tmpdir(), 'latchkey-browser-state-'));
   const tempFilePath = join(tempDir, 'browser_state.json');
 
   let initialStorageState: string | undefined;
-  if (existsSync(browserStatePath)) {
-    const content = encryptedStorage.readFile(browserStatePath);
+  if (options.browserStatePath && existsSync(options.browserStatePath)) {
+    const content = encryptedStorage.readFile(options.browserStatePath);
     if (content !== null) {
       writeFileSync(tempFilePath, content, { encoding: 'utf-8', mode: 0o600 });
       initialStorageState = tempFilePath;
@@ -35,7 +42,11 @@ export async function withTempBrowserContext<T>(
   }
 
   const { chromium: chromiumBrowser } = await import('playwright');
-  const browser = await chromiumBrowser.launch({ headless: false });
+  const playwrightLaunchOptions: LaunchOptions = { headless: false };
+  if (options.executablePath) {
+    playwrightLaunchOptions.executablePath = options.executablePath;
+  }
+  const browser = await chromiumBrowser.launch(playwrightLaunchOptions);
 
   try {
     const contextOptions: { storageState?: string } = {};
@@ -47,9 +58,11 @@ export async function withTempBrowserContext<T>(
     const result = await callback({ browser, context });
 
     // Persist browser state back to encrypted storage
-    await context.storageState({ path: tempFilePath });
-    const content = readFileSync(tempFilePath, 'utf-8');
-    encryptedStorage.writeFile(browserStatePath, content);
+    if (options.browserStatePath) {
+      await context.storageState({ path: tempFilePath });
+      const content = readFileSync(tempFilePath, 'utf-8');
+      encryptedStorage.writeFile(options.browserStatePath, content);
+    }
 
     return result;
   } finally {

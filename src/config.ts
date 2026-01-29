@@ -19,6 +19,7 @@ export class InsecureFilePermissionsError extends Error {
 
 const LATCHKEY_STORE_ENV_VAR = 'LATCHKEY_STORE';
 const LATCHKEY_BROWSER_STATE_ENV_VAR = 'LATCHKEY_BROWSER_STATE';
+const LATCHKEY_BROWSER_CONFIG_ENV_VAR = 'LATCHKEY_BROWSER_CONFIG';
 const LATCHKEY_CURL_PATH_ENV_VAR = 'LATCHKEY_CURL_PATH';
 const LATCHKEY_ENCRYPTION_KEY_ENV_VAR = 'LATCHKEY_ENCRYPTION_KEY';
 const LATCHKEY_KEYRING_SERVICE_NAME_ENV_VAR = 'LATCHKEY_KEYRING_SERVICE_NAME';
@@ -37,6 +38,10 @@ function getDefaultBrowserStatePath(encryptionEnabled: boolean): string {
   return join(homedir(), '.latchkey', filename);
 }
 
+function getDefaultBrowserConfigPath(): string {
+  return join(homedir(), '.latchkey', 'browser.json');
+}
+
 function resolvePathWithTildeExpansion(path: string): string {
   if (path.startsWith('~')) {
     return resolve(homedir(), path.slice(2));
@@ -50,6 +55,7 @@ function resolvePathWithTildeExpansion(path: string): string {
 export class Config {
   readonly credentialStorePath: string;
   readonly browserStatePath: string;
+  readonly browserConfigPath: string;
   readonly curlCommand: string;
   /**
    * Encryption key override from environment variable.
@@ -82,6 +88,11 @@ export class Config {
     this.browserStatePath = browserStateEnv
       ? resolvePathWithTildeExpansion(browserStateEnv)
       : getDefaultBrowserStatePath(encryptionEnabled);
+
+    const browserConfigEnv = getEnv(LATCHKEY_BROWSER_CONFIG_ENV_VAR);
+    this.browserConfigPath = browserConfigEnv
+      ? resolvePathWithTildeExpansion(browserConfigEnv)
+      : getDefaultBrowserConfigPath();
   }
 
   /**

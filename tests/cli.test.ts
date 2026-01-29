@@ -167,6 +167,7 @@ describe('CLI commands with dependency injection', () => {
     return {
       credentialStorePath: overrides.credentialStorePath ?? join(tempDir, 'credentials.json'),
       browserStatePath: overrides.browserStatePath ?? join(tempDir, 'browser_state.json'),
+      browserConfigPath: overrides.browserConfigPath ?? join(tempDir, 'browser.json'),
       curlCommand: overrides.curlCommand ?? defaultConfig.curlCommand,
       encryptionKeyOverride: overrides.encryptionKeyOverride ?? TEST_ENCRYPTION_KEY,
       serviceName: overrides.serviceName ?? defaultConfig.serviceName,
@@ -586,7 +587,21 @@ describe('CLI commands with dependency injection', () => {
     it('should call login when no credentials in store', async () => {
       const storePath = join(tempDir, 'credentials.json');
       const browserStatePath = join(tempDir, 'browser_state.json');
+      const browserConfigPath = join(tempDir, 'browser.json');
+      const fakeBrowserPath = join(tempDir, 'fake-browser');
       writeSecureFile(storePath, '{}');
+      // Create a fake browser executable so loadBrowserConfig validation passes
+      writeFileSync(fakeBrowserPath, '#!/bin/sh\necho fake', { mode: 0o755 });
+      // Create a browser config file so the command doesn't fail
+      writeFileSync(
+        browserConfigPath,
+        JSON.stringify({
+          executablePath: fakeBrowserPath,
+          source: 'system',
+          discoveredAt: new Date().toISOString(),
+        }),
+        { mode: 0o600 }
+      );
 
       const mockLogin = vi
         .fn()
@@ -602,12 +617,12 @@ describe('CLI commands with dependency injection', () => {
 
       const deps = createMockDependencies({
         registry: new Registry([mockSlackService]),
-        config: createMockConfig({ credentialStorePath: storePath, browserStatePath }),
+        config: createMockConfig({ credentialStorePath: storePath, browserStatePath, browserConfigPath }),
       });
 
       await runCommand(['curl', 'https://slack.com/api/test'], deps);
 
-      expect(mockLogin).toHaveBeenCalledWith(expect.any(EncryptedStorage), browserStatePath);
+      expect(mockLogin).toHaveBeenCalledWith(expect.any(EncryptedStorage), expect.any(Object));
       expect(capturedArgs).toContain('Authorization: Bearer new-token');
     });
   });
