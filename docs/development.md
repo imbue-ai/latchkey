@@ -4,17 +4,17 @@ Thank you for considering contributing to Latchkey!
 
 ## Setting up your environment
 
-The easiest way to set up your system so that you can invoke Latchkey while working on it is to:
+The easiest way to set up your system so that you can run
+Latchkey while working on it is to clone this repository and
+then run:
 
-1. Clone this repository.
-2. And then run:
-  ```
-  npm install && playwright install chromium && npm run build && npm link
-  ```
+```
+npm install && playwright install chromium && npm run build && npm link
+```
 
-After that, every time you make a change to the code and run
-`npm run rebuild`, invoking `latchkey` in your terminal should
-invoke the version you just built.
+After that, every time you make a change to the code, run
+`npm run rebuild`. Invoking `latchkey` in your terminal will
+then use the version you just built.
 
 ## Before you submit a PR
 
@@ -29,7 +29,7 @@ differently. When adding support for a new service, you need to
 start by asking yourself the following question:
 
 
-_Can an API token can be extracted from the network traffic that flows between the browser and the service's website during or after login?_
+_Can an API token be extracted from the network traffic that flows between the browser and the service's website during or after login?_
 
 If the answer is yes, see how the Discord service is implemented and try to do it similarly.
 
@@ -37,27 +37,27 @@ Otherwise, ask yourself the following question:
 
 _Can an API token be created in the user's account (e.g. in Developer settings)?_
 
-If you reply with a positive answer, see how the Linear service is implemented and try to do it similarly.
+If so, see how the Linear service is implemented and try to do it similarly.
 
-When possible, the first option (extracting the token from the network traffic) is always preferable because it's simpler, more robust and less invasive.
-If the answer is "no" in both cases, it's a special case and you're on your own!
+When possible, the first option (extracting the token from the network traffic) is always preferable because it's simpler, more robust, and less invasive.
+If the answer is no in both cases, it's a special case and you're on your own!
 
 
 ### Potentially useful helpers
 
 #### Request / response recorder
 
-Use this to record the request / response pairs of your browser
-login sequence as plaintext JSON. The resulting recording can be inspected,
-either manually or using AI, to see if you can extract an API token
-or something similar from there.
+Use this to record the request/response pairs of your browser
+login sequence as plaintext JSON files. The resulting recording
+can be inspected, either manually or with the help of AI, to see
+if you can extract an API token or something similar from there.
 
 ```
 npx tsx scripts/recordBrowserSession.ts <service_name>
 ```
 
-If you have `jq` installed on your system, you can then get
-start exploring for instance like this:
+If you have `jq` installed on your system, you can then
+start exploring, for instance like this:
 
 ```
 cat path/to/recording/login_session.json | jq -C | less -R
@@ -65,7 +65,8 @@ cat path/to/recording/login_session.json | jq -C | less -R
 
 #### File encryptor / decryptor
 
-Sometimes, while developing, it may be necessary to inspect the credentials stored in ~/.latchkey/credentials.json.enc.
+During development, it may sometimes be necessary to inspect the
+credentials stored in `~/.latchkey/credentials.json.enc`.
 
 To do that, you can use `scripts/cryptFile.ts`. For example:
 

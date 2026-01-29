@@ -149,12 +149,12 @@ You can set these environment variables to override certain
 defaults:
 
 - `LATCHKEY_STORE`: path to the (typically encrypted) file
-containing stored API credentials.
+containing stored API credentials
 - `LATCHKEY_BROWSER_STATE`: path to the (typically encrypted) file
-containing the state (cookies, local storage, ...) of
-the login popup browser.
-- `LATCHKEY_CURL_PATH`: path to a curl binary
-- `LATCHKEY_KEYRING_SERVICE_NAME`, `LATCHKEY_KEYRING_ACCOUNT_NAME`: identifiers used to store the encryption password in your keyring.
+containing the state (cookies, local storage, etc.) of
+the browser used for the login popup
+- `LATCHKEY_CURL_PATH`: path to the curl binary
+- `LATCHKEY_KEYRING_SERVICE_NAME`, `LATCHKEY_KEYRING_ACCOUNT_NAME`: identifiers that are used to store the encryption password in your keyring
 
 
 ## Disclaimers
