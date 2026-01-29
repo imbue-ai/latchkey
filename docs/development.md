@@ -31,13 +31,13 @@ start by asking yourself the following question:
 
 _Can an API token be extracted from the network traffic that flows between the browser and the service's website during or after login?_
 
-If the answer is yes, see how the Discord service is implemented and try to do it similarly.
+If the answer is yes, see how the [Discord](../src/services/discord.ts) service is implemented and try to do it similarly.
 
 Otherwise, ask yourself the following question:
 
 _Can an API token be created in the user's account (e.g. in Developer settings)?_
 
-If so, see how the Linear service is implemented and try to do it similarly.
+If so, see how the [Linear](../src/services/discord.ts) service is implemented and try to do it similarly.
 
 When possible, the first option (extracting the token from the network traffic) is always preferable because it's simpler, more robust, and less invasive.
 If the answer is no in both cases, it's a special case and you're on your own!
