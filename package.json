@@ -9,6 +9,7 @@
     "latchkey": "./dist/src/cli.js"
   },
   "scripts": {
+    "prepare": "npm run build",
     "postinstall": "npx playwright install chromium",
     "build": "tsc",
     "dev": "tsc --watch",
