@@ -2,6 +2,15 @@
   "name": "latchkey",
   "version": "0.1.0",
   "description": "A CLI tool that injects API credentials into curl requests for known third-party services",
+  "author": "Imbue <hynek@imbue.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/imbue-ai/latchkey.git"
+  },
+  "homepage": "https://github.com/imbue-ai/latchkey#readme",
+  "bugs": {
+    "url": "https://github.com/imbue-ai/latchkey/issues"
+  },
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -9,8 +18,13 @@
     "latchkey": "./dist/src/cli.js"
   },
   "scripts": {
-    "prepare": "npm run build",
     "postinstall": "npx playwright install chromium",
+    "prepublishOnly": "npm run build",
+    "files": [
+      "dist",
+      "README.md",
+      "LICENSE"
+    ],
     "build": "tsc",
     "dev": "tsc --watch",
     "lint": "eslint src tests scripts",
@@ -29,7 +43,8 @@
     "api",
     "credentials",
     "authentication",
-    "oauth"
+    "agents",
+    "imbue"
   ],
   "license": "MIT",
   "engines": {

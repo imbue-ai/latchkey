@@ -44,11 +44,11 @@ for details.
 
 ### Steps
 
-1. Clone this repository to your local machine.
-2. Enter the repository's directory.
-3. `npm install -g .`
+```
+npm install -g latchkey
+```
 
-**nvm users**: Global packages are per node version. If you switch versions, reinstall with `npm install -g .`
+**nvm users**: Global packages are per node version. If you switch versions, reinstall with `npm install -g latchkey`
 
 ## Integrations
 
@@ -164,3 +164,4 @@ the browser used for the login popup
   new API keys being created on your accounts (through browser automation).
 - Using agents for automated access may be prohibited by some services' ToS.
 - We reserve the right to change the license of future releases of Latchkey.
+- Latchkey was not tested on Windows.
