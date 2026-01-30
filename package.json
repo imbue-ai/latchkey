@@ -1,6 +1,6 @@
 {
   "name": "latchkey",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A CLI tool that injects API credentials into curl requests for known third-party services",
   "author": "Imbue <hynek@imbue.com>",
   "repository": {
@@ -17,14 +17,14 @@
   "bin": {
     "latchkey": "./dist/src/cli.js"
   },
-  "scripts": {
-    "postinstall": "npx playwright install chromium",
-    "prepublishOnly": "npm run build",
-    "files": [
+  "files": [
       "dist",
       "README.md",
       "LICENSE"
-    ],
+  ],
+  "scripts": {
+    "postinstall": "npx playwright install chromium",
+    "prepublishOnly": "npm run build",
     "build": "tsc",
     "dev": "tsc --watch",
     "lint": "eslint src tests scripts",
