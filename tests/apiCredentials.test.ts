@@ -3,6 +3,7 @@ import {
   AuthorizationBearer,
   AuthorizationBare,
   SlackApiCredentials,
+  DatabricksApiCredentials,
   deserializeCredentials,
   serializeCredentials,
   ApiCredentialsSchema,
@@ -88,6 +89,58 @@ describe('SlackApiCredentials', () => {
   });
 });
 
+describe('DatabricksApiCredentials', () => {
+  it('should generate correct curl arguments with cookies and csrf token', () => {
+    const credentials = new DatabricksApiCredentials(
+      'DBAUTH=token123; lfid=abc',
+      'csrf-token-456',
+      'https://workspace.cloud.databricks.com'
+    );
+    expect(credentials.asCurlArguments()).toEqual([
+      '-b',
+      'DBAUTH=token123; lfid=abc',
+      '-H',
+      'x-csrf-token: csrf-token-456',
+    ]);
+  });
+
+  it('should generate curl arguments without csrf token when empty', () => {
+    const credentials = new DatabricksApiCredentials(
+      'DBAUTH=token123',
+      '',
+      'https://workspace.cloud.databricks.com'
+    );
+    expect(credentials.asCurlArguments()).toEqual(['-b', 'DBAUTH=token123']);
+  });
+
+  it('should serialize to JSON', () => {
+    const credentials = new DatabricksApiCredentials(
+      'DBAUTH=token123',
+      'csrf-token',
+      'https://workspace.cloud.databricks.com'
+    );
+    expect(credentials.toJSON()).toEqual({
+      objectType: 'databricks',
+      cookies: 'DBAUTH=token123',
+      csrfToken: 'csrf-token',
+      workspaceUrl: 'https://workspace.cloud.databricks.com',
+    });
+  });
+
+  it('should deserialize from JSON', () => {
+    const data = {
+      objectType: 'databricks' as const,
+      cookies: 'DBAUTH=token123; lfid=abc',
+      csrfToken: 'csrf-token-456',
+      workspaceUrl: 'https://workspace.cloud.databricks.com',
+    };
+    const credentials = DatabricksApiCredentials.fromJSON(data);
+    expect(credentials.cookies).toBe('DBAUTH=token123; lfid=abc');
+    expect(credentials.csrfToken).toBe('csrf-token-456');
+    expect(credentials.workspaceUrl).toBe('https://workspace.cloud.databricks.com');
+  });
+});
+
 describe('deserializeCredentials', () => {
   it('should deserialize AuthorizationBearer', () => {
     const data = {
@@ -120,6 +173,19 @@ describe('deserializeCredentials', () => {
     expect((credentials as SlackApiCredentials).token).toBe('slack-token');
     expect((credentials as SlackApiCredentials).dCookie).toBe('slack-cookie');
   });
+
+  it('should deserialize DatabricksApiCredentials', () => {
+    const data = {
+      objectType: 'databricks' as const,
+      cookies: 'DBAUTH=token123',
+      csrfToken: 'csrf-token',
+      workspaceUrl: 'https://workspace.cloud.databricks.com',
+    };
+    const credentials = deserializeCredentials(data);
+    expect(credentials).toBeInstanceOf(DatabricksApiCredentials);
+    expect((credentials as DatabricksApiCredentials).cookies).toBe('DBAUTH=token123');
+    expect((credentials as DatabricksApiCredentials).csrfToken).toBe('csrf-token');
+  });
 });
 
 describe('serializeCredentials', () => {
@@ -150,6 +216,21 @@ describe('serializeCredentials', () => {
       dCookie: 'cookie',
     });
   });
+
+  it('should serialize DatabricksApiCredentials', () => {
+    const credentials = new DatabricksApiCredentials(
+      'DBAUTH=token123',
+      'csrf-token',
+      'https://workspace.cloud.databricks.com'
+    );
+    const data = serializeCredentials(credentials);
+    expect(data).toEqual({
+      objectType: 'databricks',
+      cookies: 'DBAUTH=token123',
+      csrfToken: 'csrf-token',
+      workspaceUrl: 'https://workspace.cloud.databricks.com',
+    });
+  });
 });
 
 describe('ApiCredentialsSchema', () => {
@@ -174,6 +255,16 @@ describe('ApiCredentialsSchema', () => {
       objectType: 'slack',
       token: 'test',
       dCookie: 'cookie',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('should validate DatabricksApiCredentials', () => {
+    const result = ApiCredentialsSchema.safeParse({
+      objectType: 'databricks',
+      cookies: 'DBAUTH=token',
+      csrfToken: 'csrf',
+      workspaceUrl: 'https://workspace.cloud.databricks.com',
     });
     expect(result.success).toBe(true);
   });
