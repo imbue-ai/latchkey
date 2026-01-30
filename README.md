@@ -76,6 +76,11 @@ cp integrations/SKILL.md ~/.codex/skills/latchkey/SKILL.md
 ```
 
 
+## Demo
+
+![Image](https://github.com/user-attachments/assets/784bd7eb-6d34-4cab-97d3-4a0f8c4ca9aa)
+
+
 ## Direct usage
 
 Let's revisit the initial example:
