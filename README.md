@@ -39,8 +39,7 @@ for details.
 
 ### Prerequisites
 
-- `curl` and `npm` need to be present on your system.
-- Node.js >= 22.9.0 and npm >= 11.6.0 (upgrade with `npm install -g npm@latest`)
+- `curl`, `node` and `npm` need to be present on your system in reasonably recent versions.
 - The browser requires a graphical environment.
 
 ### Steps

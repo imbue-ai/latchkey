@@ -33,8 +33,7 @@
   ],
   "license": "MIT",
   "engines": {
-    "node": ">=22.9.0",
-    "npm": ">=11.6.0"
+    "node": ">=20"
   },
   "dependencies": {
     "@napi-rs/keyring": "^1.2.0",

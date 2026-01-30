@@ -4,12 +4,15 @@ Thank you for considering contributing to Latchkey!
 
 ## Setting up your environment
 
-The easiest way to set up your system so that you can run
+Make sure you're using [nvm](https://github.com/nvm-sh/nvm) so that your node version
+corresponds to the one listed in `.nvmrc`.
+
+After that, the easiest way to set up your system so that you can run
 Latchkey while working on it is to clone this repository and
 then run:
 
 ```
-npm install && playwright install chromium && npm run build && npm link
+npm install && npm run build && npm link
 ```
 
 After that, every time you make a change to the code, run
