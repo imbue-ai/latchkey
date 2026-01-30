@@ -164,3 +164,4 @@ the browser used for the login popup
 - Invoking `latchkey curl ...` can sometimes have side effects in the form of
   new API keys being created on your accounts (through browser automation).
 - Using agents for automated access may be prohibited by some services' ToS.
+- We reserve the right to change the license of future releases of Latchkey.
