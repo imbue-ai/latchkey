@@ -1,6 +1,6 @@
 {
   "name": "latchkey",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A CLI tool that injects API credentials into curl requests for known third-party services",
   "author": "Imbue <hynek@imbue.com>",
   "repository": {
@@ -12,8 +12,8 @@
     "url": "https://github.com/imbue-ai/latchkey/issues"
   },
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
   "bin": {
     "latchkey": "./dist/src/cli.js"
   },
