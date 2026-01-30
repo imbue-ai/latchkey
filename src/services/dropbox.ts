@@ -40,7 +40,7 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
     this.isLoggedIn = true;
   }
 
-  protected isHeadfulLoginComplete(): boolean {
+  protected isLoginComplete(): boolean {
     return this.isLoggedIn;
   }
 
