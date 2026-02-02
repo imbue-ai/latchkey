@@ -5,6 +5,7 @@
 import { existsSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { getDefaultBrowserConfigPath } from './browserConfig.js';
 import { isKeychainAvailable } from './keychain.js';
 
 export class InsecureFilePermissionsError extends Error {
@@ -36,10 +37,6 @@ function getDefaultCredentialStorePath(encryptionEnabled: boolean): string {
 function getDefaultBrowserStatePath(encryptionEnabled: boolean): string {
   const filename = encryptionEnabled ? 'browser_state.json.enc' : 'browser_state.json';
   return join(homedir(), '.latchkey', filename);
-}
-
-function getDefaultBrowserConfigPath(): string {
-  return join(homedir(), '.latchkey', 'browser.json');
 }
 
 function resolvePathWithTildeExpansion(path: string): string {

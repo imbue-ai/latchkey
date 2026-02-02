@@ -172,27 +172,21 @@ function clearService(deps: CliDependencies, serviceName: string): void {
   }
 }
 
-class BrowserNotConfiguredError extends Error {
-  constructor() {
-    super("No browser configured. Run 'latchkey ensure-browser' first.");
-    this.name = 'BrowserNotConfiguredError';
-  }
-}
-
 /**
- * Get the browser launch options from configuration.
- * Throws BrowserNotConfiguredError if no valid browser config exists.
+ * Get the browser launch options from configuration, handling errors with CLI output.
+ * Exits with error if no valid browser config exists.
  */
-function getBrowserLaunchOptions(config: Config): {
+function getBrowserLaunchOptionsOrExit(deps: CliDependencies): {
   browserStatePath: string;
   executablePath: string;
 } {
-  const browserConfig = loadBrowserConfig(config.browserConfigPath);
+  const browserConfig = loadBrowserConfig(deps.config.browserConfigPath);
   if (!browserConfig) {
-    throw new BrowserNotConfiguredError();
+    deps.errorLog("Error: No browser configured. Run 'latchkey ensure-browser' first.");
+    deps.exit(1);
   }
   return {
-    browserStatePath: config.browserStatePath,
+    browserStatePath: deps.config.browserStatePath,
     executablePath: browserConfig.executablePath,
   };
 }
@@ -325,16 +319,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         encryptedStorage
       );
 
-      let launchOptions;
-      try {
-        launchOptions = getBrowserLaunchOptions(deps.config);
-      } catch (error) {
-        if (error instanceof BrowserNotConfiguredError) {
-          deps.errorLog(`Error: ${error.message}`);
-          deps.exit(1);
-        }
-        throw error;
-      }
+      const launchOptions = getBrowserLaunchOptionsOrExit(deps);
 
       try {
         const apiCredentials = await service.getSession().login(encryptedStorage, launchOptions);
@@ -381,16 +366,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       let apiCredentials: ApiCredentials | null = apiCredentialStore.get(service.name);
 
       if (apiCredentials === null) {
-        let launchOptions;
-        try {
-          launchOptions = getBrowserLaunchOptions(deps.config);
-        } catch (error) {
-          if (error instanceof BrowserNotConfiguredError) {
-            deps.errorLog(`Error: ${error.message}`);
-            deps.exit(1);
-          }
-          throw error;
-        }
+        const launchOptions = getBrowserLaunchOptionsOrExit(deps);
 
         try {
           apiCredentials = await service.getSession().login(encryptedStorage, launchOptions);

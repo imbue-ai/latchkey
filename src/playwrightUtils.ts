@@ -6,6 +6,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Browser, BrowserContext, Page, Locator, LaunchOptions } from 'playwright';
+import { chromium } from 'playwright';
 import { EncryptedStorage } from './encryptedStorage.js';
 
 export interface BrowserWithContext {
@@ -41,12 +42,11 @@ export async function withTempBrowserContext<T>(
     }
   }
 
-  const { chromium: chromiumBrowser } = await import('playwright');
   const playwrightLaunchOptions: LaunchOptions = { headless: false };
   if (options.executablePath) {
     playwrightLaunchOptions.executablePath = options.executablePath;
   }
-  const browser = await chromiumBrowser.launch(playwrightLaunchOptions);
+  const browser = await chromium.launch(playwrightLaunchOptions);
 
   try {
     const contextOptions: { storageState?: string } = {};

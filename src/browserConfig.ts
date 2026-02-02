@@ -11,6 +11,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir, platform } from 'node:os';
 import { dirname, join } from 'node:path';
+import { chromium } from 'playwright';
 import { z } from 'zod';
 
 /**
@@ -76,7 +77,6 @@ const SYSTEM_CHROME_PATHS: Record<string, readonly string[]> = {
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     '/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary',
     '/Applications/Chromium.app/Contents/MacOS/Chromium',
-    '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
   ],
   linux: [
     '/opt/google/chrome/chrome',
@@ -86,7 +86,6 @@ const SYSTEM_CHROME_PATHS: Record<string, readonly string[]> = {
     '/usr/bin/google-chrome-stable',
     '/usr/bin/chromium',
     '/usr/bin/chromium-browser',
-    '/opt/microsoft/msedge/msedge',
   ],
   win32: [
     // These are relative paths that will be joined with common Windows prefixes
@@ -94,7 +93,6 @@ const SYSTEM_CHROME_PATHS: Record<string, readonly string[]> = {
     '\\Google\\Chrome Beta\\Application\\chrome.exe',
     '\\Google\\Chrome SxS\\Application\\chrome.exe',
     '\\Chromium\\Application\\chrome.exe',
-    '\\Microsoft\\Edge\\Application\\msedge.exe',
   ],
 };
 
@@ -123,17 +121,6 @@ function getWindowsPrefixes(): string[] {
 }
 
 /**
- * Check if a file exists and is accessible.
- */
-function canAccessFile(filePath: string): boolean {
-  try {
-    return existsSync(filePath);
-  } catch {
-    return false;
-  }
-}
-
-/**
  * Find a system-installed Chrome/Chromium browser.
  * Returns the path to the executable if found, null otherwise.
  */
@@ -150,14 +137,14 @@ export function findSystemBrowser(): string | null {
     for (const prefix of prefixes) {
       for (const suffix of paths) {
         const fullPath = join(prefix, suffix);
-        if (canAccessFile(fullPath)) {
+        if (existsSync(fullPath)) {
           return fullPath;
         }
       }
     }
   } else {
     for (const path of paths) {
-      if (canAccessFile(path)) {
+      if (existsSync(path)) {
         return path;
       }
     }
@@ -170,17 +157,11 @@ export function findSystemBrowser(): string | null {
  * Find Chrome/Chromium installed by Playwright.
  * Returns the path to the executable if found, null otherwise.
  */
-export async function findPlaywrightBrowser(): Promise<string | null> {
-  try {
-    const { chromium } = await import('playwright');
-    const executablePath = chromium.executablePath();
-    if (executablePath && canAccessFile(executablePath)) {
-      return executablePath;
-    }
-  } catch {
-    // Playwright not available or browser not installed
+export function findPlaywrightBrowser(): string | null {
+  const executablePath = chromium.executablePath();
+  if (executablePath && existsSync(executablePath)) {
+    return executablePath;
   }
-
   return null;
 }
 
@@ -195,7 +176,7 @@ export async function downloadPlaywrightBrowser(): Promise<string> {
   await installBrowsersForNpmInstall(['chromium']);
 
   // After installation, get the path
-  const browserPath = await findPlaywrightBrowser();
+  const browserPath = findPlaywrightBrowser();
   if (!browserPath) {
     throw new BrowserNotFoundError(
       'Failed to locate Chromium after download. The installation may have failed.'
@@ -228,7 +209,7 @@ async function tryBrowserSource(
       return null;
     }
     case 'existing-playwright-browser': {
-      const playwrightPath = await findPlaywrightBrowser();
+      const playwrightPath = findPlaywrightBrowser();
       if (playwrightPath) {
         return {
           executablePath: playwrightPath,
@@ -297,7 +278,7 @@ function loadBrowserConfigInternal(configPath: string): BrowserConfig | null {
     const config = BrowserConfigSchema.parse(data);
 
     // Verify the browser still exists
-    if (!canAccessFile(config.executablePath)) {
+    if (!existsSync(config.executablePath)) {
       return null;
     }
 
@@ -331,15 +312,4 @@ export async function ensureBrowser(
   }
 
   return result;
-}
-
-/**
- * Get the browser executable path from the stored configuration.
- * Returns null if no valid configuration exists.
- */
-export function getBrowserExecutablePath(
-  configPath: string = getDefaultBrowserConfigPath()
-): string | null {
-  const config = loadBrowserConfig(configPath);
-  return config?.executablePath ?? null;
 }
