@@ -180,7 +180,7 @@ function getBrowserLaunchOptionsOrExit(deps: CliDependencies): {
   browserStatePath: string;
   executablePath: string;
 } {
-  const browserConfig = loadBrowserConfig(deps.config.browserConfigPath);
+  const browserConfig = loadBrowserConfig(deps.config.configPath);
   if (!browserConfig) {
     deps.errorLog("Error: No browser configured. Run 'latchkey ensure-browser' first.");
     deps.exit(1);
@@ -212,7 +212,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       DEFAULT_BROWSER_SOURCES.join(',')
     )
     .action(async (options: { source: string }) => {
-      const configPath = deps.config.browserConfigPath;
+      const configPath = deps.config.configPath;
 
       // Parse and validate sources
       const sourceList = options.source.split(',').map((s) => s.trim());

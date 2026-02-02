@@ -163,8 +163,8 @@ containing stored API credentials
 containing the state (cookies, local storage, etc.) of
 the browser used for the login popup
 - `LATCHKEY_CURL_PATH`: path to the curl binary
-- `LATCHKEY_BROWSER_CONFIG`: path to the browser configuration file
-(defaults to `~/.latchkey/browser.json`)
+- `LATCHKEY_CONFIG`: path to the configuration file
+(defaults to `~/.latchkey/config.json`)
 - `LATCHKEY_KEYRING_SERVICE_NAME`, `LATCHKEY_KEYRING_ACCOUNT_NAME`: identifiers that are used to store the encryption password in your keyring
 
 
