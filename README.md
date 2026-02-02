@@ -46,7 +46,10 @@ for details.
 
 ```
 npm install -g latchkey
+latchkey ensure-browser
 ```
+
+The `ensure-browser` command discovers and configures a browser for Latchkey to use. It searches for Chrome, Chromium, or Edge on your system. If none is found, it downloads Chromium via Playwright.
 
 **nvm users**: Global packages are per node version. If you switch versions, reinstall with `npm install -g latchkey`
 
@@ -160,6 +163,8 @@ containing stored API credentials
 containing the state (cookies, local storage, etc.) of
 the browser used for the login popup
 - `LATCHKEY_CURL_PATH`: path to the curl binary
+- `LATCHKEY_BROWSER_CONFIG`: path to the browser configuration file
+(defaults to `~/.latchkey/browser.json`)
 - `LATCHKEY_KEYRING_SERVICE_NAME`, `LATCHKEY_KEYRING_ACCOUNT_NAME`: identifiers that are used to store the encryption password in your keyring
 
 

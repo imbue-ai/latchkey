@@ -69,14 +69,15 @@ export function getDefaultBrowserConfigPath(): string {
 }
 
 /**
- * System Chrome/Chromium installation paths by platform.
+ * System Chrome/Chromium/Edge installation paths by platform.
  * These are the standard locations where browsers are installed.
  */
-const SYSTEM_CHROME_PATHS: Record<string, readonly string[]> = {
+const SYSTEM_BROWSER_PATHS: Record<string, readonly string[]> = {
   darwin: [
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     '/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary',
     '/Applications/Chromium.app/Contents/MacOS/Chromium',
+    '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
   ],
   linux: [
     '/opt/google/chrome/chrome',
@@ -86,6 +87,7 @@ const SYSTEM_CHROME_PATHS: Record<string, readonly string[]> = {
     '/usr/bin/google-chrome-stable',
     '/usr/bin/chromium',
     '/usr/bin/chromium-browser',
+    '/opt/microsoft/msedge/msedge',
   ],
   win32: [
     // These are relative paths that will be joined with common Windows prefixes
@@ -93,6 +95,7 @@ const SYSTEM_CHROME_PATHS: Record<string, readonly string[]> = {
     '\\Google\\Chrome Beta\\Application\\chrome.exe',
     '\\Google\\Chrome SxS\\Application\\chrome.exe',
     '\\Chromium\\Application\\chrome.exe',
+    '\\Microsoft\\Edge\\Application\\msedge.exe',
   ],
 };
 
@@ -126,7 +129,7 @@ function getWindowsPrefixes(): string[] {
  */
 export function findSystemBrowser(): string | null {
   const currentPlatform = platform();
-  const paths = SYSTEM_CHROME_PATHS[currentPlatform];
+  const paths = SYSTEM_BROWSER_PATHS[currentPlatform];
 
   if (!paths) {
     return null;
