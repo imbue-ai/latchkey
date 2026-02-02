@@ -15,11 +15,13 @@
  *   npx tsx scripts/recordBrowserSession.ts discord custom_session.json
  */
 
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium, Response } from 'playwright';
+import type { Response } from 'playwright';
 import { CONFIG } from '../src/config.js';
+import { EncryptedStorage } from '../src/encryptedStorage.js';
+import { withTempBrowserContext } from '../src/playwrightUtils.js';
 import { REGISTRY } from '../src/registry.js';
 
 // Get the directory of this file
@@ -208,38 +210,27 @@ async function record(
   const recordedEntries: RecordedEntry[] = [];
   const startTime = { value: 0 };
 
-  const browser = await chromium.launch({ headless: false });
-  const context = await browser.newContext(
-    existsSync(browserStatePath) ? { storageState: browserStatePath } : undefined
-  );
-  const page = await context.newPage();
-
-  // Register response handler to capture all requests and responses
-  page.on('response', (response) => {
-    handleResponse(response, recordedEntries, startTime, baseDomain).catch(() => {
-      // Ignore errors in response handling
-    });
+  const encryptedStorage = new EncryptedStorage({
+    encryptionKeyOverride: CONFIG.encryptionKeyOverride,
+    serviceName: CONFIG.serviceName,
+    accountName: CONFIG.accountName,
   });
 
-  await page.goto(service.loginUrl);
+  await withTempBrowserContext(encryptedStorage, browserStatePath, async ({ context }) => {
+    const page = await context.newPage();
 
-  // Wait for user to close the browser
-  try {
-    // This will block until the page/context is closed
+    // Register response handler to capture all requests and responses
+    page.on('response', (response) => {
+      handleResponse(response, recordedEntries, startTime, baseDomain).catch(() => {
+        // Ignore errors in response handling
+      });
+    });
+
+    await page.goto(service.loginUrl);
+
+    // Wait for user to close the browser
     await page.waitForEvent('close', { timeout: 0 });
-  } catch {
-    // Browser was closed, this is expected
-  }
-
-  // Save browser state
-  try {
-    await context.storageState({ path: browserStatePath });
-  } catch {
-    // Context may already be closed
-  }
-
-  await context.close();
-  await browser.close();
+  });
 
   // Save recorded entries
   writeFileSync(requestsPath, JSON.stringify(recordedEntries, null, 2));

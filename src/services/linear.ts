@@ -48,7 +48,7 @@ class LinearServiceSession extends BrowserFollowupServiceSession {
     }
   }
 
-  protected isHeadfulLoginComplete(): boolean {
+  protected isLoginComplete(): boolean {
     return this.isLoggedIn;
   }
 

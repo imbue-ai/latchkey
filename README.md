@@ -39,15 +39,16 @@ for details.
 
 ### Prerequisites
 
-- `curl` and `npm` need to be present on your system.
+- `curl`, `node` and `npm` need to be present on your system in reasonably recent versions.
 - The browser requires a graphical environment.
-
 
 ### Steps
 
-1. Clone this repository to your local machine.
-2. Enter the repository's directory.
-3. `npm install -g .`
+```
+npm install -g latchkey
+```
+
+**nvm users**: Global packages are per node version. If you switch versions, reinstall with `npm install -g latchkey`
 
 ## Integrations
 
@@ -75,6 +76,11 @@ cp integrations/SKILL.md ~/.codex/skills/latchkey/SKILL.md
 ```
 
 
+## Demo
+
+![Image](https://github.com/user-attachments/assets/784bd7eb-6d34-4cab-97d3-4a0f8c4ca9aa)
+
+
 ## Direct usage
 
 Let's revisit the initial example:
@@ -99,11 +105,10 @@ to the caller of `latchkey`.
 
 ### Remembering API credentials
 
-Your API credentials and browser state are stored by default under
-`~/.latchkey`. You can override the storage locations by setting the
-`LATCHKEY_STORE` and `LATCHKEY_BROWSER_STATE` environment variables. When a
-functioning keyring is detected (which is the case on most systems), the
-data is properly encrypted.
+Your API credentials and browser state are stored by default
+under `~/.latchkey`. When a functioning keyring is detected
+(which is the case on most systems), the data is properly
+encrypted.
 
 
 ### Inspecting the status of stored credentials
@@ -144,9 +149,24 @@ state file), run:
 latchkey clear
 ```
 
+### Advanced configuration
+
+You can set these environment variables to override certain
+defaults:
+
+- `LATCHKEY_STORE`: path to the (typically encrypted) file
+containing stored API credentials
+- `LATCHKEY_BROWSER_STATE`: path to the (typically encrypted) file
+containing the state (cookies, local storage, etc.) of
+the browser used for the login popup
+- `LATCHKEY_CURL_PATH`: path to the curl binary
+- `LATCHKEY_KEYRING_SERVICE_NAME`, `LATCHKEY_KEYRING_ACCOUNT_NAME`: identifiers that are used to store the encryption password in your keyring
+
 
 ## Disclaimers
 
 - Invoking `latchkey curl ...` can sometimes have side effects in the form of
   new API keys being created on your accounts (through browser automation).
 - Using agents for automated access may be prohibited by some services' ToS.
+- We reserve the right to change the license of future releases of Latchkey.
+- Latchkey was not tested on Windows.

@@ -80,9 +80,9 @@ export abstract class ServiceSession {
   abstract onResponse(response: Response): void;
 
   /**
-   * Check if the headful login phase is complete.
+   * Check if the login phase is complete.
    */
-  protected abstract isHeadfulLoginComplete(): boolean;
+  protected abstract isLoginComplete(): boolean;
 
   /**
    * Finalize credentials after the headful login phase.
@@ -94,20 +94,14 @@ export abstract class ServiceSession {
   ): Promise<ApiCredentials | null>;
 
   /**
-   * Wait until the headful browser login phase is complete.
+   * Wait until the browser login phase is complete.
    */
-  protected async waitForHeadfulLoginComplete(page: Page): Promise<void> {
-    while (!this.isHeadfulLoginComplete()) {
+  private async waitForLoginComplete(page: Page): Promise<void> {
+    while (!this.isLoginComplete()) {
       await page.waitForTimeout(100);
     }
   }
 
-  /**
-   * Called after headful login completes but before the browser closes.
-   */
-  protected async onHeadfulLoginComplete(_context: BrowserContext): Promise<void> {
-    // Default implementation does nothing
-  }
 
   /**
    * Optionally diagnose a timeout error that occurred during credential finalization.
@@ -143,15 +137,13 @@ export abstract class ServiceSession {
 
         try {
           await page.goto(this.service.loginUrl);
-          await this.waitForHeadfulLoginComplete(page);
+          await this.waitForLoginComplete(page);
         } catch (error: unknown) {
           if (error instanceof Error && isBrowserClosedError(error)) {
             throw new LoginCancelledError();
           }
           throw error;
         }
-
-        await this.onHeadfulLoginComplete(context);
 
         let apiCredentials: ApiCredentials | null;
         try {
@@ -208,7 +200,7 @@ export abstract class SimpleServiceSession extends ServiceSession {
       });
   }
 
-  protected isHeadfulLoginComplete(): boolean {
+  protected isLoginComplete(): boolean {
     return this.apiCredentials !== null;
   }
 
@@ -223,7 +215,7 @@ export abstract class SimpleServiceSession extends ServiceSession {
 /**
  * Service session that requires a browser followup to finalize credentials.
  *
- * The headful login phase captures login state. After login completes,
+ * The login phase captures login state. After login completes,
  * the same browser session is reused to perform additional actions
  * (e.g., navigating to settings and creating an API key).
  */

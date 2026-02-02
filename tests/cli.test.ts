@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, rmSync, existsSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execSync, ExecSyncOptionsWithStringEncoding } from 'node:child_process';
@@ -409,7 +409,7 @@ describe('CLI commands with dependency injection', () => {
         storePath,
         JSON.stringify({ slack: { objectType: 'slack', token: 'test', dCookie: 'test' } })
       );
-      writeFileSync(browserStatePath, '{}');
+      writeSecureFile(browserStatePath, '{}');
 
       const deps = createMockDependencies({
         config: createMockConfig({ credentialStorePath: storePath, browserStatePath }),
@@ -706,7 +706,7 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
       expect(result.exitCode).toBe(0);
 
       const lines = result.stdout.trim().split('\n');
-      expect(lines.some((line) => line.includes('slack: valid'))).toBe(true);
+      expect(lines.some((line) => line.includes('slack: invalid'))).toBe(true);
       expect(lines.some((line) => line.includes('discord: missing'))).toBe(true);
     });
   });
@@ -769,7 +769,7 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
         testEnv.LATCHKEY_STORE,
         JSON.stringify({ slack: { objectType: 'slack', token: 'test', dCookie: 'test' } })
       );
-      writeFileSync(testEnv.LATCHKEY_BROWSER_STATE, '{}');
+      writeSecureFile(testEnv.LATCHKEY_BROWSER_STATE, '{}');
 
       const result = runCli(['clear', '-y'], testEnv);
       expect(result.exitCode).toBe(0);

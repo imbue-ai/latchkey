@@ -2,12 +2,8 @@
  * Re-export all services.
  */
 
-export {
-  Service,
-  ServiceSession,
-  SimpleServiceSession,
-  BrowserFollowupServiceSession,
-} from './base.js';
+export type { Service } from './base.js';
+export { ServiceSession, SimpleServiceSession, BrowserFollowupServiceSession } from './base.js';
 export { LoginCancelledError, LoginFailedError } from './base.js';
 
 export { Slack, SLACK } from './slack.js';

@@ -25,7 +25,7 @@ program
   .description(
     'A command-line tool that injects API credentials to curl requests to known public APIs.'
   )
-  .version('0.1.0');
+  .version('0.1.3');
 
 registerCommands(program, deps);
 
