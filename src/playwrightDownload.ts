@@ -11,8 +11,8 @@
 
 import { createWriteStream, existsSync, mkdirSync, chmodSync, unlinkSync } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
-import { get as httpsGet, type IncomingMessage } from 'node:https';
-import { get as httpGet } from 'node:http';
+import { get as httpsGet } from 'node:https';
+import { get as httpGet, type IncomingMessage } from 'node:http';
 import { platform } from 'node:os';
 import { join, dirname } from 'node:path';
 import { registry } from 'playwright-core/lib/server/registry/index';
