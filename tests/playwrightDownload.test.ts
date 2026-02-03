@@ -20,7 +20,7 @@ describe('playwrightDownload', () => {
       expect(executable.name).toBe('chromium');
       expect(executable.directory).toBeDefined();
       expect(typeof executable.directory).toBe('string');
-      expect(executable.executablePath).toBeDefined();
+      expect(executable.executablePath.bind(executable)).toBeDefined();
       expect(typeof executable.executablePath).toBe('function');
     });
 
@@ -73,9 +73,9 @@ describe('playwrightDownload', () => {
     it('should throw BrowserDownloadError for non-existent URL', async () => {
       const destinationPath = join(tempDir, 'test-file.txt');
 
-      await expect(
-        downloadFile('https://httpbin.org/status/404', destinationPath)
-      ).rejects.toThrow(BrowserDownloadError);
+      await expect(downloadFile('https://httpbin.org/status/404', destinationPath)).rejects.toThrow(
+        BrowserDownloadError
+      );
     }, 30000);
 
     it('should create parent directories if they do not exist', async () => {
@@ -155,7 +155,9 @@ describe('playwrightDownload', () => {
       const nonExistentPath = join(tempDir, 'non-existent-file');
 
       // Should not throw
-      expect(() => { setExecutablePermissions(nonExistentPath); }).not.toThrow();
+      expect(() => {
+        setExecutablePermissions(nonExistentPath);
+      }).not.toThrow();
     });
   });
 

@@ -124,50 +124,46 @@ export abstract class ServiceSession {
     encryptedStorage: EncryptedStorage,
     launchOptions: BrowserLaunchOptions = {}
   ): Promise<ApiCredentials> {
-    return withTempBrowserContext(
-      encryptedStorage,
-      launchOptions,
-      async ({ browser, context }) => {
-        const page = await context.newPage();
+    return withTempBrowserContext(encryptedStorage, launchOptions, async ({ browser, context }) => {
+      const page = await context.newPage();
 
-        page.on('response', (response) => {
-          this.onResponse(response);
-        });
+      page.on('response', (response) => {
+        this.onResponse(response);
+      });
 
-        try {
-          await page.goto(this.service.loginUrl);
-          await this.waitForLoginComplete(page);
-        } catch (error: unknown) {
-          if (error instanceof Error && isBrowserClosedError(error)) {
-            throw new LoginCancelledError();
-          }
-          throw error;
+      try {
+        await page.goto(this.service.loginUrl);
+        await this.waitForLoginComplete(page);
+      } catch (error: unknown) {
+        if (error instanceof Error && isBrowserClosedError(error)) {
+          throw new LoginCancelledError();
         }
-
-        let apiCredentials: ApiCredentials | null;
-        try {
-          apiCredentials = await this.finalizeCredentials(browser, context);
-        } catch (error: unknown) {
-          if (error instanceof Error && isBrowserClosedError(error)) {
-            throw new LoginCancelledError();
-          }
-          if (error instanceof Error && isTimeoutError(error)) {
-            const diagnosedError = await this.diagnoseTimeoutError(context, error);
-            if (diagnosedError !== null) {
-              throw diagnosedError;
-            }
-            throw new LoginFailedError(`Login failed: ${error.message}`);
-          }
-          throw error;
-        }
-
-        if (apiCredentials === null) {
-          throw new LoginFailedError();
-        }
-
-        return apiCredentials;
+        throw error;
       }
-    );
+
+      let apiCredentials: ApiCredentials | null;
+      try {
+        apiCredentials = await this.finalizeCredentials(browser, context);
+      } catch (error: unknown) {
+        if (error instanceof Error && isBrowserClosedError(error)) {
+          throw new LoginCancelledError();
+        }
+        if (error instanceof Error && isTimeoutError(error)) {
+          const diagnosedError = await this.diagnoseTimeoutError(context, error);
+          if (diagnosedError !== null) {
+            throw diagnosedError;
+          }
+          throw new LoginFailedError(`Login failed: ${error.message}`);
+        }
+        throw error;
+      }
+
+      if (apiCredentials === null) {
+        throw new LoginFailedError();
+      }
+
+      return apiCredentials;
+    });
   }
 }
 

@@ -248,9 +248,7 @@ export async function discoverBrowserFromSources(
     }
   }
 
-  throw new BrowserNotFoundError(
-    `No browser found after trying sources: ${sources.join(', ')}`
-  );
+  throw new BrowserNotFoundError(`No browser found after trying sources: ${sources.join(', ')}`);
 }
 
 /**

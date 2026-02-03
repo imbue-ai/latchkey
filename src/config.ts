@@ -87,9 +87,7 @@ export class Config {
       : getDefaultBrowserStatePath(encryptionEnabled);
 
     const configEnv = getEnv(LATCHKEY_CONFIG_ENV_VAR);
-    this.configPath = configEnv
-      ? resolvePathWithTildeExpansion(configEnv)
-      : getDefaultConfigPath();
+    this.configPath = configEnv ? resolvePathWithTildeExpansion(configEnv) : getDefaultConfigPath();
   }
 
   /**

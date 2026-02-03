@@ -9,13 +9,7 @@
  * browser directory, then perform the download and extraction ourselves.
  */
 
-import {
-  createWriteStream,
-  existsSync,
-  mkdirSync,
-  chmodSync,
-  unlinkSync,
-} from 'node:fs';
+import { createWriteStream, existsSync, mkdirSync, chmodSync, unlinkSync } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { get as httpsGet } from 'node:https';
 import { get as httpGet, type IncomingMessage } from 'node:http';
@@ -50,7 +44,7 @@ const PROGRESS_BAR_WIDTH = 20;
  * Formats bytes into a human-readable string (e.g., "120MB").
  */
 function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024) return `${bytes.toString()}B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)}KB`;
   return `${(bytes / (1024 * 1024)).toFixed(0)}MB`;
 }
@@ -63,7 +57,7 @@ function renderProgressBar(downloaded: number, total: number): void {
   const filled = Math.round((downloaded / total) * PROGRESS_BAR_WIDTH);
   const empty = PROGRESS_BAR_WIDTH - filled;
   const bar = '#'.repeat(filled) + ' '.repeat(empty);
-  const line = `\r[${bar}] ${percent}% of ${formatBytes(total)}`;
+  const line = `\r[${bar}] ${percent.toString()}% of ${formatBytes(total)}`;
   process.stdout.write(line);
 }
 
@@ -72,9 +66,7 @@ function renderProgressBar(downloaded: number, total: number): void {
  */
 function formatErrorDetails(error: unknown): string {
   if (error instanceof AggregateError) {
-    const messages = error.errors.map((e) =>
-      e instanceof Error ? e.message : String(e)
-    );
+    const messages = error.errors.map((e) => (e instanceof Error ? e.message : String(e)));
     return `AggregateError: ${messages.join('; ')}`;
   }
   if (error instanceof Error) {
@@ -118,7 +110,9 @@ export async function downloadFile(url: string, destinationPath: string): Promis
       if (response.statusCode !== 200) {
         response.destroy();
         reject(
-          new BrowserDownloadError(`Download failed with status ${response.statusCode}: ${url}`)
+          new BrowserDownloadError(
+            `Download failed with status ${response.statusCode?.toString() ?? 'unknown'}: ${url}`
+          )
         );
         return;
       }
@@ -129,7 +123,7 @@ export async function downloadFile(url: string, destinationPath: string): Promis
         mkdirSync(directory, { recursive: true });
       }
 
-      const totalSize = parseInt(response.headers['content-length'] || '0', 10);
+      const totalSize = parseInt(response.headers['content-length'] ?? '0', 10);
       let downloadedSize = 0;
 
       if (totalSize > 0) {
@@ -148,7 +142,7 @@ export async function downloadFile(url: string, destinationPath: string): Promis
           }
           resolve();
         })
-        .catch((error) => {
+        .catch((error: unknown) => {
           if (totalSize > 0) {
             process.stdout.write('\n');
           }
@@ -215,7 +209,7 @@ export async function downloadChromium(): Promise<string> {
   }
 
   // Download to temp directory to avoid issues with extraction
-  const zipPath = join(tmpdir(), `chromium-${Date.now()}.zip`);
+  const zipPath = join(tmpdir(), `chromium-${Date.now().toString()}.zip`);
 
   // Try each URL until one succeeds
   let lastError: Error | null = null;
@@ -255,6 +249,6 @@ export async function downloadChromium(): Promise<string> {
   }
 
   throw new BrowserDownloadError(
-    `Failed to download Chromium from all mirrors. Last error: ${lastError?.message || 'Unknown error'}`
+    `Failed to download Chromium from all mirrors. Last error: ${lastError?.message ?? 'Unknown error'}`
   );
 }
