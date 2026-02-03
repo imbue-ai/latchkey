@@ -75,6 +75,10 @@ mkdir -p ~/.codex/skills/latchkey
 cp integrations/SKILL.md ~/.codex/skills/latchkey/SKILL.md
 ```
 
+### Passepartout
+
+Check out our [Passepartout demo app](https://github.com/imbue-ai/passepartout) for an idea of how to build AI assistants for non-technical users on top of Latchkey.
+
 
 ## Demo
 
