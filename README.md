@@ -165,8 +165,10 @@ the browser used for the login popup
 
 ## Disclaimers
 
+- This is still a work in progress.
+- Latchkey has been created with the help of AI-assisted coding tools with careful human curation.
 - Invoking `latchkey curl ...` can sometimes have side effects in the form of
-  new API keys being created on your accounts (through browser automation).
+  new API keys being created in your accounts (through browser automation).
 - Using agents for automated access may be prohibited by some services' ToS.
 - We reserve the right to change the license of future releases of Latchkey.
 - Latchkey was not tested on Windows.
