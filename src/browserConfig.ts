@@ -13,6 +13,7 @@ import { homedir, platform } from 'node:os';
 import { dirname, join } from 'node:path';
 import { chromium } from 'playwright';
 import { z } from 'zod';
+import { downloadChromium } from './playwrightDownload.js';
 
 /**
  * Browser sources that can be used for discovery.
@@ -176,24 +177,16 @@ export function findPlaywrightBrowser(): string | null {
 }
 
 /**
- * Download Chromium using Playwright's browser installation mechanism.
+ * Download Chromium using a direct download mechanism.
+ *
+ * This implementation downloads Chromium without using Playwright's
+ * installBrowsersForNpmInstall, which uses childProcess.fork() - a mechanism
+ * not supported when Latchkey is compiled with Bun.
+ *
  * Returns the path to the downloaded executable.
  */
 export async function downloadPlaywrightBrowser(): Promise<string> {
-  const { installBrowsersForNpmInstall } = await import(
-    'playwright-core/lib/server/registry/index'
-  );
-  await installBrowsersForNpmInstall(['chromium']);
-
-  // After installation, get the path
-  const browserPath = findPlaywrightBrowser();
-  if (!browserPath) {
-    throw new BrowserNotFoundError(
-      'Failed to locate Chromium after download. The installation may have failed.'
-    );
-  }
-
-  return browserPath;
+  return downloadChromium();
 }
 
 /**
