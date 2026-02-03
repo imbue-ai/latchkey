@@ -9,11 +9,17 @@
  * browser directory, then perform the download and extraction ourselves.
  */
 
-import { createWriteStream, existsSync, mkdirSync, chmodSync, unlinkSync } from 'node:fs';
+import {
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  chmodSync,
+  unlinkSync,
+} from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { get as httpsGet } from 'node:https';
 import { get as httpGet, type IncomingMessage } from 'node:http';
-import { platform } from 'node:os';
+import { platform, tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { registry } from 'playwright-core/lib/server/registry/index';
 import { extract } from 'playwright-core/lib/zipBundle';
@@ -38,6 +44,45 @@ export class BrowserExtractionError extends Error {
   }
 }
 
+const PROGRESS_BAR_WIDTH = 20;
+
+/**
+ * Formats bytes into a human-readable string (e.g., "120MB").
+ */
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)}KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(0)}MB`;
+}
+
+/**
+ * Renders a progress bar to stdout.
+ */
+function renderProgressBar(downloaded: number, total: number): void {
+  const percent = Math.round((downloaded / total) * 100);
+  const filled = Math.round((downloaded / total) * PROGRESS_BAR_WIDTH);
+  const empty = PROGRESS_BAR_WIDTH - filled;
+  const bar = '#'.repeat(filled) + ' '.repeat(empty);
+  const line = `\r[${bar}] ${percent}% of ${formatBytes(total)}`;
+  process.stdout.write(line);
+}
+
+/**
+ * Formats error details, extracting nested errors from AggregateError.
+ */
+function formatErrorDetails(error: unknown): string {
+  if (error instanceof AggregateError) {
+    const messages = error.errors.map((e) =>
+      e instanceof Error ? e.message : String(e)
+    );
+    return `AggregateError: ${messages.join('; ')}`;
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
+}
+
 /**
  * Gets the Chromium executable info from Playwright's registry.
  */
@@ -52,7 +97,7 @@ export function getChromiumExecutable() {
 }
 
 /**
- * Downloads a file from a URL to a local path.
+ * Downloads a file from a URL to a local path with progress reporting.
  */
 export async function downloadFile(url: string, destinationPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -82,11 +127,29 @@ export async function downloadFile(url: string, destinationPath: string): Promis
         mkdirSync(directory, { recursive: true });
       }
 
+      const totalSize = parseInt(response.headers['content-length'] || '0', 10);
+      let downloadedSize = 0;
+
+      if (totalSize > 0) {
+        response.on('data', (chunk: Buffer) => {
+          downloadedSize += chunk.length;
+          renderProgressBar(downloadedSize, totalSize);
+        });
+      }
+
       const fileStream = createWriteStream(destinationPath);
 
       pipeline(response, fileStream)
-        .then(() => resolve())
+        .then(() => {
+          if (totalSize > 0) {
+            process.stdout.write('\n');
+          }
+          resolve();
+        })
         .catch((error) => {
+          if (totalSize > 0) {
+            process.stdout.write('\n');
+          }
           // Clean up partial file
           try {
             unlinkSync(destinationPath);
@@ -99,7 +162,8 @@ export async function downloadFile(url: string, destinationPath: string): Promis
 
     const request = getter(url, handleResponse);
     request.on('error', (error) => {
-      reject(new BrowserDownloadError(`Download request failed: ${String(error)}`));
+      const errorDetails = formatErrorDetails(error);
+      reject(new BrowserDownloadError(`Download request failed: ${errorDetails}`));
     });
   });
 }
@@ -108,11 +172,7 @@ export async function downloadFile(url: string, destinationPath: string): Promis
  * Extracts a zip file to a directory using Playwright's internal zip extraction.
  */
 export async function extractZip(zipPath: string, destinationDirectory: string): Promise<void> {
-  // Ensure destination directory exists
-  if (!existsSync(destinationDirectory)) {
-    mkdirSync(destinationDirectory, { recursive: true });
-  }
-
+  mkdirSync(destinationDirectory, { recursive: true });
   await extract(zipPath, { dir: destinationDirectory });
 }
 
@@ -142,15 +202,18 @@ export async function downloadChromium(): Promise<string> {
     throw new BrowserDownloadError('Could not determine Chromium executable path');
   }
 
+  // Check if already downloaded
+  if (existsSync(executablePath)) {
+    return executablePath;
+  }
+
   const downloadUrls = chromiumExecutable.downloadURLs;
   if (!downloadUrls || downloadUrls.length === 0) {
     throw new BrowserDownloadError('No download URLs available for Chromium');
   }
 
-  const zipPath = join(browserDirectory, 'chromium.zip');
-
-  // Ensure browser directory exists
-  mkdirSync(browserDirectory, { recursive: true });
+  // Download to temp directory to avoid issues with extraction
+  const zipPath = join(tmpdir(), `chromium-${Date.now()}.zip`);
 
   // Try each URL until one succeeds
   let lastError: Error | null = null;
