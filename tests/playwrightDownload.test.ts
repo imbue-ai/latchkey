@@ -155,7 +155,7 @@ describe('playwrightDownload', () => {
       const nonExistentPath = join(tempDir, 'non-existent-file');
 
       // Should not throw
-      expect(() => setExecutablePermissions(nonExistentPath)).not.toThrow();
+      expect(() => { setExecutablePermissions(nonExistentPath); }).not.toThrow();
     });
   });
 
