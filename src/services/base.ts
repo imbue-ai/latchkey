@@ -5,7 +5,11 @@
 import type { Browser, BrowserContext, Page, Response } from 'playwright';
 import { ApiCredentialStatus, ApiCredentials } from '../apiCredentials.js';
 import { EncryptedStorage } from '../encryptedStorage.js';
-import { showSpinnerPage, withTempBrowserContext } from '../playwrightUtils.js';
+import {
+  showSpinnerPage,
+  withTempBrowserContext,
+  type BrowserLaunchOptions,
+} from '../playwrightUtils.js';
 
 export class LoginCancelledError extends Error {
   constructor(message = 'Login was cancelled because the browser was closed.') {
@@ -118,11 +122,11 @@ export abstract class ServiceSession {
    */
   async login(
     encryptedStorage: EncryptedStorage,
-    browserStatePath: string
+    launchOptions: BrowserLaunchOptions = {}
   ): Promise<ApiCredentials> {
     return withTempBrowserContext(
       encryptedStorage,
-      browserStatePath,
+      launchOptions,
       async ({ browser, context }) => {
         const page = await context.newPage();
 

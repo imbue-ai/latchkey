@@ -23,7 +23,6 @@
       "LICENSE"
   ],
   "scripts": {
-    "postinstall": "npx playwright install chromium",
     "prepublishOnly": "npm run build",
     "build": "tsc",
     "dev": "tsc --watch",

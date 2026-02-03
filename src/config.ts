@@ -5,6 +5,7 @@
 import { existsSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { getDefaultConfigPath } from './browserConfig.js';
 import { isKeychainAvailable } from './keychain.js';
 
 export class InsecureFilePermissionsError extends Error {
@@ -19,6 +20,7 @@ export class InsecureFilePermissionsError extends Error {
 
 const LATCHKEY_STORE_ENV_VAR = 'LATCHKEY_STORE';
 const LATCHKEY_BROWSER_STATE_ENV_VAR = 'LATCHKEY_BROWSER_STATE';
+const LATCHKEY_CONFIG_ENV_VAR = 'LATCHKEY_CONFIG';
 const LATCHKEY_CURL_PATH_ENV_VAR = 'LATCHKEY_CURL_PATH';
 const LATCHKEY_ENCRYPTION_KEY_ENV_VAR = 'LATCHKEY_ENCRYPTION_KEY';
 const LATCHKEY_KEYRING_SERVICE_NAME_ENV_VAR = 'LATCHKEY_KEYRING_SERVICE_NAME';
@@ -50,6 +52,7 @@ function resolvePathWithTildeExpansion(path: string): string {
 export class Config {
   readonly credentialStorePath: string;
   readonly browserStatePath: string;
+  readonly configPath: string;
   readonly curlCommand: string;
   /**
    * Encryption key override from environment variable.
@@ -82,6 +85,11 @@ export class Config {
     this.browserStatePath = browserStateEnv
       ? resolvePathWithTildeExpansion(browserStateEnv)
       : getDefaultBrowserStatePath(encryptionEnabled);
+
+    const configEnv = getEnv(LATCHKEY_CONFIG_ENV_VAR);
+    this.configPath = configEnv
+      ? resolvePathWithTildeExpansion(configEnv)
+      : getDefaultConfigPath();
   }
 
   /**

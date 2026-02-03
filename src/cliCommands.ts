@@ -7,6 +7,14 @@ import { existsSync, unlinkSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { ApiCredentialStore } from './apiCredentialStore.js';
 import { ApiCredentialStatus, ApiCredentials } from './apiCredentials.js';
+import {
+  BROWSER_SOURCES,
+  BrowserNotFoundError,
+  DEFAULT_BROWSER_SOURCES,
+  ensureBrowser,
+  loadBrowserConfig,
+  type BrowserSource,
+} from './browserConfig.js';
 import { Config, CONFIG } from './config.js';
 import type { CurlResult } from './curl.js';
 import { EncryptedStorage } from './encryptedStorage.js';
@@ -165,6 +173,25 @@ function clearService(deps: CliDependencies, serviceName: string): void {
 }
 
 /**
+ * Get the browser launch options from configuration, handling errors with CLI output.
+ * Exits with error if no valid browser config exists.
+ */
+function getBrowserLaunchOptionsOrExit(deps: CliDependencies): {
+  browserStatePath: string;
+  executablePath: string;
+} {
+  const browserConfig = loadBrowserConfig(deps.config.configPath);
+  if (!browserConfig) {
+    deps.errorLog("Error: No browser configured. Run 'latchkey ensure-browser' first.");
+    deps.exit(1);
+  }
+  return {
+    browserStatePath: deps.config.browserStatePath,
+    executablePath: browserConfig.executablePath,
+  };
+}
+
+/**
  * Register all CLI commands on the given program.
  */
 export function registerCommands(program: Command, deps: CliDependencies): void {
@@ -174,6 +201,49 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .action(() => {
       const serviceNames = deps.registry.services.map((service) => service.name);
       deps.log(serviceNames.join(' '));
+    });
+
+  program
+    .command('ensure-browser')
+    .description('Ensure a Chrome/Chromium browser is available for Latchkey to use.')
+    .option(
+      '--source <sources>',
+      `Comma-separated list of sources to try in order: ${BROWSER_SOURCES.join(', ')}`,
+      DEFAULT_BROWSER_SOURCES.join(',')
+    )
+    .action(async (options: { source: string }) => {
+      const configPath = deps.config.configPath;
+
+      // Parse and validate sources
+      const sourceList = options.source.split(',').map((s) => s.trim());
+      const invalidSources = sourceList.filter(
+        (s) => !BROWSER_SOURCES.includes(s as BrowserSource)
+      );
+      if (invalidSources.length > 0) {
+        deps.errorLog(`Error: Invalid source(s): ${invalidSources.join(', ')}`);
+        deps.errorLog(`Valid sources: ${BROWSER_SOURCES.join(', ')}`);
+        deps.exit(1);
+      }
+      const sources = sourceList as BrowserSource[];
+
+      deps.log(`Discovering browser using sources: ${sources.join(', ')}`);
+
+      try {
+        const { config, source } = await ensureBrowser(configPath, sources);
+        deps.log('');
+        deps.log('Browser configured successfully:');
+        deps.log(`  Path: ${config.executablePath}`);
+        deps.log(`  Found via: ${source}`);
+        if (source !== 'existing-config') {
+          deps.log(`  Config saved to: ${configPath}`);
+        }
+      } catch (error) {
+        if (error instanceof BrowserNotFoundError) {
+          deps.errorLog(`Error: ${error.message}`);
+          deps.exit(1);
+        }
+        throw error;
+      }
     });
 
   program
@@ -249,10 +319,10 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         encryptedStorage
       );
 
+      const launchOptions = getBrowserLaunchOptionsOrExit(deps);
+
       try {
-        const apiCredentials = await service
-          .getSession()
-          .login(encryptedStorage, deps.config.browserStatePath);
+        const apiCredentials = await service.getSession().login(encryptedStorage, launchOptions);
         apiCredentialStore.save(service.name, apiCredentials);
         deps.log('Done');
       } catch (error) {
@@ -296,10 +366,10 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       let apiCredentials: ApiCredentials | null = apiCredentialStore.get(service.name);
 
       if (apiCredentials === null) {
+        const launchOptions = getBrowserLaunchOptionsOrExit(deps);
+
         try {
-          apiCredentials = await service
-            .getSession()
-            .login(encryptedStorage, deps.config.browserStatePath);
+          apiCredentials = await service.getSession().login(encryptedStorage, launchOptions);
           apiCredentialStore.save(service.name, apiCredentials);
         } catch (error) {
           if (error instanceof LoginCancelledError) {
