@@ -76,13 +76,6 @@ export function getDefaultConfigPath(): string {
 }
 
 /**
- * @deprecated Use getDefaultConfigPath instead
- */
-export function getDefaultBrowserConfigPath(): string {
-  return getDefaultConfigPath();
-}
-
-/**
  * System Chrome/Chromium/Edge installation paths by platform.
  * These are the standard locations where browsers are installed.
  */
