@@ -216,7 +216,7 @@ async function record(
     accountName: CONFIG.accountName,
   });
 
-  await withTempBrowserContext(encryptedStorage, browserStatePath, async ({ context }) => {
+  await withTempBrowserContext(encryptedStorage, { browserStatePath }, async ({ context }) => {
     const page = await context.newPage();
 
     // Register response handler to capture all requests and responses
