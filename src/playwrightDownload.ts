@@ -109,12 +109,14 @@ export async function downloadFile(url: string, destinationPath: string): Promis
       if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400) {
         const location = response.headers.location;
         if (location) {
+          response.destroy();
           downloadFile(location, destinationPath).then(resolve).catch(reject);
           return;
         }
       }
 
       if (response.statusCode !== 200) {
+        response.destroy();
         reject(
           new BrowserDownloadError(`Download failed with status ${response.statusCode}: ${url}`)
         );
