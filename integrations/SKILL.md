@@ -13,13 +13,12 @@ Use this skill when the user asks you to work with third-party services like Sla
 
 Usage:
 
-1. **Run `latchkey ensure-browser`** first if you haven't already. This configures a browser for Latchkey to use.
-2. **Use `latchkey curl`** instead of regular `curl` for supported services.
-3. **Look for the newest documentation of the desired public API online.**
-4. **Pass through all regular curl arguments** - latchkey is a transparent wrapper.
-5. **Use `latchkey status <service_name>`** when you notice potentially expired credentials.
-6. When the status is `invalid`, **force a new login by calling `latchkey clear <service_name>`**, then retry the curl command.
-7. **Do not force a new login if the status is `valid`** - the user might just not have the necessary permissions.
+1. **Use `latchkey curl`** instead of regular `curl` for supported services.
+2. **Look for the newest documentation of the desired public API online.**
+3. **Pass through all regular curl arguments** - latchkey is a transparent wrapper.
+4. **Use `latchkey status <service_name>`** when you notice potentially expired credentials.
+5. When the status is `invalid`, **force a new login by calling `latchkey clear <service_name>`**, then retry the curl command.
+6. **Do not force a new login if the status is `valid`** - the user might just not have the necessary permissions.
 
 
 ## Examples
