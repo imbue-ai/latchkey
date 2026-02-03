@@ -37,7 +37,7 @@ export const DEFAULT_BROWSER_SOURCES: readonly BrowserSource[] = [
 ];
 
 /**
- * Schema for the browser configuration file.
+ * Schema for the browser configuration.
  */
 const BrowserConfigSchema = z.object({
   executablePath: z.string(),
@@ -46,6 +46,13 @@ const BrowserConfigSchema = z.object({
 });
 
 export type BrowserConfig = z.infer<typeof BrowserConfigSchema>;
+
+/**
+ * Schema for the top-level configuration file.
+ */
+const ConfigFileSchema = z.object({
+  browser: BrowserConfigSchema.optional(),
+});
 
 export class BrowserNotFoundError extends Error {
   constructor(message: string) {
@@ -62,10 +69,17 @@ export class BrowserConfigError extends Error {
 }
 
 /**
- * Get the default path for the browser configuration file.
+ * Get the default path for the configuration file.
+ */
+export function getDefaultConfigPath(): string {
+  return join(homedir(), '.latchkey', 'config.json');
+}
+
+/**
+ * @deprecated Use getDefaultConfigPath instead
  */
 export function getDefaultBrowserConfigPath(): string {
-  return join(homedir(), '.latchkey', 'browser.json');
+  return getDefaultConfigPath();
 }
 
 /**
@@ -262,7 +276,19 @@ export function saveBrowserConfig(configPath: string, config: BrowserConfig): vo
     mkdirSync(directory, { recursive: true, mode: 0o700 });
   }
 
-  const content = JSON.stringify(config, null, 2);
+  // Load existing config file if it exists, to preserve other settings
+  let existingConfig: Record<string, unknown> = {};
+  if (existsSync(configPath)) {
+    try {
+      const existingContent = readFileSync(configPath, 'utf-8');
+      existingConfig = JSON.parse(existingContent) as Record<string, unknown>;
+    } catch {
+      // Ignore parse errors, start fresh
+    }
+  }
+
+  const newConfig = { ...existingConfig, browser: config };
+  const content = JSON.stringify(newConfig, null, 2);
   writeFileSync(configPath, content, { encoding: 'utf-8', mode: 0o600 });
 }
 
@@ -278,14 +304,18 @@ function loadBrowserConfigInternal(configPath: string): BrowserConfig | null {
   try {
     const content = readFileSync(configPath, 'utf-8');
     const data = JSON.parse(content) as unknown;
-    const config = BrowserConfigSchema.parse(data);
+    const configFile = ConfigFileSchema.parse(data);
 
-    // Verify the browser still exists
-    if (!existsSync(config.executablePath)) {
+    if (!configFile.browser) {
       return null;
     }
 
-    return config;
+    // Verify the browser still exists
+    if (!existsSync(configFile.browser.executablePath)) {
+      return null;
+    }
+
+    return configFile.browser;
   } catch {
     return null;
   }
@@ -304,7 +334,7 @@ export function loadBrowserConfig(configPath: string): BrowserConfig | null {
  * Tries sources in the specified order, saves the result to the config file.
  */
 export async function ensureBrowser(
-  configPath: string = getDefaultBrowserConfigPath(),
+  configPath: string = getDefaultConfigPath(),
   sources: readonly BrowserSource[] = DEFAULT_BROWSER_SOURCES
 ): Promise<{ config: BrowserConfig; source: BrowserSource }> {
   const result = await discoverBrowserFromSources(sources, configPath);

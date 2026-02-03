@@ -167,7 +167,7 @@ describe('CLI commands with dependency injection', () => {
     return {
       credentialStorePath: overrides.credentialStorePath ?? join(tempDir, 'credentials.json'),
       browserStatePath: overrides.browserStatePath ?? join(tempDir, 'browser_state.json'),
-      browserConfigPath: overrides.browserConfigPath ?? join(tempDir, 'browser.json'),
+      configPath: overrides.configPath ?? join(tempDir, 'config.json'),
       curlCommand: overrides.curlCommand ?? defaultConfig.curlCommand,
       encryptionKeyOverride: overrides.encryptionKeyOverride ?? TEST_ENCRYPTION_KEY,
       serviceName: overrides.serviceName ?? defaultConfig.serviceName,
@@ -587,18 +587,20 @@ describe('CLI commands with dependency injection', () => {
     it('should call login when no credentials in store', async () => {
       const storePath = join(tempDir, 'credentials.json');
       const browserStatePath = join(tempDir, 'browser_state.json');
-      const browserConfigPath = join(tempDir, 'browser.json');
+      const configPath = join(tempDir, 'config.json');
       const fakeBrowserPath = join(tempDir, 'fake-browser');
       writeSecureFile(storePath, '{}');
       // Create a fake browser executable so loadBrowserConfig validation passes
       writeFileSync(fakeBrowserPath, '#!/bin/sh\necho fake', { mode: 0o755 });
-      // Create a browser config file so the command doesn't fail
+      // Create a config file so the command doesn't fail
       writeFileSync(
-        browserConfigPath,
+        configPath,
         JSON.stringify({
-          executablePath: fakeBrowserPath,
-          source: 'system',
-          discoveredAt: new Date().toISOString(),
+          browser: {
+            executablePath: fakeBrowserPath,
+            source: 'system',
+            discoveredAt: new Date().toISOString(),
+          },
         }),
         { mode: 0o600 }
       );
@@ -617,7 +619,7 @@ describe('CLI commands with dependency injection', () => {
 
       const deps = createMockDependencies({
         registry: new Registry([mockSlackService]),
-        config: createMockConfig({ credentialStorePath: storePath, browserStatePath, browserConfigPath }),
+        config: createMockConfig({ credentialStorePath: storePath, browserStatePath, configPath }),
       });
 
       await runCommand(['curl', 'https://slack.com/api/test'], deps);
