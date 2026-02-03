@@ -98,7 +98,6 @@ export abstract class ServiceSession {
     }
   }
 
-
   /**
    * Optionally diagnose a timeout error that occurred during credential finalization.
    *
