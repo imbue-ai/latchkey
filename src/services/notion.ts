@@ -10,7 +10,7 @@ import { Service, BrowserFollowupServiceSession, LoginFailedError } from './base
 
 const DEFAULT_TIMEOUT_MS = 8000;
 
-const NOTION_INTEGRATIONS_URL = 'https://www.notion.so/profile/integrations';
+const NOTION_INTEGRATIONS_URL = 'https://www.notion.so/profile/integrations/form/new-integration';
 
 class NotionServiceSession extends BrowserFollowupServiceSession {
   private isLoggedIn = false;
@@ -38,18 +38,28 @@ class NotionServiceSession extends BrowserFollowupServiceSession {
 
     await page.goto(NOTION_INTEGRATIONS_URL);
 
-    await page.getByRole('link', { name: 'Create a new integration' }).click();
+    // Integration name
     await page.getByRole('textbox').click();
     await page.getByRole('textbox').fill(generateLatchkeyAppName());
+    // Workspace
     await page.getByRole('button').filter({ hasText: /^$/ }).click();
-    await page.getByText("Qi Xiao's Notion").click();
-    await page.getByRole('button', { name: 'Create' }).click();
+    await page.getByRole('menuitem').click();
+    // Create integration
+    await page.getByRole('button').nth(1).click();
+    // Configure integration settings
+    await page.getByRole('dialog').getByRole('button').click({ timeout: DEFAULT_TIMEOUT_MS });
     await page
       .getByRole('button', { name: 'Configure integration settings' })
       .click({ timeout: DEFAULT_TIMEOUT_MS });
-    await page.getByRole('button', { name: 'Show' }).click({ timeout: DEFAULT_TIMEOUT_MS });
+    // Show
+    await page
+      .locator('input[type="password"]')
+      .locator('..')
+      .getByRole('button')
+      .nth(1)
+      .click({ timeout: DEFAULT_TIMEOUT_MS });
 
-    const tokenTextbox = page.getByRole('textbox').nth(1);
+    const tokenTextbox = page.locator('input[type="password"]');
     await tokenTextbox.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
 
     const token = await tokenTextbox.inputValue();
