@@ -64,7 +64,7 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
     await appNameInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await typeLikeHuman(page, appNameInput, appName);
 
-    const createButton = page.locator('//*[@id="create-button"]');
+    const createButton = page.locator('//*[@id="create-button" and not(@disabled)]');
     await createButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await createButton.click();
 
