@@ -257,11 +257,19 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     const { clientId, clientSecret } = await this.createOAuthClient(page);
 
     // Step 4: Perform OAuth flow with localhost server
-    const { accessToken, refreshToken } = await this.performOAuthFlow(page, clientId, clientSecret);
+    const { accessToken, refreshToken, accessTokenExpiresAt, refreshTokenExpiresAt } =
+      await this.performOAuthFlow(page, clientId, clientSecret);
 
     await page.close();
 
-    return new OAuthCredentials(accessToken, refreshToken, clientId, clientSecret);
+    return new OAuthCredentials(
+      accessToken,
+      refreshToken,
+      clientId,
+      clientSecret,
+      accessTokenExpiresAt,
+      refreshTokenExpiresAt
+    );
   }
 
   private async createProject(page: Page): Promise<void> {
@@ -388,7 +396,12 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     page: Page,
     clientId: string,
     clientSecret: string
-  ): Promise<{ accessToken: string; refreshToken: string }> {
+  ): Promise<{
+    accessToken: string;
+    refreshToken: string;
+    accessTokenExpiresAt?: string;
+    refreshTokenExpiresAt?: string;
+  }> {
     const redirectUri = `http://localhost:${OAUTH_CALLBACK_PORT.toString()}/oauth2callback`;
 
     // Start the callback server
@@ -415,9 +428,14 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     // Exchange code for tokens
     const tokens = exchangeCodeForTokens(code, clientId, clientSecret, redirectUri);
 
+    // Calculate access token expiration from the expires_in field
+    const accessTokenExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
+
+    // Google refresh tokens typically don't expire, so we don't set refreshTokenExpiresAt
     return {
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token,
+      accessTokenExpiresAt,
     };
   }
 }

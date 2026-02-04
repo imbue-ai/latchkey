@@ -135,6 +135,8 @@ export const OAuthCredentialsSchema = z.object({
   refreshToken: z.string(),
   clientId: z.string(),
   clientSecret: z.string(),
+  accessTokenExpiresAt: z.string().optional(),
+  refreshTokenExpiresAt: z.string().optional(),
 });
 
 export type OAuthCredentialsData = z.infer<typeof OAuthCredentialsSchema>;
@@ -145,12 +147,27 @@ export class OAuthCredentials implements ApiCredentials {
   readonly refreshToken: string;
   readonly clientId: string;
   readonly clientSecret: string;
+  readonly accessTokenExpiresAt?: string;
+  readonly refreshTokenExpiresAt?: string;
 
-  constructor(accessToken: string, refreshToken: string, clientId: string, clientSecret: string) {
+  constructor(
+    accessToken: string,
+    refreshToken: string,
+    clientId: string,
+    clientSecret: string,
+    accessTokenExpiresAt?: string,
+    refreshTokenExpiresAt?: string
+  ) {
     this.accessToken = accessToken;
     this.refreshToken = refreshToken;
     this.clientId = clientId;
     this.clientSecret = clientSecret;
+    if (accessTokenExpiresAt !== undefined) {
+      this.accessTokenExpiresAt = accessTokenExpiresAt;
+    }
+    if (refreshTokenExpiresAt !== undefined) {
+      this.refreshTokenExpiresAt = refreshTokenExpiresAt;
+    }
   }
 
   asCurlArguments(): readonly string[] {
@@ -158,13 +175,20 @@ export class OAuthCredentials implements ApiCredentials {
   }
 
   toJSON(): OAuthCredentialsData {
-    return {
+    const result: OAuthCredentialsData = {
       objectType: this.objectType,
       accessToken: this.accessToken,
       refreshToken: this.refreshToken,
       clientId: this.clientId,
       clientSecret: this.clientSecret,
     };
+    if (this.accessTokenExpiresAt !== undefined) {
+      result.accessTokenExpiresAt = this.accessTokenExpiresAt;
+    }
+    if (this.refreshTokenExpiresAt !== undefined) {
+      result.refreshTokenExpiresAt = this.refreshTokenExpiresAt;
+    }
+    return result;
   }
 
   static fromJSON(data: OAuthCredentialsData): OAuthCredentials {
@@ -172,7 +196,9 @@ export class OAuthCredentials implements ApiCredentials {
       data.accessToken,
       data.refreshToken,
       data.clientId,
-      data.clientSecret
+      data.clientSecret,
+      data.accessTokenExpiresAt,
+      data.refreshTokenExpiresAt
     );
   }
 }
