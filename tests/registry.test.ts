@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Registry, REGISTRY } from '../src/registry.js';
-import { SLACK, DISCORD, GITHUB, DROPBOX, LINEAR } from '../src/services/index.js';
+import { SLACK, DISCORD, GITHUB, DROPBOX, LINEAR, GOOGLE } from '../src/services/index.js';
 
 describe('Registry', () => {
   describe('getByName', () => {
@@ -22,6 +22,10 @@ describe('Registry', () => {
 
     it('should find Linear by name', () => {
       expect(REGISTRY.getByName('linear')).toBe(LINEAR);
+    });
+
+    it('should find Google by name', () => {
+      expect(REGISTRY.getByName('google')).toBe(GOOGLE);
     });
 
     it('should return null for unknown service', () => {
@@ -62,9 +66,14 @@ describe('Registry', () => {
       expect(REGISTRY.getByUrl('https://api.linear.app/graphql')).toBe(LINEAR);
     });
 
+    it('should find Google by API URL', () => {
+      expect(REGISTRY.getByUrl('https://www.googleapis.com/gmail/v1/users/me/profile')).toBe(
+        GOOGLE
+      );
+    });
+
     it('should return null for unknown URL', () => {
       expect(REGISTRY.getByUrl('https://example.com/api')).toBeNull();
-      expect(REGISTRY.getByUrl('https://google.com')).toBeNull();
     });
 
     it('should not match partial URLs', () => {
@@ -75,12 +84,13 @@ describe('Registry', () => {
 
   describe('services', () => {
     it('should contain all services', () => {
-      expect(REGISTRY.services).toHaveLength(5);
+      expect(REGISTRY.services).toHaveLength(6);
       expect(REGISTRY.services).toContain(SLACK);
       expect(REGISTRY.services).toContain(DISCORD);
       expect(REGISTRY.services).toContain(GITHUB);
       expect(REGISTRY.services).toContain(DROPBOX);
       expect(REGISTRY.services).toContain(LINEAR);
+      expect(REGISTRY.services).toContain(GOOGLE);
     });
   });
 

@@ -126,12 +126,65 @@ export class SlackApiCredentials implements ApiCredentials {
 }
 
 /**
+ * OAuth 2.0 credentials (access token, refresh token, client ID, and client secret).
+ * Used by services that implement OAuth 2.0 authorization flows.
+ */
+export const OAuthCredentialsSchema = z.object({
+  objectType: z.literal('oauth'),
+  accessToken: z.string(),
+  refreshToken: z.string(),
+  clientId: z.string(),
+  clientSecret: z.string(),
+});
+
+export type OAuthCredentialsData = z.infer<typeof OAuthCredentialsSchema>;
+
+export class OAuthCredentials implements ApiCredentials {
+  readonly objectType = 'oauth' as const;
+  readonly accessToken: string;
+  readonly refreshToken: string;
+  readonly clientId: string;
+  readonly clientSecret: string;
+
+  constructor(accessToken: string, refreshToken: string, clientId: string, clientSecret: string) {
+    this.accessToken = accessToken;
+    this.refreshToken = refreshToken;
+    this.clientId = clientId;
+    this.clientSecret = clientSecret;
+  }
+
+  asCurlArguments(): readonly string[] {
+    return ['-H', `Authorization: Bearer ${this.accessToken}`];
+  }
+
+  toJSON(): OAuthCredentialsData {
+    return {
+      objectType: this.objectType,
+      accessToken: this.accessToken,
+      refreshToken: this.refreshToken,
+      clientId: this.clientId,
+      clientSecret: this.clientSecret,
+    };
+  }
+
+  static fromJSON(data: OAuthCredentialsData): OAuthCredentials {
+    return new OAuthCredentials(
+      data.accessToken,
+      data.refreshToken,
+      data.clientId,
+      data.clientSecret
+    );
+  }
+}
+
+/**
  * Union schema for all credential types.
  */
 export const ApiCredentialsSchema = z.discriminatedUnion('objectType', [
   AuthorizationBearerSchema,
   AuthorizationBareSchema,
   SlackApiCredentialsSchema,
+  OAuthCredentialsSchema,
 ]);
 
 export type ApiCredentialsData = z.infer<typeof ApiCredentialsSchema>;
@@ -147,6 +200,8 @@ export function deserializeCredentials(data: ApiCredentialsData): ApiCredentials
       return AuthorizationBare.fromJSON(data);
     case 'slack':
       return SlackApiCredentials.fromJSON(data);
+    case 'oauth':
+      return OAuthCredentials.fromJSON(data);
     default: {
       const exhaustiveCheck: never = data;
       throw new ApiCredentialsSerializationError(
@@ -167,6 +222,9 @@ export function serializeCredentials(credentials: ApiCredentials): ApiCredential
     return credentials.toJSON();
   }
   if (credentials instanceof SlackApiCredentials) {
+    return credentials.toJSON();
+  }
+  if (credentials instanceof OAuthCredentials) {
     return credentials.toJSON();
   }
   throw new ApiCredentialsSerializationError(`Unknown credential type: ${credentials.objectType}`);
