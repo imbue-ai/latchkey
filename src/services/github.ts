@@ -52,7 +52,6 @@ class GithubServiceSession extends BrowserFollowupServiceSession {
       return;
     }
     // Make sure the content returned is actually the correct page, not just the sudo page.
-    // HOW CAN I IGNORE IT WITH THE VOID OPERATOR?
     void response.text().then((text) => {
       if (text.includes('<p id="settings_user_tokens_note">')) {
         this.isLoggedIn = true;
