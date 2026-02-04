@@ -4,12 +4,13 @@
 
 import type { Response, BrowserContext, Page } from 'playwright';
 import { ApiCredentialStatus, ApiCredentials, OAuthCredentials } from '../apiCredentials.js';
+import { generateLatchkeyAppName } from '../playwrightUtils.js';
 import { runCaptured } from '../curl.js';
 import { Service, BrowserFollowupServiceSession, LoginFailedError } from './base.js';
 import * as http from 'node:http';
 import * as url from 'node:url';
 
-const DEFAULT_TIMEOUT_MS = 30000;
+const DEFAULT_TIMEOUT_MS = 8000;
 const OAUTH_CALLBACK_PORT = 8080;
 const OAUTH_SCOPES = [
   // User info (for credential validation)
@@ -259,10 +260,10 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
       clientSecret = oldCredentials.clientSecret;
     } else {
       // Step 1: Navigate to Google Cloud Console and create project
-      await this.createProject(page);
+      const projectSlug = await this.createProject(page);
 
       // Step 2: Enable required APIs
-      await this.enableGoogleApis(page);
+      await this.enableGoogleApis(page, projectSlug);
 
       // Step 3: Create OAuth client ID
       const credentials = await this.createOAuthClient(page);
@@ -286,34 +287,38 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     );
   }
 
-  private async createProject(page: Page): Promise<void> {
+  private async createProject(page: Page): Promise<string> {
     // Navigate to the projects page
     await page.goto('https://console.cloud.google.com/projectselector2/home/dashboard', {
       timeout: DEFAULT_TIMEOUT_MS,
     });
 
-    // Wait a bit for the page to load
-    await page.waitForTimeout(2000);
-
     // Always create a new project
-    const createProjectButton = page.locator('text="Create Project"').first();
+    const createProjectButton = page.locator('.projectselector-project-create');
+    await createProjectButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+    await createProjectButton.click();
 
-    if (await createProjectButton.isVisible({ timeout: 5000 })) {
-      await createProjectButton.click();
-      await page.waitForTimeout(1000);
+    const projectNameInput = page.locator('input[name="projectName"]');
+    await projectNameInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+    await projectNameInput.fill(generateLatchkeyAppName());
 
-      const projectNameInput = page.locator('input[name="projectName"]');
-      await projectNameInput.fill('Latchkey Project');
+    const createButton = page.locator('button[type="submit"]');
+    await createButton.click();
 
-      const createButton = page.locator('button:has-text("Create")');
-      await createButton.click();
-
-      // Wait for project creation
-      await page.waitForTimeout(5000);
+    // Wait until the URL is https:
+    // https://console.cloud.google.com/home/dashboard?project=...
+    await page.waitForURL('https://console.cloud.google.com/home/dashboard?project=**', {
+      timeout: 16000,
+    });
+    const urlObj = new URL(page.url());
+    const projectId = urlObj.searchParams.get('project');
+    if (!projectId) {
+      throw new LoginFailedError('Failed to create or retrieve Google Cloud project ID.');
     }
+    return projectId;
   }
 
-  private async enableGoogleApis(page: Page): Promise<void> {
+  private async enableGoogleApis(page: Page, projectSlug: string): Promise<void> {
     const apis = [
       'gmail.googleapis.com',
       'calendar-json.googleapis.com',
@@ -324,31 +329,32 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     ];
 
     for (const api of apis) {
-      await this.enableApi(page, api);
+      await this.enableApi(page, projectSlug, api);
     }
   }
 
-  private async enableApi(page: Page, apiName: string): Promise<void> {
-    // Navigate to API library
-    await page.goto(`https://console.cloud.google.com/apis/library/${apiName}`, {
+  private async enableApi(page: Page, projectSlug: string, apiName: string): Promise<void> {
+    await page.goto(`https://console.cloud.google.com/apis/library/${apiName}?project=${projectSlug}`, {
       timeout: DEFAULT_TIMEOUT_MS,
     });
 
-    await page.waitForTimeout(2000);
+    const manageButton = page.locator('text="Manage"');
+    const enableButton = page.locator('button:has-text("Enable")');
+    const manageOrEnableButton = manageButton.or(enableButton);
+
+    await manageOrEnableButton.isVisible({ timeout: DEFAULT_TIMEOUT_MS });
 
     // Check if API is already enabled
-    const manageButton = page.locator('text="Manage"');
-    if (await manageButton.isVisible({ timeout: 5000 })) {
-      // API already enabled
+    if (await manageButton.isVisible()) {
       return;
     }
 
-    // Enable the API
-    const enableButton = page.locator('button:has-text("Enable")');
-    if (await enableButton.isVisible({ timeout: 5000 })) {
+    if (await enableButton.isVisible()) {
       await enableButton.click();
-      await page.waitForTimeout(5000);
     }
+    const disableButton = page.locator('text="Disable API"');
+    await disableButton.waitFor({ timeout: 16000 });
+    throw new LoginFailedError(`Failed to enable API: ${apiName}`);
   }
 
   private async createOAuthClient(page: Page): Promise<{ clientId: string; clientSecret: string }> {
