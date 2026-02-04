@@ -247,8 +247,8 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
       throw new LoginFailedError('No page available in browser context.');
     }
 
-    // Step 1: Navigate to Google Cloud Console and create/select project
-    await this.ensureProjectExists(page);
+    // Step 1: Navigate to Google Cloud Console and create project
+    await this.createProject(page);
 
     // Step 2: Enable required APIs
     await this.enableGoogleApis(page);
@@ -264,7 +264,7 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     return new OAuthCredentials(accessToken, refreshToken, clientId, clientSecret);
   }
 
-  private async ensureProjectExists(page: Page): Promise<void> {
+  private async createProject(page: Page): Promise<void> {
     // Navigate to the projects page
     await page.goto('https://console.cloud.google.com/projectselector2/home/dashboard', {
       timeout: DEFAULT_TIMEOUT_MS,
@@ -273,25 +273,21 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     // Wait a bit for the page to load
     await page.waitForTimeout(2000);
 
-    // Check if there's already a project or create one
+    // Always create a new project
     const createProjectButton = page.locator('text="Create Project"').first();
-    const projectExists = await page.locator('[data-test-id="project-name"]').count();
 
-    if (projectExists === 0) {
-      // No project exists, create one
-      if (await createProjectButton.isVisible({ timeout: 5000 })) {
-        await createProjectButton.click();
-        await page.waitForTimeout(1000);
+    if (await createProjectButton.isVisible({ timeout: 5000 })) {
+      await createProjectButton.click();
+      await page.waitForTimeout(1000);
 
-        const projectNameInput = page.locator('input[name="projectName"]');
-        await projectNameInput.fill('Latchkey Project');
+      const projectNameInput = page.locator('input[name="projectName"]');
+      await projectNameInput.fill('Latchkey Project');
 
-        const createButton = page.locator('button:has-text("Create")');
-        await createButton.click();
+      const createButton = page.locator('button:has-text("Create")');
+      await createButton.click();
 
-        // Wait for project creation
-        await page.waitForTimeout(5000);
-      }
+      // Wait for project creation
+      await page.waitForTimeout(5000);
     }
   }
 
