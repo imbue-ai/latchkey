@@ -9,5 +9,6 @@ Typescript style guide:
 - Use immutable data structures as much as possible.
 - Do not use abbreviations in variable (class, function, ...) names. It's fine for names to be somewhat verbose.
 - Omit docstrings if they don't add any value beyond what can be obviously inferred from the function signature / class name.
+- Avoid locale dependent selectors in Playwright code.
 - Do not throw builtin errors; always replace them with dedicated error subclasses.
 - When done, validate your changes by running `npm lint` and `npm test`.

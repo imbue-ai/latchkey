@@ -2,6 +2,7 @@
  * Playwright utility functions for browser automation.
  */
 
+import { randomUUID } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -19,6 +20,16 @@ export interface BrowserLaunchOptions {
   executablePath?: string;
   /** Path to the encrypted browser state file for persisting cookies/storage. */
   browserStatePath?: string;
+}
+
+/**
+ * Generate a random Latchkey-prefixed app name.
+ * Used for creating unique names when registering API keys, apps, or tokens.
+ */
+export function generateLatchkeyAppName(): string {
+  const date = new Date().toISOString().slice(0, 10);
+  const randomSuffix = randomUUID().slice(0, 4);
+  return `Latchkey-${date}-${randomSuffix}`;
 }
 
 /**

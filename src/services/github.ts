@@ -2,11 +2,10 @@
  * GitHub service implementation.
  */
 
-import { randomUUID } from 'node:crypto';
 import type { Response, BrowserContext } from 'playwright';
 import { ApiCredentialStatus, ApiCredentials, AuthorizationBearer } from '../apiCredentials.js';
 import { runCaptured } from '../curl.js';
-import { typeLikeHuman } from '../playwrightUtils.js';
+import { generateLatchkeyAppName, typeLikeHuman } from '../playwrightUtils.js';
 import { Service, BrowserFollowupServiceSession, LoginFailedError } from './base.js';
 
 const DEFAULT_TIMEOUT_MS = 8000;
@@ -46,11 +45,18 @@ class GithubServiceSession extends BrowserFollowupServiceSession {
 
     const request = response.request();
     // Detect login (and github's sudo) by seeing if github allows us to access the new token page.
-    if (request.url() === GITHUB_NEW_TOKEN_URL) {
-      if (response.status() === 200) {
+    if (request.url() != GITHUB_NEW_TOKEN_URL) {
+      return;
+    }
+    if (response.status() != 200) {
+      return;
+    }
+    // Make sure the content returned is actually the correct page, not just the sudo page.
+    void response.text().then((text) => {
+      if (text.includes('<p id="settings_user_tokens_note">')) {
         this.isLoggedIn = true;
       }
-    }
+    });
   }
 
   protected isLoginComplete(): boolean {
@@ -68,7 +74,7 @@ class GithubServiceSession extends BrowserFollowupServiceSession {
     // Add a note for the token
     const noteInput = page.locator('//*[@id="oauth_access_description"]');
     await noteInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-    await typeLikeHuman(page, noteInput, `Latchkey-${randomUUID().slice(0, 8)}`);
+    await typeLikeHuman(page, noteInput, generateLatchkeyAppName());
 
     // Enable all necessary scopes
     for (const scope of GITHUB_TOKEN_SCOPES) {
@@ -79,9 +85,8 @@ class GithubServiceSession extends BrowserFollowupServiceSession {
     }
 
     // Click the Generate Token button
-    const generateButton = page.locator(
-      'button[type="submit"].btn-primary:has-text("Generate token")'
-    );
+    // Get me button with type="submit" that's somewhere under a form with id="new_oauth_access".
+    const generateButton = page.locator('form#new_oauth_access button[type="submit"]');
     await generateButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await generateButton.click();
 

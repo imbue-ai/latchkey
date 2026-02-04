@@ -89,3 +89,9 @@ use Playwright's codegen functionality, for example:
 ```
 npx playwright codegen --target=javascript https://login-page.example.com/
 ```
+
+
+## Style guidelines
+
+- Try to make new code look as similar to existing code as possible.
+- See CLAUDE.md for additional details.
