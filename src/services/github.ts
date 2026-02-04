@@ -45,11 +45,19 @@ class GithubServiceSession extends BrowserFollowupServiceSession {
 
     const request = response.request();
     // Detect login (and github's sudo) by seeing if github allows us to access the new token page.
-    if (request.url() === GITHUB_NEW_TOKEN_URL) {
-      if (response.status() === 200) {
+    if (request.url() != GITHUB_NEW_TOKEN_URL) {
+      return;
+    }
+    if (response.status() != 200) {
+      return;
+    }
+    // Make sure the content returned is actually the correct page, not just the sudo page.
+    // HOW CAN I IGNORE IT WITH THE VOID OPERATOR?
+    void response.text().then((text) => {
+      if (text.includes('<p id="settings_user_tokens_note">')) {
         this.isLoggedIn = true;
       }
-    }
+    });
   }
 
   protected isLoginComplete(): boolean {
