@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Registry, REGISTRY } from '../src/registry.js';
-import { SLACK, DISCORD, GITHUB, DROPBOX, LINEAR } from '../src/services/index.js';
+import { SLACK, DISCORD, GITHUB, DROPBOX, LINEAR, isDatabricksUrl } from '../src/services/index.js';
 
 describe('Registry', () => {
   describe('getByName', () => {
@@ -70,6 +70,43 @@ describe('Registry', () => {
     it('should not match partial URLs', () => {
       expect(REGISTRY.getByUrl('https://slack.com/')).toBeNull();
       expect(REGISTRY.getByUrl('https://slack.com')).toBeNull();
+    });
+
+    it('should find Databricks by workspace URL', () => {
+      const service = REGISTRY.getByUrl(
+        'https://dbc-12345678-abcd.cloud.databricks.com/ajax-api/2.0/clusters/list'
+      );
+      expect(service).not.toBeNull();
+      expect(service?.name).toBe('databricks');
+    });
+
+    it('should find Databricks for different workspace URLs', () => {
+      const service1 = REGISTRY.getByUrl(
+        'https://adb-123456789.cloud.databricks.com/api/2.0/jobs/list'
+      );
+      const service2 = REGISTRY.getByUrl(
+        'https://dbc-b28fe787-b68d.cloud.databricks.com/ajax-api/2.0/mlflow/experiments/list'
+      );
+      expect(service1?.name).toBe('databricks');
+      expect(service2?.name).toBe('databricks');
+    });
+  });
+
+  describe('isDatabricksUrl', () => {
+    it('should match Databricks workspace URLs', () => {
+      expect(isDatabricksUrl('https://dbc-12345678-abcd.cloud.databricks.com/api/2.0/clusters/list')).toBe(true);
+      expect(isDatabricksUrl('https://adb-123456789.cloud.databricks.com/ajax-api/2.0/jobs/list')).toBe(true);
+    });
+
+    it('should not match non-Databricks URLs', () => {
+      expect(isDatabricksUrl('https://example.com')).toBe(false);
+      expect(isDatabricksUrl('https://databricks.com')).toBe(false);
+      expect(isDatabricksUrl('https://cloud.databricks.com')).toBe(false);
+    });
+
+    it('should handle invalid URLs gracefully', () => {
+      expect(isDatabricksUrl('not-a-url')).toBe(false);
+      expect(isDatabricksUrl('')).toBe(false);
     });
   });
 

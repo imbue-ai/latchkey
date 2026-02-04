@@ -200,8 +200,10 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .command('services')
     .description('List known and supported third-party services.')
     .action(() => {
-      const serviceNames = deps.registry.services.map((service) => service.name);
-      deps.log(serviceNames.join(' '));
+      const staticServices = deps.registry.services.map((service) => service.name);
+      // Add dynamic services that aren't in the static registry
+      const allServices = [...staticServices, 'databricks'];
+      deps.log(allServices.join(' '));
     });
 
   program

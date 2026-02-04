@@ -126,12 +126,56 @@ export class SlackApiCredentials implements ApiCredentials {
 }
 
 /**
+ * Databricks-specific credentials (all cookies + CSRF token).
+ */
+export const DatabricksApiCredentialsSchema = z.object({
+  objectType: z.literal('databricks'),
+  cookies: z.string(), // All cookies as a single string for curl -b
+  csrfToken: z.string(),
+  workspaceUrl: z.string(),
+});
+
+export type DatabricksApiCredentialsData = z.infer<typeof DatabricksApiCredentialsSchema>;
+
+export class DatabricksApiCredentials implements ApiCredentials {
+  readonly objectType = 'databricks' as const;
+
+  constructor(
+    readonly cookies: string,
+    readonly csrfToken: string,
+    readonly workspaceUrl: string
+  ) {}
+
+  asCurlArguments(): readonly string[] {
+    const args: string[] = ['-b', this.cookies];
+    if (this.csrfToken) {
+      args.push('-H', `x-csrf-token: ${this.csrfToken}`);
+    }
+    return args;
+  }
+
+  toJSON(): DatabricksApiCredentialsData {
+    return {
+      objectType: this.objectType,
+      cookies: this.cookies,
+      csrfToken: this.csrfToken,
+      workspaceUrl: this.workspaceUrl,
+    };
+  }
+
+  static fromJSON(data: DatabricksApiCredentialsData): DatabricksApiCredentials {
+    return new DatabricksApiCredentials(data.cookies, data.csrfToken, data.workspaceUrl);
+  }
+}
+
+/**
  * Union schema for all credential types.
  */
 export const ApiCredentialsSchema = z.discriminatedUnion('objectType', [
   AuthorizationBearerSchema,
   AuthorizationBareSchema,
   SlackApiCredentialsSchema,
+  DatabricksApiCredentialsSchema,
 ]);
 
 export type ApiCredentialsData = z.infer<typeof ApiCredentialsSchema>;
@@ -147,6 +191,8 @@ export function deserializeCredentials(data: ApiCredentialsData): ApiCredentials
       return AuthorizationBare.fromJSON(data);
     case 'slack':
       return SlackApiCredentials.fromJSON(data);
+    case 'databricks':
+      return DatabricksApiCredentials.fromJSON(data);
     default: {
       const exhaustiveCheck: never = data;
       throw new ApiCredentialsSerializationError(
@@ -167,6 +213,9 @@ export function serializeCredentials(credentials: ApiCredentials): ApiCredential
     return credentials.toJSON();
   }
   if (credentials instanceof SlackApiCredentials) {
+    return credentials.toJSON();
+  }
+  if (credentials instanceof DatabricksApiCredentials) {
     return credentials.toJSON();
   }
   throw new ApiCredentialsSerializationError(`Unknown credential type: ${credentials.objectType}`);
