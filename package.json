@@ -18,13 +18,13 @@
     "latchkey": "./dist/src/cli.js"
   },
   "files": [
-      "dist",
-      "README.md",
-      "LICENSE"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "prepublishOnly": "npm run build",
-    "build": "tsc",
+    "build": "tsc && node -e \"require('fs').cpSync('integrations', 'dist/integrations', {recursive:true})\" ",
     "dev": "tsc --watch",
     "lint": "eslint src tests scripts",
     "lint:fix": "eslint src tests scripts --fix",
