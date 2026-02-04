@@ -2,11 +2,10 @@
  * Linear service implementation.
  */
 
-import { randomUUID } from 'node:crypto';
 import type { Response, BrowserContext } from 'playwright';
 import { ApiCredentialStatus, ApiCredentials, AuthorizationBare } from '../apiCredentials.js';
 import { runCaptured } from '../curl.js';
-import { typeLikeHuman } from '../playwrightUtils.js';
+import { generateLatchkeyAppName, typeLikeHuman } from '../playwrightUtils.js';
 import { Service, BrowserFollowupServiceSession, LoginFailedError } from './base.js';
 
 const DEFAULT_TIMEOUT_MS = 8000;
@@ -61,7 +60,7 @@ class LinearServiceSession extends BrowserFollowupServiceSession {
     await page.goto(LINEAR_NEW_API_KEY_URL);
 
     // Fill in the key name
-    const keyName = `Latchkey-${randomUUID().slice(0, 8)}`;
+    const keyName = generateLatchkeyAppName();
     const keyNameInput = page.locator('//*[@id="label"]');
     await keyNameInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await typeLikeHuman(page, keyNameInput, keyName);

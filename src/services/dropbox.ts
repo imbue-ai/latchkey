@@ -2,11 +2,10 @@
  * Dropbox service implementation.
  */
 
-import { randomUUID } from 'node:crypto';
 import type { Response, BrowserContext } from 'playwright';
 import { ApiCredentialStatus, ApiCredentials, AuthorizationBearer } from '../apiCredentials.js';
 import { runCaptured } from '../curl.js';
-import { typeLikeHuman } from '../playwrightUtils.js';
+import { generateLatchkeyAppName, typeLikeHuman } from '../playwrightUtils.js';
 import { Service, BrowserFollowupServiceSession, LoginFailedError } from './base.js';
 
 const DEFAULT_TIMEOUT_MS = 8000;
@@ -60,12 +59,12 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
     await fullPermissionsInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await fullPermissionsInput.click();
 
-    const appName = `Latchkey-${randomUUID().slice(0, 8)}`;
+    const appName = generateLatchkeyAppName();
     const appNameInput = page.locator('input#app-name');
     await appNameInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await typeLikeHuman(page, appNameInput, appName);
 
-    const createButton = page.locator('//*[@id="create-button"]')
+    const createButton = page.locator('//*[@id="create-button"]');
     await createButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await createButton.click();
 

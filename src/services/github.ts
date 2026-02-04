@@ -2,11 +2,10 @@
  * GitHub service implementation.
  */
 
-import { randomUUID } from 'node:crypto';
 import type { Response, BrowserContext } from 'playwright';
 import { ApiCredentialStatus, ApiCredentials, AuthorizationBearer } from '../apiCredentials.js';
 import { runCaptured } from '../curl.js';
-import { typeLikeHuman } from '../playwrightUtils.js';
+import { generateLatchkeyAppName, typeLikeHuman } from '../playwrightUtils.js';
 import { Service, BrowserFollowupServiceSession, LoginFailedError } from './base.js';
 
 const DEFAULT_TIMEOUT_MS = 8000;
@@ -68,7 +67,7 @@ class GithubServiceSession extends BrowserFollowupServiceSession {
     // Add a note for the token
     const noteInput = page.locator('//*[@id="oauth_access_description"]');
     await noteInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-    await typeLikeHuman(page, noteInput, `Latchkey-${randomUUID().slice(0, 8)}`);
+    await typeLikeHuman(page, noteInput, generateLatchkeyAppName());
 
     // Enable all necessary scopes
     for (const scope of GITHUB_TOKEN_SCOPES) {
