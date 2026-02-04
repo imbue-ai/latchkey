@@ -9,7 +9,9 @@ async function getSkillMdPath(): Promise<string> {
   try {
     // @ts-expect-error - Bun-specific import attribute
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const mod: { default: string } = await import('../integrations/SKILL.md', { with: { type: 'text' } });
+    const mod: { default: string } = await import('../integrations/SKILL.md', {
+      with: { type: 'text' },
+    });
     return mod.default;
   } catch {
     return resolve(import.meta.dirname, '../integrations/SKILL.md');
