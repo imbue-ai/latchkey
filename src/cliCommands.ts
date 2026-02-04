@@ -21,6 +21,7 @@ import { EncryptedStorage } from './encryptedStorage.js';
 import { Registry, REGISTRY } from './registry.js';
 import { LoginCancelledError, LoginFailedError } from './services/index.js';
 import { run as curlRun } from './curl.js';
+import { getSkillMdContent } from './skillMd.js';
 
 // Curl flags that don't affect the HTTP request semantics but may not be supported by URL extraction.
 const CURL_PASSTHROUGH_FLAGS = new Set(['-v', '--verbose']);
@@ -201,6 +202,13 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .action(() => {
       const serviceNames = deps.registry.services.map((service) => service.name);
       deps.log(serviceNames.join(' '));
+    });
+
+  program
+    .command('skill-md')
+    .description('Print the SKILL.md file for AI agent integration.')
+    .action(async () => {
+      deps.log(await getSkillMdContent());
     });
 
   program
