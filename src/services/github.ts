@@ -79,9 +79,8 @@ class GithubServiceSession extends BrowserFollowupServiceSession {
     }
 
     // Click the Generate Token button
-    const generateButton = page.locator(
-      'button[type="submit"].btn-primary:has-text("Generate token")'
-    );
+    // Get me button with type="submit" that's somewhere under a form with id="new_oauth_access".
+    const generateButton = page.locator('form#new_oauth_access button[type="submit"]');
     await generateButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await generateButton.click();
 

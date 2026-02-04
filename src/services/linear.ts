@@ -62,12 +62,12 @@ class LinearServiceSession extends BrowserFollowupServiceSession {
 
     // Fill in the key name
     const keyName = `Latchkey-${randomUUID().slice(0, 8)}`;
-    const keyNameInput = page.getByRole('textbox', { name: 'Key name' });
+    const keyNameInput = page.locator('//*[@id="label"]');
     await keyNameInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await typeLikeHuman(page, keyNameInput, keyName);
 
     // Click the Create button
-    const createButton = page.getByRole('button', { name: 'Create' });
+    const createButton = page.locator('button[type="submit"]');
     await createButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await createButton.click();
 
