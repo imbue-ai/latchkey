@@ -87,10 +87,14 @@ export abstract class ServiceSession {
   /**
    * Finalize credentials after the headful login phase.
    * Receives the browser and context from the login phase, which are still open.
+   * @param browser - Browser instance
+   * @param context - Browser context
+   * @param oldCredentials - Optional existing credentials to reuse
    */
   protected abstract finalizeCredentials(
     browser: Browser,
-    context: BrowserContext
+    context: BrowserContext,
+    oldCredentials?: ApiCredentials
   ): Promise<ApiCredentials | null>;
 
   /**
@@ -119,10 +123,14 @@ export abstract class ServiceSession {
 
   /**
    * Perform the login flow and return the extracted credentials.
+   * @param encryptedStorage - Storage for managing credentials
+   * @param launchOptions - Browser launch options
+   * @param oldCredentials - Optional existing credentials to reuse (e.g., client ID/secret)
    */
   async login(
     encryptedStorage: EncryptedStorage,
-    launchOptions: BrowserLaunchOptions = {}
+    launchOptions: BrowserLaunchOptions = {},
+    oldCredentials?: ApiCredentials
   ): Promise<ApiCredentials> {
     return withTempBrowserContext(encryptedStorage, launchOptions, async ({ browser, context }) => {
       const page = await context.newPage();
@@ -143,7 +151,7 @@ export abstract class ServiceSession {
 
       let apiCredentials: ApiCredentials | null;
       try {
-        apiCredentials = await this.finalizeCredentials(browser, context);
+        apiCredentials = await this.finalizeCredentials(browser, context, oldCredentials);
       } catch (error: unknown) {
         if (error instanceof Error && isBrowserClosedError(error)) {
           throw new LoginCancelledError();
@@ -201,7 +209,8 @@ export abstract class SimpleServiceSession extends ServiceSession {
 
   protected finalizeCredentials(
     _browser: Browser,
-    _context: BrowserContext
+    _context: BrowserContext,
+    _oldCredentials?: ApiCredentials
   ): Promise<ApiCredentials | null> {
     return Promise.resolve(this.apiCredentials);
   }
@@ -218,16 +227,20 @@ export abstract class BrowserFollowupServiceSession extends ServiceSession {
   /**
    * Perform actions in the browser to finalize and extract API credentials.
    * This runs in the same browser session used for login.
+   * @param context - Browser context
+   * @param oldCredentials - Optional existing credentials to reuse
    */
   protected abstract performBrowserFollowup(
-    context: BrowserContext
+    context: BrowserContext,
+    oldCredentials?: ApiCredentials
   ): Promise<ApiCredentials | null>;
 
   protected override async finalizeCredentials(
     _browser: Browser,
-    context: BrowserContext
+    context: BrowserContext,
+    oldCredentials?: ApiCredentials
   ): Promise<ApiCredentials | null> {
     await showSpinnerPage(context, this.service.name);
-    return this.performBrowserFollowup(context);
+    return this.performBrowserFollowup(context, oldCredentials);
   }
 }

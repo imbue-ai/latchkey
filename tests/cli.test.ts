@@ -624,7 +624,11 @@ describe('CLI commands with dependency injection', () => {
 
       await runCommand(['curl', 'https://slack.com/api/test'], deps);
 
-      expect(mockLogin).toHaveBeenCalledWith(expect.any(EncryptedStorage), expect.any(Object));
+      expect(mockLogin).toHaveBeenCalledWith(
+        expect.any(EncryptedStorage),
+        expect.any(Object),
+        undefined
+      );
       expect(capturedArgs).toContain('Authorization: Bearer new-token');
     });
   });

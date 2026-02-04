@@ -373,11 +373,18 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       );
       let apiCredentials: ApiCredentials | null = apiCredentialStore.get(service.name);
 
-      if (apiCredentials === null) {
+      // Check if credentials exist but are expired
+      const isExpired = apiCredentials?.isExpired?.() ?? false;
+
+      if (apiCredentials === null || isExpired) {
         const launchOptions = getBrowserLaunchOptionsOrExit(deps);
 
         try {
-          apiCredentials = await service.getSession().login(encryptedStorage, launchOptions);
+          // Pass old credentials to login() if they're expired (to reuse client ID/secret)
+          const oldCredentials = isExpired && apiCredentials !== null ? apiCredentials : undefined;
+          apiCredentials = await service
+            .getSession()
+            .login(encryptedStorage, launchOptions, oldCredentials);
           apiCredentialStore.save(service.name, apiCredentials);
         } catch (error) {
           if (error instanceof LoginCancelledError) {

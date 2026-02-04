@@ -241,20 +241,34 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     return this.isLoggedIn;
   }
 
-  protected async performBrowserFollowup(context: BrowserContext): Promise<ApiCredentials | null> {
+  protected async performBrowserFollowup(
+    context: BrowserContext,
+    oldCredentials?: ApiCredentials
+  ): Promise<ApiCredentials | null> {
     const page = context.pages()[0];
     if (!page) {
       throw new LoginFailedError('No page available in browser context.');
     }
 
-    // Step 1: Navigate to Google Cloud Console and create project
-    await this.createProject(page);
+    let clientId: string;
+    let clientSecret: string;
 
-    // Step 2: Enable required APIs
-    await this.enableGoogleApis(page);
+    // Try to reuse existing client ID and secret from old credentials
+    if (oldCredentials instanceof OAuthCredentials) {
+      clientId = oldCredentials.clientId;
+      clientSecret = oldCredentials.clientSecret;
+    } else {
+      // Step 1: Navigate to Google Cloud Console and create project
+      await this.createProject(page);
 
-    // Step 3: Create OAuth client ID
-    const { clientId, clientSecret } = await this.createOAuthClient(page);
+      // Step 2: Enable required APIs
+      await this.enableGoogleApis(page);
+
+      // Step 3: Create OAuth client ID
+      const credentials = await this.createOAuthClient(page);
+      clientId = credentials.clientId;
+      clientSecret = credentials.clientSecret;
+    }
 
     // Step 4: Perform OAuth flow with localhost server
     const { accessToken, refreshToken, accessTokenExpiresAt, refreshTokenExpiresAt } =

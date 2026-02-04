@@ -17,6 +17,11 @@ export enum ApiCredentialStatus {
 export interface ApiCredentials {
   readonly objectType: string;
   asCurlArguments(): readonly string[];
+  /**
+   * Check if the credentials are expired.
+   * Returns true if expired, false if valid, or undefined if expiration is unknown.
+   */
+  isExpired?(): boolean;
 }
 
 /**
@@ -172,6 +177,14 @@ export class OAuthCredentials implements ApiCredentials {
 
   asCurlArguments(): readonly string[] {
     return ['-H', `Authorization: Bearer ${this.accessToken}`];
+  }
+
+  isExpired(): boolean {
+    if (this.accessTokenExpiresAt === undefined) {
+      return false;
+    }
+    const expirationDate = new Date(this.accessTokenExpiresAt);
+    return Date.now() >= expirationDate.getTime();
   }
 
   toJSON(): OAuthCredentialsData {
