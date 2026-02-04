@@ -1,0 +1,6 @@
+{
+    "name": "latchkey",
+    "build": {
+      "dockerfile": "Dockerfile"
+    }
+}
