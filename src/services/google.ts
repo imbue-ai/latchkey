@@ -333,12 +333,17 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
   }
 
   private async enableApi(page: Page, projectSlug: string, apiName: string): Promise<void> {
-    await page.goto(`https://console.cloud.google.com/apis/library/${apiName}?project=${projectSlug}`, {
-      timeout: DEFAULT_TIMEOUT_MS,
-    });
+    await page.goto(
+      `https://console.cloud.google.com/apis/library/${apiName}?project=${projectSlug}`,
+      {
+        timeout: DEFAULT_TIMEOUT_MS,
+      }
+    );
 
     const manageButton = page.locator('text="Manage"');
-    const enableButton = page.locator('.mp-details-cta-button-primary button .mdc-button__label').filter({ visible: true });
+    const enableButton = page
+      .locator('.mp-details-cta-button-primary button .mdc-button__label')
+      .filter({ visible: true });
 
     const manageOrEnableButton = manageButton.or(enableButton);
 
@@ -356,14 +361,14 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
 
   private async configureBranding(page: Page, projectSlug: string) {
     await page.goto(`https://console.cloud.google.com/auth/branding?project=${projectSlug}`, {
-        timeout: DEFAULT_TIMEOUT_MS,
+      timeout: DEFAULT_TIMEOUT_MS,
     });
     const getStartedButton = page.locator('cfc-empty-state-actions .mdc-button__label');
     await getStartedButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await getStartedButton.click();
     const appNameInput = page.locator('input[formcontrolname="displayName"]');
     await appNameInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-    await appNameInput.fill(await generateLatchkeyAppName());
+    await appNameInput.fill(generateLatchkeyAppName());
     const emailSelector = page.locator('svg[data-icon-name="arrowDropDownIcon"]').nth(0);
     await emailSelector.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await emailSelector.click();
@@ -373,7 +378,6 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     await supportEmailOption.click();
     const nextButton = page.locator('.cfc-stepper-step-button');
     await nextButton.click();
-
 
     const internalAudienceRadio = page.locator('.mdc-radio').nth(0);
     await internalAudienceRadio.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
@@ -388,7 +392,7 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     const agreeCheckbox = page.locator('input[type="checkbox"]');
     await agreeCheckbox.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await agreeCheckbox.click();
-    nextButton.click();
+    await nextButton.click();
 
     const createButton = page.locator('.cfc-stepper-submit-button button');
     await createButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
@@ -415,13 +419,13 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     await applicationTypeDropdown.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await applicationTypeDropdown.click();
 
-    const desktopAppOption = page.locator('#_1rif_mat-option-5')
+    const desktopAppOption = page.locator('#_1rif_mat-option-5');
     await desktopAppOption.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await desktopAppOption.click();
 
     const clientNameInput = page.locator('input[formcontrolname="displayName"]');
     await clientNameInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-    await clientNameInput.fill(await generateLatchkeyAppName());
+    await clientNameInput.fill(generateLatchkeyAppName());
 
     // Click Create
     const createButton = page.locator('cfc-progress-button button');
@@ -433,7 +437,7 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     const [download] = await Promise.all([page.waitForEvent('download'), downloadButton.click()]);
     const path = await download.path();
     if (!path) {
-        throw new LoginFailedError('Failed to download client_secret.json');
+      throw new LoginFailedError('Failed to download client_secret.json');
     }
 
     const fs = await import('node:fs/promises');
