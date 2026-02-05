@@ -36,11 +36,15 @@ class NotionServiceSession extends BrowserFollowupServiceSession {
 
     await page.goto(NOTION_INTEGRATIONS_URL);
 
+    // Annoyingly, Notion's DOM is devoid of IDs,
+    // so we have to use broad locators with nth.
+
     // Integration name
     await page.getByRole('textbox').click();
     await page.getByRole('textbox').fill(generateLatchkeyAppName());
-    // Workspace
+    // Workspace - initially empty
     await page.getByRole('button').filter({ hasText: /^$/ }).click();
+    // Just pick the first workspace
     await page.getByRole('menuitem').click();
     // Create integration
     await page.getByRole('button').last().click();
@@ -50,21 +54,39 @@ class NotionServiceSession extends BrowserFollowupServiceSession {
       .getByRole('button')
       .nth(0)
       .click({ timeout: DEFAULT_TIMEOUT_MS });
+    // Token input
+    const tokenTextbox = page.locator('input[type="password"]');
+    // We have to save the element handle because the same element's type changes to text after clicking "Show".
+    const tokenTextboxElement = (await tokenTextbox.elementHandle())!;
     // Show
-    await page
-      .locator('input[type="password"]')
+    await tokenTextbox
       .locator('..')
       .getByRole('button')
       .nth(1)
       .click({ timeout: DEFAULT_TIMEOUT_MS });
 
-    const tokenTextbox = page.locator('input[type="password"]');
-    await tokenTextbox.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+    let token = '';
+    // Poll for up to 2 seconds for the token to be revealed
+    for (let i = 0; i < 20; i++) {
+      token = (await tokenTextboxElement.inputValue()).trim();
+      if (token !== '') {
+        break;
+      }
+      await page.waitForTimeout(100);
+    }
 
-    const token = await tokenTextbox.inputValue();
     if (token === '') {
       throw new LoginFailedError('Failed to extract token from Notion.');
     }
+
+    // Grant access.
+    // This part of the flow is too annoying to automate without using the labels...
+    await page.getByRole('tab', { name: 'Access' }).click();
+    await page.getByRole('button', { name: 'Edit access' }).click();
+    await page.getByRole('button', { name: 'Private' }).click();
+    await page.getByRole('button', { name: 'Select all' }).click();
+    await page.getByRole('button', { name: 'Save' }).click();
+    await page.getByRole('dialog').waitFor({ state: 'hidden' });
 
     await page.close();
 
