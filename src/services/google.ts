@@ -4,9 +4,14 @@
 
 import type { Response, BrowserContext, Page } from 'playwright';
 import { ApiCredentialStatus, ApiCredentials, OAuthCredentials } from '../apiCredentials.js';
-import { generateLatchkeyAppName } from '../playwrightUtils.js';
+import {
+  generateLatchkeyAppName,
+  withTempBrowserContext,
+  type BrowserLaunchOptions,
+} from '../playwrightUtils.js';
 import { runCaptured } from '../curl.js';
 import { Service, BrowserFollowupServiceSession, LoginFailedError } from './base.js';
+import type { EncryptedStorage } from '../encryptedStorage.js';
 import * as http from 'node:http';
 import * as url from 'node:url';
 
@@ -216,30 +221,211 @@ function parseClientSecretJson(content: string): { clientId: string; clientSecre
   }
 }
 
+async function createProject(page: Page): Promise<string> {
+  // Navigate to the projects page
+  await page.goto('https://console.cloud.google.com/projectselector2/home/dashboard', {
+    timeout: DEFAULT_TIMEOUT_MS,
+  });
+
+  // Always create a new project
+  const createProjectButton = page.locator('.projectselector-project-create');
+  await createProjectButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+  await createProjectButton.click();
+
+  const projectNameInput = page.locator('proj-name-id-input input');
+  await projectNameInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS * 100 });
+  await projectNameInput.fill(generateLatchkeyAppName());
+
+  const createButton = page.locator('button[type="submit"]');
+  await createButton.click();
+
+  await page.waitForURL('https://console.cloud.google.com/home/dashboard?project=**', {
+    timeout: 16000,
+  });
+  const urlObj = new URL(page.url());
+  const projectId = urlObj.searchParams.get('project');
+  if (!projectId) {
+    throw new LoginFailedError('Failed to create or retrieve Google Cloud project ID.');
+  }
+  return projectId;
+}
+
+async function enableGoogleApis(page: Page, projectSlug: string): Promise<void> {
+  const apis = [
+    'gmail.googleapis.com',
+    'calendar-json.googleapis.com',
+    'drive.googleapis.com',
+    'sheets.googleapis.com',
+    'docs.googleapis.com',
+    'people.googleapis.com', // Contacts API
+  ];
+
+  for (const api of apis) {
+    await enableApi(page, projectSlug, api);
+  }
+}
+
+async function enableApi(page: Page, projectSlug: string, apiName: string): Promise<void> {
+  await page.goto(
+    `https://console.cloud.google.com/apis/library/${apiName}?project=${projectSlug}`,
+    {
+      timeout: DEFAULT_TIMEOUT_MS,
+    }
+  );
+
+  const manageButton = page.locator('text="Manage"');
+  const enableButton = page
+    .locator('.mp-details-cta-button-primary button .mdc-button__label')
+    .filter({ visible: true });
+
+  const manageOrEnableButton = manageButton.or(enableButton);
+
+  await manageOrEnableButton.isVisible({ timeout: DEFAULT_TIMEOUT_MS });
+
+  // Check if API is already enabled
+  if (await manageButton.isVisible()) {
+    return;
+  }
+
+  await enableButton.click();
+  const disableButton = page.locator('text="Disable API"');
+  await disableButton.waitFor({ timeout: 18000 });
+}
+
+async function configureBranding(page: Page, projectSlug: string): Promise<void> {
+  await page.goto(`https://console.cloud.google.com/auth/branding?project=${projectSlug}`, {
+    timeout: DEFAULT_TIMEOUT_MS,
+  });
+  const getStartedButton = page.locator('cfc-empty-state-actions .mdc-button__label');
+  await getStartedButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+  await getStartedButton.click();
+  const appNameInput = page.locator('input[formcontrolname="displayName"]');
+  await appNameInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+  await appNameInput.fill(generateLatchkeyAppName());
+  const emailSelector = page.locator('svg[data-icon-name="arrowDropDownIcon"]').nth(0);
+  await emailSelector.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+  await emailSelector.click();
+  const supportEmailOption = page.locator('mat-option > span:nth-child(1)').first();
+  await supportEmailOption.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+  const supportEmailValue = await supportEmailOption.textContent();
+  await supportEmailOption.click();
+  const nextButton = page.locator('.cfc-stepper-step-button');
+  await nextButton.click();
+
+  const internalAudienceRadio = page.locator('.mdc-radio').nth(0);
+  await internalAudienceRadio.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+  await internalAudienceRadio.click();
+  await nextButton.click();
+
+  const contactEmailInput = page.locator('mat-chip-grid[formcontrolname="emails"] input');
+  await contactEmailInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+  await contactEmailInput.fill(supportEmailValue ?? '');
+  await nextButton.click();
+
+  const agreeCheckbox = page.locator('input[type="checkbox"]');
+  await agreeCheckbox.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+  await agreeCheckbox.click();
+  await nextButton.click();
+
+  const createButton = page.locator('.cfc-stepper-submit-button button');
+  await createButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+  await createButton.click();
+}
+
+async function createOAuthClient(page: Page): Promise<{ clientId: string; clientSecret: string }> {
+  // Navigate to credentials page
+  await page.goto('https://console.cloud.google.com/apis/credentials', {
+    timeout: DEFAULT_TIMEOUT_MS,
+  });
+
+  // Click "Create Credentials" button
+  const createCredentialsButton = page.locator('services-create-credentials-menu button');
+  await createCredentialsButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+  await createCredentialsButton.click();
+
+  // Click "OAuth client ID"
+  const oauthClientIdOption = page.locator('cfc-menu-item[track-metadata-type="OAUTH_CLIENT"]');
+  await oauthClientIdOption.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+  await oauthClientIdOption.click();
+
+  const applicationTypeDropdown = page.locator('svg[data-icon-name="arrowDropDownIcon"]').nth(0);
+  await applicationTypeDropdown.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+  await applicationTypeDropdown.click();
+
+  const desktopAppOption = page.locator('#_1rif_mat-option-5');
+  await desktopAppOption.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+  await desktopAppOption.click();
+
+  const clientNameInput = page.locator('input[formcontrolname="displayName"]');
+  await clientNameInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+  await clientNameInput.fill(generateLatchkeyAppName());
+
+  // Click Create
+  const createButton = page.locator('cfc-progress-button button');
+  await createButton.click();
+
+  // Download the JSON file
+  const downloadButton = page.locator('cfc-icon[icon="download"]');
+  await downloadButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+  const [download] = await Promise.all([page.waitForEvent('download'), downloadButton.click()]);
+  const path = await download.path();
+  if (!path) {
+    throw new LoginFailedError('Failed to download client_secret.json');
+  }
+
+  const fs = await import('node:fs/promises');
+  const content = await fs.readFile(path, 'utf-8');
+
+  return parseClientSecretJson(content);
+}
+
+function checkGoogleLoginResponse(
+  response: Response,
+  loginDetector: { isLoggedIn: boolean }
+): void {
+  if (loginDetector.isLoggedIn) {
+    return;
+  }
+
+  const request = response.request();
+  // Detect successful login by checking for Google account access
+  if (request.url().startsWith('https://console.cloud.google.com/')) {
+    if (response.status() === 200) {
+      void response.text().then((text) => {
+        // Check if we're actually logged in (not on login page)
+        if (!text.includes('accounts.google.com/signin')) {
+          loginDetector.isLoggedIn = true;
+        }
+      });
+    }
+  }
+}
+
+async function waitForGoogleLogin(page: Page): Promise<void> {
+  const loginDetector = { isLoggedIn: false };
+
+  const responseHandler = (response: Response) => {
+    checkGoogleLoginResponse(response, loginDetector);
+  };
+
+  page.on('response', responseHandler);
+
+  while (!loginDetector.isLoggedIn) {
+    await page.waitForTimeout(100);
+  }
+
+  page.off('response', responseHandler);
+}
+
 class GoogleServiceSession extends BrowserFollowupServiceSession {
-  private isLoggedIn = false;
+  private readonly loginDetector = { isLoggedIn: false };
 
   onResponse(response: Response): void {
-    if (this.isLoggedIn) {
-      return;
-    }
-
-    const request = response.request();
-    // Detect successful login by checking for Google account access
-    if (request.url().startsWith('https://console.cloud.google.com/')) {
-      if (response.status() === 200) {
-        void response.text().then((text) => {
-          // Check if we're actually logged in (not on login page)
-          if (!text.includes('accounts.google.com/signin')) {
-            this.isLoggedIn = true;
-          }
-        });
-      }
-    }
+    checkGoogleLoginResponse(response, this.loginDetector);
   }
 
   protected isLoginComplete(): boolean {
-    return this.isLoggedIn;
+    return this.loginDetector.isLoggedIn;
   }
 
   protected async performBrowserFollowup(
@@ -251,199 +437,30 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
       throw new LoginFailedError('No page available in browser context.');
     }
 
-    let clientId: string;
-    let clientSecret: string;
-
-    // Try to reuse existing client ID and secret from old credentials
-    if (oldCredentials instanceof OAuthCredentials) {
-      clientId = oldCredentials.clientId;
-      clientSecret = oldCredentials.clientSecret;
-    } else {
-      // Step 1: Navigate to Google Cloud Console and create project
-      const projectSlug = await this.createProject(page);
-
-      // Step 2: Enable required APIs
-      await this.enableGoogleApis(page, projectSlug);
-
-      // Step 3: Create OAuth client ID
-      await this.configureBranding(page, projectSlug);
-      const credentials = await this.createOAuthClient(page);
-      clientId = credentials.clientId;
-      clientSecret = credentials.clientSecret;
+    // Require existing credentials with client ID and secret
+    if (!(oldCredentials instanceof OAuthCredentials)) {
+      throw new LoginFailedError(
+        'Google login requires existing OAuth client credentials. Run prepare first.'
+      );
     }
 
-    // Step 4: Perform OAuth flow with localhost server
+    const clientId = oldCredentials.clientId;
+    const clientSecret = oldCredentials.clientSecret;
+
+    // Perform OAuth flow with localhost server
     const { accessToken, refreshToken, accessTokenExpiresAt, refreshTokenExpiresAt } =
       await this.performOAuthFlow(page, clientId, clientSecret);
 
     await page.close();
 
     return new OAuthCredentials(
-      accessToken,
-      refreshToken,
       clientId,
       clientSecret,
+      accessToken,
+      refreshToken,
       accessTokenExpiresAt,
       refreshTokenExpiresAt
     );
-  }
-
-  private async createProject(page: Page): Promise<string> {
-    // Navigate to the projects page
-    await page.goto('https://console.cloud.google.com/projectselector2/home/dashboard', {
-      timeout: DEFAULT_TIMEOUT_MS,
-    });
-
-    // Always create a new project
-    const createProjectButton = page.locator('.projectselector-project-create');
-    await createProjectButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-    await createProjectButton.click();
-
-    const projectNameInput = page.locator('proj-name-id-input input');
-    await projectNameInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS * 100 });
-    await projectNameInput.fill(generateLatchkeyAppName());
-
-    const createButton = page.locator('button[type="submit"]');
-    await createButton.click();
-
-    await page.waitForURL('https://console.cloud.google.com/home/dashboard?project=**', {
-      timeout: 16000,
-    });
-    const urlObj = new URL(page.url());
-    const projectId = urlObj.searchParams.get('project');
-    if (!projectId) {
-      throw new LoginFailedError('Failed to create or retrieve Google Cloud project ID.');
-    }
-    return projectId;
-  }
-
-  private async enableGoogleApis(page: Page, projectSlug: string): Promise<void> {
-    const apis = [
-      'gmail.googleapis.com',
-      'calendar-json.googleapis.com',
-      'drive.googleapis.com',
-      'sheets.googleapis.com',
-      'docs.googleapis.com',
-      'people.googleapis.com', // Contacts API
-    ];
-
-    for (const api of apis) {
-      await this.enableApi(page, projectSlug, api);
-    }
-  }
-
-  private async enableApi(page: Page, projectSlug: string, apiName: string): Promise<void> {
-    await page.goto(
-      `https://console.cloud.google.com/apis/library/${apiName}?project=${projectSlug}`,
-      {
-        timeout: DEFAULT_TIMEOUT_MS,
-      }
-    );
-
-    const manageButton = page.locator('text="Manage"');
-    const enableButton = page
-      .locator('.mp-details-cta-button-primary button .mdc-button__label')
-      .filter({ visible: true });
-
-    const manageOrEnableButton = manageButton.or(enableButton);
-
-    await manageOrEnableButton.isVisible({ timeout: DEFAULT_TIMEOUT_MS });
-
-    // Check if API is already enabled
-    if (await manageButton.isVisible()) {
-      return;
-    }
-
-    await enableButton.click();
-    const disableButton = page.locator('text="Disable API"');
-    await disableButton.waitFor({ timeout: 18000 });
-  }
-
-  private async configureBranding(page: Page, projectSlug: string) {
-    await page.goto(`https://console.cloud.google.com/auth/branding?project=${projectSlug}`, {
-      timeout: DEFAULT_TIMEOUT_MS,
-    });
-    const getStartedButton = page.locator('cfc-empty-state-actions .mdc-button__label');
-    await getStartedButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-    await getStartedButton.click();
-    const appNameInput = page.locator('input[formcontrolname="displayName"]');
-    await appNameInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-    await appNameInput.fill(generateLatchkeyAppName());
-    const emailSelector = page.locator('svg[data-icon-name="arrowDropDownIcon"]').nth(0);
-    await emailSelector.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-    await emailSelector.click();
-    const supportEmailOption = page.locator('mat-option > span:nth-child(1)').first();
-    await supportEmailOption.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-    const supportEmailValue = await supportEmailOption.textContent();
-    await supportEmailOption.click();
-    const nextButton = page.locator('.cfc-stepper-step-button');
-    await nextButton.click();
-
-    const internalAudienceRadio = page.locator('.mdc-radio').nth(0);
-    await internalAudienceRadio.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-    await internalAudienceRadio.click();
-    await nextButton.click();
-
-    const contactEmailInput = page.locator('mat-chip-grid[formcontrolname="emails"] input');
-    await contactEmailInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-    await contactEmailInput.fill(supportEmailValue ?? '');
-    await nextButton.click();
-
-    const agreeCheckbox = page.locator('input[type="checkbox"]');
-    await agreeCheckbox.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-    await agreeCheckbox.click();
-    await nextButton.click();
-
-    const createButton = page.locator('.cfc-stepper-submit-button button');
-    await createButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-    await createButton.click();
-  }
-
-  private async createOAuthClient(page: Page): Promise<{ clientId: string; clientSecret: string }> {
-    // Navigate to credentials page
-    await page.goto('https://console.cloud.google.com/apis/credentials', {
-      timeout: DEFAULT_TIMEOUT_MS,
-    });
-
-    // Click "Create Credentials" button
-    const createCredentialsButton = page.locator('services-create-credentials-menu button');
-    await createCredentialsButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-    await createCredentialsButton.click();
-
-    // Click "OAuth client ID"
-    const oauthClientIdOption = page.locator('cfc-menu-item[track-metadata-type="OAUTH_CLIENT"]');
-    await oauthClientIdOption.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-    await oauthClientIdOption.click();
-
-    const applicationTypeDropdown = page.locator('svg[data-icon-name="arrowDropDownIcon"]').nth(0);
-    await applicationTypeDropdown.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-    await applicationTypeDropdown.click();
-
-    const desktopAppOption = page.locator('#_1rif_mat-option-5');
-    await desktopAppOption.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-    await desktopAppOption.click();
-
-    const clientNameInput = page.locator('input[formcontrolname="displayName"]');
-    await clientNameInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-    await clientNameInput.fill(generateLatchkeyAppName());
-
-    // Click Create
-    const createButton = page.locator('cfc-progress-button button');
-    await createButton.click();
-
-    // Download the JSON file
-    const downloadButton = page.locator('cfc-icon[icon="download"]');
-    await downloadButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-    const [download] = await Promise.all([page.waitForEvent('download'), downloadButton.click()]);
-    const path = await download.path();
-    if (!path) {
-      throw new LoginFailedError('Failed to download client_secret.json');
-    }
-
-    const fs = await import('node:fs/promises');
-    const content = await fs.readFile(path, 'utf-8');
-
-    return parseClientSecretJson(content);
   }
 
   private async performOAuthFlow(
@@ -512,6 +529,11 @@ export class Google implements Service {
       return ApiCredentialStatus.Invalid;
     }
 
+    // Credentials from prepare() don't have tokens yet
+    if (apiCredentials.accessToken === undefined) {
+      return ApiCredentialStatus.Missing;
+    }
+
     const result = runCaptured(
       [
         '-s',
@@ -529,6 +551,32 @@ export class Google implements Service {
       return ApiCredentialStatus.Valid;
     }
     return ApiCredentialStatus.Invalid;
+  }
+
+  async prepare(
+    encryptedStorage: EncryptedStorage,
+    launchOptions?: BrowserLaunchOptions
+  ): Promise<ApiCredentials> {
+    return withTempBrowserContext(encryptedStorage, launchOptions ?? {}, async ({ context }) => {
+      const page = await context.newPage();
+
+      // Navigate to Google Cloud Console login
+      await page.goto(this.loginUrl);
+
+      // Wait for user to log in
+      await waitForGoogleLogin(page);
+
+      // Create project, enable APIs, and create OAuth client
+      const projectSlug = await createProject(page);
+      await enableGoogleApis(page, projectSlug);
+      await configureBranding(page, projectSlug);
+      const { clientId, clientSecret } = await createOAuthClient(page);
+
+      await page.close();
+
+      // Return credentials with just client ID and secret (no tokens yet)
+      return new OAuthCredentials(clientId, clientSecret);
+    });
   }
 }
 

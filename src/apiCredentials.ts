@@ -133,11 +133,13 @@ export class SlackApiCredentials implements ApiCredentials {
 /**
  * OAuth 2.0 credentials (access token, refresh token, client ID, and client secret).
  * Used by services that implement OAuth 2.0 authorization flows.
+ * Token attributes are optional - when only clientId and clientSecret are present,
+ * this represents credentials from the prepare() step before obtaining user tokens.
  */
 export const OAuthCredentialsSchema = z.object({
   objectType: z.literal('oauth'),
-  accessToken: z.string(),
-  refreshToken: z.string(),
+  accessToken: z.string().optional(),
+  refreshToken: z.string().optional(),
   clientId: z.string(),
   clientSecret: z.string(),
   accessTokenExpiresAt: z.string().optional(),
@@ -148,25 +150,29 @@ export type OAuthCredentialsData = z.infer<typeof OAuthCredentialsSchema>;
 
 export class OAuthCredentials implements ApiCredentials {
   readonly objectType = 'oauth' as const;
-  readonly accessToken: string;
-  readonly refreshToken: string;
+  readonly accessToken?: string;
+  readonly refreshToken?: string;
   readonly clientId: string;
   readonly clientSecret: string;
   readonly accessTokenExpiresAt?: string;
   readonly refreshTokenExpiresAt?: string;
 
   constructor(
-    accessToken: string,
-    refreshToken: string,
     clientId: string,
     clientSecret: string,
+    accessToken?: string,
+    refreshToken?: string,
     accessTokenExpiresAt?: string,
     refreshTokenExpiresAt?: string
   ) {
-    this.accessToken = accessToken;
-    this.refreshToken = refreshToken;
     this.clientId = clientId;
     this.clientSecret = clientSecret;
+    if (accessToken !== undefined) {
+      this.accessToken = accessToken;
+    }
+    if (refreshToken !== undefined) {
+      this.refreshToken = refreshToken;
+    }
     if (accessTokenExpiresAt !== undefined) {
       this.accessTokenExpiresAt = accessTokenExpiresAt;
     }
@@ -176,6 +182,11 @@ export class OAuthCredentials implements ApiCredentials {
   }
 
   asCurlArguments(): readonly string[] {
+    if (this.accessToken === undefined) {
+      throw new ApiCredentialsUsageError(
+        'OAuth credentials missing access token. Run login to obtain access tokens.'
+      );
+    }
     return ['-H', `Authorization: Bearer ${this.accessToken}`];
   }
 
@@ -190,11 +201,15 @@ export class OAuthCredentials implements ApiCredentials {
   toJSON(): OAuthCredentialsData {
     const result: OAuthCredentialsData = {
       objectType: this.objectType,
-      accessToken: this.accessToken,
-      refreshToken: this.refreshToken,
       clientId: this.clientId,
       clientSecret: this.clientSecret,
     };
+    if (this.accessToken !== undefined) {
+      result.accessToken = this.accessToken;
+    }
+    if (this.refreshToken !== undefined) {
+      result.refreshToken = this.refreshToken;
+    }
     if (this.accessTokenExpiresAt !== undefined) {
       result.accessTokenExpiresAt = this.accessTokenExpiresAt;
     }
@@ -206,13 +221,20 @@ export class OAuthCredentials implements ApiCredentials {
 
   static fromJSON(data: OAuthCredentialsData): OAuthCredentials {
     return new OAuthCredentials(
-      data.accessToken,
-      data.refreshToken,
       data.clientId,
       data.clientSecret,
+      data.accessToken,
+      data.refreshToken,
       data.accessTokenExpiresAt,
       data.refreshTokenExpiresAt
     );
+  }
+}
+
+export class ApiCredentialsUsageError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ApiCredentialsUsageError';
   }
 }
 
