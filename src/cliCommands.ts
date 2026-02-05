@@ -327,15 +327,65 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         encryptedStorage
       );
 
+      const oldCredentials = apiCredentialStore.get(service.name);
+      if (service.prepare && oldCredentials === null) {
+        deps.errorLog(`Error: Service ${serviceName} requires preparation first.`);
+        deps.errorLog(`Run 'latchkey prepare ${serviceName}' before logging in.`);
+        deps.exit(1);
+      }
+
       const launchOptions = getBrowserLaunchOptionsOrExit(deps);
 
       try {
-        const apiCredentials = await service.getSession().login(encryptedStorage, launchOptions);
+        const apiCredentials = await service
+          .getSession()
+          .login(encryptedStorage, launchOptions, oldCredentials ?? undefined);
         apiCredentialStore.save(service.name, apiCredentials);
         deps.log('Done');
       } catch (error) {
         if (error instanceof LoginCancelledError) {
           deps.errorLog('Login cancelled.');
+          deps.exit(1);
+        }
+        if (error instanceof LoginFailedError) {
+          deps.errorLog(error.message);
+          deps.exit(1);
+        }
+        throw error;
+      }
+    });
+
+  program
+    .command('prepare')
+    .description('Prepare a service for use.')
+    .argument('<service_name>', 'Name of the service to prepare')
+    .action(async (serviceName: string) => {
+      const service = deps.registry.getByName(serviceName);
+      if (service === null) {
+        deps.errorLog(`Error: Unknown service: ${serviceName}`);
+        deps.errorLog("Use 'latchkey services' to see available services.");
+        deps.exit(1);
+      }
+
+      if (!service.prepare) {
+        deps.errorLog(`Error: Service ${serviceName} does not support the prepare command.`);
+        deps.exit(1);
+      }
+
+      const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
+      const apiCredentialStore = new ApiCredentialStore(
+        deps.config.credentialStorePath,
+        encryptedStorage
+      );
+      const launchOptions = getBrowserLaunchOptionsOrExit(deps);
+
+      try {
+        const apiCredentials = await service.prepare(encryptedStorage, launchOptions);
+        apiCredentialStore.save(service.name, apiCredentials);
+        deps.log('Done');
+      } catch (error) {
+        if (error instanceof LoginCancelledError) {
+          deps.errorLog('Preparation cancelled.');
           deps.exit(1);
         }
         if (error instanceof LoginFailedError) {
@@ -377,6 +427,13 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       const isExpired = apiCredentials?.isExpired?.() ?? false;
 
       if (apiCredentials === null || isExpired) {
+        // Check if service requires preparation first
+        if (service.prepare && apiCredentials === null) {
+          deps.errorLog(`Error: Service ${service.name} requires preparation first.`);
+          deps.errorLog(`Run 'latchkey prepare ${service.name}' before using curl.`);
+          deps.exit(1);
+        }
+
         const launchOptions = getBrowserLaunchOptionsOrExit(deps);
 
         try {

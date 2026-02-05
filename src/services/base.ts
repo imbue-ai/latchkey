@@ -62,6 +62,15 @@ export interface Service {
    * Get a new session for the login flow.
    */
   getSession(): ServiceSession;
+
+  /**
+   * Optional preparation stage.
+   * Services can implement this to perform additional preparation steps.
+   */
+  prepare?(
+    encryptedStorage: EncryptedStorage,
+    launchOptions?: BrowserLaunchOptions
+  ): Promise<ApiCredentials>;
 }
 
 /**
