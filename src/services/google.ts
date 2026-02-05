@@ -402,58 +402,44 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     });
 
     // Click "Create Credentials" button
-    const createCredentialsButton = page.locator('button:has-text("Create Credentials")');
+    const createCredentialsButton = page.locator('services-create-credentials-menu button');
+    await createCredentialsButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await createCredentialsButton.click();
 
     // Click "OAuth client ID"
-    const oauthClientIdOption = page.locator('text="OAuth client ID"');
+    const oauthClientIdOption = page.locator('cfc-menu-item[track-metadata-type="OAUTH_CLIENT"]');
+    await oauthClientIdOption.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await oauthClientIdOption.click();
 
-    const configureConsentButton = page.locator('button:has-text("Configure consent screen")');
-    const applicationTypeDropdown = page.locator('[aria-label="Application type"]');
-    const applicationTypeOrConfigureConsentButton = configureConsentButton.or(applicationTypeDropdown);
-
-    await applicationTypeOrConfigureConsentButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-
-    if (await configureConsentButton.isVisible()) {
-        await configureConsentButton.click();
-
-    }
-
-    // Select "Desktop app" as application type
+    const applicationTypeDropdown = page.locator('svg[data-icon-name="arrowDropDownIcon"]').nth(0);
+    await applicationTypeDropdown.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await applicationTypeDropdown.click();
 
-    const desktopAppOption = page.locator('text="Desktop app"');
+    const desktopAppOption = page.locator('#_1rif_mat-option-5')
+    await desktopAppOption.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await desktopAppOption.click();
 
-    // Fill in name
-    const nameInput = page.locator('input[aria-label="Name"]');
-    await nameInput.fill('Latchkey OAuth Client');
+    const clientNameInput = page.locator('input[formcontrolname="displayName"]');
+    await clientNameInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+    await clientNameInput.fill(await generateLatchkeyAppName());
 
     // Click Create
-    const createButton = page.locator('button:has-text("Create")');
+    const createButton = page.locator('cfc-progress-button button');
     await createButton.click();
 
-    // Wait for the credentials to be created
-    await page.waitForTimeout(3000);
-
     // Download the JSON file
-    const downloadButton = page.locator('button:has-text("Download JSON")');
-    if (await downloadButton.isVisible({ timeout: 5000 })) {
-      const [download] = await Promise.all([page.waitForEvent('download'), downloadButton.click()]);
-
-      const path = await download.path();
-      if (!path) {
+    const downloadButton = page.locator('cfc-icon[icon="download"]');
+    await downloadButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+    const [download] = await Promise.all([page.waitForEvent('download'), downloadButton.click()]);
+    const path = await download.path();
+    if (!path) {
         throw new LoginFailedError('Failed to download client_secret.json');
-      }
-
-      const fs = await import('node:fs/promises');
-      const content = await fs.readFile(path, 'utf-8');
-
-      return parseClientSecretJson(content);
     }
 
-    throw new LoginFailedError('Failed to create OAuth client credentials.');
+    const fs = await import('node:fs/promises');
+    const content = await fs.readFile(path, 'utf-8');
+
+    return parseClientSecretJson(content);
   }
 
   private async performOAuthFlow(
