@@ -16,7 +16,6 @@ import * as http from 'node:http';
 import * as url from 'node:url';
 
 const DEFAULT_TIMEOUT_MS = 8000;
-const OAUTH_CALLBACK_PORT = 8080;
 const OAUTH_SCOPES = [
   // User info (for credential validation)
   'https://www.googleapis.com/auth/userinfo.profile',
@@ -73,6 +72,54 @@ class OAuthTokenExchangeError extends Error {
     super(message);
     this.name = 'OAuthTokenExchangeError';
   }
+}
+
+class PortUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PortUnavailableError';
+  }
+}
+
+/**
+ * Find an available port starting from the specified port.
+ * Tries ports sequentially until it finds one that's available.
+ */
+async function findAvailablePort(startPort: number, maxAttempts = 10): Promise<number> {
+  for (let port = startPort; port < startPort + maxAttempts; port++) {
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const testServer = http.createServer();
+
+        testServer.once('error', (error: NodeJS.ErrnoException) => {
+          if (error.code === 'EADDRINUSE') {
+            reject(error);
+          } else {
+            reject(error);
+          }
+        });
+
+        testServer.once('listening', () => {
+          testServer.close(() => {
+            resolve();
+          });
+        });
+
+        testServer.listen(port, 'localhost');
+      });
+
+      return port;
+    } catch (error: unknown) {
+      if (error instanceof Error && 'code' in error && error.code === 'EADDRINUSE') {
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  throw new PortUnavailableError(
+    `Could not find an available port in range ${startPort.toString()}-${(startPort + maxAttempts - 1).toString()}`
+  );
 }
 
 /**
@@ -473,10 +520,12 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     accessTokenExpiresAt?: string;
     refreshTokenExpiresAt?: string;
   }> {
-    const redirectUri = `http://localhost:${OAUTH_CALLBACK_PORT.toString()}/oauth2callback`;
+    // Find an available port starting from 8080
+    const port = await findAvailablePort(8080);
+    const redirectUri = `http://localhost:${port.toString()}/oauth2callback`;
 
     // Start the callback server
-    const serverPromise = startOAuthCallbackServer(OAUTH_CALLBACK_PORT, 120000);
+    const serverPromise = startOAuthCallbackServer(port, 120000);
 
     // Build OAuth authorization URL
     const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
