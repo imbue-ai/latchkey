@@ -42,7 +42,7 @@ const OAUTH_SCOPES = [
 
 interface OAuthTokenResponse {
   access_token: string;
-  refresh_token: string;
+  refresh_token?: string;
   expires_in: number;
   token_type: string;
 }
@@ -237,6 +237,51 @@ function exchangeCodeForTokens(
     throw new OAuthTokenExchangeError(
       `Failed to parse token response: ${error instanceof Error ? error.message : String(error)}`
     );
+  }
+}
+
+/**
+ * Refresh OAuth access token using the refresh token.
+ */
+function refreshAccessToken(
+  refreshToken: string,
+  clientId: string,
+  clientSecret: string
+): OAuthTokenResponse | null {
+  const tokenEndpoint = 'https://oauth2.googleapis.com/token';
+  const body = new URLSearchParams({
+    refresh_token: refreshToken,
+    client_id: clientId,
+    client_secret: clientSecret,
+    grant_type: 'refresh_token',
+  });
+
+  const result = runCaptured(
+    [
+      '-s',
+      '-X',
+      'POST',
+      '-H',
+      'Content-Type: application/x-www-form-urlencoded',
+      '-d',
+      body.toString(),
+      tokenEndpoint,
+    ],
+    30
+  );
+
+  if (result.returncode !== 0) {
+    return null;
+  }
+
+  try {
+    const response = JSON.parse(result.stdout) as OAuthTokenResponse;
+    if (!response.access_token) {
+      return null;
+    }
+    return response;
+  } catch {
+    return null;
   }
 }
 
@@ -551,6 +596,12 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     // Calculate access token expiration from the expires_in field
     const accessTokenExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
+    // The refresh_token is guaranteed to be present in the authorization code flow
+    // because exchangeCodeForTokens validates it
+    if (!tokens.refresh_token) {
+      throw new OAuthTokenExchangeError('Token response missing refresh_token.');
+    }
+
     // Google refresh tokens typically don't expire, so we don't set refreshTokenExpiresAt
     return {
       accessToken: tokens.access_token,
@@ -626,6 +677,42 @@ export class Google implements Service {
       // Return credentials with just client ID and secret (no tokens yet)
       return new OAuthCredentials(clientId, clientSecret);
     });
+  }
+
+  refreshCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentials | null> {
+    if (!(apiCredentials instanceof OAuthCredentials)) {
+      return Promise.resolve(null);
+    }
+
+    if (!apiCredentials.refreshToken) {
+      return Promise.resolve(null);
+    }
+
+    const tokens = refreshAccessToken(
+      apiCredentials.refreshToken,
+      apiCredentials.clientId,
+      apiCredentials.clientSecret
+    );
+
+    if (tokens === null) {
+      return Promise.resolve(null);
+    }
+
+    // Calculate access token expiration from the expires_in field
+    const accessTokenExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
+
+    // Return new credentials with refreshed access token
+    // Keep the same refresh token unless a new one is provided
+    return Promise.resolve(
+      new OAuthCredentials(
+        apiCredentials.clientId,
+        apiCredentials.clientSecret,
+        tokens.access_token,
+        tokens.refresh_token ?? apiCredentials.refreshToken,
+        accessTokenExpiresAt,
+        apiCredentials.refreshTokenExpiresAt
+      )
+    );
   }
 }
 

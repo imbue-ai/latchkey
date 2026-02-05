@@ -71,6 +71,14 @@ export interface Service {
     encryptedStorage: EncryptedStorage,
     launchOptions?: BrowserLaunchOptions
   ): Promise<ApiCredentials>;
+
+  /**
+   * Optional method to refresh expired credentials.
+   * Services can implement this to refresh access tokens without user interaction.
+   * @param apiCredentials - The expired credentials
+   * @returns New credentials if refresh succeeded, null otherwise
+   */
+  refreshCredentials?(apiCredentials: ApiCredentials): Promise<ApiCredentials | null>;
 }
 
 /**

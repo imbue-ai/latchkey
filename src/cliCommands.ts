@@ -434,25 +434,41 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           deps.exit(1);
         }
 
-        const launchOptions = getBrowserLaunchOptionsOrExit(deps);
+        // Try to refresh credentials if the service supports it and credentials are expired
+        if (isExpired && apiCredentials !== null && service.refreshCredentials) {
+          const refreshedCredentials = await service.refreshCredentials(apiCredentials);
+          if (refreshedCredentials !== null) {
+            apiCredentials = refreshedCredentials;
+            apiCredentialStore.save(service.name, apiCredentials);
+          } else {
+            // Refresh failed, fall through to login flow
+            apiCredentials = null;
+          }
+        }
 
-        try {
-          // Pass old credentials to login() if they're expired (to reuse client ID/secret)
-          const oldCredentials = isExpired && apiCredentials !== null ? apiCredentials : undefined;
-          apiCredentials = await service
-            .getSession()
-            .login(encryptedStorage, launchOptions, oldCredentials);
-          apiCredentialStore.save(service.name, apiCredentials);
-        } catch (error) {
-          if (error instanceof LoginCancelledError) {
-            deps.errorLog('Login cancelled.');
-            deps.exit(1);
+        // If we still don't have valid credentials, perform login
+        if (apiCredentials === null || apiCredentials.isExpired?.()) {
+          const launchOptions = getBrowserLaunchOptionsOrExit(deps);
+
+          try {
+            // Pass old credentials to login() if they're expired (to reuse client ID/secret)
+            const oldCredentials =
+              isExpired && apiCredentials !== null ? apiCredentials : undefined;
+            apiCredentials = await service
+              .getSession()
+              .login(encryptedStorage, launchOptions, oldCredentials);
+            apiCredentialStore.save(service.name, apiCredentials);
+          } catch (error) {
+            if (error instanceof LoginCancelledError) {
+              deps.errorLog('Login cancelled.');
+              deps.exit(1);
+            }
+            if (error instanceof LoginFailedError) {
+              deps.errorLog(error.message);
+              deps.exit(1);
+            }
+            throw error;
           }
-          if (error instanceof LoginFailedError) {
-            deps.errorLog(error.message);
-            deps.exit(1);
-          }
-          throw error;
         }
       }
 
