@@ -43,11 +43,12 @@ class NotionServiceSession extends BrowserFollowupServiceSession {
     await page.getByRole('button').filter({ hasText: /^$/ }).click();
     await page.getByRole('menuitem').click();
     // Create integration
-    await page.getByRole('button').nth(1).click();
+    await page.getByRole('button').last().click();
     // Configure integration settings
-    await page.getByRole('dialog').getByRole('button').click({ timeout: DEFAULT_TIMEOUT_MS });
     await page
-      .getByRole('button', { name: 'Configure integration settings' })
+      .getByRole('dialog')
+      .getByRole('button')
+      .nth(0)
       .click({ timeout: DEFAULT_TIMEOUT_MS });
     // Show
     await page
