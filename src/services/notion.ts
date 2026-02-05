@@ -19,9 +19,7 @@ class NotionServiceSession extends BrowserFollowupServiceSession {
     if (this.isLoggedIn) {
       return;
     }
-
-    const request = response.request();
-    if (request.url() === NOTION_INTEGRATIONS_URL && response.status() === 200) {
+    if (response.request().headers()['x-notion-active-user-header']) {
       this.isLoggedIn = true;
     }
   }
