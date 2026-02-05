@@ -437,12 +437,9 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         // Try to refresh credentials if the service supports it and credentials are expired
         if (isExpired && apiCredentials !== null && service.refreshCredentials) {
           const refreshedCredentials = await service.refreshCredentials(apiCredentials);
-          if (refreshedCredentials !== null) {
-            apiCredentials = refreshedCredentials;
+          apiCredentials = refreshedCredentials;
+          if (apiCredentials !== null) {
             apiCredentialStore.save(service.name, apiCredentials);
-          } else {
-            // Refresh failed, fall through to login flow
-            apiCredentials = null;
           }
         }
 
