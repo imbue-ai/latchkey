@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Registry, REGISTRY } from '../src/registry.js';
-import { SLACK, DISCORD, GITHUB, DROPBOX, LINEAR } from '../src/services/index.js';
+import { SLACK, DISCORD, GITHUB, DROPBOX, LINEAR, NOTION } from '../src/services/index.js';
 
 describe('Registry', () => {
   describe('getByName', () => {
@@ -22,6 +22,10 @@ describe('Registry', () => {
 
     it('should find Linear by name', () => {
       expect(REGISTRY.getByName('linear')).toBe(LINEAR);
+    });
+
+    it('should find Notion by name', () => {
+      expect(REGISTRY.getByName('notion')).toBe(NOTION);
     });
 
     it('should return null for unknown service', () => {
@@ -60,6 +64,10 @@ describe('Registry', () => {
 
     it('should find Linear by API URL', () => {
       expect(REGISTRY.getByUrl('https://api.linear.app/graphql')).toBe(LINEAR);
+    });
+
+    it('should find Notion by API URL', () => {
+      expect(REGISTRY.getByUrl('https://api.notion.com/v1/users/me')).toBe(NOTION);
     });
 
     it('should return null for unknown URL', () => {
