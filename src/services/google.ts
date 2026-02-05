@@ -266,6 +266,7 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
       await this.enableGoogleApis(page, projectSlug);
 
       // Step 3: Create OAuth client ID
+      await this.configureBranding(page, projectSlug);
       const credentials = await this.createOAuthClient(page);
       clientId = credentials.clientId;
       clientSecret = credentials.clientSecret;
@@ -298,15 +299,13 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     await createProjectButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await createProjectButton.click();
 
-    const projectNameInput = page.locator('input[name="projectName"]');
-    await projectNameInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+    const projectNameInput = page.locator('proj-name-id-input input');
+    await projectNameInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS * 100 });
     await projectNameInput.fill(generateLatchkeyAppName());
 
     const createButton = page.locator('button[type="submit"]');
     await createButton.click();
 
-    // Wait until the URL is https:
-    // https://console.cloud.google.com/home/dashboard?project=...
     await page.waitForURL('https://console.cloud.google.com/home/dashboard?project=**', {
       timeout: 16000,
     });
@@ -339,7 +338,8 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     });
 
     const manageButton = page.locator('text="Manage"');
-    const enableButton = page.locator('button:has-text("Enable")');
+    const enableButton = page.locator('.mp-details-cta-button-primary button .mdc-button__label').filter({ visible: true });
+
     const manageOrEnableButton = manageButton.or(enableButton);
 
     await manageOrEnableButton.isVisible({ timeout: DEFAULT_TIMEOUT_MS });
@@ -349,12 +349,50 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
       return;
     }
 
-    if (await enableButton.isVisible()) {
-      await enableButton.click();
-    }
+    await enableButton.click();
     const disableButton = page.locator('text="Disable API"');
-    await disableButton.waitFor({ timeout: 16000 });
-    throw new LoginFailedError(`Failed to enable API: ${apiName}`);
+    await disableButton.waitFor({ timeout: 18000 });
+  }
+
+  private async configureBranding(page: Page, projectSlug: string) {
+    await page.goto(`https://console.cloud.google.com/auth/branding?project=${projectSlug}`, {
+        timeout: DEFAULT_TIMEOUT_MS,
+    });
+    const getStartedButton = page.locator('cfc-empty-state-actions .mdc-button__label');
+    await getStartedButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+    await getStartedButton.click();
+    const appNameInput = page.locator('input[formcontrolname="displayName"]');
+    await appNameInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+    await appNameInput.fill(await generateLatchkeyAppName());
+    const emailSelector = page.locator('svg[data-icon-name="arrowDropDownIcon"]').nth(0);
+    await emailSelector.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+    await emailSelector.click();
+    const supportEmailOption = page.locator('mat-option > span:nth-child(1)').first();
+    await supportEmailOption.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+    const supportEmailValue = await supportEmailOption.textContent();
+    await supportEmailOption.click();
+    const nextButton = page.locator('.cfc-stepper-step-button');
+    await nextButton.click();
+
+
+    const internalAudienceRadio = page.locator('.mdc-radio').nth(0);
+    await internalAudienceRadio.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+    await internalAudienceRadio.click();
+    await nextButton.click();
+
+    const contactEmailInput = page.locator('mat-chip-grid[formcontrolname="emails"] input');
+    await contactEmailInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+    await contactEmailInput.fill(supportEmailValue ?? '');
+    await nextButton.click();
+
+    const agreeCheckbox = page.locator('input[type="checkbox"]');
+    await agreeCheckbox.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+    await agreeCheckbox.click();
+    nextButton.click();
+
+    const createButton = page.locator('.cfc-stepper-submit-button button');
+    await createButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+    await createButton.click();
   }
 
   private async createOAuthClient(page: Page): Promise<{ clientId: string; clientSecret: string }> {
@@ -362,8 +400,6 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     await page.goto('https://console.cloud.google.com/apis/credentials', {
       timeout: DEFAULT_TIMEOUT_MS,
     });
-
-    await page.waitForTimeout(2000);
 
     // Click "Create Credentials" button
     const createCredentialsButton = page.locator('button:has-text("Create Credentials")');
@@ -373,10 +409,18 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     const oauthClientIdOption = page.locator('text="OAuth client ID"');
     await oauthClientIdOption.click();
 
-    await page.waitForTimeout(1000);
+    const configureConsentButton = page.locator('button:has-text("Configure consent screen")');
+    const applicationTypeDropdown = page.locator('[aria-label="Application type"]');
+    const applicationTypeOrConfigureConsentButton = configureConsentButton.or(applicationTypeDropdown);
+
+    await applicationTypeOrConfigureConsentButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+
+    if (await configureConsentButton.isVisible()) {
+        await configureConsentButton.click();
+
+    }
 
     // Select "Desktop app" as application type
-    const applicationTypeDropdown = page.locator('[aria-label="Application type"]');
     await applicationTypeDropdown.click();
 
     const desktopAppOption = page.locator('text="Desktop app"');
