@@ -1,5 +1,10 @@
 /**
  * Notion service implementation.
+ *
+ * This has some severe limitations:
+ *
+ * - It requires the UI to be in English.
+ * - It only grants access to the private pages that existed at the time of login.
  */
 
 import type { Response, BrowserContext } from 'playwright';
