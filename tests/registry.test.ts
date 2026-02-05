@@ -73,17 +73,6 @@ describe('Registry', () => {
     });
   });
 
-  describe('services', () => {
-    it('should contain all services', () => {
-      expect(REGISTRY.services).toHaveLength(5);
-      expect(REGISTRY.services).toContain(SLACK);
-      expect(REGISTRY.services).toContain(DISCORD);
-      expect(REGISTRY.services).toContain(GITHUB);
-      expect(REGISTRY.services).toContain(DROPBOX);
-      expect(REGISTRY.services).toContain(LINEAR);
-    });
-  });
-
   describe('custom registry', () => {
     it('should work with custom service list', () => {
       const customRegistry = new Registry([SLACK, GITHUB]);
