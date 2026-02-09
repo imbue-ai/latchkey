@@ -44,7 +44,7 @@ const OAUTH_SCOPES = [
 
 interface OAuthTokenResponse {
   access_token: string;
-  refresh_token?: string;
+  refresh_token: string;
   expires_in: number;
   token_type: string;
 }
@@ -562,14 +562,10 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     accessTokenExpiresAt?: string;
     refreshTokenExpiresAt?: string;
   }> {
-    // Find an available port starting from 8080
     const port = await findAvailablePort(8080);
     const redirectUri = `http://localhost:${port.toString()}/oauth2callback`;
-
-    // Start the callback server
     const codePromise = waitForOAuthCallback(port, LOGIN_TIMEOUT_MS);
 
-    // Build OAuth authorization URL
     const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
     authUrl.searchParams.set('client_id', clientId);
     authUrl.searchParams.set('redirect_uri', redirectUri);
@@ -578,23 +574,10 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     authUrl.searchParams.set('access_type', 'offline');
     authUrl.searchParams.set('prompt', 'consent');
 
-    // Navigate to OAuth authorization URL
     await page.goto(authUrl.toString());
-
-    // Wait for user to authorize and get the code
     const code = await codePromise;
-
-    // Exchange code for tokens
     const tokens = exchangeCodeForTokens(code, clientId, clientSecret, redirectUri);
-
-    // Calculate access token expiration from the expires_in field
     const accessTokenExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
-
-    // The refresh_token is guaranteed to be present in the authorization code flow
-    // because exchangeCodeForTokens validates it
-    if (!tokens.refresh_token) {
-      throw new OAuthTokenExchangeError('Token response missing refresh_token.');
-    }
 
     // Google refresh tokens typically don't expire, so we don't set refreshTokenExpiresAt
     return {
@@ -653,25 +636,15 @@ export class Google implements Service {
   ): Promise<ApiCredentials> {
     return withTempBrowserContext(encryptedStorage, launchOptions ?? {}, async ({ context }) => {
       const page = await context.newPage();
-
-      // Navigate to Google Cloud Console login
       await page.goto(this.loginUrl);
-
-      // Wait for user to log in
       await waitForGoogleLogin(page);
 
-      // Show spinner while performing automated setup
       await showSpinnerPage(context, this.name);
-
-      // Create project, enable APIs, and create OAuth client
       const projectSlug = await createProject(page);
       await enableGoogleApis(page, projectSlug);
       await configureBranding(page, projectSlug);
       const { clientId, clientSecret } = await createOAuthClient(page);
-
       await page.close();
-
-      // Return credentials with just client ID and secret (no tokens yet)
       return new OAuthCredentials(clientId, clientSecret);
     });
   }
@@ -705,7 +678,7 @@ export class Google implements Service {
         apiCredentials.clientId,
         apiCredentials.clientSecret,
         tokens.access_token,
-        tokens.refresh_token ?? apiCredentials.refreshToken,
+        tokens.refresh_token,
         accessTokenExpiresAt,
         apiCredentials.refreshTokenExpiresAt
       )
