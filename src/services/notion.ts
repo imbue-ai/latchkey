@@ -104,6 +104,10 @@ export class Notion implements Service {
   readonly displayName = 'Notion';
   readonly baseApiUrls = ['https://api.notion.com/'] as const;
   readonly loginUrl = NOTION_INTEGRATIONS_URL;
+  readonly info =
+    'Uses the Notion API (https://developers.notion.com/reference). ' +
+    'Include "Notion-Version: 2022-06-28" header in all requests. ' +
+    'Access is limited to pages that existed when the integration was created.';
 
   readonly credentialCheckCurlArguments = [
     '-H',
