@@ -419,6 +419,14 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         deps.config.credentialStorePath,
         encryptedStorage
       );
+
+      // Check if already prepared (credentials exist)
+      const existingCredentials = apiCredentialStore.get(service.name);
+      if (existingCredentials !== null) {
+        deps.log('Already prepared.');
+        return;
+      }
+
       const launchOptions = getBrowserLaunchOptionsOrExit(deps);
 
       try {
