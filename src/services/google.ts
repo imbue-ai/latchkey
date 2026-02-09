@@ -2,10 +2,11 @@
  * Google service implementation with OAuth flow.
  */
 
-import type { Response, BrowserContext, Page } from 'playwright';
+import type { Browser, BrowserContext, Page, Response } from 'playwright';
 import { ApiCredentialStatus, ApiCredentials, OAuthCredentials } from '../apiCredentials.js';
 import {
   generateLatchkeyAppName,
+  showSpinnerPage,
   withTempBrowserContext,
   type BrowserLaunchOptions,
 } from '../playwrightUtils.js';
@@ -504,6 +505,18 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     return this.loginDetector.isLoggedIn;
   }
 
+  /**
+   * Override to skip the spinner page since the OAuth flow requires user interaction
+   * (granting consent on Google's authorization page).
+   */
+  protected override finalizeCredentials(
+    _browser: Browser,
+    context: BrowserContext,
+    oldCredentials?: ApiCredentials
+  ): Promise<ApiCredentials | null> {
+    return this.performBrowserFollowup(context, oldCredentials);
+  }
+
   protected async performBrowserFollowup(
     context: BrowserContext,
     oldCredentials?: ApiCredentials
@@ -646,6 +659,9 @@ export class Google implements Service {
 
       // Wait for user to log in
       await waitForGoogleLogin(page);
+
+      // Show spinner while performing automated setup
+      await showSpinnerPage(context, this.name);
 
       // Create project, enable APIs, and create OAuth client
       const projectSlug = await createProject(page);
