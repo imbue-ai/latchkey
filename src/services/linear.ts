@@ -93,9 +93,6 @@ export class Linear implements Service {
   readonly displayName = 'Linear';
   readonly baseApiUrls = ['https://api.linear.app/'] as const;
   readonly loginUrl = LINEAR_NEW_API_KEY_URL;
-  readonly info =
-    'Uses the Linear GraphQL API (https://developers.linear.app/docs/graphql/working-with-the-graphql-api). ' +
-    'All requests go to https://api.linear.app/graphql using POST with a JSON body.';
 
   readonly credentialCheckCurlArguments = [
     '-X',

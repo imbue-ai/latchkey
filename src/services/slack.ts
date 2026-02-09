@@ -54,9 +54,6 @@ export class Slack implements Service {
   readonly displayName = 'Slack';
   readonly baseApiUrls = ['https://slack.com/api/'] as const;
   readonly loginUrl = 'https://slack.com/signin';
-  readonly info =
-    'Uses the Slack Web API (https://api.slack.com/web). ' +
-    'Do not use bot-only endpoints; use user-token endpoints instead.';
 
   readonly credentialCheckCurlArguments = ['https://slack.com/api/auth.test'] as const;
 

@@ -113,9 +113,6 @@ export class Github implements Service {
   readonly displayName = 'GitHub';
   readonly baseApiUrls = ['https://api.github.com/'] as const;
   readonly loginUrl = GITHUB_NEW_TOKEN_URL;
-  readonly info =
-    'Uses the GitHub REST API (https://docs.github.com/en/rest). ' +
-    'A personal access token with broad permissions is created during login.';
 
   readonly credentialCheckCurlArguments = ['https://api.github.com/user'] as const;
 
