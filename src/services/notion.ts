@@ -106,8 +106,8 @@ export class Notion implements Service {
   readonly loginUrl = NOTION_INTEGRATIONS_URL;
   readonly info =
     'Uses the Notion API (https://developers.notion.com/reference). ' +
-    'Include "Notion-Version: 2022-06-28" header in all requests. ' +
-    'Access is limited to pages that existed when the integration was created.';
+    'The UI must be in English, otherwise the initial login will not work. ' +
+    'Access is limited to pages that existed when the login happened for the first time.';
 
   readonly credentialCheckCurlArguments = [
     '-H',
