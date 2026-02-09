@@ -16,6 +16,7 @@ import * as http from 'node:http';
 import * as url from 'node:url';
 
 const DEFAULT_TIMEOUT_MS = 8000;
+const LOGIN_TIMEOUT_MS = 120000;
 const OAUTH_SCOPES = [
   // User info (for credential validation)
   'https://www.googleapis.com/auth/userinfo.profile',
@@ -570,7 +571,7 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     const redirectUri = `http://localhost:${port.toString()}/oauth2callback`;
 
     // Start the callback server
-    const serverPromise = startOAuthCallbackServer(port, 120000);
+    const serverPromise = startOAuthCallbackServer(port, LOGIN_TIMEOUT_MS);
 
     // Build OAuth authorization URL
     const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
