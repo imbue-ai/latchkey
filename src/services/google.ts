@@ -327,7 +327,7 @@ async function createProject(page: Page): Promise<string> {
   return projectId;
 }
 
-async function enableGoogleApis(page: Page, projectSlug: string): Promise<void> {
+async function enableApis(page: Page, projectSlug: string): Promise<void> {
   const apis = [
     'gmail.googleapis.com',
     'calendar-json.googleapis.com',
@@ -350,23 +350,20 @@ async function enableApi(page: Page, projectSlug: string, apiName: string): Prom
     }
   );
 
-  const manageButton = page.locator('text="Manage"');
+  const successIcon = page.locator('.cfc-icon-status-success'); // Present when API is already enabled.
   const enableButton = page
     .locator('.mp-details-cta-button-primary button .mdc-button__label')
     .filter({ visible: true });
+  const sucessOrEnableButton = successIcon.or(enableButton);
+  await sucessOrEnableButton.isVisible({ timeout: DEFAULT_TIMEOUT_MS });
 
-  const manageOrEnableButton = manageButton.or(enableButton);
-
-  await manageOrEnableButton.isVisible({ timeout: DEFAULT_TIMEOUT_MS });
-
-  // Check if API is already enabled
-  if (await manageButton.isVisible()) {
+  if (await successIcon.isVisible()) {
     return;
   }
 
   await enableButton.click();
-  const disableButton = page.locator('text="Disable API"');
-  await disableButton.waitFor({ timeout: 18000 });
+  const stopIndicator = page.locator('.cfc-icon-stop');
+  await stopIndicator.waitFor({ timeout: 18000 });
 }
 
 async function configureBranding(page: Page, projectSlug: string): Promise<void> {
@@ -641,7 +638,7 @@ export class Google implements Service {
 
       await showSpinnerPage(context, this.name);
       const projectSlug = await createProject(page);
-      await enableGoogleApis(page, projectSlug);
+      await enableApis(page, projectSlug);
       await configureBranding(page, projectSlug);
       const { clientId, clientSecret } = await createOAuthClient(page);
       await page.close();
