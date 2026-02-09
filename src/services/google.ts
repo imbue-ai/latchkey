@@ -126,65 +126,48 @@ async function findAvailablePort(startPort: number, maxAttempts = 10): Promise<n
 /**
  * Start a temporary HTTP server to receive OAuth callback.
  * Returns a promise that resolves with the authorization code.
+ * The server is always closed before the function returns.
  */
-function startOAuthCallbackServer(
-  port: number,
-  timeoutMs: number
-): Promise<{ code: string; server: http.Server }> {
-  return new Promise((resolve, reject) => {
-    const server = http.createServer((req, res) => {
-      const parsedUrl = url.parse(req.url ?? '', true);
+async function waitForOAuthCallback(port: number, timeoutMs: number): Promise<string> {
+  const server = http.createServer();
 
-      if (parsedUrl.pathname === '/oauth2callback') {
-        const code = parsedUrl.query.code as string | undefined;
+  try {
+    return await new Promise<string>((resolve, reject) => {
+      server.on('request', (req, res) => {
+        const parsedUrl = url.parse(req.url ?? '', true);
 
-        if (code) {
-          res.writeHead(200, { 'Content-Type': 'text/html' });
-          res.end(`
-            <!DOCTYPE html>
-            <html>
-              <head><title>Authorization Successful</title></head>
-              <body>
-                <h1>Authorization successful!</h1>
-                <p>You can close this window and return to the terminal.</p>
-              </body>
-            </html>
-          `);
-          resolve({ code, server });
+        if (parsedUrl.pathname === '/oauth2callback') {
+          const code = parsedUrl.query.code as string | undefined;
+
+          if (code) {
+            res.writeHead(200, { 'Content-Type': 'text/plain' });
+            res.end('OK');
+            resolve(code);
+          } else {
+            res.writeHead(400, { 'Content-Type': 'text/plain' });
+            res.end('ERROR');
+            reject(new LoginFailedError('No authorization code received from OAuth callback.'));
+          }
         } else {
-          res.writeHead(400, { 'Content-Type': 'text/html' });
-          res.end(`
-            <!DOCTYPE html>
-            <html>
-              <head><title>Authorization Failed</title></head>
-              <body>
-                <h1>Authorization failed</h1>
-                <p>No authorization code received.</p>
-              </body>
-            </html>
-          `);
-          reject(new LoginFailedError('No authorization code received from OAuth callback.'));
+          res.writeHead(404);
+          res.end();
         }
-      } else {
-        res.writeHead(404);
-        res.end();
-      }
-    });
+      });
 
-    const timeout = setTimeout(() => {
-      server.close();
-      reject(new OAuthCallbackServerTimeoutError());
-    }, timeoutMs);
+      const timeout = setTimeout(() => {
+        reject(new OAuthCallbackServerTimeoutError());
+      }, timeoutMs);
 
-    server.on('error', (error) => {
-      clearTimeout(timeout);
-      reject(error);
-    });
+      server.on('error', (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      });
 
-    server.listen(port, 'localhost', () => {
-      // Server is listening
+      server.listen(port, 'localhost');
     });
-  });
+  } finally {
+    server.close();
+  }
 }
 
 /**
@@ -571,7 +554,7 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     const redirectUri = `http://localhost:${port.toString()}/oauth2callback`;
 
     // Start the callback server
-    const serverPromise = startOAuthCallbackServer(port, LOGIN_TIMEOUT_MS);
+    const codePromise = waitForOAuthCallback(port, LOGIN_TIMEOUT_MS);
 
     // Build OAuth authorization URL
     const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
@@ -586,10 +569,7 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     await page.goto(authUrl.toString());
 
     // Wait for user to authorize and get the code
-    const { code, server } = await serverPromise;
-
-    // Close the server
-    server.close();
+    const code = await codePromise;
 
     // Exchange code for tokens
     const tokens = exchangeCodeForTokens(code, clientId, clientSecret, redirectUri);
