@@ -19,9 +19,29 @@ import { Config, CONFIG } from './config.js';
 import type { CurlResult } from './curl.js';
 import { EncryptedStorage } from './encryptedStorage.js';
 import { Registry, REGISTRY } from './registry.js';
-import { LoginCancelledError, LoginFailedError } from './services/index.js';
+import { LoginCancelledError, LoginFailedError, Service } from './services/index.js';
 import { run as curlRun } from './curl.js';
 import { getSkillMdContent } from './skillMd.js';
+
+/**
+ * Try to refresh expired credentials if the service supports it.
+ * Returns refreshed credentials if successful, otherwise returns the original credentials.
+ */
+async function maybeRefreshCredentials(
+  service: Service,
+  apiCredentials: ApiCredentials,
+  apiCredentialStore: ApiCredentialStore
+): Promise<ApiCredentials> {
+  if (!apiCredentials.isExpired?.() || !service.refreshCredentials) {
+    return apiCredentials;
+  }
+  const refreshedCredentials = await service.refreshCredentials(apiCredentials);
+  if (refreshedCredentials !== null) {
+    apiCredentialStore.save(service.name, refreshedCredentials);
+    return refreshedCredentials;
+  }
+  return apiCredentials;
+}
 
 // Curl flags that don't affect the HTTP request semantics but may not be supported by URL extraction.
 const CURL_PASSTHROUGH_FLAGS = new Set(['-v', '--verbose']);
@@ -271,7 +291,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .command('status')
     .description('Check the API credential status for a service.')
     .argument('[service_name]', 'Name of the service to check status for')
-    .action((serviceName: string | undefined) => {
+    .action(async (serviceName: string | undefined) => {
       const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
       const apiCredentialStore = new ApiCredentialStore(
         deps.config.credentialStorePath,
@@ -280,10 +300,15 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
 
       if (serviceName === undefined) {
         for (const service of deps.registry.services) {
-          const apiCredentials = apiCredentialStore.get(service.name);
+          let apiCredentials = apiCredentialStore.get(service.name);
           if (apiCredentials === null) {
             deps.log(`${service.name}: ${ApiCredentialStatus.Missing}`);
           } else {
+            apiCredentials = await maybeRefreshCredentials(
+              service,
+              apiCredentials,
+              apiCredentialStore
+            );
             const status = service.checkApiCredentials(apiCredentials);
             deps.log(`${service.name}: ${status}`);
           }
@@ -298,12 +323,14 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         deps.exit(1);
       }
 
-      const apiCredentials = apiCredentialStore.get(serviceName);
+      let apiCredentials = apiCredentialStore.get(serviceName);
 
       if (apiCredentials === null) {
         deps.log(ApiCredentialStatus.Missing);
         return;
       }
+
+      apiCredentials = await maybeRefreshCredentials(service, apiCredentials, apiCredentialStore);
 
       const apiCredentialStatus = service.checkApiCredentials(apiCredentials);
       deps.log(apiCredentialStatus);
@@ -435,12 +462,12 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         }
 
         // Try to refresh credentials if the service supports it and credentials are expired
-        if (isExpired && apiCredentials !== null && service.refreshCredentials) {
-          const refreshedCredentials = await service.refreshCredentials(apiCredentials);
-          apiCredentials = refreshedCredentials;
-          if (apiCredentials !== null) {
-            apiCredentialStore.save(service.name, apiCredentials);
-          }
+        if (isExpired && apiCredentials !== null) {
+          apiCredentials = await maybeRefreshCredentials(
+            service,
+            apiCredentials,
+            apiCredentialStore
+          );
         }
 
         // If we still don't have valid credentials, perform login
