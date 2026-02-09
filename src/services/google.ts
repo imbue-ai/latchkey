@@ -14,7 +14,6 @@ import { runCaptured } from '../curl.js';
 import { Service, BrowserFollowupServiceSession, LoginFailedError } from './base.js';
 import type { EncryptedStorage } from '../encryptedStorage.js';
 import * as http from 'node:http';
-import * as url from 'node:url';
 
 const DEFAULT_TIMEOUT_MS = 8000;
 const LOGIN_TIMEOUT_MS = 120000;
@@ -131,14 +130,15 @@ async function findAvailablePort(startPort: number, maxAttempts = 10): Promise<n
  */
 async function waitForOAuthCallback(port: number, timeoutMs: number): Promise<string> {
   const server = http.createServer();
+  let timeout: NodeJS.Timeout | undefined;
 
   try {
     return await new Promise<string>((resolve, reject) => {
       server.on('request', (req, res) => {
-        const parsedUrl = url.parse(req.url ?? '', true);
+        const parsedUrl = new URL(req.url ?? '', `http://localhost:${port.toString()}`);
 
         if (parsedUrl.pathname === '/oauth2callback') {
-          const code = parsedUrl.query.code as string | undefined;
+          const code = parsedUrl.searchParams.get('code') ?? undefined;
 
           if (code) {
             res.writeHead(200, { 'Content-Type': 'text/plain' });
@@ -155,18 +155,21 @@ async function waitForOAuthCallback(port: number, timeoutMs: number): Promise<st
         }
       });
 
-      const timeout = setTimeout(() => {
+      timeout = setTimeout(() => {
         reject(new OAuthCallbackServerTimeoutError());
       }, timeoutMs);
 
       server.on('error', (error) => {
-        clearTimeout(timeout);
         reject(error);
       });
 
       server.listen(port, 'localhost');
     });
   } finally {
+    if (timeout !== undefined) {
+      clearTimeout(timeout);
+    }
+    server.closeAllConnections();
     server.close();
   }
 }
