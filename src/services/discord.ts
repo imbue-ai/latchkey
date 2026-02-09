@@ -36,6 +36,7 @@ class DiscordServiceSession extends SimpleServiceSession {
 
 export class Discord implements Service {
   readonly name = 'discord';
+  readonly displayName = 'Discord';
   readonly baseApiUrls = ['https://discord.com/api/'] as const;
   readonly loginUrl = 'https://discord.com/login';
 

@@ -108,7 +108,7 @@ export async function typeLikeHuman(page: Page, locator: Locator, text: string):
 }
 
 // Script that creates the spinner overlay, designed to run in browser context
-function createSpinnerOverlayScript(serviceName: string): string {
+function createSpinnerOverlayScript(message: string): string {
   return `
 (() => {
   if (document.getElementById('latchkey-spinner-overlay')) return;
@@ -143,13 +143,16 @@ function createSpinnerOverlayScript(serviceName: string): string {
         margin-top: 20px;
         color: #555;
         font-size: 16px;
+        text-align: center;
+        max-width: 80%;
+        white-space: pre-line;
       }
       @keyframes latchkey-spin {
         to { transform: rotate(360deg); }
       }
     </style>
     <div class="spinner"></div>
-    <div class="message">Finalizing ${serviceName} login...</div>
+    <div class="message">${message}</div>
   \`;
   document.body.appendChild(overlay);
 })()
@@ -160,8 +163,8 @@ function createSpinnerOverlayScript(serviceName: string): string {
  * Show a spinner overlay that hides page content from the user.
  * The overlay persists across page navigations within the browser context.
  */
-export async function showSpinnerPage(context: BrowserContext, serviceName: string): Promise<void> {
+export async function showSpinnerPage(context: BrowserContext, message: string): Promise<void> {
   const spinnerPage = await context.newPage();
-  await spinnerPage.evaluate(createSpinnerOverlayScript(serviceName));
+  await spinnerPage.evaluate(createSpinnerOverlayScript(message));
   await spinnerPage.bringToFront();
 }

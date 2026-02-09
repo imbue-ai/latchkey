@@ -179,6 +179,7 @@ describe('CLI commands with dependency injection', () => {
   function createMockDependencies(overrides: Partial<CliDependencies> = {}): CliDependencies {
     const mockSlackService: Service = {
       name: 'slack',
+      displayName: 'Slack',
       baseApiUrls: ['https://slack.com/api/'],
       loginUrl: 'https://slack.com/signin',
       credentialCheckCurlArguments: ['https://slack.com/api/auth.test'],
@@ -566,6 +567,7 @@ describe('CLI commands with dependency injection', () => {
       const mockLogin = vi.fn();
       const mockSlackService: Service = {
         name: 'slack',
+        displayName: 'Slack',
         baseApiUrls: ['https://slack.com/api/'],
         loginUrl: 'https://slack.com/signin',
         credentialCheckCurlArguments: [],
@@ -610,6 +612,7 @@ describe('CLI commands with dependency injection', () => {
         .mockResolvedValue(new SlackApiCredentials('new-token', 'new-cookie'));
       const mockSlackService: Service = {
         name: 'slack',
+        displayName: 'Slack',
         baseApiUrls: ['https://slack.com/api/'],
         loginUrl: 'https://slack.com/signin',
         credentialCheckCurlArguments: [],

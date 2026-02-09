@@ -90,6 +90,7 @@ class LinearServiceSession extends BrowserFollowupServiceSession {
 
 export class Linear implements Service {
   readonly name = 'linear';
+  readonly displayName = 'Linear';
   readonly baseApiUrls = ['https://api.linear.app/'] as const;
   readonly loginUrl = LINEAR_NEW_API_KEY_URL;
 

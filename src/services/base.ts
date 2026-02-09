@@ -45,6 +45,7 @@ function isTimeoutError(error: Error): boolean {
  */
 export interface Service {
   readonly name: string;
+  readonly displayName: string;
   readonly baseApiUrls: readonly string[];
   readonly loginUrl: string;
 
@@ -257,7 +258,7 @@ export abstract class BrowserFollowupServiceSession extends ServiceSession {
     context: BrowserContext,
     oldCredentials?: ApiCredentials
   ): Promise<ApiCredentials | null> {
-    await showSpinnerPage(context, this.service.name);
+    await showSpinnerPage(context, `Finalizing ${this.service.displayName} login...`);
     return this.performBrowserFollowup(context, oldCredentials);
   }
 }

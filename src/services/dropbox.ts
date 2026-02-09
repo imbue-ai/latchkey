@@ -130,6 +130,7 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
 
 export class Dropbox implements Service {
   readonly name = 'dropbox';
+  readonly displayName = 'Dropbox';
   readonly baseApiUrls = [
     'https://api.dropboxapi.com/',
     'https://content.dropboxapi.com/',

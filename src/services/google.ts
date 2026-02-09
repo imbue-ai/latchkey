@@ -590,6 +590,7 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
 
 export class Google implements Service {
   readonly name = 'google';
+  readonly displayName = 'Google Workspace';
   readonly baseApiUrls = ['https://www.googleapis.com/'] as const;
   readonly loginUrl = 'https://console.cloud.google.com/';
 
@@ -639,7 +640,10 @@ export class Google implements Service {
       await page.goto(this.loginUrl);
       await waitForGoogleLogin(page);
 
-      await showSpinnerPage(context, this.name);
+      await showSpinnerPage(
+        context,
+        `Finalizing ${this.displayName} login...\nThis can take a few minutes.`
+      );
       const projectSlug = await createProject(page);
       await enableApis(page, projectSlug);
       await configureBranding(page, projectSlug);
