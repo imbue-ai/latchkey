@@ -2,7 +2,16 @@
  * Service registry for looking up services by name or URL.
  */
 
-import { Service, SLACK, DISCORD, DROPBOX, GITHUB, LINEAR, GOOGLE } from './services/index.js';
+import {
+  Service,
+  SLACK,
+  DISCORD,
+  DROPBOX,
+  GITHUB,
+  LINEAR,
+  NOTION,
+  GOOGLE,
+} from './services/index.js';
 
 export class Registry {
   readonly services: readonly Service[];
@@ -32,4 +41,4 @@ export class Registry {
   }
 }
 
-export const REGISTRY = new Registry([SLACK, DISCORD, DROPBOX, GITHUB, LINEAR, GOOGLE]);
+export const REGISTRY = new Registry([SLACK, DISCORD, DROPBOX, GITHUB, LINEAR, NOTION, GOOGLE]);
