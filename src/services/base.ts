@@ -50,6 +50,11 @@ export interface Service {
   readonly loginUrl: string;
 
   /**
+   * Developer notes about this service for agents and users.
+   */
+  readonly info: string;
+
+  /**
    * Check if the given API credentials are valid for this service.
    */
   checkApiCredentials(apiCredentials: ApiCredentials): ApiCredentialStatus;
