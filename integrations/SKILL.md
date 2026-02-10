@@ -1,7 +1,7 @@
 ---
 name: latchkey
 description: Interact with third-party services (Slack, Google Workspace, Dropbox, GitHub, Linear...) on user's behalf using their public APIs.
-compatibility: Requires node, curl, latchkey (npm install -g latchkey).
+compatibility: Requires node.js, curl, latchkey (npm install -g latchkey) and a desktop/GUI environment.
 ---
 
 # Latchkey
