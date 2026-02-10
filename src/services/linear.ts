@@ -51,7 +51,10 @@ class LinearServiceSession extends BrowserFollowupServiceSession {
     return this.isLoggedIn;
   }
 
-  protected async performBrowserFollowup(context: BrowserContext): Promise<ApiCredentials | null> {
+  protected async performBrowserFollowup(
+    context: BrowserContext,
+    _oldCredentials?: ApiCredentials
+  ): Promise<ApiCredentials | null> {
     const page = context.pages()[0];
     if (!page) {
       throw new LoginFailedError('No page available in browser context.');
@@ -87,6 +90,7 @@ class LinearServiceSession extends BrowserFollowupServiceSession {
 
 export class Linear implements Service {
   readonly name = 'linear';
+  readonly displayName = 'Linear';
   readonly baseApiUrls = ['https://api.linear.app/'] as const;
   readonly loginUrl = LINEAR_NEW_API_KEY_URL;
 

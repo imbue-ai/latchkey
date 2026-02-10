@@ -11,4 +11,5 @@ export { Discord, DISCORD } from './discord.js';
 export { Github, GITHUB } from './github.js';
 export { Dropbox, DROPBOX } from './dropbox.js';
 export { Linear, LINEAR } from './linear.js';
+export { Google, GOOGLE } from './google.js';
 export { Notion, NOTION } from './notion.js';

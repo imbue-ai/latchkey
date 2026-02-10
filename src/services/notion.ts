@@ -101,6 +101,7 @@ class NotionServiceSession extends BrowserFollowupServiceSession {
 
 export class Notion implements Service {
   readonly name = 'notion';
+  readonly displayName = 'Notion';
   readonly baseApiUrls = ['https://api.notion.com/'] as const;
   readonly loginUrl = NOTION_INTEGRATIONS_URL;
 

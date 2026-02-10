@@ -1,5 +1,6 @@
 /**
- * API credentials types and utilities for authentication with various services.
+ * Serialized API credentials types and utilities.
+ *
  */
 
 import { z } from 'zod';
@@ -17,6 +18,11 @@ export enum ApiCredentialStatus {
 export interface ApiCredentials {
   readonly objectType: string;
   asCurlArguments(): readonly string[];
+  /**
+   * Check if the credentials are expired.
+   * Returns true if expired, false if valid, or undefined if expiration is unknown.
+   */
+  isExpired(): boolean | undefined;
 }
 
 /**
@@ -39,6 +45,10 @@ export class AuthorizationBearer implements ApiCredentials {
 
   asCurlArguments(): readonly string[] {
     return ['-H', `Authorization: Bearer ${this.token}`];
+  }
+
+  isExpired(): boolean | undefined {
+    return undefined;
   }
 
   toJSON(): AuthorizationBearerData {
@@ -73,6 +83,10 @@ export class AuthorizationBare implements ApiCredentials {
 
   asCurlArguments(): readonly string[] {
     return ['-H', `Authorization: ${this.token}`];
+  }
+
+  isExpired(): boolean | undefined {
+    return undefined;
   }
 
   toJSON(): AuthorizationBareData {
@@ -112,6 +126,10 @@ export class SlackApiCredentials implements ApiCredentials {
     return ['-H', `Authorization: Bearer ${this.token}`, '-H', `Cookie: d=${this.dCookie}`];
   }
 
+  isExpired(): boolean | undefined {
+    return undefined;
+  }
+
   toJSON(): SlackApiCredentialsData {
     return {
       objectType: this.objectType,
@@ -126,12 +144,105 @@ export class SlackApiCredentials implements ApiCredentials {
 }
 
 /**
+ * OAuth 2.0 credentials (access token, refresh token, client ID, and client secret).
+ * Used by services that implement OAuth 2.0 authorization flows.
+ * Token attributes are optional - when only clientId and clientSecret are present,
+ * this represents credentials from the prepare() step before obtaining user tokens.
+ */
+export const OAuthCredentialsSchema = z.object({
+  objectType: z.literal('oauth'),
+  accessToken: z.string().optional(),
+  refreshToken: z.string().optional(),
+  clientId: z.string(),
+  clientSecret: z.string(),
+  accessTokenExpiresAt: z.string().optional(),
+  refreshTokenExpiresAt: z.string().optional(),
+});
+
+export type OAuthCredentialsData = z.infer<typeof OAuthCredentialsSchema>;
+
+export class OAuthCredentials implements ApiCredentials {
+  readonly objectType = 'oauth' as const;
+  readonly accessToken?: string;
+  readonly refreshToken?: string;
+  readonly clientId: string;
+  readonly clientSecret: string;
+  readonly accessTokenExpiresAt?: string;
+  readonly refreshTokenExpiresAt?: string;
+
+  constructor(
+    clientId: string,
+    clientSecret: string,
+    accessToken?: string,
+    refreshToken?: string,
+    accessTokenExpiresAt?: string,
+    refreshTokenExpiresAt?: string
+  ) {
+    this.clientId = clientId;
+    this.clientSecret = clientSecret;
+    this.accessToken = accessToken;
+    this.refreshToken = refreshToken;
+    this.accessTokenExpiresAt = accessTokenExpiresAt;
+    this.refreshTokenExpiresAt = refreshTokenExpiresAt;
+  }
+
+  asCurlArguments(): readonly string[] {
+    if (this.accessToken === undefined) {
+      throw new ApiCredentialsUsageError(
+        'OAuth credentials missing access token. Run login to obtain access tokens.'
+      );
+    }
+    return ['-H', `Authorization: Bearer ${this.accessToken}`];
+  }
+
+  isExpired(): boolean | undefined {
+    if (this.accessTokenExpiresAt === undefined) {
+      return undefined;
+    }
+    const expirationDate = new Date(this.accessTokenExpiresAt);
+    return Date.now() >= expirationDate.getTime();
+  }
+
+  toJSON(): OAuthCredentialsData {
+    const result: OAuthCredentialsData = {
+      objectType: this.objectType,
+      clientId: this.clientId,
+      clientSecret: this.clientSecret,
+      accessToken: this.accessToken,
+      refreshToken: this.refreshToken,
+      accessTokenExpiresAt: this.accessTokenExpiresAt,
+      refreshTokenExpiresAt: this.refreshTokenExpiresAt,
+    };
+    return result;
+  }
+
+  static fromJSON(data: OAuthCredentialsData): OAuthCredentials {
+    return new OAuthCredentials(
+      data.clientId,
+      data.clientSecret,
+      data.accessToken,
+      data.refreshToken,
+      data.accessTokenExpiresAt,
+      data.refreshTokenExpiresAt
+    );
+  }
+}
+
+export class ApiCredentialsUsageError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ApiCredentialsUsageError';
+  }
+}
+
+/**
  * Union schema for all credential types.
  */
 export const ApiCredentialsSchema = z.discriminatedUnion('objectType', [
   AuthorizationBearerSchema,
   AuthorizationBareSchema,
   SlackApiCredentialsSchema,
+  OAuthCredentialsSchema,
 ]);
 
 export type ApiCredentialsData = z.infer<typeof ApiCredentialsSchema>;
@@ -147,6 +258,8 @@ export function deserializeCredentials(data: ApiCredentialsData): ApiCredentials
       return AuthorizationBare.fromJSON(data);
     case 'slack':
       return SlackApiCredentials.fromJSON(data);
+    case 'oauth':
+      return OAuthCredentials.fromJSON(data);
     default: {
       const exhaustiveCheck: never = data;
       throw new ApiCredentialsSerializationError(
@@ -167,6 +280,9 @@ export function serializeCredentials(credentials: ApiCredentials): ApiCredential
     return credentials.toJSON();
   }
   if (credentials instanceof SlackApiCredentials) {
+    return credentials.toJSON();
+  }
+  if (credentials instanceof OAuthCredentials) {
     return credentials.toJSON();
   }
   throw new ApiCredentialsSerializationError(`Unknown credential type: ${credentials.objectType}`);

@@ -63,7 +63,10 @@ class GithubServiceSession extends BrowserFollowupServiceSession {
     return this.isLoggedIn;
   }
 
-  protected async performBrowserFollowup(context: BrowserContext): Promise<ApiCredentials | null> {
+  protected async performBrowserFollowup(
+    context: BrowserContext,
+    _oldCredentials?: ApiCredentials
+  ): Promise<ApiCredentials | null> {
     const page = context.pages()[0];
     if (!page) {
       throw new LoginFailedError('No page available in browser context.');
@@ -107,6 +110,7 @@ class GithubServiceSession extends BrowserFollowupServiceSession {
 
 export class Github implements Service {
   readonly name = 'github';
+  readonly displayName = 'GitHub';
   readonly baseApiUrls = ['https://api.github.com/'] as const;
   readonly loginUrl = GITHUB_NEW_TOKEN_URL;
 

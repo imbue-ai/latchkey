@@ -19,9 +19,29 @@ import { Config, CONFIG } from './config.js';
 import type { CurlResult } from './curl.js';
 import { EncryptedStorage } from './encryptedStorage.js';
 import { Registry, REGISTRY } from './registry.js';
-import { LoginCancelledError, LoginFailedError } from './services/index.js';
+import { LoginCancelledError, LoginFailedError, Service } from './services/index.js';
 import { run as curlRun } from './curl.js';
 import { getSkillMdContent } from './skillMd.js';
+
+/**
+ * Try to refresh expired credentials if the service supports it.
+ * Returns refreshed credentials if successful, otherwise returns the original credentials.
+ */
+async function maybeRefreshCredentials(
+  service: Service,
+  apiCredentials: ApiCredentials,
+  apiCredentialStore: ApiCredentialStore
+): Promise<ApiCredentials> {
+  if (apiCredentials.isExpired() !== true || !service.refreshCredentials) {
+    return apiCredentials;
+  }
+  const refreshedCredentials = await service.refreshCredentials(apiCredentials);
+  if (refreshedCredentials !== null) {
+    apiCredentialStore.save(service.name, refreshedCredentials);
+    return refreshedCredentials;
+  }
+  return apiCredentials;
+}
 
 // Curl flags that don't affect the HTTP request semantics but may not be supported by URL extraction.
 const CURL_PASSTHROUGH_FLAGS = new Set(['-v', '--verbose']);
@@ -271,7 +291,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .command('status')
     .description('Check the API credential status for a service.')
     .argument('[service_name]', 'Name of the service to check status for')
-    .action((serviceName: string | undefined) => {
+    .action(async (serviceName: string | undefined) => {
       const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
       const apiCredentialStore = new ApiCredentialStore(
         deps.config.credentialStorePath,
@@ -280,10 +300,15 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
 
       if (serviceName === undefined) {
         for (const service of deps.registry.services) {
-          const apiCredentials = apiCredentialStore.get(service.name);
+          let apiCredentials = apiCredentialStore.get(service.name);
           if (apiCredentials === null) {
             deps.log(`${service.name}: ${ApiCredentialStatus.Missing}`);
           } else {
+            apiCredentials = await maybeRefreshCredentials(
+              service,
+              apiCredentials,
+              apiCredentialStore
+            );
             const status = service.checkApiCredentials(apiCredentials);
             deps.log(`${service.name}: ${status}`);
           }
@@ -298,12 +323,14 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         deps.exit(1);
       }
 
-      const apiCredentials = apiCredentialStore.get(serviceName);
+      let apiCredentials = apiCredentialStore.get(serviceName);
 
       if (apiCredentials === null) {
         deps.log(ApiCredentialStatus.Missing);
         return;
       }
+
+      apiCredentials = await maybeRefreshCredentials(service, apiCredentials, apiCredentialStore);
 
       const apiCredentialStatus = service.checkApiCredentials(apiCredentials);
       deps.log(apiCredentialStatus);
@@ -327,15 +354,71 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         encryptedStorage
       );
 
+      const oldCredentials = apiCredentialStore.get(service.name);
+      if (service.prepare && oldCredentials === null) {
+        deps.errorLog(`Error: Service ${serviceName} requires preparation first.`);
+        deps.errorLog(`Run 'latchkey prepare ${serviceName}' before logging in.`);
+        deps.exit(1);
+      }
+
       const launchOptions = getBrowserLaunchOptionsOrExit(deps);
 
       try {
-        const apiCredentials = await service.getSession().login(encryptedStorage, launchOptions);
+        const apiCredentials = await service
+          .getSession()
+          .login(encryptedStorage, launchOptions, oldCredentials ?? undefined);
         apiCredentialStore.save(service.name, apiCredentials);
         deps.log('Done');
       } catch (error) {
         if (error instanceof LoginCancelledError) {
           deps.errorLog('Login cancelled.');
+          deps.exit(1);
+        }
+        if (error instanceof LoginFailedError) {
+          deps.errorLog(error.message);
+          deps.exit(1);
+        }
+        throw error;
+      }
+    });
+
+  program
+    .command('prepare')
+    .description('Prepare a service for use.')
+    .argument('<service_name>', 'Name of the service to prepare')
+    .action(async (serviceName: string) => {
+      const service = deps.registry.getByName(serviceName);
+      if (service === null) {
+        deps.errorLog(`Error: Unknown service: ${serviceName}`);
+        deps.errorLog("Use 'latchkey services' to see available services.");
+        deps.exit(1);
+      }
+
+      if (!service.prepare) {
+        deps.errorLog(`Error: Service ${serviceName} does not support the prepare command.`);
+        deps.exit(1);
+      }
+
+      const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
+      const apiCredentialStore = new ApiCredentialStore(
+        deps.config.credentialStorePath,
+        encryptedStorage
+      );
+      const launchOptions = getBrowserLaunchOptionsOrExit(deps);
+
+      const existingCredentials = apiCredentialStore.get(service.name);
+      if (existingCredentials !== null) {
+        deps.log('Already prepared.');
+        return;
+      }
+
+      try {
+        const apiCredentials = await service.prepare(encryptedStorage, launchOptions);
+        apiCredentialStore.save(service.name, apiCredentials);
+        deps.log('Done');
+      } catch (error) {
+        if (error instanceof LoginCancelledError) {
+          deps.errorLog('Preparation cancelled.');
           deps.exit(1);
         }
         if (error instanceof LoginFailedError) {
@@ -373,22 +456,49 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       );
       let apiCredentials: ApiCredentials | null = apiCredentialStore.get(service.name);
 
-      if (apiCredentials === null) {
-        const launchOptions = getBrowserLaunchOptionsOrExit(deps);
+      // Check if credentials exist but are expired
+      const isExpired = apiCredentials?.isExpired() === true;
 
-        try {
-          apiCredentials = await service.getSession().login(encryptedStorage, launchOptions);
-          apiCredentialStore.save(service.name, apiCredentials);
-        } catch (error) {
-          if (error instanceof LoginCancelledError) {
-            deps.errorLog('Login cancelled.');
-            deps.exit(1);
+      if (apiCredentials === null || isExpired) {
+        // Check if service requires preparation first
+        if (service.prepare && apiCredentials === null) {
+          deps.errorLog(`Error: Service ${service.name} requires preparation first.`);
+          deps.errorLog(`Run 'latchkey prepare ${service.name}' before using curl.`);
+          deps.exit(1);
+        }
+
+        // Try to refresh credentials if the service supports it and credentials are expired
+        if (isExpired && apiCredentials !== null) {
+          apiCredentials = await maybeRefreshCredentials(
+            service,
+            apiCredentials,
+            apiCredentialStore
+          );
+        }
+
+        // If we still don't have valid credentials, perform login
+        if (apiCredentials === null || apiCredentials.isExpired() === true) {
+          const launchOptions = getBrowserLaunchOptionsOrExit(deps);
+
+          try {
+            // Pass old credentials to login() if they're expired (to reuse client ID/secret)
+            const oldCredentials =
+              isExpired && apiCredentials !== null ? apiCredentials : undefined;
+            apiCredentials = await service
+              .getSession()
+              .login(encryptedStorage, launchOptions, oldCredentials);
+            apiCredentialStore.save(service.name, apiCredentials);
+          } catch (error) {
+            if (error instanceof LoginCancelledError) {
+              deps.errorLog('Login cancelled.');
+              deps.exit(1);
+            }
+            if (error instanceof LoginFailedError) {
+              deps.errorLog(error.message);
+              deps.exit(1);
+            }
+            throw error;
           }
-          if (error instanceof LoginFailedError) {
-            deps.errorLog(error.message);
-            deps.exit(1);
-          }
-          throw error;
         }
       }
 

@@ -60,10 +60,9 @@ export async function withTempBrowserContext<T>(
   const browser = await chromium.launch(playwrightLaunchOptions);
 
   try {
-    const contextOptions: { storageState?: string } = {};
-    if (initialStorageState !== undefined) {
-      contextOptions.storageState = initialStorageState;
-    }
+    const contextOptions: { storageState?: string } = {
+      storageState: initialStorageState,
+    };
     const context = await browser.newContext(contextOptions);
 
     const result = await callback({ browser, context });
@@ -108,7 +107,7 @@ export async function typeLikeHuman(page: Page, locator: Locator, text: string):
 }
 
 // Script that creates the spinner overlay, designed to run in browser context
-function createSpinnerOverlayScript(serviceName: string): string {
+function createSpinnerOverlayScript(message: string): string {
   return `
 (() => {
   if (document.getElementById('latchkey-spinner-overlay')) return;
@@ -143,13 +142,16 @@ function createSpinnerOverlayScript(serviceName: string): string {
         margin-top: 20px;
         color: #555;
         font-size: 16px;
+        text-align: center;
+        max-width: 80%;
+        white-space: pre-line;
       }
       @keyframes latchkey-spin {
         to { transform: rotate(360deg); }
       }
     </style>
     <div class="spinner"></div>
-    <div class="message">Finalizing ${serviceName} login...</div>
+    <div class="message">${message}</div>
   \`;
   document.body.appendChild(overlay);
 })()
@@ -162,11 +164,11 @@ function createSpinnerOverlayScript(serviceName: string): string {
  *
  * Can be disabled by setting LATCHKEY_DISABLE_SPINNER=1 environment variable.
  */
-export async function showSpinnerPage(context: BrowserContext, serviceName: string): Promise<void> {
+export async function showSpinnerPage(context: BrowserContext, message: string): Promise<void> {
   if (process.env.LATCHKEY_DISABLE_SPINNER === '1') {
     return;
   }
   const spinnerPage = await context.newPage();
-  await spinnerPage.evaluate(createSpinnerOverlayScript(serviceName));
+  await spinnerPage.evaluate(createSpinnerOverlayScript(message));
   await spinnerPage.bringToFront();
 }

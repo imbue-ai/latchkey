@@ -43,7 +43,10 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
     return this.isLoggedIn;
   }
 
-  protected async performBrowserFollowup(context: BrowserContext): Promise<ApiCredentials | null> {
+  protected async performBrowserFollowup(
+    context: BrowserContext,
+    _oldCredentials?: ApiCredentials
+  ): Promise<ApiCredentials | null> {
     const page = context.pages()[0];
     if (!page) {
       throw new LoginFailedError('No page available in browser context.');
@@ -127,6 +130,7 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
 
 export class Dropbox implements Service {
   readonly name = 'dropbox';
+  readonly displayName = 'Dropbox';
   readonly baseApiUrls = [
     'https://api.dropboxapi.com/',
     'https://content.dropboxapi.com/',
