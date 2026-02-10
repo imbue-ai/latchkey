@@ -4,14 +4,23 @@
 
 import { writeFileSync } from 'node:fs';
 import type { Request, Response } from 'playwright';
-import type { RequestMetadata } from './types.js';
+import type { RecordingPhase, RequestMetadata } from './types.js';
 
 export class RequestMetadataCollector {
   private readonly requests: RequestMetadata[] = [];
   private readonly outputPath: string;
+  private currentPhase: RecordingPhase = 'pre-login';
 
   constructor(outputPath: string) {
     this.outputPath = outputPath;
+  }
+
+  setPhase(phase: RecordingPhase): void {
+    this.currentPhase = phase;
+  }
+
+  getPhase(): RecordingPhase {
+    return this.currentPhase;
   }
 
   addRequest(request: Request, response: Response | null): void {
@@ -42,6 +51,7 @@ export class RequestMetadataCollector {
       responseHeaders,
       statusCode: response?.status() ?? 0,
       timestamp: new Date().toISOString(),
+      phase: this.currentPhase,
     };
 
     this.requests.push(metadata);

@@ -4,6 +4,10 @@
  * - Always generates TypeScript code
  * - Records all HTTP request metadata to a file
  * - Includes a custom toolbar with additional buttons
+ *
+ * The session has two phases:
+ * - Pre-login: User interactions are recorded
+ * - Post-login: Only HTTP requests are captured (no action recording)
  */
 
 import type { BrowserContext, Page, Request, Response } from 'playwright';
@@ -13,17 +17,19 @@ import { CodeGenerator } from './codeGenerator.js';
 import { createRecorderScript } from './recorderScript.js';
 import { RequestMetadataCollector } from './requestMetadataCollector.js';
 import { createToolbarScript } from './toolbarScript.js';
-import type { CodegenOptions, RecordedAction } from './types.js';
+import type { CodegenOptions, CodegenResult, RecordedAction, RecordingPhase } from './types.js';
 
 // Re-export types for external use
-export type { CodegenOptions, RecordedAction, RequestMetadata } from './types.js';
+export type { CodegenOptions, CodegenResult, RecordedAction, RecordingPhase, RequestMetadata } from './types.js';
 export { CodegenError } from './types.js';
 
 /**
  * Run the codegen which opens a browser with recording enabled.
  * Injects a custom toolbar and records user actions and HTTP request metadata.
+ *
+ * @returns Result containing the API key selector if selected by the user
  */
-export async function runCodegen(options: CodegenOptions): Promise<void> {
+export async function runCodegen(options: CodegenOptions): Promise<CodegenResult> {
   const outputFile = options.outputFile ?? 'tmp.js';
   const requestsFile = options.requestsFile ?? 'requests.json';
 
@@ -40,6 +46,10 @@ export async function runCodegen(options: CodegenOptions): Promise<void> {
 
   const requestCollector = new RequestMetadataCollector(requestsFile);
   const codeGenerator = new CodeGenerator(outputFile);
+
+  // Session state
+  let currentPhase: RecordingPhase = 'pre-login';
+  let apiKeySelector: string | undefined;
 
   // Track HTTP requests and responses
   context.on('response', (response: Response) => {
@@ -58,9 +68,15 @@ export async function runCodegen(options: CodegenOptions): Promise<void> {
   await context.addInitScript(recorderScript + toolbarScript);
 
   // Expose function to receive recorded actions from the page
+  // Only records actions during pre-login phase
   await context.exposeFunction(
     '__latchkeyRecordAction',
     (action: { type: string; selector?: string; value?: string; key?: string; url?: string }) => {
+      // Only record actions during pre-login phase
+      if (currentPhase === 'post-login') {
+        return;
+      }
+
       codeGenerator.addAction({
         type: action.type as RecordedAction['type'],
         selector: action.selector,
@@ -72,17 +88,27 @@ export async function runCodegen(options: CodegenOptions): Promise<void> {
     }
   );
 
-  // Expose toolbar button callbacks
-  await context.exposeFunction('__latchkeyToggleRecording', () => {
-    console.log('[Latchkey] Toggle recording clicked');
+  // Expose function to get current phase (called by toolbar)
+  await context.exposeFunction('__latchkeyGetPhase', () => {
+    return currentPhase;
   });
 
-  await context.exposeFunction('__latchkeyInspect', () => {
-    console.log('[Latchkey] Inspect clicked');
+  // Expose function called when "Ready to Log In" is clicked
+  await context.exposeFunction('__latchkeySetWaitingForLogin', (_waiting: boolean) => {
+    console.log('[Latchkey] Waiting for login button click...');
   });
 
-  await context.exposeFunction('__latchkeyFoo', () => {
-    console.log('[Latchkey] Foo clicked');
+  // Expose function called when the login button is clicked
+  await context.exposeFunction('__latchkeyLoginClicked', () => {
+    console.log('[Latchkey] Login button clicked - transitioning to post-login phase');
+    currentPhase = 'post-login';
+    requestCollector.setPhase('post-login');
+  });
+
+  // Expose function called when API key element is selected
+  await context.exposeFunction('__latchkeyApiKeyElementSelected', (selector: string) => {
+    console.log(`[Latchkey] API key element selected: ${selector}`);
+    apiKeySelector = selector;
   });
 
   const page: Page = await context.newPage();
@@ -113,10 +139,10 @@ export async function runCodegen(options: CodegenOptions): Promise<void> {
     void injectToolbarIfNeeded(page);
   });
 
-  // Track navigations
+  // Track navigations (only during pre-login phase)
   page.on('framenavigated', (frame) => {
-    // Only track main frame navigations
-    if (frame === page.mainFrame()) {
+    // Only track main frame navigations during pre-login
+    if (frame === page.mainFrame() && currentPhase === 'pre-login') {
       const url = frame.url();
       // Don't record about:blank or the initial navigation (already recorded above)
       if (url && url !== 'about:blank' && url !== options.url) {
@@ -146,4 +172,9 @@ export async function runCodegen(options: CodegenOptions): Promise<void> {
 
   console.log(`Generated code saved to: ${outputFile}`);
   console.log(`Request metadata saved to: ${requestsFile}`);
+  if (apiKeySelector) {
+    console.log(`API key element selector: ${apiKeySelector}`);
+  }
+
+  return { apiKeySelector };
 }

@@ -11,6 +11,11 @@ export function createToolbarScript(): string {
     // Don't inject twice (in case of race condition)
     if (document.getElementById('latchkey-recorder-toolbar')) return;
 
+    // State
+    let isWaitingForLoginClick = false;
+    let isSelectingApiKeyElement = false;
+    let highlightOverlay = null;
+
     // Create styles
     const style = document.createElement('style');
     style.textContent = \`
@@ -49,6 +54,7 @@ export function createToolbarScript(): string {
         display: flex;
         align-items: center;
         gap: 6px;
+        white-space: nowrap;
       }
 
       .latchkey-toolbar-button:hover {
@@ -60,14 +66,19 @@ export function createToolbarScript(): string {
         background: #555;
       }
 
-      .latchkey-toolbar-button.recording {
-        background: #dc3545;
-        border-color: #dc3545;
+      .latchkey-toolbar-button.active {
+        background: #2563eb;
+        border-color: #3b82f6;
       }
 
-      .latchkey-toolbar-button.recording:hover {
-        background: #c82333;
-        border-color: #bd2130;
+      .latchkey-toolbar-button.active:hover {
+        background: #1d4ed8;
+        border-color: #2563eb;
+      }
+
+      .latchkey-toolbar-button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
       }
 
       .latchkey-toolbar-separator {
@@ -87,12 +98,21 @@ export function createToolbarScript(): string {
         color: #ff6b6b;
       }
 
+      .latchkey-toolbar-status.post-login {
+        color: #4ade80;
+      }
+
       .latchkey-recording-dot {
         width: 8px;
         height: 8px;
         background: #ff4444;
         border-radius: 50%;
         animation: latchkey-pulse 1.5s infinite;
+      }
+
+      .latchkey-recording-dot.post-login {
+        background: #4ade80;
+        animation: none;
       }
 
       @keyframes latchkey-pulse {
@@ -112,10 +132,30 @@ export function createToolbarScript(): string {
         width: 16px;
         height: 16px;
       }
+
+      #latchkey-highlight-overlay {
+        position: fixed;
+        pointer-events: none;
+        border: 2px solid #f43f5e;
+        background: rgba(244, 63, 94, 0.1);
+        z-index: 2147483646;
+        transition: all 0.05s ease-out;
+      }
+
+      #latchkey-highlight-overlay.api-key {
+        border-color: #22c55e;
+        background: rgba(34, 197, 94, 0.1);
+      }
     \`;
 
     // Add styles to head (or documentElement if head doesn't exist)
     (document.head || document.documentElement).appendChild(style);
+
+    // Create highlight overlay for element picker
+    highlightOverlay = document.createElement('div');
+    highlightOverlay.id = 'latchkey-highlight-overlay';
+    highlightOverlay.style.display = 'none';
+    document.body.appendChild(highlightOverlay);
 
     // Create toolbar
     const toolbar = document.createElement('div');
@@ -139,7 +179,7 @@ export function createToolbarScript(): string {
     // Status text
     const status = document.createElement('span');
     status.className = 'latchkey-toolbar-status recording';
-    status.textContent = 'Recording';
+    status.textContent = 'Recording (pre-login)';
     toolbar.appendChild(status);
 
     // Separator
@@ -147,58 +187,155 @@ export function createToolbarScript(): string {
     sep1.className = 'latchkey-toolbar-separator';
     toolbar.appendChild(sep1);
 
-    // Record button (toggle)
-    const recordBtn = document.createElement('button');
-    recordBtn.className = 'latchkey-toolbar-button recording';
-    recordBtn.innerHTML = \`
+    // "Ready to Log In" button
+    const loginBtn = document.createElement('button');
+    loginBtn.className = 'latchkey-toolbar-button';
+    loginBtn.innerHTML = \`
       <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-        <circle cx="8" cy="8" r="6"/>
+        <path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm2-3a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm4 8c0 1-1 1-1 1H3s-1 0-1-1 1-4 6-4 6 3 6 4zm-1-.004c-.001-.246-.154-.986-.832-1.664C11.516 10.68 10.289 10 8 10c-2.29 0-3.516.68-4.168 1.332-.678.678-.83 1.418-.832 1.664h10z"/>
       </svg>
-      Record
+      Ready to Log In
     \`;
-    recordBtn.title = 'Toggle recording';
-    recordBtn.onclick = () => {
-      window.__latchkeyToggleRecording && window.__latchkeyToggleRecording();
+    loginBtn.title = 'Click this, then click the login button on the page';
+    loginBtn.onclick = () => {
+      if (isSelectingApiKeyElement) return;
+      isWaitingForLoginClick = true;
+      loginBtn.classList.add('active');
+      status.textContent = 'Click the login button...';
+      window.__latchkeySetWaitingForLogin && window.__latchkeySetWaitingForLogin(true);
     };
-    toolbar.appendChild(recordBtn);
+    toolbar.appendChild(loginBtn);
 
-    // Inspect button
-    const inspectBtn = document.createElement('button');
-    inspectBtn.className = 'latchkey-toolbar-button';
-    inspectBtn.innerHTML = \`
+    // "Select API Key Element" button
+    const apiKeyBtn = document.createElement('button');
+    apiKeyBtn.className = 'latchkey-toolbar-button';
+    apiKeyBtn.innerHTML = \`
       <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
         <path fill-rule="evenodd" clip-rule="evenodd" d="M1 3l1-1h12l1 1v6h-1V3H2v8h5v1H2l-1-1V3zm14.707 9.707L9 6v9.414l2.707-2.707h4zM10 13V8.414l3.293 3.293h-2L10 13z"/>
       </svg>
-      Inspect
+      Select API Key Element
     \`;
-    inspectBtn.title = 'Pick locator';
-    inspectBtn.onclick = () => {
-      window.__latchkeyInspect && window.__latchkeyInspect();
+    apiKeyBtn.title = 'Click to select the element containing the API key';
+    apiKeyBtn.onclick = () => {
+      if (isWaitingForLoginClick) return;
+      isSelectingApiKeyElement = !isSelectingApiKeyElement;
+      apiKeyBtn.classList.toggle('active', isSelectingApiKeyElement);
+      highlightOverlay.style.display = isSelectingApiKeyElement ? 'block' : 'none';
+      highlightOverlay.classList.add('api-key');
+      if (isSelectingApiKeyElement) {
+        status.textContent = 'Click the API key element...';
+      } else {
+        updateStatusText();
+      }
     };
-    toolbar.appendChild(inspectBtn);
-
-    // Separator
-    const sep2 = document.createElement('div');
-    sep2.className = 'latchkey-toolbar-separator';
-    toolbar.appendChild(sep2);
-
-    // Foo button (custom)
-    const fooBtn = document.createElement('button');
-    fooBtn.className = 'latchkey-toolbar-button';
-    fooBtn.innerHTML = \`
-      <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-        <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zM7 4h2v5H7V4zm0 6h2v2H7v-2z"/>
-      </svg>
-      Foo
-    \`;
-    fooBtn.title = 'Foo button (placeholder)';
-    fooBtn.onclick = () => {
-      window.__latchkeyFoo && window.__latchkeyFoo();
-    };
-    toolbar.appendChild(fooBtn);
+    toolbar.appendChild(apiKeyBtn);
 
     // Append toolbar to body
     document.body.appendChild(toolbar);
+
+    // Function to update status text based on current phase
+    function updateStatusText() {
+      const phase = window.__latchkeyGetPhase ? window.__latchkeyGetPhase() : 'pre-login';
+      if (phase === 'post-login') {
+        status.textContent = 'Post-login (not recording)';
+        status.className = 'latchkey-toolbar-status post-login';
+        recordingDot.classList.add('post-login');
+        loginBtn.disabled = true;
+      } else {
+        status.textContent = 'Recording (pre-login)';
+        status.className = 'latchkey-toolbar-status recording';
+        recordingDot.classList.remove('post-login');
+      }
+    }
+
+    // Element picker: highlight on mousemove
+    document.addEventListener('mousemove', (e) => {
+      if (!isSelectingApiKeyElement) return;
+
+      const target = e.target;
+      if (!target || target === highlightOverlay || toolbar.contains(target)) {
+        highlightOverlay.style.display = 'none';
+        return;
+      }
+
+      const rect = target.getBoundingClientRect();
+      highlightOverlay.style.display = 'block';
+      highlightOverlay.style.left = rect.left + 'px';
+      highlightOverlay.style.top = rect.top + 'px';
+      highlightOverlay.style.width = rect.width + 'px';
+      highlightOverlay.style.height = rect.height + 'px';
+    }, true);
+
+    // Element picker: select on click
+    document.addEventListener('click', (e) => {
+      // Handle login button click detection
+      if (isWaitingForLoginClick) {
+        const target = e.target;
+        if (target && !toolbar.contains(target)) {
+          isWaitingForLoginClick = false;
+          loginBtn.classList.remove('active');
+          window.__latchkeyLoginClicked && window.__latchkeyLoginClicked();
+          updateStatusText();
+          // Don't prevent default - let the actual login click through
+          return;
+        }
+      }
+
+      // Handle API key element selection
+      if (isSelectingApiKeyElement) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const target = e.target;
+        if (!target || target === highlightOverlay || toolbar.contains(target)) {
+          return;
+        }
+
+        isSelectingApiKeyElement = false;
+        apiKeyBtn.classList.remove('active');
+        highlightOverlay.style.display = 'none';
+
+        // Generate selector for the element
+        const selector = generateSelector(target);
+        window.__latchkeyApiKeyElementSelected && window.__latchkeyApiKeyElementSelected(selector);
+        updateStatusText();
+      }
+    }, true);
+
+    // Generate a CSS selector for an element
+    function generateSelector(element) {
+      // Try data-testid first
+      if (element.dataset && element.dataset.testid) {
+        return '[data-testid="' + element.dataset.testid + '"]';
+      }
+
+      // Try id
+      if (element.id) {
+        return '#' + CSS.escape(element.id);
+      }
+
+      // Try unique class combination
+      if (element.className && typeof element.className === 'string') {
+        const classes = element.className.trim().split(/\\s+/).filter(c => c.length > 0);
+        if (classes.length > 0) {
+          const selector = '.' + classes.map(c => CSS.escape(c)).join('.');
+          if (document.querySelectorAll(selector).length === 1) {
+            return selector;
+          }
+        }
+      }
+
+      // Fall back to tag + nth-child
+      const parent = element.parentElement;
+      if (parent) {
+        const siblings = Array.from(parent.children);
+        const index = siblings.indexOf(element) + 1;
+        const parentSelector = parent === document.body ? 'body' : generateSelector(parent);
+        return parentSelector + ' > ' + element.tagName.toLowerCase() + ':nth-child(' + index + ')';
+      }
+
+      return element.tagName.toLowerCase();
+    }
 
     // Make toolbar draggable
     let isDragging = false;
@@ -226,6 +363,9 @@ export function createToolbarScript(): string {
     document.addEventListener('mouseup', () => {
       isDragging = false;
     });
+
+    // Expose function to update UI when phase changes
+    window.__latchkeyUpdatePhase = updateStatusText;
   }
 
   // Wait for DOM to be ready

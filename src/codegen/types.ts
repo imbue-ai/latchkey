@@ -3,6 +3,13 @@
  */
 
 /**
+ * Phase of the recording session.
+ * - 'pre-login': Before the user clicks the login button
+ * - 'post-login': After the user clicks the login button
+ */
+export type RecordingPhase = 'pre-login' | 'post-login';
+
+/**
  * Represents HTTP request metadata captured during recording.
  */
 export interface RequestMetadata {
@@ -13,6 +20,7 @@ export interface RequestMetadata {
   readonly responseHeaders: Record<string, string>;
   readonly statusCode: number;
   readonly timestamp: string;
+  readonly phase: RecordingPhase;
 }
 
 /**
@@ -46,6 +54,14 @@ export interface RecordedAction {
   readonly value?: string;
   readonly key?: string;
   readonly timestamp: number;
+}
+
+/**
+ * Result of the codegen session.
+ */
+export interface CodegenResult {
+  /** Selector for the API key element, if selected by the user. */
+  readonly apiKeySelector?: string;
 }
 
 export class CodegenError extends Error {
