@@ -593,9 +593,6 @@ export class Google implements Service {
   readonly displayName = 'Google Workspace';
   readonly baseApiUrls = ['https://www.googleapis.com/'] as const;
   readonly loginUrl = 'https://console.cloud.google.com/';
-  readonly info =
-    'Provides OAuth credentials for Google Workspace APIs: Gmail, Calendar, Drive, Sheets, Docs, and Contacts. ' +
-    'If needed, run "latchkey prepare google" to create an OAuth client first.';
 
   readonly credentialCheckCurlArguments = [
     'https://www.googleapis.com/oauth2/v1/userinfo',
