@@ -571,11 +571,16 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     const redirectUri = `http://localhost:${port.toString()}/oauth2callback`;
     const codePromise = waitForOAuthCallback(port, LOGIN_TIMEOUT_MS);
 
-    // Create a promise that rejects when the browser context is closed
+    // Create a promise that rejects when the browser context is closed.
+    // We need to track the handler so we can remove it after the race completes,
+    // otherwise it will fire when the context is closed normally and cause an
+    // unhandled rejection.
+    let contextCloseHandler: (() => void) | undefined;
     const contextClosedPromise = new Promise<never>((_resolve, reject) => {
-      context.on('close', () => {
+      contextCloseHandler = () => {
         reject(new LoginCancelledError());
-      });
+      };
+      context.on('close', contextCloseHandler);
     });
 
     const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
@@ -589,7 +594,16 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     await page.goto(authUrl.toString());
 
     // Race the OAuth callback against browser context close
-    const code = await Promise.race([codePromise, contextClosedPromise]);
+    let code: string;
+    try {
+      code = await Promise.race([codePromise, contextClosedPromise]);
+    } finally {
+      // Remove the close handler to prevent unhandled rejection when context
+      // is closed normally during cleanup
+      if (contextCloseHandler) {
+        context.off('close', contextCloseHandler);
+      }
+    }
     const tokens = exchangeCodeForTokens(code, clientId, clientSecret, redirectUri);
     const accessTokenExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
