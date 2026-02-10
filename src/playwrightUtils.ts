@@ -61,7 +61,7 @@ export async function withTempBrowserContext<T>(
 
   try {
     const contextOptions: { storageState?: string } = {
-      storageState: initialStorageState
+      storageState: initialStorageState,
     };
     const context = await browser.newContext(contextOptions);
 
