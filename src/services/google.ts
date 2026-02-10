@@ -2,6 +2,7 @@
  * Google service implementation with OAuth flow.
  */
 
+import fs from 'node:fs/promises';
 import type { Browser, BrowserContext, Page, Response } from 'playwright';
 import { ApiCredentialStatus, ApiCredentials, OAuthCredentials } from '../apiCredentials.js';
 import {
@@ -478,7 +479,6 @@ async function createOAuthClient(page: Page): Promise<{ clientId: string; client
     throw new LoginFailedError('Failed to download client_secret.json');
   }
 
-  const fs = await import('node:fs/promises');
   const content = await fs.readFile(path, 'utf-8');
 
   return parseClientSecretJson(content);
