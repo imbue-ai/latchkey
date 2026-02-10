@@ -22,7 +22,7 @@ import { Registry, REGISTRY } from './registry.js';
 import { LoginCancelledError, LoginFailedError, Service } from './services/index.js';
 import { run as curlRun } from './curl.js';
 import { getSkillMdContent } from './skillMd.js';
-import { runCodegen } from './codegen.js';
+import { runCodegen } from './codegen/index.js';
 
 /**
  * Try to refresh expired credentials if the service supports it.
