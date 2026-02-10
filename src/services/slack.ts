@@ -54,6 +54,9 @@ export class Slack implements Service {
   readonly displayName = 'Slack';
   readonly baseApiUrls = ['https://slack.com/api/'] as const;
   readonly loginUrl = 'https://slack.com/signin';
+  readonly info =
+    'https://docs.slack.dev/apis/web-api/. ' +
+    'Credentials are extracted from the user session, not a bot token.';
 
   readonly credentialCheckCurlArguments = ['https://slack.com/api/auth.test'] as const;
 
