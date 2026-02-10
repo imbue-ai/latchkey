@@ -592,12 +592,14 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     refreshTokenExpiresAt?: string;
   }> {
     // Use an AbortController to signal the OAuth callback server to shut down
-    // when the browser context is closed.
+    // when the browser is closed. Listen to both page and context close events
+    // to handle all cases where the user might close the browser.
     const abortController = new AbortController();
-    const contextCloseHandler = () => {
+    const closeHandler = () => {
       abortController.abort();
     };
-    context.on('close', contextCloseHandler);
+    page.on('close', closeHandler);
+    context.on('close', closeHandler);
 
     try {
       const port = await findAvailablePort(8080);
@@ -631,9 +633,10 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
       }
       throw error;
     } finally {
-      // Remove the close handler to prevent it from firing when context
+      // Remove the close handlers to prevent them from firing when context
       // is closed normally during cleanup
-      context.off('close', contextCloseHandler);
+      page.off('close', closeHandler);
+      context.off('close', closeHandler);
     }
   }
 }
