@@ -140,13 +140,32 @@ async function findAvailablePort(startPort: number, maxAttempts = 10): Promise<n
  * Start a temporary HTTP server to receive OAuth callback.
  * Returns a promise that resolves with the authorization code.
  * The server is always closed before the function returns.
+ * @param port - Port to listen on
+ * @param timeoutMs - Timeout in milliseconds
+ * @param signal - Optional AbortSignal to cancel the server early
  */
-async function waitForOAuthCallback(port: number, timeoutMs: number): Promise<string> {
+async function waitForOAuthCallback(
+  port: number,
+  timeoutMs: number,
+  signal?: AbortSignal
+): Promise<string> {
   const server = http.createServer();
   let timeout: NodeJS.Timeout | undefined;
 
   try {
     return await new Promise<string>((resolve, reject) => {
+      const abortHandler = () => {
+        reject(new LoginCancelledError());
+      };
+
+      if (signal) {
+        if (signal.aborted) {
+          reject(new LoginCancelledError());
+          return;
+        }
+        signal.addEventListener('abort', abortHandler, { once: true });
+      }
+
       server.on('request', (req, res) => {
         const parsedUrl = new URL(req.url ?? '', `http://localhost:${port.toString()}`);
 
@@ -156,10 +175,12 @@ async function waitForOAuthCallback(port: number, timeoutMs: number): Promise<st
           if (code) {
             res.writeHead(200, { 'Content-Type': 'text/plain' });
             res.end('OK');
+            signal?.removeEventListener('abort', abortHandler);
             resolve(code);
           } else {
             res.writeHead(400, { 'Content-Type': 'text/plain' });
             res.end('ERROR');
+            signal?.removeEventListener('abort', abortHandler);
             reject(new LoginFailedError('No authorization code received from OAuth callback.'));
           }
         } else {
@@ -169,10 +190,12 @@ async function waitForOAuthCallback(port: number, timeoutMs: number): Promise<st
       });
 
       timeout = setTimeout(() => {
+        signal?.removeEventListener('abort', abortHandler);
         reject(new OAuthCallbackServerTimeoutError());
       }, timeoutMs);
 
       server.on('error', (error) => {
+        signal?.removeEventListener('abort', abortHandler);
         reject(error);
       });
 
@@ -567,22 +590,17 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     accessTokenExpiresAt?: string;
     refreshTokenExpiresAt?: string;
   }> {
-    // Create a promise that rejects when the browser context is closed.
-    // We need to track the handler so we can remove it after the flow completes,
-    // otherwise it will fire when the context is closed normally and cause an
-    // unhandled rejection.
-    let contextCloseHandler: (() => void) | undefined;
-    const contextClosedPromise = new Promise<never>((_resolve, reject) => {
-      contextCloseHandler = () => {
-        reject(new LoginCancelledError());
-      };
-      context.on('close', contextCloseHandler);
-    });
+    // Use an AbortController to signal the OAuth callback server to shut down
+    // when the browser context is closed.
+    const abortController = new AbortController();
+    const contextCloseHandler = () => {
+      abortController.abort();
+    };
+    context.on('close', contextCloseHandler);
 
     try {
       const port = await findAvailablePort(8080);
       const redirectUri = `http://localhost:${port.toString()}/oauth2callback`;
-      const codePromise = waitForOAuthCallback(port, LOGIN_TIMEOUT_MS);
 
       const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
       authUrl.searchParams.set('client_id', clientId);
@@ -592,11 +610,11 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
       authUrl.searchParams.set('access_type', 'offline');
       authUrl.searchParams.set('prompt', 'consent');
 
-      // Race the page navigation against browser context close
-      await Promise.race([page.goto(authUrl.toString()), contextClosedPromise]);
+      await page.goto(authUrl.toString());
 
-      // Race the OAuth callback against browser context close
-      const code = await Promise.race([codePromise, contextClosedPromise]);
+      // Wait for OAuth callback, passing the abort signal so the server
+      // can be shut down if the browser is closed
+      const code = await waitForOAuthCallback(port, LOGIN_TIMEOUT_MS, abortController.signal);
       const tokens = exchangeCodeForTokens(code, clientId, clientSecret, redirectUri);
       const accessTokenExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
@@ -607,11 +625,9 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
         accessTokenExpiresAt,
       };
     } finally {
-      // Remove the close handler to prevent unhandled rejection when context
+      // Remove the close handler to prevent it from firing when context
       // is closed normally during cleanup
-      if (contextCloseHandler) {
-        context.off('close', contextCloseHandler);
-      }
+      context.off('close', contextCloseHandler);
     }
   }
 }
