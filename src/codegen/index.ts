@@ -115,13 +115,13 @@ export async function runCodegen(options: CodegenOptions): Promise<void> {
 
   // Wait for browser to close
   await new Promise<void>((resolve) => {
-    browser.on('disconnected', () => {
+    const cleanup = () => {
       resolve();
-    });
+    };
 
-    context.on('close', () => {
-      resolve();
-    });
+    browser.on('disconnected', cleanup);
+    context.on('close', cleanup);
+    page.on('close', cleanup);
   });
 
   // Final flush of collected data

@@ -191,7 +191,18 @@ export function createToolbarScript(): string {
   };
   toolbar.appendChild(fooBtn);
 
-  document.body.appendChild(toolbar);
+  // Wait for body to be ready before appending
+  function appendToolbar() {
+    if (document.body) {
+      document.body.appendChild(toolbar);
+    } else {
+      // If body not ready, wait for DOMContentLoaded
+      document.addEventListener('DOMContentLoaded', () => {
+        document.body.appendChild(toolbar);
+      });
+    }
+  }
+  appendToolbar();
 
   // Make toolbar draggable
   let isDragging = false;
