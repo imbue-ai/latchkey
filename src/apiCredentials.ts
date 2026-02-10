@@ -22,7 +22,7 @@ export interface ApiCredentials {
    * Check if the credentials are expired.
    * Returns true if expired, false if valid, or undefined if expiration is unknown.
    */
-  isExpired?(): boolean;
+  isExpired(): boolean | undefined;
 }
 
 /**
@@ -45,6 +45,10 @@ export class AuthorizationBearer implements ApiCredentials {
 
   asCurlArguments(): readonly string[] {
     return ['-H', `Authorization: Bearer ${this.token}`];
+  }
+
+  isExpired(): boolean | undefined {
+    return undefined;
   }
 
   toJSON(): AuthorizationBearerData {
@@ -79,6 +83,10 @@ export class AuthorizationBare implements ApiCredentials {
 
   asCurlArguments(): readonly string[] {
     return ['-H', `Authorization: ${this.token}`];
+  }
+
+  isExpired(): boolean | undefined {
+    return undefined;
   }
 
   toJSON(): AuthorizationBareData {
@@ -116,6 +124,10 @@ export class SlackApiCredentials implements ApiCredentials {
 
   asCurlArguments(): readonly string[] {
     return ['-H', `Authorization: Bearer ${this.token}`, '-H', `Cookie: d=${this.dCookie}`];
+  }
+
+  isExpired(): boolean | undefined {
+    return undefined;
   }
 
   toJSON(): SlackApiCredentialsData {
@@ -191,9 +203,9 @@ export class OAuthCredentials implements ApiCredentials {
     return ['-H', `Authorization: Bearer ${this.accessToken}`];
   }
 
-  isExpired(): boolean {
+  isExpired(): boolean | undefined {
     if (this.accessTokenExpiresAt === undefined) {
-      return false;
+      return undefined;
     }
     const expirationDate = new Date(this.accessTokenExpiresAt);
     return Date.now() >= expirationDate.getTime();

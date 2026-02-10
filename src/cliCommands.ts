@@ -32,7 +32,7 @@ async function maybeRefreshCredentials(
   apiCredentials: ApiCredentials,
   apiCredentialStore: ApiCredentialStore
 ): Promise<ApiCredentials> {
-  if (!apiCredentials.isExpired?.() || !service.refreshCredentials) {
+  if (apiCredentials.isExpired() !== true || !service.refreshCredentials) {
     return apiCredentials;
   }
   const refreshedCredentials = await service.refreshCredentials(apiCredentials);
@@ -457,7 +457,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       let apiCredentials: ApiCredentials | null = apiCredentialStore.get(service.name);
 
       // Check if credentials exist but are expired
-      const isExpired = apiCredentials?.isExpired?.() ?? false;
+      const isExpired = apiCredentials?.isExpired() === true;
 
       if (apiCredentials === null || isExpired) {
         // Check if service requires preparation first
@@ -477,7 +477,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         }
 
         // If we still don't have valid credentials, perform login
-        if (apiCredentials === null || apiCredentials.isExpired?.()) {
+        if (apiCredentials === null || apiCredentials.isExpired() === true) {
           const launchOptions = getBrowserLaunchOptionsOrExit(deps);
 
           try {
