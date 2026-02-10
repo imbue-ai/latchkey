@@ -14,9 +14,8 @@ import {
 import { runCaptured } from '../curl.js';
 import {
   exchangeCodeForTokens,
-  findAvailablePort,
   refreshAccessToken,
-  waitForOAuthCallback,
+  startOAuthCallbackServer,
 } from '../oauthUtils.js';
 import {
   Service,
@@ -366,7 +365,11 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     context.on('close', closeHandler);
 
     try {
-      const port = await findAvailablePort(8080);
+      // Start the callback server first to get the auto-assigned port
+      const { port, codePromise } = await startOAuthCallbackServer(
+        LOGIN_TIMEOUT_MS,
+        abortController.signal
+      );
       const redirectUri = `http://localhost:${port.toString()}/oauth2callback`;
 
       const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
@@ -379,9 +382,8 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
 
       await page.goto(authUrl.toString());
 
-      // Wait for OAuth callback, passing the abort signal so the server
-      // can be shut down if the browser is closed
-      const code = await waitForOAuthCallback(port, LOGIN_TIMEOUT_MS, abortController.signal);
+      // Wait for the authorization code from the callback
+      const code = await codePromise;
       const tokens = exchangeCodeForTokens(
         GOOGLE_TOKEN_ENDPOINT,
         code,

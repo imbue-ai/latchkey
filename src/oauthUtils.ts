@@ -27,128 +27,108 @@ export class OAuthCallbackServerTimeoutError extends Error {
   }
 }
 
-export class PortUnavailableError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'PortUnavailableError';
-  }
-}
-
-/**
- * Find an available port starting from the specified port.
- * Tries ports sequentially until it finds one that's available.
- */
-export async function findAvailablePort(startPort: number, maxAttempts = 10): Promise<number> {
-  for (let port = startPort; port < startPort + maxAttempts; port++) {
-    try {
-      await new Promise<void>((resolve, reject) => {
-        const testServer = http.createServer();
-
-        testServer.once('error', (error: NodeJS.ErrnoException) => {
-          if (error.code === 'EADDRINUSE') {
-            reject(error);
-          } else {
-            reject(error);
-          }
-        });
-
-        testServer.once('listening', () => {
-          testServer.close(() => {
-            resolve();
-          });
-        });
-
-        testServer.listen(port, 'localhost');
-      });
-
-      return port;
-    } catch (error: unknown) {
-      if (error instanceof Error && 'code' in error && error.code === 'EADDRINUSE') {
-        continue;
-      }
-      throw error;
-    }
-  }
-
-  throw new PortUnavailableError(
-    `Could not find an available port in range ${startPort.toString()}-${(startPort + maxAttempts - 1).toString()}`
-  );
+export interface OAuthCallbackServer {
+  /** The port the server is listening on */
+  port: number;
+  /** Promise that resolves with the authorization code when received */
+  codePromise: Promise<string>;
 }
 
 /**
  * Start a temporary HTTP server to receive OAuth callback.
- * Returns a promise that resolves with the authorization code.
- * The server is always closed before the function returns.
- * @param port - Port to listen on
+ * Returns the assigned port and a promise that resolves with the authorization code.
+ * The server uses port 0 to get an auto-assigned available port.
  * @param timeoutMs - Timeout in milliseconds
  * @param signal - Optional AbortSignal to cancel the server early
  * @param callbackPath - Path to listen for OAuth callback (default: '/oauth2callback')
  */
-export async function waitForOAuthCallback(
-  port: number,
+export function startOAuthCallbackServer(
   timeoutMs: number,
   signal?: AbortSignal,
   callbackPath = '/oauth2callback'
-): Promise<string> {
+): Promise<OAuthCallbackServer> {
   const server = http.createServer();
-  let timeout: NodeJS.Timeout | undefined;
 
-  try {
-    return await new Promise<string>((resolve, reject) => {
-      const abortHandler = () => {
-        reject(new LoginCancelledError());
-      };
+  return new Promise<OAuthCallbackServer>((resolveServer, rejectServer) => {
+    server.on('error', (error) => {
+      rejectServer(error);
+    });
 
-      if (signal) {
-        if (signal.aborted) {
-          reject(new LoginCancelledError());
-          return;
-        }
-        signal.addEventListener('abort', abortHandler, { once: true });
+    server.listen(0, 'localhost', () => {
+      const address = server.address();
+      if (address === null || typeof address === 'string') {
+        server.close();
+        rejectServer(new Error('Failed to get server address'));
+        return;
       }
 
-      server.on('request', (req, res) => {
-        const parsedUrl = new URL(req.url ?? '', `http://localhost:${port.toString()}`);
+      const port = address.port;
+      let timeout: NodeJS.Timeout | undefined;
 
-        if (parsedUrl.pathname === callbackPath) {
-          const code = parsedUrl.searchParams.get('code') ?? undefined;
-
-          if (code) {
-            res.writeHead(200, { 'Content-Type': 'text/plain' });
-            res.end('OK');
-            signal?.removeEventListener('abort', abortHandler);
-            resolve(code);
-          } else {
-            res.writeHead(400, { 'Content-Type': 'text/plain' });
-            res.end('ERROR');
-            signal?.removeEventListener('abort', abortHandler);
-            reject(new LoginFailedError('No authorization code received from OAuth callback.'));
+      const codePromise = new Promise<string>((resolve, reject) => {
+        const cleanup = () => {
+          if (timeout !== undefined) {
+            clearTimeout(timeout);
           }
-        } else {
-          res.writeHead(404);
-          res.end();
+          server.closeAllConnections();
+          server.close();
+        };
+
+        const abortHandler = () => {
+          cleanup();
+          reject(new LoginCancelledError());
+        };
+
+        if (signal) {
+          if (signal.aborted) {
+            cleanup();
+            reject(new LoginCancelledError());
+            return;
+          }
+          signal.addEventListener('abort', abortHandler, { once: true });
         }
+
+        server.on('request', (req, res) => {
+          const parsedUrl = new URL(req.url ?? '', `http://localhost:${port.toString()}`);
+
+          if (parsedUrl.pathname === callbackPath) {
+            const code = parsedUrl.searchParams.get('code') ?? undefined;
+
+            if (code) {
+              res.writeHead(200, { 'Content-Type': 'text/plain' });
+              res.end('OK');
+              signal?.removeEventListener('abort', abortHandler);
+              cleanup();
+              resolve(code);
+            } else {
+              res.writeHead(400, { 'Content-Type': 'text/plain' });
+              res.end('ERROR');
+              signal?.removeEventListener('abort', abortHandler);
+              cleanup();
+              reject(new LoginFailedError('No authorization code received from OAuth callback.'));
+            }
+          } else {
+            res.writeHead(404);
+            res.end();
+          }
+        });
+
+        timeout = setTimeout(() => {
+          signal?.removeEventListener('abort', abortHandler);
+          cleanup();
+          reject(new OAuthCallbackServerTimeoutError());
+        }, timeoutMs);
+
+        server.on('error', (error) => {
+          signal?.removeEventListener('abort', abortHandler);
+          cleanup();
+          reject(error);
+        });
       });
 
-      timeout = setTimeout(() => {
-        signal?.removeEventListener('abort', abortHandler);
-        reject(new OAuthCallbackServerTimeoutError());
-      }, timeoutMs);
-
-      server.on('error', (error) => {
-        signal?.removeEventListener('abort', abortHandler);
-        reject(error);
-      });
-
-      server.listen(port, 'localhost');
+      resolveServer({ port, codePromise });
     });
-  } finally {
-    if (timeout !== undefined) {
-      clearTimeout(timeout);
-    }
-    server.closeAllConnections();
-    server.close();
-  }
+  });
 }
 
 /**
