@@ -105,8 +105,8 @@ export class Notion implements Service {
   readonly baseApiUrls = ['https://api.notion.com/'] as const;
   readonly loginUrl = NOTION_INTEGRATIONS_URL;
   readonly info =
-    'Uses the Notion API (https://developers.notion.com/reference). ' +
-    'The UI must be in English, otherwise the initial login will not work. ' +
+    'https://developers.notion.com/reference. ' +
+    'The initial login will not work if the locale is not English. ' +
     'Access is limited to pages that existed when the login happened for the first time.';
 
   readonly credentialCheckCurlArguments = [
