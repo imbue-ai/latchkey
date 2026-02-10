@@ -11,7 +11,12 @@ import {
   type BrowserLaunchOptions,
 } from '../playwrightUtils.js';
 import { runCaptured } from '../curl.js';
-import { Service, BrowserFollowupServiceSession, LoginFailedError } from './base.js';
+import {
+  Service,
+  BrowserFollowupServiceSession,
+  LoginFailedError,
+  LoginCancelledError,
+} from './base.js';
 import type { EncryptedStorage } from '../encryptedStorage.js';
 import * as http from 'node:http';
 
@@ -537,7 +542,7 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
 
     // Perform OAuth flow with localhost server
     const { accessToken, refreshToken, accessTokenExpiresAt, refreshTokenExpiresAt } =
-      await this.performOAuthFlow(page, clientId, clientSecret);
+      await this.performOAuthFlow(context, page, clientId, clientSecret);
 
     await page.close();
 
@@ -552,6 +557,7 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
   }
 
   private async performOAuthFlow(
+    context: BrowserContext,
     page: Page,
     clientId: string,
     clientSecret: string
@@ -565,6 +571,13 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     const redirectUri = `http://localhost:${port.toString()}/oauth2callback`;
     const codePromise = waitForOAuthCallback(port, LOGIN_TIMEOUT_MS);
 
+    // Create a promise that rejects when the browser context is closed
+    const contextClosedPromise = new Promise<never>((_resolve, reject) => {
+      context.on('close', () => {
+        reject(new LoginCancelledError());
+      });
+    });
+
     const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
     authUrl.searchParams.set('client_id', clientId);
     authUrl.searchParams.set('redirect_uri', redirectUri);
@@ -574,7 +587,9 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     authUrl.searchParams.set('prompt', 'consent');
 
     await page.goto(authUrl.toString());
-    const code = await codePromise;
+
+    // Race the OAuth callback against browser context close
+    const code = await Promise.race([codePromise, contextClosedPromise]);
     const tokens = exchangeCodeForTokens(code, clientId, clientSecret, redirectUri);
     const accessTokenExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
