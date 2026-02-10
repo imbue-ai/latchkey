@@ -406,6 +406,12 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       );
       const launchOptions = getBrowserLaunchOptionsOrExit(deps);
 
+      const existingCredentials = apiCredentialStore.get(service.name);
+      if (existingCredentials !== null) {
+        deps.log('Already prepared.');
+        return;
+      }
+
       try {
         const apiCredentials = await service.prepare(encryptedStorage, launchOptions);
         apiCredentialStore.save(service.name, apiCredentials);
