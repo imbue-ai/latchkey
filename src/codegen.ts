@@ -1,8 +1,8 @@
 /**
- * Codegen module that mirrors Playwright's codegen functionality with modifications:
+ * Codegen module that records browser actions and generates TypeScript code:
+ * - Records user interactions (clicks, fills, navigations, etc.)
  * - Always generates TypeScript code
  * - Records all HTTP request metadata to a file
- * - Outputs generated code to a file
  * - Includes a custom toolbar with additional buttons
  */
 
@@ -35,6 +35,25 @@ export interface CodegenOptions {
   readonly outputFile?: string;
   /** Path to output the request metadata JSON. Defaults to 'requests.json'. */
   readonly requestsFile?: string;
+}
+
+/**
+ * Represents a recorded action.
+ */
+interface RecordedAction {
+  readonly type:
+    | 'navigate'
+    | 'click'
+    | 'fill'
+    | 'press'
+    | 'select'
+    | 'check'
+    | 'uncheck';
+  readonly selector?: string;
+  readonly url?: string;
+  readonly value?: string;
+  readonly key?: string;
+  readonly timestamp: number;
 }
 
 /**
@@ -87,6 +106,79 @@ class RequestMetadataCollector {
   }
 }
 
+/**
+ * Generates TypeScript code from recorded actions.
+ */
+class CodeGenerator {
+  private readonly actions: RecordedAction[] = [];
+  private readonly outputPath: string;
+
+  constructor(outputPath: string) {
+    this.outputPath = outputPath;
+  }
+
+  addAction(action: RecordedAction): void {
+    this.actions.push(action);
+    this.flush();
+  }
+
+  private escapeString(str: string): string {
+    return str
+      .replace(/\\/g, '\\\\')
+      .replace(/'/g, "\\'")
+      .replace(/\n/g, '\\n')
+      .replace(/\r/g, '\\r');
+  }
+
+  private generateActionCode(action: RecordedAction): string {
+    switch (action.type) {
+      case 'navigate':
+        return `  await page.goto('${this.escapeString(action.url ?? '')}');`;
+      case 'click':
+        return `  await page.locator('${this.escapeString(action.selector ?? '')}').click();`;
+      case 'fill':
+        return `  await page.locator('${this.escapeString(action.selector ?? '')}').fill('${this.escapeString(action.value ?? '')}');`;
+      case 'press':
+        return `  await page.locator('${this.escapeString(action.selector ?? '')}').press('${this.escapeString(action.key ?? '')}');`;
+      case 'select':
+        return `  await page.locator('${this.escapeString(action.selector ?? '')}').selectOption('${this.escapeString(action.value ?? '')}');`;
+      case 'check':
+        return `  await page.locator('${this.escapeString(action.selector ?? '')}').check();`;
+      case 'uncheck':
+        return `  await page.locator('${this.escapeString(action.selector ?? '')}').uncheck();`;
+      default: {
+        const unknownType: never = action.type;
+        return `  // Unknown action: ${String(unknownType)}`;
+      }
+    }
+  }
+
+  generateCode(): string {
+    const header = `const { chromium } = require('playwright');
+
+(async () => {
+  const browser = await chromium.launch({ headless: false });
+  const context = await browser.newContext();
+  const page = await context.newPage();
+
+`;
+
+    const footer = `
+  // ---------------------
+  await context.close();
+  await browser.close();
+})();
+`;
+
+    const actionLines = this.actions.map((action) => this.generateActionCode(action));
+    return header + actionLines.join('\n') + footer;
+  }
+
+  flush(): void {
+    writeFileSync(this.outputPath, this.generateCode(), 'utf-8');
+  }
+}
+
 export class CodegenError extends Error {
   constructor(message: string) {
     super(message);
@@ -95,8 +187,164 @@ export class CodegenError extends Error {
 }
 
 /**
+ * Creates the recorder script that captures user interactions.
+ * This script is injected into every page and listens for clicks, inputs, etc.
+ */
+function createRecorderScript(): string {
+  return `
+(function() {
+  // Don't inject twice
+  if (window.__latchkeyRecorderInstalled) return;
+  window.__latchkeyRecorderInstalled = true;
+
+  // Helper to generate a simple selector for an element
+  function generateSelector(element) {
+    // Try data-testid first
+    if (element.dataset && element.dataset.testid) {
+      return '[data-testid="' + element.dataset.testid + '"]';
+    }
+
+    // Try id
+    if (element.id) {
+      return '#' + CSS.escape(element.id);
+    }
+
+    // Try unique class combination
+    if (element.className && typeof element.className === 'string') {
+      const classes = element.className.trim().split(/\\s+/).filter(c => c.length > 0);
+      if (classes.length > 0) {
+        const selector = '.' + classes.map(c => CSS.escape(c)).join('.');
+        if (document.querySelectorAll(selector).length === 1) {
+          return selector;
+        }
+      }
+    }
+
+    // Try tag + nth-child
+    const parent = element.parentElement;
+    if (parent) {
+      const siblings = Array.from(parent.children);
+      const index = siblings.indexOf(element);
+      const tagName = element.tagName.toLowerCase();
+      const parentSelector = parent === document.body ? 'body' : generateSelector(parent);
+      return parentSelector + ' > ' + tagName + ':nth-child(' + (index + 1) + ')';
+    }
+
+    // Fallback to tag name
+    return element.tagName.toLowerCase();
+  }
+
+  // Check if element is part of our toolbar
+  function isToolbarElement(element) {
+    return element.closest && element.closest('#latchkey-recorder-toolbar');
+  }
+
+  // Track clicks
+  document.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!target || isToolbarElement(target)) return;
+
+    const selector = generateSelector(target);
+
+    // Check if it's a checkbox or radio
+    if (target.tagName === 'INPUT') {
+      const inputType = target.type.toLowerCase();
+      if (inputType === 'checkbox') {
+        if (target.checked) {
+          window.__latchkeyRecordAction && window.__latchkeyRecordAction({
+            type: 'check',
+            selector: selector
+          });
+        } else {
+          window.__latchkeyRecordAction && window.__latchkeyRecordAction({
+            type: 'uncheck',
+            selector: selector
+          });
+        }
+        return;
+      }
+    }
+
+    window.__latchkeyRecordAction && window.__latchkeyRecordAction({
+      type: 'click',
+      selector: selector
+    });
+  }, true);
+
+  // Track input/change for fill actions
+  let lastInputElement = null;
+  let lastInputValue = '';
+  let inputTimeout = null;
+
+  document.addEventListener('input', (event) => {
+    const target = event.target;
+    if (!target || isToolbarElement(target)) return;
+
+    const tagName = target.tagName;
+    if (tagName === 'INPUT' || tagName === 'TEXTAREA' || target.isContentEditable) {
+      const inputType = target.type ? target.type.toLowerCase() : 'text';
+
+      // Skip checkboxes and radios (handled by click)
+      if (inputType === 'checkbox' || inputType === 'radio') return;
+
+      lastInputElement = target;
+      lastInputValue = target.value || target.innerText || '';
+
+      // Debounce the recording to capture the final value
+      if (inputTimeout) clearTimeout(inputTimeout);
+      inputTimeout = setTimeout(() => {
+        if (lastInputElement) {
+          const selector = generateSelector(lastInputElement);
+          window.__latchkeyRecordAction && window.__latchkeyRecordAction({
+            type: 'fill',
+            selector: selector,
+            value: lastInputValue
+          });
+          lastInputElement = null;
+          lastInputValue = '';
+        }
+      }, 500);
+    }
+  }, true);
+
+  // Track select changes
+  document.addEventListener('change', (event) => {
+    const target = event.target;
+    if (!target || isToolbarElement(target)) return;
+
+    if (target.tagName === 'SELECT') {
+      const selector = generateSelector(target);
+      const selectedValue = target.value;
+      window.__latchkeyRecordAction && window.__latchkeyRecordAction({
+        type: 'select',
+        selector: selector,
+        value: selectedValue
+      });
+    }
+  }, true);
+
+  // Track key presses (for special keys like Enter, Tab, etc.)
+  document.addEventListener('keydown', (event) => {
+    const target = event.target;
+    if (!target || isToolbarElement(target)) return;
+
+    // Only record special keys
+    const specialKeys = ['Enter', 'Tab', 'Escape', 'Backspace', 'Delete', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+    if (specialKeys.includes(event.key)) {
+      const selector = generateSelector(target);
+      window.__latchkeyRecordAction && window.__latchkeyRecordAction({
+        type: 'press',
+        selector: selector,
+        key: event.key
+      });
+    }
+  }, true);
+})();
+`;
+}
+
+/**
  * Creates the toolbar overlay script to be injected into pages.
- * This mirrors Playwright's toolbar approach but with our own custom buttons.
  */
 function createToolbarScript(): string {
   return `
@@ -123,7 +371,6 @@ function createToolbarScript(): string {
       font-size: 13px;
       box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
       user-select: none;
-      cursor: move;
     }
 
     #latchkey-recorder-toolbar * {
@@ -302,6 +549,7 @@ function createToolbarScript(): string {
     offsetX = e.clientX - rect.left;
     offsetY = e.clientY - rect.top;
     toolbar.style.transition = 'none';
+    e.preventDefault();
   });
 
   document.addEventListener('mousemove', (e) => {
@@ -322,7 +570,7 @@ function createToolbarScript(): string {
 
 /**
  * Run the codegen which opens a browser with recording enabled.
- * Injects a custom toolbar and records HTTP request metadata.
+ * Injects a custom toolbar and records user actions and HTTP request metadata.
  */
 export async function runCodegen(options: CodegenOptions): Promise<void> {
   const outputFile = options.outputFile ?? 'tmp.js';
@@ -338,13 +586,11 @@ export async function runCodegen(options: CodegenOptions): Promise<void> {
 
   const browser = await chromium.launch(launchOptions);
   const context: BrowserContext = await browser.newContext();
+
   const requestCollector = new RequestMetadataCollector(requestsFile);
+  const codeGenerator = new CodeGenerator(outputFile);
 
-  // Track requests and responses
-  context.on('request', (_request: Request) => {
-    // We only track on response
-  });
-
+  // Track HTTP requests and responses
   context.on('response', (response: Response) => {
     const request = response.request();
     requestCollector.addRequest(request, response);
@@ -354,32 +600,28 @@ export async function runCodegen(options: CodegenOptions): Promise<void> {
     requestCollector.addRequest(request, null);
   });
 
-  // Enable the built-in Playwright recorder
-  // This uses the internal _enableRecorder API that powers npx playwright codegen
-  type BrowserContextWithRecorder = BrowserContext & {
-    _enableRecorder?: (options: {
-      language: string;
-      mode: string;
-      outputFile: string;
-      handleSIGINT: boolean;
-    }) => Promise<void>;
-  };
-  const contextWithRecorder = context as BrowserContextWithRecorder;
-  if (typeof contextWithRecorder._enableRecorder === 'function') {
-    await contextWithRecorder._enableRecorder({
-      language: 'javascript',
-      mode: 'recording',
-      outputFile: outputFile,
-      handleSIGINT: false,
-    });
-  }
-
-  // Inject our custom toolbar into every page
+  // Inject our recorder script into every page
+  const recorderScript = createRecorderScript();
   const toolbarScript = createToolbarScript();
 
-  await context.addInitScript(toolbarScript);
+  await context.addInitScript(recorderScript + toolbarScript);
 
-  // Also expose bindings for toolbar buttons
+  // Expose function to receive recorded actions from the page
+  await context.exposeFunction(
+    '__latchkeyRecordAction',
+    (action: { type: string; selector?: string; value?: string; key?: string; url?: string }) => {
+      codeGenerator.addAction({
+        type: action.type as RecordedAction['type'],
+        selector: action.selector,
+        value: action.value,
+        key: action.key,
+        url: action.url,
+        timestamp: Date.now(),
+      });
+    }
+  );
+
+  // Expose toolbar button callbacks
   await context.exposeFunction('__latchkeyToggleRecording', () => {
     console.log('[Latchkey] Toggle recording clicked');
   });
@@ -394,9 +636,31 @@ export async function runCodegen(options: CodegenOptions): Promise<void> {
 
   const page: Page = await context.newPage();
 
+  // Record initial navigation if URL provided
   if (options.url) {
+    codeGenerator.addAction({
+      type: 'navigate',
+      url: options.url,
+      timestamp: Date.now(),
+    });
     await page.goto(options.url);
   }
+
+  // Track navigations
+  page.on('framenavigated', (frame) => {
+    // Only track main frame navigations
+    if (frame === page.mainFrame()) {
+      const url = frame.url();
+      // Don't record about:blank or the initial navigation (already recorded above)
+      if (url && url !== 'about:blank' && url !== options.url) {
+        codeGenerator.addAction({
+          type: 'navigate',
+          url: url,
+          timestamp: Date.now(),
+        });
+      }
+    }
+  });
 
   // Wait for browser to close
   await new Promise<void>((resolve) => {
@@ -411,6 +675,7 @@ export async function runCodegen(options: CodegenOptions): Promise<void> {
 
   // Final flush of collected data
   requestCollector.flush();
+  codeGenerator.flush();
 
   console.log(`Generated code saved to: ${outputFile}`);
   console.log(`Request metadata saved to: ${requestsFile}`);
