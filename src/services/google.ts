@@ -16,6 +16,7 @@ import {
   BrowserFollowupServiceSession,
   LoginFailedError,
   LoginCancelledError,
+  isBrowserClosedError,
 } from './base.js';
 import type { EncryptedStorage } from '../encryptedStorage.js';
 import * as http from 'node:http';
@@ -624,6 +625,11 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
         refreshToken: tokens.refresh_token,
         accessTokenExpiresAt,
       };
+    } catch (error: unknown) {
+      if (error instanceof Error && isBrowserClosedError(error)) {
+        throw new LoginCancelledError();
+      }
+      throw error;
     } finally {
       // Remove the close handler to prevent it from firing when context
       // is closed normally during cleanup

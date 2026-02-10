@@ -25,14 +25,15 @@ export class LoginFailedError extends Error {
   }
 }
 
-function isBrowserClosedError(error: Error): boolean {
+export function isBrowserClosedError(error: Error): boolean {
   const message = error.message.toLowerCase();
   return (
     message.includes('target closed') ||
     message.includes('browser closed') ||
     message.includes('browser has been closed') ||
     message.includes('context has been closed') ||
-    message.includes('page has been closed')
+    message.includes('page has been closed') ||
+    message.includes('net::err_aborted')
   );
 }
 
