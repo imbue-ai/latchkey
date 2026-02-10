@@ -63,19 +63,19 @@ you're willing to accept the risks.
 ### OpenCode
 ```
 mkdir -p ~/.opencode/skills/latchkey
-cp integrations/SKILL.md ~/.opencode/skills/latchkey/SKILL.md
+latchkey skill-md > ~/.opencode/skills/latchkey/SKILL.md
 ```
 
 ### Claude Code
 ```
 mkdir -p ~/.claude/skills/latchkey
-cp integrations/SKILL.md ~/.claude/skills/latchkey/SKILL.md
+latchkey skill-md > ~/.claude/skills/latchkey/SKILL.md
 ```
 
 ### Codex
 ```
 mkdir -p ~/.codex/skills/latchkey
-cp integrations/SKILL.md ~/.codex/skills/latchkey/SKILL.md
+latchkey skill-md > ~/.codex/skills/latchkey/SKILL.md
 ```
 
 ### Passepartout
