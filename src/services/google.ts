@@ -17,6 +17,14 @@ import * as http from 'node:http';
 
 const DEFAULT_TIMEOUT_MS = 8000;
 const LOGIN_TIMEOUT_MS = 120000;
+const APIS = [
+  'gmail.googleapis.com',
+  'calendar-json.googleapis.com',
+  'drive.googleapis.com',
+  'sheets.googleapis.com',
+  'docs.googleapis.com',
+  'people.googleapis.com', // Contacts API
+];
 const OAUTH_SCOPES = [
   // User info (for credential validation)
   'https://www.googleapis.com/auth/userinfo.profile',
@@ -331,16 +339,7 @@ async function createProject(page: Page): Promise<string> {
 }
 
 async function enableApis(page: Page, projectSlug: string): Promise<void> {
-  const apis = [
-    'gmail.googleapis.com',
-    'calendar-json.googleapis.com',
-    'drive.googleapis.com',
-    'sheets.googleapis.com',
-    'docs.googleapis.com',
-    'people.googleapis.com', // Contacts API
-  ];
-
-  for (const api of apis) {
+  for (const api of APIS) {
     await enableApi(page, projectSlug, api);
   }
 }
