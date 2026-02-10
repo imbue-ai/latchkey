@@ -567,12 +567,8 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     accessTokenExpiresAt?: string;
     refreshTokenExpiresAt?: string;
   }> {
-    const port = await findAvailablePort(8080);
-    const redirectUri = `http://localhost:${port.toString()}/oauth2callback`;
-    const codePromise = waitForOAuthCallback(port, LOGIN_TIMEOUT_MS);
-
     // Create a promise that rejects when the browser context is closed.
-    // We need to track the handler so we can remove it after the race completes,
+    // We need to track the handler so we can remove it after the flow completes,
     // otherwise it will fire when the context is closed normally and cause an
     // unhandled rejection.
     let contextCloseHandler: (() => void) | undefined;
@@ -583,20 +579,33 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
       context.on('close', contextCloseHandler);
     });
 
-    const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-    authUrl.searchParams.set('client_id', clientId);
-    authUrl.searchParams.set('redirect_uri', redirectUri);
-    authUrl.searchParams.set('response_type', 'code');
-    authUrl.searchParams.set('scope', OAUTH_SCOPES.join(' '));
-    authUrl.searchParams.set('access_type', 'offline');
-    authUrl.searchParams.set('prompt', 'consent');
-
-    await page.goto(authUrl.toString());
-
-    // Race the OAuth callback against browser context close
-    let code: string;
     try {
-      code = await Promise.race([codePromise, contextClosedPromise]);
+      const port = await findAvailablePort(8080);
+      const redirectUri = `http://localhost:${port.toString()}/oauth2callback`;
+      const codePromise = waitForOAuthCallback(port, LOGIN_TIMEOUT_MS);
+
+      const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+      authUrl.searchParams.set('client_id', clientId);
+      authUrl.searchParams.set('redirect_uri', redirectUri);
+      authUrl.searchParams.set('response_type', 'code');
+      authUrl.searchParams.set('scope', OAUTH_SCOPES.join(' '));
+      authUrl.searchParams.set('access_type', 'offline');
+      authUrl.searchParams.set('prompt', 'consent');
+
+      // Race the page navigation against browser context close
+      await Promise.race([page.goto(authUrl.toString()), contextClosedPromise]);
+
+      // Race the OAuth callback against browser context close
+      const code = await Promise.race([codePromise, contextClosedPromise]);
+      const tokens = exchangeCodeForTokens(code, clientId, clientSecret, redirectUri);
+      const accessTokenExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
+
+      // Google refresh tokens typically don't expire, so we don't set refreshTokenExpiresAt
+      return {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        accessTokenExpiresAt,
+      };
     } finally {
       // Remove the close handler to prevent unhandled rejection when context
       // is closed normally during cleanup
@@ -604,15 +613,6 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
         context.off('close', contextCloseHandler);
       }
     }
-    const tokens = exchangeCodeForTokens(code, clientId, clientSecret, redirectUri);
-    const accessTokenExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
-
-    // Google refresh tokens typically don't expire, so we don't set refreshTokenExpiresAt
-    return {
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token,
-      accessTokenExpiresAt,
-    };
   }
 }
 
