@@ -225,6 +225,21 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     });
 
   program
+    .command('info')
+    .description('Show developer notes about a service.')
+    .argument('<service_name>', 'Name of the service to get info for')
+    .action((serviceName: string) => {
+      const service = deps.registry.getByName(serviceName);
+      if (service === null) {
+        deps.errorLog(`Error: Unknown service: ${serviceName}`);
+        deps.errorLog("Use 'latchkey services' to see available services.");
+        deps.exit(1);
+      }
+
+      deps.log(service.info);
+    });
+
+  program
     .command('skill-md')
     .description('Print the SKILL.md file for AI agent integration.')
     .action(async () => {
@@ -404,6 +419,14 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         deps.config.credentialStorePath,
         encryptedStorage
       );
+
+      // Check if already prepared (credentials exist)
+      const existingCredentials = apiCredentialStore.get(service.name);
+      if (existingCredentials !== null) {
+        deps.log('Already prepared.');
+        return;
+      }
+
       const launchOptions = getBrowserLaunchOptionsOrExit(deps);
 
       const existingCredentials = apiCredentialStore.get(service.name);

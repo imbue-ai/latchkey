@@ -182,6 +182,7 @@ describe('CLI commands with dependency injection', () => {
       displayName: 'Slack',
       baseApiUrls: ['https://slack.com/api/'],
       loginUrl: 'https://slack.com/signin',
+      info: 'Test info for Slack service.',
       credentialCheckCurlArguments: ['https://slack.com/api/auth.test'],
       checkApiCredentials: vi.fn().mockReturnValue(ApiCredentialStatus.Valid),
       getSession: vi.fn().mockReturnValue({
@@ -247,6 +248,25 @@ describe('CLI commands with dependency injection', () => {
       expect(logs).toHaveLength(1);
       const services = (logs[0] ?? '').split(' ');
       expect(services).toContain('slack');
+    });
+  });
+
+  describe('info command', () => {
+    it('should show info for a known service', async () => {
+      const deps = createMockDependencies();
+      await runCommand(['info', 'slack'], deps);
+
+      expect(logs).toHaveLength(1);
+      expect(logs[0]).toBe('Test info for Slack service.');
+    });
+
+    it('should return error for unknown service', async () => {
+      const deps = createMockDependencies();
+
+      await runCommand(['info', 'unknown-service'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs.some((log) => log.includes('Unknown service'))).toBe(true);
     });
   });
 
@@ -570,6 +590,7 @@ describe('CLI commands with dependency injection', () => {
         displayName: 'Slack',
         baseApiUrls: ['https://slack.com/api/'],
         loginUrl: 'https://slack.com/signin',
+        info: 'Test info for Slack service.',
         credentialCheckCurlArguments: [],
         checkApiCredentials: vi.fn(),
         getSession: vi.fn().mockReturnValue({ login: mockLogin }),
@@ -615,6 +636,7 @@ describe('CLI commands with dependency injection', () => {
         displayName: 'Slack',
         baseApiUrls: ['https://slack.com/api/'],
         loginUrl: 'https://slack.com/signin',
+        info: 'Test info for Slack service.',
         credentialCheckCurlArguments: [],
         checkApiCredentials: vi.fn(),
         getSession: vi.fn().mockReturnValue({ login: mockLogin }),
@@ -817,6 +839,26 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
       expect(services).toContain('github');
       expect(services).toContain('dropbox');
       expect(services).toContain('linear');
+    });
+  });
+
+  describe('info command', () => {
+    it('should show info for a known service', () => {
+      const result = runCli(['info', 'slack'], testEnv);
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('Slack Web API');
+    });
+
+    it('should show info for google service mentioning prepare', () => {
+      const result = runCli(['info', 'google'], testEnv);
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('prepare');
+    });
+
+    it('should return error for unknown service', () => {
+      const result = runCli(['info', 'unknown-service'], testEnv);
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('Unknown service');
     });
   });
 });
