@@ -87,6 +87,15 @@ export async function runCodegen(options: CodegenOptions): Promise<void> {
 
   const page: Page = await context.newPage();
 
+  // Helper function to inject toolbar after page load
+  async function injectToolbarIfNeeded(targetPage: Page): Promise<void> {
+    try {
+      await targetPage.evaluate(toolbarScript);
+    } catch {
+      // Ignore errors (e.g., if page is closed or navigating)
+    }
+  }
+
   // Record initial navigation if URL provided
   if (options.url) {
     codeGenerator.addAction({
@@ -95,7 +104,14 @@ export async function runCodegen(options: CodegenOptions): Promise<void> {
       timestamp: Date.now(),
     });
     await page.goto(options.url);
+    // Inject toolbar after page loads
+    await injectToolbarIfNeeded(page);
   }
+
+  // Re-inject toolbar after navigations
+  page.on('load', () => {
+    void injectToolbarIfNeeded(page);
+  });
 
   // Track navigations
   page.on('framenavigated', (frame) => {
