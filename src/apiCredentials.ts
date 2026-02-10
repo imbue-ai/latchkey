@@ -180,18 +180,10 @@ export class OAuthCredentials implements ApiCredentials {
   ) {
     this.clientId = clientId;
     this.clientSecret = clientSecret;
-    if (accessToken !== undefined) {
-      this.accessToken = accessToken;
-    }
-    if (refreshToken !== undefined) {
-      this.refreshToken = refreshToken;
-    }
-    if (accessTokenExpiresAt !== undefined) {
-      this.accessTokenExpiresAt = accessTokenExpiresAt;
-    }
-    if (refreshTokenExpiresAt !== undefined) {
-      this.refreshTokenExpiresAt = refreshTokenExpiresAt;
-    }
+    this.accessToken = accessToken;
+    this.refreshToken = refreshToken;
+    this.accessTokenExpiresAt = accessTokenExpiresAt;
+    this.refreshTokenExpiresAt = refreshTokenExpiresAt;
   }
 
   asCurlArguments(): readonly string[] {
@@ -216,19 +208,11 @@ export class OAuthCredentials implements ApiCredentials {
       objectType: this.objectType,
       clientId: this.clientId,
       clientSecret: this.clientSecret,
+      accessToken: this.accessToken,
+      refreshToken: this.refreshToken,
+      accessTokenExpiresAt: this.accessTokenExpiresAt,
+      refreshTokenExpiresAt: this.refreshTokenExpiresAt,
     };
-    if (this.accessToken !== undefined) {
-      result.accessToken = this.accessToken;
-    }
-    if (this.refreshToken !== undefined) {
-      result.refreshToken = this.refreshToken;
-    }
-    if (this.accessTokenExpiresAt !== undefined) {
-      result.accessTokenExpiresAt = this.accessTokenExpiresAt;
-    }
-    if (this.refreshTokenExpiresAt !== undefined) {
-      result.refreshTokenExpiresAt = this.refreshTokenExpiresAt;
-    }
     return result;
   }
 

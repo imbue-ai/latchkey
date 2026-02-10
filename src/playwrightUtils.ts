@@ -60,10 +60,9 @@ export async function withTempBrowserContext<T>(
   const browser = await chromium.launch(playwrightLaunchOptions);
 
   try {
-    const contextOptions: { storageState?: string } = {};
-    if (initialStorageState !== undefined) {
-      contextOptions.storageState = initialStorageState;
-    }
+    const contextOptions: { storageState?: string } = {
+      storageState: initialStorageState
+    };
     const context = await browser.newContext(contextOptions);
 
     const result = await callback({ browser, context });
