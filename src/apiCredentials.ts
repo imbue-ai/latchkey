@@ -1,5 +1,6 @@
 /**
- * API credentials types and utilities for authentication with various services.
+ * Serialized API credentials types and utilities.
+ *
  */
 
 import { z } from 'zod';
