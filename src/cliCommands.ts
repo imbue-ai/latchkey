@@ -22,6 +22,7 @@ import { Registry, REGISTRY } from './registry.js';
 import { LoginCancelledError, LoginFailedError, Service } from './services/index.js';
 import { run as curlRun } from './curl.js';
 import { getSkillMdContent } from './skillMd.js';
+import { runCodegenService } from './codegen.js';
 
 /**
  * Try to refresh expired credentials if the service supports it.
@@ -522,5 +523,32 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       const allArguments = [...apiCredentials.asCurlArguments(), ...curlArguments];
       const result = deps.runCurl(allArguments);
       deps.exit(result.returncode);
+    });
+
+  program
+    .command('codegen')
+    .description(
+      'Open a browser with code recording enabled, generating TypeScript code and capturing HTTP request metadata.'
+    )
+    .argument('[url]', 'Initial URL to navigate to')
+    .option('-o, --output <file>', 'Output file for generated code', 'tmp.js')
+    .option('-r, --requests <file>', 'Output file for request metadata JSON', 'requests.json')
+    .action(async (url: string | undefined, options: { output: string; requests: string }) => {
+      const launchOptions = getBrowserLaunchOptionsOrExit(deps);
+
+      try {
+        await runCodegenService({
+          executablePath: launchOptions.executablePath,
+          url,
+          outputFile: options.output,
+          requestsFile: options.requests,
+        });
+      } catch (error) {
+        if (error instanceof Error) {
+          deps.errorLog(`Error: ${error.message}`);
+          deps.exit(1);
+        }
+        throw error;
+      }
     });
 }
