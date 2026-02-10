@@ -161,8 +161,13 @@ function createSpinnerOverlayScript(message: string): string {
 /**
  * Show a spinner overlay that hides page content from the user.
  * The overlay persists across page navigations within the browser context.
+ *
+ * Can be disabled by setting LATCHKEY_DISABLE_SPINNER=1 environment variable.
  */
 export async function showSpinnerPage(context: BrowserContext, message: string): Promise<void> {
+  if (process.env.LATCHKEY_DISABLE_SPINNER === '1') {
+    return;
+  }
   const spinnerPage = await context.newPage();
   await spinnerPage.evaluate(createSpinnerOverlayScript(message));
   await spinnerPage.bringToFront();

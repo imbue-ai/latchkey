@@ -91,6 +91,13 @@ npx playwright codegen --target=javascript https://login-page.example.com/
 ```
 
 
+## Environment variables
+
+The following environment variables can be set for development and debugging:
+
+- `LATCHKEY_DISABLE_SPINNER=1`: Disables the spinner overlay that normally hides browser activity during credential finalization. Useful for debugging browser automation sequences.
+
+
 ## Style guidelines
 
 - Try to make new code look as similar to existing code as possible.
