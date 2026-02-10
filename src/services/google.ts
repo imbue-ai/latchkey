@@ -11,12 +11,26 @@ import {
   type BrowserLaunchOptions,
 } from '../playwrightUtils.js';
 import { runCaptured } from '../curl.js';
-import { Service, BrowserFollowupServiceSession, LoginFailedError } from './base.js';
+import {
+  Service,
+  BrowserFollowupServiceSession,
+  LoginFailedError,
+  LoginCancelledError,
+  isBrowserClosedError,
+} from './base.js';
 import type { EncryptedStorage } from '../encryptedStorage.js';
 import * as http from 'node:http';
 
 const DEFAULT_TIMEOUT_MS = 8000;
 const LOGIN_TIMEOUT_MS = 120000;
+const APIS = [
+  'gmail.googleapis.com',
+  'calendar-json.googleapis.com',
+  'drive.googleapis.com',
+  'sheets.googleapis.com',
+  'docs.googleapis.com',
+  'people.googleapis.com', // Contacts API
+];
 const OAUTH_SCOPES = [
   // User info (for credential validation)
   'https://www.googleapis.com/auth/userinfo.profile',
@@ -127,13 +141,32 @@ async function findAvailablePort(startPort: number, maxAttempts = 10): Promise<n
  * Start a temporary HTTP server to receive OAuth callback.
  * Returns a promise that resolves with the authorization code.
  * The server is always closed before the function returns.
+ * @param port - Port to listen on
+ * @param timeoutMs - Timeout in milliseconds
+ * @param signal - Optional AbortSignal to cancel the server early
  */
-async function waitForOAuthCallback(port: number, timeoutMs: number): Promise<string> {
+async function waitForOAuthCallback(
+  port: number,
+  timeoutMs: number,
+  signal?: AbortSignal
+): Promise<string> {
   const server = http.createServer();
   let timeout: NodeJS.Timeout | undefined;
 
   try {
     return await new Promise<string>((resolve, reject) => {
+      const abortHandler = () => {
+        reject(new LoginCancelledError());
+      };
+
+      if (signal) {
+        if (signal.aborted) {
+          reject(new LoginCancelledError());
+          return;
+        }
+        signal.addEventListener('abort', abortHandler, { once: true });
+      }
+
       server.on('request', (req, res) => {
         const parsedUrl = new URL(req.url ?? '', `http://localhost:${port.toString()}`);
 
@@ -143,10 +176,12 @@ async function waitForOAuthCallback(port: number, timeoutMs: number): Promise<st
           if (code) {
             res.writeHead(200, { 'Content-Type': 'text/plain' });
             res.end('OK');
+            signal?.removeEventListener('abort', abortHandler);
             resolve(code);
           } else {
             res.writeHead(400, { 'Content-Type': 'text/plain' });
             res.end('ERROR');
+            signal?.removeEventListener('abort', abortHandler);
             reject(new LoginFailedError('No authorization code received from OAuth callback.'));
           }
         } else {
@@ -156,10 +191,12 @@ async function waitForOAuthCallback(port: number, timeoutMs: number): Promise<st
       });
 
       timeout = setTimeout(() => {
+        signal?.removeEventListener('abort', abortHandler);
         reject(new OAuthCallbackServerTimeoutError());
       }, timeoutMs);
 
       server.on('error', (error) => {
+        signal?.removeEventListener('abort', abortHandler);
         reject(error);
       });
 
@@ -331,16 +368,7 @@ async function createProject(page: Page): Promise<string> {
 }
 
 async function enableApis(page: Page, projectSlug: string): Promise<void> {
-  const apis = [
-    'gmail.googleapis.com',
-    'calendar-json.googleapis.com',
-    'drive.googleapis.com',
-    'sheets.googleapis.com',
-    'docs.googleapis.com',
-    'people.googleapis.com', // Contacts API
-  ];
-
-  for (const api of apis) {
+  for (const api of APIS) {
     await enableApi(page, projectSlug, api);
   }
 }
@@ -538,7 +566,7 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
 
     // Perform OAuth flow with localhost server
     const { accessToken, refreshToken, accessTokenExpiresAt, refreshTokenExpiresAt } =
-      await this.performOAuthFlow(page, clientId, clientSecret);
+      await this.performOAuthFlow(context, page, clientId, clientSecret);
 
     await page.close();
 
@@ -553,6 +581,7 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
   }
 
   private async performOAuthFlow(
+    context: BrowserContext,
     page: Page,
     clientId: string,
     clientSecret: string
@@ -562,29 +591,53 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     accessTokenExpiresAt?: string;
     refreshTokenExpiresAt?: string;
   }> {
-    const port = await findAvailablePort(8080);
-    const redirectUri = `http://localhost:${port.toString()}/oauth2callback`;
-    const codePromise = waitForOAuthCallback(port, LOGIN_TIMEOUT_MS);
-
-    const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-    authUrl.searchParams.set('client_id', clientId);
-    authUrl.searchParams.set('redirect_uri', redirectUri);
-    authUrl.searchParams.set('response_type', 'code');
-    authUrl.searchParams.set('scope', OAUTH_SCOPES.join(' '));
-    authUrl.searchParams.set('access_type', 'offline');
-    authUrl.searchParams.set('prompt', 'consent');
-
-    await page.goto(authUrl.toString());
-    const code = await codePromise;
-    const tokens = exchangeCodeForTokens(code, clientId, clientSecret, redirectUri);
-    const accessTokenExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
-
-    // Google refresh tokens typically don't expire, so we don't set refreshTokenExpiresAt
-    return {
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token,
-      accessTokenExpiresAt,
+    // Use an AbortController to signal the OAuth callback server to shut down
+    // when the browser is closed. Listen to both page and context close events
+    // to handle all cases where the user might close the browser.
+    const abortController = new AbortController();
+    const closeHandler = () => {
+      abortController.abort();
     };
+    page.on('close', closeHandler);
+    context.on('close', closeHandler);
+
+    try {
+      const port = await findAvailablePort(8080);
+      const redirectUri = `http://localhost:${port.toString()}/oauth2callback`;
+
+      const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+      authUrl.searchParams.set('client_id', clientId);
+      authUrl.searchParams.set('redirect_uri', redirectUri);
+      authUrl.searchParams.set('response_type', 'code');
+      authUrl.searchParams.set('scope', OAUTH_SCOPES.join(' '));
+      authUrl.searchParams.set('access_type', 'offline');
+      authUrl.searchParams.set('prompt', 'consent');
+
+      await page.goto(authUrl.toString());
+
+      // Wait for OAuth callback, passing the abort signal so the server
+      // can be shut down if the browser is closed
+      const code = await waitForOAuthCallback(port, LOGIN_TIMEOUT_MS, abortController.signal);
+      const tokens = exchangeCodeForTokens(code, clientId, clientSecret, redirectUri);
+      const accessTokenExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
+
+      // Google refresh tokens typically don't expire, so we don't set refreshTokenExpiresAt
+      return {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        accessTokenExpiresAt,
+      };
+    } catch (error: unknown) {
+      if (error instanceof Error && isBrowserClosedError(error)) {
+        throw new LoginCancelledError();
+      }
+      throw error;
+    } finally {
+      // Remove the close handlers to prevent them from firing when context
+      // is closed normally during cleanup
+      page.off('close', closeHandler);
+      context.off('close', closeHandler);
+    }
   }
 }
 
