@@ -144,6 +144,45 @@ export class SlackApiCredentials implements ApiCredentials {
 }
 
 /**
+ * Raw curl arguments stored directly as credentials.
+ * Allows users to manually insert arbitrary curl arguments for a service.
+ */
+export const RawCurlCredentialsSchema = z.object({
+  objectType: z.literal('rawCurl'),
+  curlArguments: z.array(z.string()),
+});
+
+export type RawCurlCredentialsData = z.infer<typeof RawCurlCredentialsSchema>;
+
+export class RawCurlCredentials implements ApiCredentials {
+  readonly objectType = 'rawCurl' as const;
+  readonly curlArguments: readonly string[];
+
+  constructor(curlArguments: readonly string[]) {
+    this.curlArguments = curlArguments;
+  }
+
+  asCurlArguments(): readonly string[] {
+    return this.curlArguments;
+  }
+
+  isExpired(): boolean | undefined {
+    return undefined;
+  }
+
+  toJSON(): RawCurlCredentialsData {
+    return {
+      objectType: this.objectType,
+      curlArguments: [...this.curlArguments],
+    };
+  }
+
+  static fromJSON(data: RawCurlCredentialsData): RawCurlCredentials {
+    return new RawCurlCredentials(data.curlArguments);
+  }
+}
+
+/**
  * OAuth 2.0 credentials (access token, refresh token, client ID, and client secret).
  * Used by services that implement OAuth 2.0 authorization flows.
  * Token attributes are optional - when only clientId and clientSecret are present,
@@ -243,6 +282,7 @@ export const ApiCredentialsSchema = z.discriminatedUnion('objectType', [
   AuthorizationBareSchema,
   SlackApiCredentialsSchema,
   OAuthCredentialsSchema,
+  RawCurlCredentialsSchema,
 ]);
 
 export type ApiCredentialsData = z.infer<typeof ApiCredentialsSchema>;
@@ -260,6 +300,8 @@ export function deserializeCredentials(data: ApiCredentialsData): ApiCredentials
       return SlackApiCredentials.fromJSON(data);
     case 'oauth':
       return OAuthCredentials.fromJSON(data);
+    case 'rawCurl':
+      return RawCurlCredentials.fromJSON(data);
     default: {
       const exhaustiveCheck: never = data;
       throw new ApiCredentialsSerializationError(
@@ -283,6 +325,9 @@ export function serializeCredentials(credentials: ApiCredentials): ApiCredential
     return credentials.toJSON();
   }
   if (credentials instanceof OAuthCredentials) {
+    return credentials.toJSON();
+  }
+  if (credentials instanceof RawCurlCredentials) {
     return credentials.toJSON();
   }
   throw new ApiCredentialsSerializationError(`Unknown credential type: ${credentials.objectType}`);

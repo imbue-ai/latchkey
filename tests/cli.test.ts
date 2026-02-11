@@ -458,6 +458,74 @@ describe('CLI commands with dependency injection', () => {
     });
   });
 
+  describe('insert-auth command', () => {
+    it('should store raw curl credentials', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(storePath, '{}');
+
+      const deps = createMockDependencies({
+        config: createMockConfig({ credentialStorePath: storePath }),
+      });
+
+      await runCommand(
+        ['insert-auth', 'slack', '-H', 'X-Token: secret', '-H', 'X-Other: value'],
+        deps
+      );
+
+      expect(logs).toContain('Credentials stored.');
+
+      const storedData = JSON.parse(readSecureFile(storePath) ?? '{}') as Record<string, unknown>;
+      expect(storedData.slack).toEqual({
+        objectType: 'rawCurl',
+        curlArguments: ['-H', 'X-Token: secret', '-H', 'X-Other: value'],
+      });
+    });
+
+    it('should return error for empty curl arguments', async () => {
+      const deps = createMockDependencies();
+
+      await runCommand(['insert-auth', 'slack'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs.some((log) => log.includes('At least one curl argument is required'))).toBe(
+        true
+      );
+    });
+
+    it('should return error for unknown service', async () => {
+      const deps = createMockDependencies();
+
+      await runCommand(['insert-auth', 'unknown-service', '-H', 'X-Token: secret'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs.some((log) => log.includes('Unknown service'))).toBe(true);
+    });
+
+    it('should overwrite existing credentials', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(
+        storePath,
+        JSON.stringify({
+          slack: { objectType: 'slack', token: 'old-token', dCookie: 'old-cookie' },
+        })
+      );
+
+      const deps = createMockDependencies({
+        config: createMockConfig({ credentialStorePath: storePath }),
+      });
+
+      await runCommand(['insert-auth', 'slack', '-H', 'X-Token: new-secret'], deps);
+
+      expect(logs).toContain('Credentials stored.');
+
+      const storedData = JSON.parse(readSecureFile(storePath) ?? '{}') as Record<string, unknown>;
+      expect(storedData.slack).toEqual({
+        objectType: 'rawCurl',
+        curlArguments: ['-H', 'X-Token: new-secret'],
+      });
+    });
+  });
+
   describe('curl command', () => {
     it('should pass arguments to subprocess', async () => {
       const storePath = join(tempDir, 'credentials.json');
@@ -481,6 +549,25 @@ describe('CLI commands with dependency injection', () => {
         'Cookie: d=stored-cookie',
         'https://slack.com/api/test',
       ]);
+      expect(exitCode).toBe(0);
+    });
+
+    it('should pass raw curl credentials to subprocess', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(
+        storePath,
+        JSON.stringify({
+          slack: { objectType: 'rawCurl', curlArguments: ['-H', 'X-Custom: header'] },
+        })
+      );
+
+      const deps = createMockDependencies({
+        config: createMockConfig({ credentialStorePath: storePath }),
+      });
+
+      await runCommand(['curl', 'https://slack.com/api/test'], deps);
+
+      expect(capturedArgs).toEqual(['-H', 'X-Custom: header', 'https://slack.com/api/test']);
       expect(exitCode).toBe(0);
     });
 

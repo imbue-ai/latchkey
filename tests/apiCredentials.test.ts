@@ -3,6 +3,7 @@ import {
   AuthorizationBearer,
   AuthorizationBare,
   SlackApiCredentials,
+  RawCurlCredentials,
   deserializeCredentials,
   serializeCredentials,
   ApiCredentialsSchema,
@@ -88,6 +89,45 @@ describe('SlackApiCredentials', () => {
   });
 });
 
+describe('RawCurlCredentials', () => {
+  it('should generate correct curl arguments', () => {
+    const credentials = new RawCurlCredentials(['-H', 'X-Token: secret', '-H', 'X-Other: value']);
+    expect(credentials.asCurlArguments()).toEqual([
+      '-H',
+      'X-Token: secret',
+      '-H',
+      'X-Other: value',
+    ]);
+  });
+
+  it('should handle empty curl arguments', () => {
+    const credentials = new RawCurlCredentials([]);
+    expect(credentials.asCurlArguments()).toEqual([]);
+  });
+
+  it('should serialize to JSON', () => {
+    const credentials = new RawCurlCredentials(['-H', 'X-Token: secret']);
+    expect(credentials.toJSON()).toEqual({
+      objectType: 'rawCurl',
+      curlArguments: ['-H', 'X-Token: secret'],
+    });
+  });
+
+  it('should deserialize from JSON', () => {
+    const data = {
+      objectType: 'rawCurl' as const,
+      curlArguments: ['-H', 'X-Token: secret'],
+    };
+    const credentials = RawCurlCredentials.fromJSON(data);
+    expect(credentials.curlArguments).toEqual(['-H', 'X-Token: secret']);
+  });
+
+  it('should return undefined for isExpired', () => {
+    const credentials = new RawCurlCredentials(['-H', 'X-Token: secret']);
+    expect(credentials.isExpired()).toBeUndefined();
+  });
+});
+
 describe('deserializeCredentials', () => {
   it('should deserialize AuthorizationBearer', () => {
     const data = {
@@ -120,6 +160,16 @@ describe('deserializeCredentials', () => {
     expect((credentials as SlackApiCredentials).token).toBe('slack-token');
     expect((credentials as SlackApiCredentials).dCookie).toBe('slack-cookie');
   });
+
+  it('should deserialize RawCurlCredentials', () => {
+    const data = {
+      objectType: 'rawCurl' as const,
+      curlArguments: ['-H', 'X-Token: test'],
+    };
+    const credentials = deserializeCredentials(data);
+    expect(credentials).toBeInstanceOf(RawCurlCredentials);
+    expect((credentials as RawCurlCredentials).curlArguments).toEqual(['-H', 'X-Token: test']);
+  });
 });
 
 describe('serializeCredentials', () => {
@@ -150,6 +200,15 @@ describe('serializeCredentials', () => {
       dCookie: 'cookie',
     });
   });
+
+  it('should serialize RawCurlCredentials', () => {
+    const credentials = new RawCurlCredentials(['-H', 'X-Token: test']);
+    const data = serializeCredentials(credentials);
+    expect(data).toEqual({
+      objectType: 'rawCurl',
+      curlArguments: ['-H', 'X-Token: test'],
+    });
+  });
 });
 
 describe('ApiCredentialsSchema', () => {
@@ -174,6 +233,14 @@ describe('ApiCredentialsSchema', () => {
       objectType: 'slack',
       token: 'test',
       dCookie: 'cookie',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('should validate RawCurlCredentials', () => {
+    const result = ApiCredentialsSchema.safeParse({
+      objectType: 'rawCurl',
+      curlArguments: ['-H', 'X-Token: test'],
     });
     expect(result.success).toBe(true);
   });

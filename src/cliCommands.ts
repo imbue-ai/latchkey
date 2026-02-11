@@ -6,7 +6,7 @@ import type { Command } from 'commander';
 import { existsSync, unlinkSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { ApiCredentialStore } from './apiCredentialStore.js';
-import { ApiCredentialStatus, ApiCredentials } from './apiCredentials.js';
+import { ApiCredentialStatus, ApiCredentials, RawCurlCredentials } from './apiCredentials.js';
 import {
   BROWSER_SOURCES,
   BrowserNotFoundError,
@@ -300,6 +300,42 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       } else {
         clearService(deps, serviceName);
       }
+    });
+
+  program
+    .command('insert-auth')
+    .description('Store arbitrary curl arguments as credentials for a service.')
+    .argument('<service_name>', 'Name of the service to store credentials for')
+    .allowUnknownOption()
+    .allowExcessArguments()
+    .action((_serviceName: string, _options: unknown, command: { args: string[] }) => {
+      const [serviceName, ...curlArguments] = command.args;
+      if (serviceName === undefined) {
+        deps.errorLog('Error: Service name is required.');
+        deps.exit(1);
+      }
+
+      const service = deps.registry.getByName(serviceName);
+      if (service === null) {
+        deps.errorLog(`Error: Unknown service: ${serviceName}`);
+        deps.errorLog("Use 'latchkey services' to see available services.");
+        deps.exit(1);
+      }
+
+      if (curlArguments.length === 0) {
+        deps.errorLog('Error: At least one curl argument is required.');
+        deps.exit(1);
+      }
+
+      const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
+      const apiCredentialStore = new ApiCredentialStore(
+        deps.config.credentialStorePath,
+        encryptedStorage
+      );
+
+      const credentials = new RawCurlCredentials(curlArguments);
+      apiCredentialStore.save(serviceName, credentials);
+      deps.log('Credentials stored.');
     });
 
   program
