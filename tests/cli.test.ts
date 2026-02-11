@@ -67,6 +67,7 @@ const cliPath = getCliPath();
 interface TestEnv {
   LATCHKEY_STORE: string;
   LATCHKEY_BROWSER_STATE: string;
+  LATCHKEY_DISABLE_BROWSER?: string;
 }
 
 function runCli(args: string[], env: TestEnv): CliResult {
@@ -172,6 +173,7 @@ describe('CLI commands with dependency injection', () => {
       encryptionKeyOverride: overrides.encryptionKeyOverride ?? TEST_ENCRYPTION_KEY,
       serviceName: overrides.serviceName ?? defaultConfig.serviceName,
       accountName: overrides.accountName ?? defaultConfig.accountName,
+      browserDisabled: overrides.browserDisabled ?? false,
       checkSensitiveFilePermissions: () => undefined,
     };
   }
@@ -781,6 +783,27 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain('No service matches URL');
       expect(result.stderr).toContain('https://unknown-api.example.com');
+    });
+
+    it('should return error when browser is disabled via LATCHKEY_DISABLE_BROWSER', () => {
+      writeSecureFile(testEnv.LATCHKEY_STORE, '{}');
+      const result = runCli(['curl', 'https://slack.com/api/test'], {
+        ...testEnv,
+        LATCHKEY_DISABLE_BROWSER: '1',
+      });
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('Browser login is disabled');
+    });
+  });
+
+  describe('login command', () => {
+    it('should return error when browser is disabled via LATCHKEY_DISABLE_BROWSER', () => {
+      const result = runCli(['login', 'slack'], {
+        ...testEnv,
+        LATCHKEY_DISABLE_BROWSER: '1',
+      });
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('Browser login is disabled');
     });
   });
 

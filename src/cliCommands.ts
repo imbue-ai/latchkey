@@ -15,7 +15,7 @@ import {
   loadBrowserConfig,
   type BrowserSource,
 } from './browserConfig.js';
-import { Config, CONFIG } from './config.js';
+import { BrowserDisabledError, Config, CONFIG } from './config.js';
 import type { CurlResult } from './curl.js';
 import { EncryptedStorage } from './encryptedStorage.js';
 import { Registry, REGISTRY } from './registry.js';
@@ -194,13 +194,26 @@ function clearService(deps: CliDependencies, serviceName: string): void {
 }
 
 /**
+ * Check if browser login is disabled via environment variable.
+ * Exits with error if LATCHKEY_DISABLE_BROWSER is set.
+ */
+function checkBrowserNotDisabledOrExit(deps: CliDependencies): void {
+  if (deps.config.browserDisabled) {
+    deps.errorLog(new BrowserDisabledError().message);
+    deps.exit(1);
+  }
+}
+
+/**
  * Get the browser launch options from configuration, handling errors with CLI output.
- * Exits with error if no valid browser config exists.
+ * Exits with error if no valid browser config exists or if browser is disabled.
  */
 function getBrowserLaunchOptionsOrExit(deps: CliDependencies): {
   browserStatePath: string;
   executablePath: string;
 } {
+  checkBrowserNotDisabledOrExit(deps);
+
   const browserConfig = loadBrowserConfig(deps.config.configPath);
   if (!browserConfig) {
     deps.errorLog("Error: No browser configured. Run 'latchkey ensure-browser' first.");

@@ -170,6 +170,7 @@ the browser used for the login popup
 - `LATCHKEY_CONFIG`: path to the configuration file
 (defaults to `~/.latchkey/config.json`)
 - `LATCHKEY_KEYRING_SERVICE_NAME`, `LATCHKEY_KEYRING_ACCOUNT_NAME`: identifiers that are used to store the encryption password in your keyring
+- `LATCHKEY_DISABLE_BROWSER`: when set (to any non-empty value), disables the browser login flow; commands that would trigger a browser login (`login`, `curl`, `prepare`) will fail with an error instead
 
 
 ## Disclaimers
