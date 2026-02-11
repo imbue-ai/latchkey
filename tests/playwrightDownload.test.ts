@@ -31,10 +31,10 @@ describe('playwrightDownload', () => {
       expect(Array.isArray(executable.downloadURLs)).toBe(true);
       expect(executable.downloadURLs!.length).toBeGreaterThan(0);
 
-      // Each URL should be a valid HTTPS URL
+      // Each URL should be a valid HTTPS URL pointing to Chrome/Chromium
       for (const url of executable.downloadURLs!) {
         expect(url).toMatch(/^https:\/\//);
-        expect(url).toContain('chromium');
+        expect(url).toMatch(/chromium|chrome/);
       }
     });
 
