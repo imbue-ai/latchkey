@@ -20,7 +20,7 @@ export class InsecureFilePermissionsError extends Error {
 
 export class CurlNotFoundError extends Error {
   constructor(curlCommand: string) {
-    super(`curl not found: '${curlCommand}' is not available. Please install curl.`);
+    super(`'${curlCommand}' is not available. Please install curl.`);
     this.name = 'CurlNotFoundError';
   }
 }
