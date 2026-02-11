@@ -27,7 +27,7 @@ export { CodegenError } from './types.js';
  * Run the codegen which opens a browser with recording enabled.
  * Injects a custom toolbar and records user actions and HTTP request metadata.
  *
- * @returns Result containing the API key selector if selected by the user
+ * @returns Result containing the API key ancestry if selected by the user
  */
 export async function runCodegen(options: CodegenOptions): Promise<CodegenResult> {
   const outputFile = options.outputFile ?? 'tmp.js';

@@ -19,10 +19,6 @@ export class RequestMetadataCollector {
     this.currentPhase = phase;
   }
 
-  getPhase(): RecordingPhase {
-    return this.currentPhase;
-  }
-
   addRequest(request: Request, response: Response | null): void {
     const url = new URL(request.url());
 

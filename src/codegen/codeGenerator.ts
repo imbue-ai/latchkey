@@ -57,6 +57,36 @@ export class CodeGenerator {
     return `page.getByLabel('${this.escapeString(element.accessibleName)}')`;
   }
 
+  private generateLocator(target: ElementInfo): { locator: string; strategy: string } {
+    // Try getByRole first (Playwright best practice)
+    let locator = this.generateGetByRole(target);
+    if (locator) {
+      return { locator, strategy: 'getByRole' };
+    }
+
+    // Try getByPlaceholder
+    locator = this.generateGetByPlaceholder(target);
+    if (locator) {
+      return { locator, strategy: 'getByPlaceholder' };
+    }
+
+    // Try getByLabel
+    locator = this.generateGetByLabel(target);
+    if (locator) {
+      return { locator, strategy: 'getByLabel' };
+    }
+
+    // Fallback to locator with a simple selector
+    if (target.id) {
+      return { locator: `page.locator('#${target.id}')`, strategy: 'id' };
+    }
+    if (target.className) {
+      const firstClass = target.className.split(/\s+/)[0] ?? '';
+      return { locator: `page.locator('.${firstClass}')`, strategy: 'class' };
+    }
+    return { locator: `page.locator('${target.tag}')`, strategy: 'tag' };
+  }
+
   private formatElementInfo(element: ElementInfo): string {
     const parts: string[] = [`tag: ${element.tag}`];
 
@@ -83,6 +113,24 @@ export class CodeGenerator {
     }
 
     return `{ ${parts.join(', ')} }`;
+  }
+
+  private formatAncestryComments(ancestry: readonly ElementInfo[]): string[] {
+    const lines: string[] = [];
+    lines.push(`  // Element ancestry (root -> target):`);
+
+    // Output ancestry in reverse order (root first, target last)
+    for (let i = ancestry.length - 1; i >= 0; i--) {
+      const element = ancestry[i];
+      if (element) {
+        const depth = ancestry.length - 1 - i;
+        const indent = '  '.repeat(depth);
+        const marker = i === 0 ? ' [TARGET]' : '';
+        lines.push(`  //   ${indent}${this.formatElementInfo(element)}${marker}`);
+      }
+    }
+
+    return lines;
   }
 
   private generateActionCode(action: RecordedAction): string {
@@ -127,51 +175,12 @@ export class CodeGenerator {
       }
     }
 
-    // Generate the primary locator using getByRole if possible
-    let primaryLocator = this.generateGetByRole(target);
-    let locatorType = 'getByRole';
-
-    if (!primaryLocator) {
-      primaryLocator = this.generateGetByPlaceholder(target);
-      locatorType = 'getByPlaceholder';
-    }
-
-    if (!primaryLocator) {
-      primaryLocator = this.generateGetByLabel(target);
-      locatorType = 'getByLabel';
-    }
-
-    if (!primaryLocator) {
-      // Fallback to locator with a simple selector
-      if (target.id) {
-        primaryLocator = `page.locator('#${target.id}')`;
-        locatorType = 'id';
-      } else if (target.className) {
-        const firstClass = target.className.split(/\s+/)[0] ?? '';
-        primaryLocator = `page.locator('.${firstClass}')`;
-        locatorType = 'class';
-      } else {
-        primaryLocator = `page.locator('${target.tag}')`;
-        locatorType = 'tag';
-      }
-    }
+    const { locator: primaryLocator, strategy: locatorType } = this.generateLocator(target);
 
     // Build the output with ancestry information (root -> target order)
     const lines: string[] = [];
     lines.push(`  // ===== ACTION ${String(actionId)}: ${action.type} =====`);
-    lines.push(`  // Element ancestry (root -> target):`);
-
-    // Output ancestry in reverse order (root first, target last)
-    for (let i = ancestry.length - 1; i >= 0; i--) {
-      const element = ancestry[i];
-      if (element) {
-        const depth = ancestry.length - 1 - i;
-        const indent = '  '.repeat(depth);
-        const marker = i === 0 ? ' [TARGET]' : '';
-        lines.push(`  //   ${indent}${this.formatElementInfo(element)}${marker}`);
-      }
-    }
-
+    lines.push(...this.formatAncestryComments(ancestry));
     lines.push(`  // Locator strategy: ${locatorType}`);
     lines.push(`  await ${primaryLocator}${actionMethod};`);
     lines.push('');
@@ -211,51 +220,12 @@ const { chromium } = require('playwright');
       const target = ancestry[0];
 
       if (target) {
-        // Generate the primary locator using getByRole if possible
-        let primaryLocator = this.generateGetByRole(target);
-        let locatorType = 'getByRole';
-
-        if (!primaryLocator) {
-          primaryLocator = this.generateGetByPlaceholder(target);
-          locatorType = 'getByPlaceholder';
-        }
-
-        if (!primaryLocator) {
-          primaryLocator = this.generateGetByLabel(target);
-          locatorType = 'getByLabel';
-        }
-
-        if (!primaryLocator) {
-          // Fallback to locator with a simple selector
-          if (target.id) {
-            primaryLocator = `page.locator('#${target.id}')`;
-            locatorType = 'id';
-          } else if (target.className) {
-            const firstClass = target.className.split(/\s+/)[0] ?? '';
-            primaryLocator = `page.locator('.${firstClass}')`;
-            locatorType = 'class';
-          } else {
-            primaryLocator = `page.locator('${target.tag}')`;
-            locatorType = 'tag';
-          }
-        }
+        const { locator: primaryLocator, strategy: locatorType } = this.generateLocator(target);
 
         // Build ancestry information
         const ancestryLines: string[] = [];
         ancestryLines.push(`  // ===== API KEY EXTRACTION =====`);
-        ancestryLines.push(`  // Element ancestry (root -> target):`);
-
-        // Output ancestry in reverse order (root first, target last)
-        for (let i = ancestry.length - 1; i >= 0; i--) {
-          const element = ancestry[i];
-          if (element) {
-            const depth = ancestry.length - 1 - i;
-            const indent = '  '.repeat(depth);
-            const marker = i === 0 ? ' [TARGET]' : '';
-            ancestryLines.push(`  //   ${indent}${this.formatElementInfo(element)}${marker}`);
-          }
-        }
-
+        ancestryLines.push(...this.formatAncestryComments(ancestry));
         ancestryLines.push(`  // Locator strategy: ${locatorType}`);
         ancestryLines.push(`  const apiKey = await ${primaryLocator}.textContent();`);
         ancestryLines.push(`  console.log('API Key:', apiKey);`);
