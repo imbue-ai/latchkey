@@ -67,17 +67,9 @@ export interface Service {
 
   /**
    * Get a new session for the login flow.
+   * Services that don't support browser login should not implement this method.
    */
-  getSession(): ServiceSession;
-
-  /**
-   * Optional preparation stage.
-   * Services can implement this to perform additional preparation steps.
-   */
-  prepare?(
-    encryptedStorage: EncryptedStorage,
-    launchOptions?: BrowserLaunchOptions
-  ): Promise<ApiCredentials>;
+  getSession?(): ServiceSession;
 
   /**
    * Optional method to refresh expired credentials.
@@ -89,7 +81,8 @@ export interface Service {
 }
 
 /**
- * Base class for service sessions that handle the login flow.
+ * Base class for service sessions that handle browser-based interactions.
+ * This includes login, preparation steps, and any other browser automation.
  */
 export abstract class ServiceSession {
   readonly service: Service;
@@ -144,6 +137,15 @@ export abstract class ServiceSession {
   ): Promise<Error | null> {
     return Promise.resolve(null);
   }
+
+  /**
+   * Optional preparation step before login.
+   * Services can override this to perform setup (e.g., creating OAuth clients).
+   */
+  prepare?(
+    encryptedStorage: EncryptedStorage,
+    launchOptions?: BrowserLaunchOptions
+  ): Promise<ApiCredentials>;
 
   /**
    * Perform the login flow and return the extracted credentials.

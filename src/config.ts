@@ -25,6 +25,15 @@ export class BrowserDisabledError extends Error {
   }
 }
 
+export class BrowserFlowNotSupportedError extends Error {
+  constructor(serviceName: string) {
+    super(
+      `Service '${serviceName}' does not support browser login. Use 'latchkey insert-auth ${serviceName}' to manually insert credentials.`
+    );
+    this.name = 'BrowserFlowNotSupportedError';
+  }
+}
+
 const LATCHKEY_STORE_ENV_VAR = 'LATCHKEY_STORE';
 const LATCHKEY_BROWSER_STATE_ENV_VAR = 'LATCHKEY_BROWSER_STATE';
 const LATCHKEY_CONFIG_ENV_VAR = 'LATCHKEY_CONFIG';

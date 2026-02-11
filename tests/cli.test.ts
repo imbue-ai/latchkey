@@ -745,6 +745,90 @@ describe('CLI commands with dependency injection', () => {
       );
       expect(capturedArgs).toContain('Authorization: Bearer new-token');
     });
+
+    it('should return error when service does not support browser login and no credentials', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(storePath, '{}');
+
+      const noLoginService: Service = {
+        name: 'nologin',
+        displayName: 'No Login Service',
+        baseApiUrls: ['https://nologin.example.com/api/'],
+        loginUrl: 'https://nologin.example.com',
+        info: 'A service without browser login support.',
+        credentialCheckCurlArguments: [],
+        checkApiCredentials: vi.fn(),
+        // No getSession - service doesn't support browser login
+      };
+
+      const deps = createMockDependencies({
+        registry: new Registry([noLoginService]),
+        config: createMockConfig({ credentialStorePath: storePath }),
+      });
+
+      await runCommand(['curl', 'https://nologin.example.com/api/test'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs.some((log) => log.includes('does not support browser login'))).toBe(true);
+      expect(errorLogs.some((log) => log.includes('insert-auth'))).toBe(true);
+    });
+
+    it('should work when service does not have getSession but credentials exist', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(
+        storePath,
+        JSON.stringify({
+          nologin: { objectType: 'rawCurl', curlArguments: ['-H', 'X-API-Key: secret'] },
+        })
+      );
+
+      const noLoginService: Service = {
+        name: 'nologin',
+        displayName: 'No Login Service',
+        baseApiUrls: ['https://nologin.example.com/api/'],
+        loginUrl: 'https://nologin.example.com',
+        info: 'A service without browser login support.',
+        credentialCheckCurlArguments: [],
+        checkApiCredentials: vi.fn().mockReturnValue(ApiCredentialStatus.Valid),
+        // No getSession - service doesn't support browser login
+      };
+
+      const deps = createMockDependencies({
+        registry: new Registry([noLoginService]),
+        config: createMockConfig({ credentialStorePath: storePath }),
+      });
+
+      await runCommand(['curl', 'https://nologin.example.com/api/test'], deps);
+
+      expect(exitCode).toBe(0);
+      expect(capturedArgs).toContain('-H');
+      expect(capturedArgs).toContain('X-API-Key: secret');
+    });
+  });
+
+  describe('login command', () => {
+    it('should return error when service does not support browser login', async () => {
+      const noLoginService: Service = {
+        name: 'nologin',
+        displayName: 'No Login Service',
+        baseApiUrls: ['https://nologin.example.com/api/'],
+        loginUrl: 'https://nologin.example.com',
+        info: 'A service without browser login support.',
+        credentialCheckCurlArguments: [],
+        checkApiCredentials: vi.fn(),
+        // No getSession - service doesn't support browser login
+      };
+
+      const deps = createMockDependencies({
+        registry: new Registry([noLoginService]),
+      });
+
+      await runCommand(['login', 'nologin'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs.some((log) => log.includes('does not support browser login'))).toBe(true);
+      expect(errorLogs.some((log) => log.includes('insert-auth'))).toBe(true);
+    });
   });
 });
 

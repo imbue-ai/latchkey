@@ -343,6 +343,28 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     );
   }
 
+  override async prepare(
+    encryptedStorage: EncryptedStorage,
+    launchOptions?: BrowserLaunchOptions
+  ): Promise<ApiCredentials> {
+    return withTempBrowserContext(encryptedStorage, launchOptions ?? {}, async ({ context }) => {
+      const page = await context.newPage();
+      await page.goto(this.service.loginUrl);
+      await waitForGoogleLogin(page);
+
+      await showSpinnerPage(
+        context,
+        `Finalizing ${this.service.displayName} login...\nThis can take a few minutes.`
+      );
+      const projectSlug = await createProject(page);
+      await enableApis(page, projectSlug);
+      await configureBranding(page, projectSlug);
+      const { clientId, clientSecret } = await createOAuthClient(page);
+      await page.close();
+      return new OAuthCredentials(clientId, clientSecret);
+    });
+  }
+
   private async performOAuthFlow(
     context: BrowserContext,
     page: Page,
@@ -458,28 +480,6 @@ export class Google implements Service {
       return ApiCredentialStatus.Valid;
     }
     return ApiCredentialStatus.Invalid;
-  }
-
-  async prepare(
-    encryptedStorage: EncryptedStorage,
-    launchOptions?: BrowserLaunchOptions
-  ): Promise<ApiCredentials> {
-    return withTempBrowserContext(encryptedStorage, launchOptions ?? {}, async ({ context }) => {
-      const page = await context.newPage();
-      await page.goto(this.loginUrl);
-      await waitForGoogleLogin(page);
-
-      await showSpinnerPage(
-        context,
-        `Finalizing ${this.displayName} login...\nThis can take a few minutes.`
-      );
-      const projectSlug = await createProject(page);
-      await enableApis(page, projectSlug);
-      await configureBranding(page, projectSlug);
-      const { clientId, clientSecret } = await createOAuthClient(page);
-      await page.close();
-      return new OAuthCredentials(clientId, clientSecret);
-    });
   }
 
   refreshCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentials | null> {

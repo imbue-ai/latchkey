@@ -15,11 +15,11 @@ import {
   loadBrowserConfig,
   type BrowserSource,
 } from './browserConfig.js';
-import { BrowserDisabledError, Config, CONFIG } from './config.js';
+import { BrowserDisabledError, BrowserFlowNotSupportedError, Config, CONFIG } from './config.js';
 import type { CurlResult } from './curl.js';
 import { EncryptedStorage } from './encryptedStorage.js';
 import { Registry, REGISTRY } from './registry.js';
-import { LoginCancelledError, LoginFailedError, Service } from './services/index.js';
+import { LoginCancelledError, LoginFailedError, type Service } from './services/index.js';
 import { run as curlRun } from './curl.js';
 import { getSkillMdContent } from './skillMd.js';
 
@@ -412,6 +412,12 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         deps.exit(1);
       }
 
+      const session = service.getSession?.();
+      if (!session) {
+        deps.errorLog(new BrowserFlowNotSupportedError(service.name).message);
+        deps.exit(1);
+      }
+
       const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
       const apiCredentialStore = new ApiCredentialStore(
         deps.config.credentialStorePath,
@@ -419,18 +425,19 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       );
 
       const oldCredentials = apiCredentialStore.get(service.name);
-      if (service.prepare && oldCredentials === null) {
+      if (session.prepare && oldCredentials === null) {
         deps.errorLog(`Error: Service ${serviceName} requires preparation first.`);
         deps.errorLog(`Run 'latchkey prepare ${serviceName}' before logging in.`);
         deps.exit(1);
       }
-
       const launchOptions = getBrowserLaunchOptionsOrExit(deps);
 
       try {
-        const apiCredentials = await service
-          .getSession()
-          .login(encryptedStorage, launchOptions, oldCredentials ?? undefined);
+        const apiCredentials = await session.login(
+          encryptedStorage,
+          launchOptions,
+          oldCredentials ?? undefined
+        );
         apiCredentialStore.save(service.name, apiCredentials);
         deps.log('Done');
       } catch (error) {
@@ -458,7 +465,8 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         deps.exit(1);
       }
 
-      if (!service.prepare) {
+      const session = service.getSession?.();
+      if (!session?.prepare) {
         deps.errorLog(`Error: Service ${serviceName} does not support the prepare command.`);
         deps.exit(1);
       }
@@ -479,7 +487,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       const launchOptions = getBrowserLaunchOptionsOrExit(deps);
 
       try {
-        const apiCredentials = await service.prepare(encryptedStorage, launchOptions);
+        const apiCredentials = await session.prepare(encryptedStorage, launchOptions);
         apiCredentialStore.save(service.name, apiCredentials);
         deps.log('Done');
       } catch (error) {
@@ -527,7 +535,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
 
       if (apiCredentials === null || isExpired) {
         // Check if service requires preparation first
-        if (service.prepare && apiCredentials === null) {
+        if (service.getSession?.().prepare && apiCredentials === null) {
           deps.errorLog(`Error: Service ${service.name} requires preparation first.`);
           deps.errorLog(`Run 'latchkey prepare ${service.name}' before using curl.`);
           deps.exit(1);
@@ -544,15 +552,18 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
 
         // If we still don't have valid credentials, perform login
         if (apiCredentials === null || apiCredentials.isExpired() === true) {
+          const session = service.getSession?.();
+          if (!session) {
+            deps.errorLog(new BrowserFlowNotSupportedError(service.name).message);
+            deps.exit(1);
+          }
           const launchOptions = getBrowserLaunchOptionsOrExit(deps);
 
           try {
             // Pass old credentials to login() if they're expired (to reuse client ID/secret)
             const oldCredentials =
               isExpired && apiCredentials !== null ? apiCredentials : undefined;
-            apiCredentials = await service
-              .getSession()
-              .login(encryptedStorage, launchOptions, oldCredentials);
+            apiCredentials = await session.login(encryptedStorage, launchOptions, oldCredentials);
             apiCredentialStore.save(service.name, apiCredentials);
           } catch (error) {
             if (error instanceof LoginCancelledError) {

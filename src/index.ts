@@ -15,7 +15,13 @@ export {
 
 export { ApiCredentialStore, ApiCredentialStoreError } from './apiCredentialStore.js';
 
-export { Config, CONFIG, InsecureFilePermissionsError } from './config.js';
+export {
+  Config,
+  CONFIG,
+  InsecureFilePermissionsError,
+  BrowserDisabledError,
+  BrowserFlowNotSupportedError,
+} from './config.js';
 
 export { encrypt, decrypt, generateKey, EncryptionError, DecryptionError } from './encryption.js';
 
