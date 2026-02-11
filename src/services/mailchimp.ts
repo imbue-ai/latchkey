@@ -15,7 +15,8 @@ export class Mailchimp implements Service {
   readonly displayName = 'Mailchimp';
   readonly baseApiUrls = ['https://api.mailchimp.com/', 'https://*.api.mailchimp.com/'] as const;
   readonly loginUrl = 'https://login.mailchimp.com/';
-  readonly info = 'https://mailchimp.com/developer/marketing/api/. ' +
+  readonly info =
+    'https://mailchimp.com/developer/marketing/api/. ' +
     'Browser login is not supported. ' +
     'Use `latchkey insert-auth mailchimp -H "Authorization: Bearer <token>"` to add credentials manually.';
 

@@ -9,6 +9,7 @@ import {
   registerCommands,
   type CliDependencies,
 } from '../src/cliCommands.js';
+import { BrowserFlowsNotSupportedError } from '../src/playwrightUtils.js';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { Config } from '../src/config.js';
 import { Registry } from '../src/registry.js';
@@ -929,8 +930,8 @@ describe('CLI commands with dependency injection', () => {
       await runCommand(['curl', 'https://nologin.example.com/api/test'], deps);
 
       expect(exitCode).toBe(1);
-      expect(errorLogs.some((log) => log.includes('does not support browser flows'))).toBe(true);
-      expect(errorLogs.some((log) => log.includes('insert-auth'))).toBe(true);
+      const expectedMessage = new BrowserFlowsNotSupportedError('nologin').message;
+      expect(errorLogs.some((log) => log.includes(expectedMessage))).toBe(true);
     });
 
     it('should work when service does not have getSession but credentials exist', async () => {
@@ -986,8 +987,8 @@ describe('CLI commands with dependency injection', () => {
       await runCommand(['login', 'nologin'], deps);
 
       expect(exitCode).toBe(1);
-      expect(errorLogs.some((log) => log.includes('does not support browser flows'))).toBe(true);
-      expect(errorLogs.some((log) => log.includes('insert-auth'))).toBe(true);
+      const expectedMessage = new BrowserFlowsNotSupportedError('nologin').message;
+      expect(errorLogs.some((log) => log.includes(expectedMessage))).toBe(true);
     });
   });
 });
