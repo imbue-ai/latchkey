@@ -4,10 +4,11 @@
 
 /**
  * Phase of the recording session.
- * - 'pre-login': Before the user clicks the login button
- * - 'post-login': After the user clicks the login button
+ * - 'pre-login': Before the user indicates they will log in
+ * - 'logging-in': After indicating login intent, during authentication process
+ * - 'post-login': After the user confirms they have successfully logged in
  */
-export type RecordingPhase = 'pre-login' | 'post-login';
+export type RecordingPhase = 'pre-login' | 'logging-in' | 'post-login';
 
 /**
  * Represents HTTP request metadata captured during recording.
@@ -38,6 +39,15 @@ export interface CodegenOptions {
 }
 
 /**
+ * Selector variant for code generation.
+ * Multiple variants are generated for AI post-processing to pick the best one.
+ */
+export interface SelectorVariant {
+  readonly type: 'id' | 'class' | 'label' | 'testid' | 'fallback';
+  readonly selector: string;
+}
+
+/**
  * Represents a recorded action.
  */
 export interface RecordedAction {
@@ -49,7 +59,10 @@ export interface RecordedAction {
     | 'select'
     | 'check'
     | 'uncheck';
+  /** Primary selector (for backwards compatibility) */
   readonly selector?: string;
+  /** All available selector variants for this action */
+  readonly selectorVariants?: readonly SelectorVariant[];
   readonly url?: string;
   readonly value?: string;
   readonly key?: string;

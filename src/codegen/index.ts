@@ -5,9 +5,10 @@
  * - Records all HTTP request metadata to a file
  * - Includes a custom toolbar with additional buttons
  *
- * The session has two phases:
+ * The session has three phases:
  * - Pre-login: User interactions are recorded
- * - Post-login: Only HTTP requests are captured (no action recording)
+ * - Logging-in: User is authenticating (no recording, requests marked as logging-in)
+ * - Post-login: User has logged in (no recording, requests marked as post-login)
  */
 
 import type { BrowserContext, Page, Request, Response } from 'playwright';
@@ -17,10 +18,10 @@ import { CodeGenerator } from './codeGenerator.js';
 import { createRecorderScript } from './recorderScript.js';
 import { RequestMetadataCollector } from './requestMetadataCollector.js';
 import { createToolbarScript } from './toolbarScript.js';
-import type { CodegenOptions, CodegenResult, RecordedAction, RecordingPhase } from './types.js';
+import type { CodegenOptions, CodegenResult, RecordedAction, RecordingPhase, SelectorVariant } from './types.js';
 
 // Re-export types for external use
-export type { CodegenOptions, CodegenResult, RecordedAction, RecordingPhase, RequestMetadata } from './types.js';
+export type { CodegenOptions, CodegenResult, RecordedAction, RecordingPhase, RequestMetadata, SelectorVariant } from './types.js';
 export { CodegenError } from './types.js';
 
 /**
@@ -71,15 +72,23 @@ export async function runCodegen(options: CodegenOptions): Promise<CodegenResult
   // Only records actions during pre-login phase
   await context.exposeFunction(
     '__latchkeyRecordAction',
-    (action: { type: string; selector?: string; value?: string; key?: string; url?: string }) => {
+    (action: {
+      type: string;
+      selector?: string;
+      selectorVariants?: SelectorVariant[];
+      value?: string;
+      key?: string;
+      url?: string;
+    }) => {
       // Only record actions during pre-login phase
-      if (currentPhase === 'post-login') {
+      if (currentPhase !== 'pre-login') {
         return;
       }
 
       codeGenerator.addAction({
         type: action.type as RecordedAction['type'],
         selector: action.selector,
+        selectorVariants: action.selectorVariants,
         value: action.value,
         key: action.key,
         url: action.url,
@@ -93,14 +102,16 @@ export async function runCodegen(options: CodegenOptions): Promise<CodegenResult
     return currentPhase;
   });
 
-  // Expose function called when "Ready to Log In" is clicked
-  await context.exposeFunction('__latchkeySetWaitingForLogin', (_waiting: boolean) => {
-    console.log('[Latchkey] Waiting for login button click...');
+  // Expose function called when "Logging In" button is clicked
+  await context.exposeFunction('__latchkeyTransitionToLoggingIn', () => {
+    console.log('[Latchkey] Transitioning to logging-in phase');
+    currentPhase = 'logging-in';
+    requestCollector.setPhase('logging-in');
   });
 
-  // Expose function called when the login button is clicked
-  await context.exposeFunction('__latchkeyLoginClicked', () => {
-    console.log('[Latchkey] Login button clicked - transitioning to post-login phase');
+  // Expose function called when "Logged In" button is clicked
+  await context.exposeFunction('__latchkeyTransitionToPostLogin', () => {
+    console.log('[Latchkey] Transitioning to post-login phase');
     currentPhase = 'post-login';
     requestCollector.setPhase('post-login');
   });

@@ -12,7 +12,6 @@ export function createToolbarScript(): string {
     if (document.getElementById('latchkey-recorder-toolbar')) return;
 
     // State
-    let isWaitingForLoginClick = false;
     let isSelectingApiKeyElement = false;
     let highlightOverlay = null;
 
@@ -92,25 +91,39 @@ export function createToolbarScript(): string {
         color: #aaa;
         font-size: 11px;
         margin-left: 8px;
+        min-width: 140px;
       }
 
-      .latchkey-toolbar-status.recording {
+      .latchkey-toolbar-status.pre-login {
         color: #ff6b6b;
+      }
+
+      .latchkey-toolbar-status.logging-in {
+        color: #fbbf24;
       }
 
       .latchkey-toolbar-status.post-login {
         color: #4ade80;
       }
 
-      .latchkey-recording-dot {
+      .latchkey-phase-dot {
         width: 8px;
         height: 8px;
-        background: #ff4444;
         border-radius: 50%;
+        flex-shrink: 0;
+      }
+
+      .latchkey-phase-dot.pre-login {
+        background: #ff4444;
         animation: latchkey-pulse 1.5s infinite;
       }
 
-      .latchkey-recording-dot.post-login {
+      .latchkey-phase-dot.logging-in {
+        background: #fbbf24;
+        animation: latchkey-pulse 1s infinite;
+      }
+
+      .latchkey-phase-dot.post-login {
         background: #4ade80;
         animation: none;
       }
@@ -136,15 +149,10 @@ export function createToolbarScript(): string {
       #latchkey-highlight-overlay {
         position: fixed;
         pointer-events: none;
-        border: 2px solid #f43f5e;
-        background: rgba(244, 63, 94, 0.1);
+        border: 2px solid #22c55e;
+        background: rgba(34, 197, 94, 0.1);
         z-index: 2147483646;
         transition: all 0.05s ease-out;
-      }
-
-      #latchkey-highlight-overlay.api-key {
-        border-color: #22c55e;
-        background: rgba(34, 197, 94, 0.1);
       }
     \`;
 
@@ -171,14 +179,14 @@ export function createToolbarScript(): string {
     \`;
     toolbar.appendChild(gripper);
 
-    // Recording indicator
-    const recordingDot = document.createElement('div');
-    recordingDot.className = 'latchkey-recording-dot';
-    toolbar.appendChild(recordingDot);
+    // Phase indicator dot
+    const phaseDot = document.createElement('div');
+    phaseDot.className = 'latchkey-phase-dot pre-login';
+    toolbar.appendChild(phaseDot);
 
     // Status text
     const status = document.createElement('span');
-    status.className = 'latchkey-toolbar-status recording';
+    status.className = 'latchkey-toolbar-status pre-login';
     status.textContent = 'Recording (pre-login)';
     toolbar.appendChild(status);
 
@@ -187,24 +195,35 @@ export function createToolbarScript(): string {
     sep1.className = 'latchkey-toolbar-separator';
     toolbar.appendChild(sep1);
 
-    // "Ready to Log In" button
-    const loginBtn = document.createElement('button');
-    loginBtn.className = 'latchkey-toolbar-button';
-    loginBtn.innerHTML = \`
+    // "Logging In" button - transitions from pre-login to logging-in
+    const loggingInBtn = document.createElement('button');
+    loggingInBtn.className = 'latchkey-toolbar-button';
+    loggingInBtn.innerHTML = \`
       <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
         <path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm2-3a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm4 8c0 1-1 1-1 1H3s-1 0-1-1 1-4 6-4 6 3 6 4zm-1-.004c-.001-.246-.154-.986-.832-1.664C11.516 10.68 10.289 10 8 10c-2.29 0-3.516.68-4.168 1.332-.678.678-.83 1.418-.832 1.664h10z"/>
       </svg>
-      Ready to Log In
+      Logging In
     \`;
-    loginBtn.title = 'Click this, then click the login button on the page';
-    loginBtn.onclick = () => {
-      if (isSelectingApiKeyElement) return;
-      isWaitingForLoginClick = true;
-      loginBtn.classList.add('active');
-      status.textContent = 'Click the login button...';
-      window.__latchkeySetWaitingForLogin && window.__latchkeySetWaitingForLogin(true);
-    };
-    toolbar.appendChild(loginBtn);
+    loggingInBtn.title = 'Click when you are about to log in';
+    toolbar.appendChild(loggingInBtn);
+
+    // "Logged In" button - transitions from logging-in to post-login
+    const loggedInBtn = document.createElement('button');
+    loggedInBtn.className = 'latchkey-toolbar-button';
+    loggedInBtn.disabled = true;
+    loggedInBtn.innerHTML = \`
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+        <path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0z"/>
+      </svg>
+      Logged In
+    \`;
+    loggedInBtn.title = 'Click when you have successfully logged in';
+    toolbar.appendChild(loggedInBtn);
+
+    // Separator
+    const sep2 = document.createElement('div');
+    sep2.className = 'latchkey-toolbar-separator';
+    toolbar.appendChild(sep2);
 
     // "Select API Key Element" button
     const apiKeyBtn = document.createElement('button');
@@ -216,37 +235,62 @@ export function createToolbarScript(): string {
       Select API Key Element
     \`;
     apiKeyBtn.title = 'Click to select the element containing the API key';
-    apiKeyBtn.onclick = () => {
-      if (isWaitingForLoginClick) return;
-      isSelectingApiKeyElement = !isSelectingApiKeyElement;
-      apiKeyBtn.classList.toggle('active', isSelectingApiKeyElement);
-      highlightOverlay.style.display = isSelectingApiKeyElement ? 'block' : 'none';
-      highlightOverlay.classList.add('api-key');
-      if (isSelectingApiKeyElement) {
-        status.textContent = 'Click the API key element...';
-      } else {
-        updateStatusText();
-      }
-    };
     toolbar.appendChild(apiKeyBtn);
 
     // Append toolbar to body
     document.body.appendChild(toolbar);
 
-    // Function to update status text based on current phase
-    function updateStatusText() {
-      const phase = window.__latchkeyGetPhase ? window.__latchkeyGetPhase() : 'pre-login';
-      if (phase === 'post-login') {
-        status.textContent = 'Post-login (not recording)';
-        status.className = 'latchkey-toolbar-status post-login';
-        recordingDot.classList.add('post-login');
-        loginBtn.disabled = true;
-      } else {
-        status.textContent = 'Recording (pre-login)';
-        status.className = 'latchkey-toolbar-status recording';
-        recordingDot.classList.remove('post-login');
+    // Function to update UI based on current phase
+    function updatePhaseUI(phase) {
+      // Update dot
+      phaseDot.className = 'latchkey-phase-dot ' + phase;
+
+      // Update status text
+      status.className = 'latchkey-toolbar-status ' + phase;
+      switch (phase) {
+        case 'pre-login':
+          status.textContent = 'Recording (pre-login)';
+          loggingInBtn.disabled = false;
+          loggedInBtn.disabled = true;
+          break;
+        case 'logging-in':
+          status.textContent = 'Logging in...';
+          loggingInBtn.disabled = true;
+          loggedInBtn.disabled = false;
+          break;
+        case 'post-login':
+          status.textContent = 'Logged in (not recording)';
+          loggingInBtn.disabled = true;
+          loggedInBtn.disabled = true;
+          break;
       }
     }
+
+    // Button handlers
+    loggingInBtn.onclick = () => {
+      if (loggingInBtn.disabled) return;
+      window.__latchkeyTransitionToLoggingIn && window.__latchkeyTransitionToLoggingIn();
+      updatePhaseUI('logging-in');
+    };
+
+    loggedInBtn.onclick = () => {
+      if (loggedInBtn.disabled) return;
+      window.__latchkeyTransitionToPostLogin && window.__latchkeyTransitionToPostLogin();
+      updatePhaseUI('post-login');
+    };
+
+    apiKeyBtn.onclick = () => {
+      isSelectingApiKeyElement = !isSelectingApiKeyElement;
+      apiKeyBtn.classList.toggle('active', isSelectingApiKeyElement);
+      highlightOverlay.style.display = isSelectingApiKeyElement ? 'block' : 'none';
+      if (isSelectingApiKeyElement) {
+        status.textContent = 'Click the API key element...';
+      } else {
+        // Restore status based on current phase
+        const phase = window.__latchkeyGetPhase ? window.__latchkeyGetPhase() : 'pre-login';
+        updatePhaseUI(phase);
+      }
+    };
 
     // Element picker: highlight on mousemove
     document.addEventListener('mousemove', (e) => {
@@ -268,28 +312,15 @@ export function createToolbarScript(): string {
 
     // Element picker: select on click
     document.addEventListener('click', (e) => {
-      // Handle login button click detection
-      if (isWaitingForLoginClick) {
-        const target = e.target;
-        if (target && !toolbar.contains(target)) {
-          isWaitingForLoginClick = false;
-          loginBtn.classList.remove('active');
-          window.__latchkeyLoginClicked && window.__latchkeyLoginClicked();
-          updateStatusText();
-          // Don't prevent default - let the actual login click through
-          return;
-        }
-      }
-
       // Handle API key element selection
       if (isSelectingApiKeyElement) {
-        e.preventDefault();
-        e.stopPropagation();
-
         const target = e.target;
         if (!target || target === highlightOverlay || toolbar.contains(target)) {
           return;
         }
+
+        e.preventDefault();
+        e.stopPropagation();
 
         isSelectingApiKeyElement = false;
         apiKeyBtn.classList.remove('active');
@@ -298,7 +329,10 @@ export function createToolbarScript(): string {
         // Generate selector for the element
         const selector = generateSelector(target);
         window.__latchkeyApiKeyElementSelected && window.__latchkeyApiKeyElementSelected(selector);
-        updateStatusText();
+
+        // Restore status based on current phase
+        const phase = window.__latchkeyGetPhase ? window.__latchkeyGetPhase() : 'pre-login';
+        updatePhaseUI(phase);
       }
     }, true);
 
@@ -364,8 +398,12 @@ export function createToolbarScript(): string {
       isDragging = false;
     });
 
-    // Expose function to update UI when phase changes
-    window.__latchkeyUpdatePhase = updateStatusText;
+    // Expose function to update UI when phase changes externally
+    window.__latchkeyUpdatePhase = updatePhaseUI;
+
+    // Initialize UI based on current phase
+    const initialPhase = window.__latchkeyGetPhase ? window.__latchkeyGetPhase() : 'pre-login';
+    updatePhaseUI(initialPhase);
   }
 
   // Wait for DOM to be ready
