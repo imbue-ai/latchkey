@@ -16,7 +16,7 @@ import {
   type BrowserSource,
 } from './browserConfig.js';
 import { Config, CONFIG } from './config.js';
-import { BrowserDisabledError, BrowserFlowNotSupportedError } from './playwrightUtils.js';
+import { BrowserDisabledError, BrowserFlowsNotSupportedError } from './playwrightUtils.js';
 import type { CurlResult } from './curl.js';
 import { EncryptedStorage } from './encryptedStorage.js';
 import { Registry, REGISTRY } from './registry.js';
@@ -415,7 +415,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
 
       const session = service.getSession?.();
       if (!session) {
-        deps.errorLog(new BrowserFlowNotSupportedError(service.name).message);
+        deps.errorLog(new BrowserFlowsNotSupportedError(service.name).message);
         deps.exit(1);
       }
 
@@ -555,7 +555,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         if (apiCredentials === null || apiCredentials.isExpired() === true) {
           const session = service.getSession?.();
           if (!session) {
-            deps.errorLog(new BrowserFlowNotSupportedError(service.name).message);
+            deps.errorLog(new BrowserFlowsNotSupportedError(service.name).message);
             deps.exit(1);
           }
           const launchOptions = getBrowserLaunchOptionsOrExit(deps);

@@ -42,7 +42,7 @@ export {
 export {
   typeLikeHuman,
   BrowserDisabledError,
-  BrowserFlowNotSupportedError,
+  BrowserFlowsNotSupportedError,
 } from './playwrightUtils.js';
 
 // Services
