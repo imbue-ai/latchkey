@@ -249,7 +249,7 @@ export function createToolbarScript(): string {
       status.className = 'latchkey-toolbar-status ' + phase;
       switch (phase) {
         case 'pre-login':
-          status.textContent = 'Recording (pre-login)';
+          status.textContent = 'Pre-login (not recording)';
           loggingInBtn.disabled = false;
           loggedInBtn.disabled = true;
           break;
@@ -259,7 +259,7 @@ export function createToolbarScript(): string {
           loggedInBtn.disabled = false;
           break;
         case 'post-login':
-          status.textContent = 'Logged in (not recording)';
+          status.textContent = 'Recording (post-login)';
           loggingInBtn.disabled = true;
           loggedInBtn.disabled = true;
           break;

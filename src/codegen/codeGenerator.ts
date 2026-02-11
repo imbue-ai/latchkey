@@ -10,6 +10,7 @@ export class CodeGenerator {
   private readonly actions: RecordedAction[] = [];
   private readonly outputPath: string;
   private actionCounter = 0;
+  private apiKeySelector: string | undefined;
 
   constructor(outputPath: string) {
     this.outputPath = outputPath;
@@ -17,6 +18,11 @@ export class CodeGenerator {
 
   addAction(action: RecordedAction): void {
     this.actions.push(action);
+    this.flush();
+  }
+
+  setApiKeySelector(selector: string): void {
+    this.apiKeySelector = selector;
     this.flush();
   }
 
@@ -125,7 +131,20 @@ const { chromium } = require('playwright');
 `;
 
     const actionLines = this.actions.map((action) => this.generateActionCode(action));
-    return header + actionLines.join('\n') + footer;
+
+    // Generate API key extraction code if selector was set
+    let apiKeyCode = '';
+    if (this.apiKeySelector) {
+      apiKeyCode = `
+  // ===== API KEY EXTRACTION =====
+  const apiKey = await page.locator('${this.escapeString(this.apiKeySelector)}').textContent();
+  console.log('API Key:', apiKey);
+  // ===== END API KEY EXTRACTION =====
+
+`;
+    }
+
+    return header + actionLines.join('\n') + apiKeyCode + footer;
   }
 
   flush(): void {

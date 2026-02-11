@@ -6,9 +6,9 @@
  * - Includes a custom toolbar with additional buttons
  *
  * The session has three phases:
- * - Pre-login: User interactions are recorded
- * - Logging-in: User is authenticating (no recording, requests marked as logging-in)
- * - Post-login: User has logged in (no recording, requests marked as post-login)
+ * - Pre-login: No recording, requests marked as pre-login
+ * - Logging-in: No recording, requests marked as logging-in
+ * - Post-login: User interactions are recorded, requests marked as post-login
  */
 
 import type { BrowserContext, Page, Request, Response } from 'playwright';
@@ -69,7 +69,7 @@ export async function runCodegen(options: CodegenOptions): Promise<CodegenResult
   await context.addInitScript(recorderScript + toolbarScript);
 
   // Expose function to receive recorded actions from the page
-  // Only records actions during pre-login phase
+  // Only records actions during post-login phase
   await context.exposeFunction(
     '__latchkeyRecordAction',
     (action: {
@@ -80,8 +80,8 @@ export async function runCodegen(options: CodegenOptions): Promise<CodegenResult
       key?: string;
       url?: string;
     }) => {
-      // Only record actions during pre-login phase
-      if (currentPhase !== 'pre-login') {
+      // Only record actions during post-login phase
+      if (currentPhase !== 'post-login') {
         return;
       }
 
@@ -120,6 +120,7 @@ export async function runCodegen(options: CodegenOptions): Promise<CodegenResult
   await context.exposeFunction('__latchkeyApiKeyElementSelected', (selector: string) => {
     console.log(`[Latchkey] API key element selected: ${selector}`);
     apiKeySelector = selector;
+    codeGenerator.setApiKeySelector(selector);
   });
 
   const page: Page = await context.newPage();
@@ -133,13 +134,8 @@ export async function runCodegen(options: CodegenOptions): Promise<CodegenResult
     }
   }
 
-  // Record initial navigation if URL provided
+  // Navigate to initial URL if provided
   if (options.url) {
-    codeGenerator.addAction({
-      type: 'navigate',
-      url: options.url,
-      timestamp: Date.now(),
-    });
     await page.goto(options.url);
     // Inject toolbar after page loads
     await injectToolbarIfNeeded(page);
@@ -150,13 +146,13 @@ export async function runCodegen(options: CodegenOptions): Promise<CodegenResult
     void injectToolbarIfNeeded(page);
   });
 
-  // Track navigations (only during pre-login phase)
+  // Track navigations (only during post-login phase)
   page.on('framenavigated', (frame) => {
-    // Only track main frame navigations during pre-login
-    if (frame === page.mainFrame() && currentPhase === 'pre-login') {
+    // Only track main frame navigations during post-login
+    if (frame === page.mainFrame() && currentPhase === 'post-login') {
       const url = frame.url();
-      // Don't record about:blank or the initial navigation (already recorded above)
-      if (url && url !== 'about:blank' && url !== options.url) {
+      // Don't record about:blank
+      if (url && url !== 'about:blank') {
         codeGenerator.addAction({
           type: 'navigate',
           url: url,
