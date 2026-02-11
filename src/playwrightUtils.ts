@@ -12,7 +12,7 @@ export class BrowserDisabledError extends Error {
 export class BrowserFlowsNotSupportedError extends Error {
   constructor(serviceName: string) {
     super(
-      `Service '${serviceName}' does not support browser flows. Use 'latchkey insert-auth ${serviceName}' to manually insert credentials.`
+      `Service '${serviceName}' does not support browser login. Use 'latchkey insert-auth ${serviceName}' to manually insert credentials.`
     );
     this.name = 'BrowserFlowNotSupportedError';
   }
