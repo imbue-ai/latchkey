@@ -156,22 +156,19 @@ export class CodeGenerator {
       }
     }
 
-    // Build the output with ancestry information
+    // Build the output with ancestry information (root -> target order)
     const lines: string[] = [];
     lines.push(`  // ===== ACTION ${String(actionId)}: ${action.type} =====`);
-    lines.push(`  // Target element: ${this.formatElementInfo(target)}`);
+    lines.push(`  // Element ancestry (root -> target):`);
 
-    // Output ancestry (skip target, which is index 0)
-    if (ancestry.length > 1) {
-      lines.push(`  // Ancestry (target -> root):`);
-      for (let i = 1; i < ancestry.length && i < 6; i++) {
-        const ancestor = ancestry[i];
-        if (ancestor) {
-          lines.push(`  //   [${String(i)}] ${this.formatElementInfo(ancestor)}`);
-        }
-      }
-      if (ancestry.length > 6) {
-        lines.push(`  //   ... (${String(ancestry.length - 6)} more ancestors)`);
+    // Output ancestry in reverse order (root first, target last)
+    for (let i = ancestry.length - 1; i >= 0; i--) {
+      const element = ancestry[i];
+      if (element) {
+        const depth = ancestry.length - 1 - i;
+        const indent = '  '.repeat(depth);
+        const marker = i === 0 ? ' [TARGET]' : '';
+        lines.push(`  //   ${indent}${this.formatElementInfo(element)}${marker}`);
       }
     }
 
