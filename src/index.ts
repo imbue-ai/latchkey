@@ -15,13 +15,7 @@ export {
 
 export { ApiCredentialStore, ApiCredentialStoreError } from './apiCredentialStore.js';
 
-export {
-  Config,
-  CONFIG,
-  InsecureFilePermissionsError,
-  BrowserDisabledError,
-  BrowserFlowNotSupportedError,
-} from './config.js';
+export { Config, CONFIG, InsecureFilePermissionsError } from './config.js';
 
 export { encrypt, decrypt, generateKey, EncryptionError, DecryptionError } from './encryption.js';
 
@@ -45,7 +39,11 @@ export {
   resetCapturingSubprocessRunner,
 } from './curl.js';
 
-export { typeLikeHuman } from './playwrightUtils.js';
+export {
+  typeLikeHuman,
+  BrowserDisabledError,
+  BrowserFlowNotSupportedError,
+} from './playwrightUtils.js';
 
 // Services
 export {

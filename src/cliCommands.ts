@@ -15,7 +15,8 @@ import {
   loadBrowserConfig,
   type BrowserSource,
 } from './browserConfig.js';
-import { BrowserDisabledError, BrowserFlowNotSupportedError, Config, CONFIG } from './config.js';
+import { Config, CONFIG } from './config.js';
+import { BrowserDisabledError, BrowserFlowNotSupportedError } from './playwrightUtils.js';
 import type { CurlResult } from './curl.js';
 import { EncryptedStorage } from './encryptedStorage.js';
 import { Registry, REGISTRY } from './registry.js';
