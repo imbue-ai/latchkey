@@ -15,6 +15,163 @@ export function createToolbarScript(): string {
     let isSelectingApiKeyElement = false;
     let highlightOverlay = null;
 
+    // Get the implicit ARIA role for an element
+    function getImplicitRole(element) {
+      const tag = element.tagName.toLowerCase();
+      const type = element.type ? element.type.toLowerCase() : '';
+
+      function getInputRole(inputType) {
+        const inputRoles = {
+          'button': 'button',
+          'checkbox': 'checkbox',
+          'email': 'textbox',
+          'number': 'spinbutton',
+          'radio': 'radio',
+          'range': 'slider',
+          'search': 'searchbox',
+          'submit': 'button',
+          'tel': 'textbox',
+          'text': 'textbox',
+          'url': 'textbox',
+        };
+        return inputRoles[inputType] || 'textbox';
+      }
+
+      const roleMap = {
+        'a': element.href ? 'link' : null,
+        'article': 'article',
+        'aside': 'complementary',
+        'button': 'button',
+        'dialog': 'dialog',
+        'form': 'form',
+        'h1': 'heading',
+        'h2': 'heading',
+        'h3': 'heading',
+        'h4': 'heading',
+        'h5': 'heading',
+        'h6': 'heading',
+        'header': 'banner',
+        'footer': 'contentinfo',
+        'img': 'img',
+        'input': getInputRole(type),
+        'li': 'listitem',
+        'main': 'main',
+        'nav': 'navigation',
+        'ol': 'list',
+        'option': 'option',
+        'progress': 'progressbar',
+        'section': 'region',
+        'select': 'combobox',
+        'table': 'table',
+        'textarea': 'textbox',
+        'ul': 'list',
+      };
+
+      return roleMap[tag] || null;
+    }
+
+    // Get accessible name for an element
+    function getAccessibleName(element) {
+      if (element.getAttribute('aria-label')) {
+        return element.getAttribute('aria-label');
+      }
+
+      const labelledBy = element.getAttribute('aria-labelledby');
+      if (labelledBy) {
+        const labelEl = document.getElementById(labelledBy);
+        if (labelEl) {
+          return labelEl.textContent.trim();
+        }
+      }
+
+      if (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA' || element.tagName === 'SELECT') {
+        if (element.id) {
+          const label = document.querySelector('label[for="' + CSS.escape(element.id) + '"]');
+          if (label) {
+            return label.textContent.trim();
+          }
+        }
+        const parentLabel = element.closest('label');
+        if (parentLabel) {
+          const clone = parentLabel.cloneNode(true);
+          const inputs = clone.querySelectorAll('input, textarea, select');
+          inputs.forEach(function(input) { input.remove(); });
+          const text = clone.textContent.trim();
+          if (text) return text;
+        }
+      }
+
+      const tag = element.tagName.toLowerCase();
+      if (tag === 'button' || tag === 'a') {
+        const text = element.textContent.trim();
+        if (text && text.length < 100) {
+          return text;
+        }
+      }
+
+      if (element.title) {
+        return element.title;
+      }
+
+      if (tag === 'img' && element.alt) {
+        return element.alt;
+      }
+
+      return null;
+    }
+
+    // Get element info for ancestry
+    function getElementInfo(element) {
+      const tag = element.tagName.toLowerCase();
+      const info = { tag: tag };
+
+      if (element.id) {
+        info.id = element.id;
+      }
+
+      if (element.className && typeof element.className === 'string' && element.className.trim()) {
+        info.className = element.className.trim();
+      }
+
+      if (element.name) {
+        info.name = element.name;
+      }
+
+      const explicitRole = element.getAttribute('role');
+      const role = explicitRole || getImplicitRole(element);
+      if (role) {
+        info.role = role;
+      }
+
+      const accessibleName = getAccessibleName(element);
+      if (accessibleName) {
+        info.accessibleName = accessibleName;
+      }
+
+      if (tag === 'input' && element.type) {
+        info.inputType = element.type.toLowerCase();
+      }
+
+      if (element.placeholder) {
+        info.placeholder = element.placeholder;
+      }
+
+      return info;
+    }
+
+    // Get full ancestry from element to body
+    function getAncestry(element) {
+      const ancestry = [];
+      let current = element;
+
+      while (current && current !== document.body && current !== document.documentElement) {
+        ancestry.push(getElementInfo(current));
+        current = current.parentElement;
+      }
+
+      return ancestry;
+    }
+
     // Create styles
     const style = document.createElement('style');
     style.textContent = \`
@@ -329,9 +486,9 @@ export function createToolbarScript(): string {
         apiKeyBtn.classList.remove('active');
         highlightOverlay.style.display = 'none';
 
-        // Generate selector for the element
-        const selector = generateSelector(target);
-        window.__latchkeyApiKeyElementSelected && window.__latchkeyApiKeyElementSelected(selector);
+        // Capture ancestry for the element
+        const ancestry = getAncestry(target);
+        window.__latchkeyApiKeyElementSelected && window.__latchkeyApiKeyElementSelected(ancestry);
 
         // Restore status based on current phase (async)
         if (window.__latchkeyGetPhase) {
@@ -341,41 +498,6 @@ export function createToolbarScript(): string {
         }
       }
     }, true);
-
-    // Generate a CSS selector for an element
-    function generateSelector(element) {
-      // Try data-testid first
-      if (element.dataset && element.dataset.testid) {
-        return '[data-testid="' + element.dataset.testid + '"]';
-      }
-
-      // Try id
-      if (element.id) {
-        return '#' + CSS.escape(element.id);
-      }
-
-      // Try unique class combination
-      if (element.className && typeof element.className === 'string') {
-        const classes = element.className.trim().split(/\\s+/).filter(c => c.length > 0);
-        if (classes.length > 0) {
-          const selector = '.' + classes.map(c => CSS.escape(c)).join('.');
-          if (document.querySelectorAll(selector).length === 1) {
-            return selector;
-          }
-        }
-      }
-
-      // Fall back to tag + nth-child
-      const parent = element.parentElement;
-      if (parent) {
-        const siblings = Array.from(parent.children);
-        const index = siblings.indexOf(element) + 1;
-        const parentSelector = parent === document.body ? 'body' : generateSelector(parent);
-        return parentSelector + ' > ' + element.tagName.toLowerCase() + ':nth-child(' + index + ')';
-      }
-
-      return element.tagName.toLowerCase();
-    }
 
     // Make toolbar draggable
     let isDragging = false;

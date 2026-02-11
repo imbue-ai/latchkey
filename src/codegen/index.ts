@@ -50,7 +50,7 @@ export async function runCodegen(options: CodegenOptions): Promise<CodegenResult
 
   // Session state
   let currentPhase: RecordingPhase = 'pre-login';
-  let apiKeySelector: string | undefined;
+  let apiKeyAncestry: ElementInfo[] | undefined;
 
   // Track HTTP requests and responses
   context.on('response', (response: Response) => {
@@ -115,10 +115,10 @@ export async function runCodegen(options: CodegenOptions): Promise<CodegenResult
   });
 
   // Expose function called when API key element is selected
-  await context.exposeFunction('__latchkeyApiKeyElementSelected', (selector: string) => {
-    console.log(`[Latchkey] API key element selected: ${selector}`);
-    apiKeySelector = selector;
-    codeGenerator.setApiKeySelector(selector);
+  await context.exposeFunction('__latchkeyApiKeyElementSelected', (ancestry: ElementInfo[]) => {
+    console.log(`[Latchkey] API key element selected with ${String(ancestry.length)} ancestors`);
+    apiKeyAncestry = ancestry;
+    codeGenerator.setApiKeyAncestry(ancestry);
   });
 
   const page: Page = await context.newPage();
@@ -184,9 +184,9 @@ export async function runCodegen(options: CodegenOptions): Promise<CodegenResult
 
   console.log(`Generated code saved to: ${outputFile}`);
   console.log(`Request metadata saved to: ${requestsFile}`);
-  if (apiKeySelector) {
-    console.log(`API key element selector: ${apiKeySelector}`);
+  if (apiKeyAncestry) {
+    console.log(`API key element ancestry captured with ${String(apiKeyAncestry.length)} elements`);
   }
 
-  return { apiKeySelector };
+  return { apiKeyAncestry };
 }

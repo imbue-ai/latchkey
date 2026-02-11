@@ -84,8 +84,8 @@ export interface RecordedAction {
  * Result of the codegen session.
  */
 export interface CodegenResult {
-  /** Selector for the API key element, if selected by the user. */
-  readonly apiKeySelector?: string;
+  /** Ancestry for the API key element, if selected by the user. */
+  readonly apiKeyAncestry?: readonly ElementInfo[];
 }
 
 export class CodegenError extends Error {
