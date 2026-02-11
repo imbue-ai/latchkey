@@ -15,9 +15,8 @@ import type { BrowserContext, Page, Request, Response } from 'playwright';
 import { chromium } from 'playwright';
 
 import { CodeGenerator } from './codeGenerator.js';
-import { createRecorderScript } from './recorderScript.js';
+import { createInjectedScript } from './injectedScript.js';
 import { RequestMetadataCollector } from './requestMetadataCollector.js';
-import { createToolbarScript } from './toolbarScript.js';
 import type { CodegenOptions, CodegenResult, ElementInfo, RecordedAction, RecordingPhase } from './types.js';
 
 // Re-export types for external use
@@ -62,11 +61,10 @@ export async function runCodegen(options: CodegenOptions): Promise<CodegenResult
     requestCollector.addRequest(request, null);
   });
 
-  // Inject our recorder script into every page
-  const recorderScript = createRecorderScript();
-  const toolbarScript = createToolbarScript();
+  // Inject our combined recorder and toolbar script into every page
+  const injectedScript = createInjectedScript();
 
-  await context.addInitScript(recorderScript + toolbarScript);
+  await context.addInitScript(injectedScript);
 
   // Expose function to receive recorded actions from the page
   // Only records actions during post-login phase
@@ -123,10 +121,11 @@ export async function runCodegen(options: CodegenOptions): Promise<CodegenResult
 
   const page: Page = await context.newPage();
 
-  // Helper function to inject toolbar after page load
-  async function injectToolbarIfNeeded(targetPage: Page): Promise<void> {
+  // Helper function to inject script after page load (needed because addInitScript
+  // runs before DOM exists, so toolbar won't appear without this)
+  async function injectScriptIfNeeded(targetPage: Page): Promise<void> {
     try {
-      await targetPage.evaluate(toolbarScript);
+      await targetPage.evaluate(injectedScript);
     } catch {
       // Ignore errors (e.g., if page is closed or navigating)
     }
@@ -135,13 +134,13 @@ export async function runCodegen(options: CodegenOptions): Promise<CodegenResult
   // Navigate to initial URL if provided
   if (options.url) {
     await page.goto(options.url);
-    // Inject toolbar after page loads
-    await injectToolbarIfNeeded(page);
+    // Inject script after page loads
+    await injectScriptIfNeeded(page);
   }
 
-  // Re-inject toolbar after navigations
+  // Re-inject script after navigations
   page.on('load', () => {
-    void injectToolbarIfNeeded(page);
+    void injectScriptIfNeeded(page);
   });
 
   // Track navigations (only during post-login phase)
