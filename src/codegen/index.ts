@@ -173,6 +173,13 @@ export async function runCodegen(options: CodegenOptions): Promise<CodegenResult
     page.on('close', cleanup);
   });
 
+  // Ensure browser is fully closed
+  try {
+    await browser.close();
+  } catch {
+    // Browser may already be closed, ignore
+  }
+
   // Final flush of collected data
   requestCollector.flush();
   codeGenerator.flush();
