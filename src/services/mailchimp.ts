@@ -11,7 +11,10 @@ import { Service } from './base.js';
 export class Mailchimp extends Service {
   readonly name = 'mailchimp';
   readonly displayName = 'Mailchimp';
-  readonly baseApiUrls = ['https://api.mailchimp.com/', 'https://*.api.mailchimp.com/'] as const;
+  readonly baseApiUrls = [
+    'https://api.mailchimp.com/',
+    /^https:\/\/[^/]+\.api\.mailchimp\.com\//,
+  ] as const;
   readonly loginUrl = 'https://login.mailchimp.com/';
   readonly info =
     'https://mailchimp.com/developer/marketing/api/. ' +

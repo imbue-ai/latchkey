@@ -55,7 +55,7 @@ function isTimeoutError(error: Error): boolean {
 export abstract class Service {
   abstract readonly name: string;
   abstract readonly displayName: string;
-  abstract readonly baseApiUrls: readonly string[];
+  abstract readonly baseApiUrls: readonly (string | RegExp)[];
   abstract readonly loginUrl: string;
 
   /**

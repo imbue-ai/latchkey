@@ -11,6 +11,7 @@ import {
   LINEAR,
   NOTION,
   GOOGLE,
+  MAILCHIMP,
 } from './services/index.js';
 
 export class Registry {
@@ -32,8 +33,14 @@ export class Registry {
   getByUrl(url: string): Service | null {
     for (const service of this.services) {
       for (const baseApiUrl of service.baseApiUrls) {
-        if (url.startsWith(baseApiUrl)) {
-          return service;
+        if (typeof baseApiUrl === 'string') {
+          if (url.startsWith(baseApiUrl)) {
+            return service;
+          }
+        } else {
+          if (baseApiUrl.test(url)) {
+            return service;
+          }
         }
       }
     }
@@ -41,4 +48,13 @@ export class Registry {
   }
 }
 
-export const REGISTRY = new Registry([SLACK, DISCORD, DROPBOX, GITHUB, LINEAR, NOTION, GOOGLE]);
+export const REGISTRY = new Registry([
+  SLACK,
+  DISCORD,
+  DROPBOX,
+  GITHUB,
+  LINEAR,
+  NOTION,
+  GOOGLE,
+  MAILCHIMP,
+]);
