@@ -3,8 +3,7 @@
  */
 
 import type { Response, BrowserContext } from 'playwright';
-import { ApiCredentialStatus, ApiCredentials, AuthorizationBearer } from '../apiCredentials.js';
-import { runCaptured } from '../curl.js';
+import { ApiCredentials, AuthorizationBearer } from '../apiCredentials.js';
 import { generateLatchkeyAppName, typeLikeHuman } from '../playwrightUtils.js';
 import { Service, BrowserFollowupServiceSession, LoginFailedError } from './base.js';
 
@@ -108,7 +107,7 @@ class GithubServiceSession extends BrowserFollowupServiceSession {
   }
 }
 
-export class Github implements Service {
+export class Github extends Service {
   readonly name = 'github';
   readonly displayName = 'GitHub';
   readonly baseApiUrls = ['https://api.github.com/'] as const;
@@ -119,32 +118,8 @@ export class Github implements Service {
 
   readonly credentialCheckCurlArguments = ['https://api.github.com/user'] as const;
 
-  getSession(): GithubServiceSession {
+  override getSession(): GithubServiceSession {
     return new GithubServiceSession(this);
-  }
-
-  checkApiCredentials(apiCredentials: ApiCredentials): ApiCredentialStatus {
-    if (!(apiCredentials instanceof AuthorizationBearer)) {
-      return ApiCredentialStatus.Invalid;
-    }
-
-    const result = runCaptured(
-      [
-        '-s',
-        '-o',
-        '/dev/null',
-        '-w',
-        '%{http_code}',
-        ...apiCredentials.asCurlArguments(),
-        ...this.credentialCheckCurlArguments,
-      ],
-      10
-    );
-
-    if (result.stdout === '200') {
-      return ApiCredentialStatus.Valid;
-    }
-    return ApiCredentialStatus.Invalid;
   }
 }
 

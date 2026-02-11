@@ -3,8 +3,7 @@
  */
 
 import type { Response, BrowserContext } from 'playwright';
-import { ApiCredentialStatus, ApiCredentials, AuthorizationBare } from '../apiCredentials.js';
-import { runCaptured } from '../curl.js';
+import { ApiCredentials, AuthorizationBare } from '../apiCredentials.js';
 import { generateLatchkeyAppName, typeLikeHuman } from '../playwrightUtils.js';
 import { Service, BrowserFollowupServiceSession, LoginFailedError } from './base.js';
 
@@ -88,7 +87,7 @@ class LinearServiceSession extends BrowserFollowupServiceSession {
   }
 }
 
-export class Linear implements Service {
+export class Linear extends Service {
   readonly name = 'linear';
   readonly displayName = 'Linear';
   readonly baseApiUrls = ['https://api.linear.app/'] as const;
@@ -105,33 +104,8 @@ export class Linear implements Service {
     'https://api.linear.app/graphql',
   ] as const;
 
-  getSession(): LinearServiceSession {
+  override getSession(): LinearServiceSession {
     return new LinearServiceSession(this);
-  }
-
-  checkApiCredentials(apiCredentials: ApiCredentials): ApiCredentialStatus {
-    if (!(apiCredentials instanceof AuthorizationBare)) {
-      return ApiCredentialStatus.Invalid;
-    }
-
-    // Linear uses GraphQL API - check credentials with a simple query
-    const result = runCaptured(
-      [
-        '-s',
-        '-o',
-        '/dev/null',
-        '-w',
-        '%{http_code}',
-        ...apiCredentials.asCurlArguments(),
-        ...this.credentialCheckCurlArguments,
-      ],
-      10
-    );
-
-    if (result.stdout === '200') {
-      return ApiCredentialStatus.Valid;
-    }
-    return ApiCredentialStatus.Invalid;
   }
 }
 

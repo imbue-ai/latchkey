@@ -4,14 +4,13 @@
 
 import fs from 'node:fs/promises';
 import type { Browser, BrowserContext, Page, Response } from 'playwright';
-import { ApiCredentialStatus, ApiCredentials, OAuthCredentials } from '../apiCredentials.js';
+import { ApiCredentials, OAuthCredentials } from '../apiCredentials.js';
 import {
   generateLatchkeyAppName,
   showSpinnerPage,
   withTempBrowserContext,
   type BrowserLaunchOptions,
 } from '../playwrightUtils.js';
-import { runCaptured } from '../curl.js';
 import {
   exchangeCodeForTokens,
   refreshAccessToken,
@@ -435,7 +434,7 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
   }
 }
 
-export class Google implements Service {
+export class Google extends Service {
   readonly name = 'google';
   readonly displayName = 'Google Workspace';
   readonly baseApiUrls = ['https://www.googleapis.com/'] as const;
@@ -449,40 +448,11 @@ export class Google implements Service {
     'https://www.googleapis.com/oauth2/v1/userinfo',
   ] as const;
 
-  getSession(): GoogleServiceSession {
+  override getSession(): GoogleServiceSession {
     return new GoogleServiceSession(this);
   }
 
-  checkApiCredentials(apiCredentials: ApiCredentials): ApiCredentialStatus {
-    if (!(apiCredentials instanceof OAuthCredentials)) {
-      return ApiCredentialStatus.Invalid;
-    }
-
-    // Credentials from prepare() don't have tokens yet
-    if (apiCredentials.accessToken === undefined) {
-      return ApiCredentialStatus.Missing;
-    }
-
-    const result = runCaptured(
-      [
-        '-s',
-        '-o',
-        '/dev/null',
-        '-w',
-        '%{http_code}',
-        ...apiCredentials.asCurlArguments(),
-        ...this.credentialCheckCurlArguments,
-      ],
-      10
-    );
-
-    if (result.stdout === '200') {
-      return ApiCredentialStatus.Valid;
-    }
-    return ApiCredentialStatus.Invalid;
-  }
-
-  refreshCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentials | null> {
+  override refreshCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentials | null> {
     if (!(apiCredentials instanceof OAuthCredentials)) {
       return Promise.resolve(null);
     }

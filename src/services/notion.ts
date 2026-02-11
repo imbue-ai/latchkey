@@ -8,8 +8,7 @@
  */
 
 import type { Response, BrowserContext } from 'playwright';
-import { ApiCredentialStatus, ApiCredentials, AuthorizationBearer } from '../apiCredentials.js';
-import { runCaptured } from '../curl.js';
+import { ApiCredentials, AuthorizationBearer } from '../apiCredentials.js';
 import { generateLatchkeyAppName } from '../playwrightUtils.js';
 import { Service, BrowserFollowupServiceSession, LoginFailedError } from './base.js';
 
@@ -99,7 +98,7 @@ class NotionServiceSession extends BrowserFollowupServiceSession {
   }
 }
 
-export class Notion implements Service {
+export class Notion extends Service {
   readonly name = 'notion';
   readonly displayName = 'Notion';
   readonly baseApiUrls = ['https://api.notion.com/'] as const;
@@ -115,32 +114,8 @@ export class Notion implements Service {
     'https://api.notion.com/v1/users/me',
   ] as const;
 
-  getSession(): NotionServiceSession {
+  override getSession(): NotionServiceSession {
     return new NotionServiceSession(this);
-  }
-
-  checkApiCredentials(apiCredentials: ApiCredentials): ApiCredentialStatus {
-    if (!(apiCredentials instanceof AuthorizationBearer)) {
-      return ApiCredentialStatus.Invalid;
-    }
-
-    const result = runCaptured(
-      [
-        '-s',
-        '-o',
-        '/dev/null',
-        '-w',
-        '%{http_code}',
-        ...apiCredentials.asCurlArguments(),
-        ...this.credentialCheckCurlArguments,
-      ],
-      10
-    );
-
-    if (result.stdout === '200') {
-      return ApiCredentialStatus.Valid;
-    }
-    return ApiCredentialStatus.Invalid;
   }
 }
 

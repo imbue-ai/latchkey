@@ -3,7 +3,12 @@
  */
 
 import type { Browser, BrowserContext, Page, Response } from 'playwright';
-import { ApiCredentialStatus, ApiCredentials } from '../apiCredentials.js';
+import {
+  ApiCredentialStatus,
+  ApiCredentials,
+  ApiCredentialsUsageError,
+} from '../apiCredentials.js';
+import { runCaptured } from '../curl.js';
 import { EncryptedStorage } from '../encryptedStorage.js';
 import {
   showSpinnerPage,
@@ -42,28 +47,59 @@ function isTimeoutError(error: Error): boolean {
 }
 
 /**
- * Base interface for a service that latchkey can authenticate with.
+ * Abstract base class for services that latchkey can authenticate with.
+ * Provides default checkApiCredentials implementation using HTTP status code check:
+ * returns Valid if 200, Missing if credentials lack required components
+ * (e.g., OAuth without access token), Invalid otherwise.
  */
-export interface Service {
-  readonly name: string;
-  readonly displayName: string;
-  readonly baseApiUrls: readonly string[];
-  readonly loginUrl: string;
+export abstract class Service {
+  abstract readonly name: string;
+  abstract readonly displayName: string;
+  abstract readonly baseApiUrls: readonly string[];
+  abstract readonly loginUrl: string;
 
   /**
    * Developer notes about this service for agents and users.
    */
-  readonly info: string;
-
-  /**
-   * Check if the given API credentials are valid for this service.
-   */
-  checkApiCredentials(apiCredentials: ApiCredentials): ApiCredentialStatus;
+  abstract readonly info: string;
 
   /**
    * Return curl arguments for checking credentials (excluding auth headers).
    */
-  readonly credentialCheckCurlArguments: readonly string[];
+  abstract readonly credentialCheckCurlArguments: readonly string[];
+
+  /**
+   * Check if the given API credentials are valid for this service.
+   */
+  checkApiCredentials(apiCredentials: ApiCredentials): ApiCredentialStatus {
+    let curlArgs: readonly string[];
+    try {
+      curlArgs = apiCredentials.asCurlArguments();
+    } catch (error) {
+      if (error instanceof ApiCredentialsUsageError) {
+        return ApiCredentialStatus.Missing;
+      }
+      throw error;
+    }
+
+    const result = runCaptured(
+      [
+        '-s',
+        '-o',
+        '/dev/null',
+        '-w',
+        '%{http_code}',
+        ...curlArgs,
+        ...this.credentialCheckCurlArguments,
+      ],
+      10
+    );
+
+    if (result.stdout === '200') {
+      return ApiCredentialStatus.Valid;
+    }
+    return ApiCredentialStatus.Invalid;
+  }
 
   /**
    * Get a new session for the login flow.
