@@ -286,9 +286,12 @@ export function createToolbarScript(): string {
       if (isSelectingApiKeyElement) {
         status.textContent = 'Click the API key element...';
       } else {
-        // Restore status based on current phase
-        const phase = window.__latchkeyGetPhase ? window.__latchkeyGetPhase() : 'pre-login';
-        updatePhaseUI(phase);
+        // Restore status based on current phase (async)
+        if (window.__latchkeyGetPhase) {
+          window.__latchkeyGetPhase().then(function(phase) {
+            updatePhaseUI(phase || 'pre-login');
+          });
+        }
       }
     };
 
@@ -330,9 +333,12 @@ export function createToolbarScript(): string {
         const selector = generateSelector(target);
         window.__latchkeyApiKeyElementSelected && window.__latchkeyApiKeyElementSelected(selector);
 
-        // Restore status based on current phase
-        const phase = window.__latchkeyGetPhase ? window.__latchkeyGetPhase() : 'pre-login';
-        updatePhaseUI(phase);
+        // Restore status based on current phase (async)
+        if (window.__latchkeyGetPhase) {
+          window.__latchkeyGetPhase().then(function(phase) {
+            updatePhaseUI(phase || 'pre-login');
+          });
+        }
       }
     }, true);
 
@@ -401,9 +407,16 @@ export function createToolbarScript(): string {
     // Expose function to update UI when phase changes externally
     window.__latchkeyUpdatePhase = updatePhaseUI;
 
-    // Initialize UI based on current phase
-    const initialPhase = window.__latchkeyGetPhase ? window.__latchkeyGetPhase() : 'pre-login';
-    updatePhaseUI(initialPhase);
+    // Initialize UI based on current phase (async because exposeFunction returns Promise)
+    if (window.__latchkeyGetPhase) {
+      window.__latchkeyGetPhase().then(function(phase) {
+        updatePhaseUI(phase || 'pre-login');
+      }).catch(function() {
+        updatePhaseUI('pre-login');
+      });
+    } else {
+      updatePhaseUI('pre-login');
+    }
   }
 
   // Wait for DOM to be ready
