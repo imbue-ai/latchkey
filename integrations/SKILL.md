@@ -53,10 +53,19 @@ latchkey curl 'https://discord.com/api/v10/users/@me'
 
 Only do this when you notice that your previous call ended up not being authenticated (HTTP 401 or 403). The next `latchkey curl` call will trigger a new login flow.
 
-### List supported services
+### List available services
 ```bash
 latchkey services
 ```
+
+By default, this lists services that are currently available (have browser login enabled or have stored credentials).
+
+### List all known services
+```bash
+latchkey services --all
+```
+
+Use `--all` to see all services that latchkey knows about, even if they're not currently available.
 
 ### Get service-specific info
 ```bash
