@@ -173,6 +173,7 @@ describe('CLI commands with dependency injection', () => {
       serviceName: overrides.serviceName ?? defaultConfig.serviceName,
       accountName: overrides.accountName ?? defaultConfig.accountName,
       checkSensitiveFilePermissions: () => undefined,
+      checkSystemPrerequisites: () => undefined,
     };
   }
 

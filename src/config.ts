@@ -2,9 +2,9 @@
  * Configuration management for Latchkey.
  */
 
-import { existsSync, statSync } from 'node:fs';
+import { accessSync, constants, existsSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { delimiter, isAbsolute, join, resolve } from 'node:path';
 import { getDefaultConfigPath } from './browserConfig.js';
 import { isKeychainAvailable } from './keychain.js';
 
@@ -15,6 +15,13 @@ export class InsecureFilePermissionsError extends Error {
       `File ${filePath} has insecure permissions (${permissionsOctal}). Run: chmod 600 ${filePath}`
     );
     this.name = 'InsecureFilePermissionsError';
+  }
+}
+
+export class CurlNotFoundError extends Error {
+  constructor(curlCommand: string) {
+    super(`curl not found: '${curlCommand}' is not available. Please install curl.`);
+    this.name = 'CurlNotFoundError';
   }
 }
 
@@ -44,6 +51,33 @@ function resolvePathWithTildeExpansion(path: string): string {
     return resolve(homedir(), path.slice(2));
   }
   return resolve(path);
+}
+
+function isExecutable(filePath: string): boolean {
+  try {
+    accessSync(filePath, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function findInPath(command: string): boolean {
+  if (isAbsolute(command)) {
+    return isExecutable(command);
+  }
+
+  const pathEnv = process.env.PATH ?? '';
+  const pathDirs = pathEnv.split(delimiter);
+
+  for (const dir of pathDirs) {
+    const fullPath = join(dir, command);
+    if (isExecutable(fullPath)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -111,6 +145,16 @@ export class Config {
       if ((permissions & 0o077) !== 0) {
         throw new InsecureFilePermissionsError(filePath, permissions);
       }
+    }
+  }
+
+  /**
+   * Check that system prerequisites are met.
+   * Throws CurlNotFoundError if curl is not available.
+   */
+  checkSystemPrerequisites(): void {
+    if (!findInPath(this.curlCommand)) {
+      throw new CurlNotFoundError(this.curlCommand);
     }
   }
 }
