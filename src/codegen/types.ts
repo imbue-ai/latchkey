@@ -39,12 +39,25 @@ export interface CodegenOptions {
 }
 
 /**
- * Selector variant for code generation.
- * Multiple variants are generated for AI post-processing to pick the best one.
+ * Information about a single element in the DOM ancestry.
  */
-export interface SelectorVariant {
-  readonly type: 'id' | 'class' | 'label' | 'testid' | 'fallback';
-  readonly selector: string;
+export interface ElementInfo {
+  /** Tag name (e.g., 'div', 'button', 'input') */
+  readonly tag: string;
+  /** Element's id attribute, if present */
+  readonly id?: string;
+  /** Element's class attribute, if present */
+  readonly className?: string;
+  /** Element's name attribute, if present */
+  readonly name?: string;
+  /** Element's role attribute or implicit ARIA role */
+  readonly role?: string;
+  /** Accessible name (text content, aria-label, etc.) */
+  readonly accessibleName?: string;
+  /** Element's type attribute (for inputs) */
+  readonly inputType?: string;
+  /** Element's placeholder attribute */
+  readonly placeholder?: string;
 }
 
 /**
@@ -59,10 +72,8 @@ export interface RecordedAction {
     | 'select'
     | 'check'
     | 'uncheck';
-  /** Primary selector (for backwards compatibility) */
-  readonly selector?: string;
-  /** All available selector variants for this action */
-  readonly selectorVariants?: readonly SelectorVariant[];
+  /** Element ancestry from target to root (first element is the target) */
+  readonly ancestry?: readonly ElementInfo[];
   readonly url?: string;
   readonly value?: string;
   readonly key?: string;

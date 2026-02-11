@@ -9,126 +9,174 @@ export function createRecorderScript(): string {
   if (window.__latchkeyRecorderInstalled) return;
   window.__latchkeyRecorderInstalled = true;
 
-  // Helper to generate all available selector variants for an element
-  function generateSelectorVariants(element) {
-    const variants = [];
+  // Get the implicit ARIA role for an element
+  function getImplicitRole(element) {
+    const tag = element.tagName.toLowerCase();
+    const type = element.type ? element.type.toLowerCase() : '';
 
-    // Try data-testid
-    if (element.dataset && element.dataset.testid) {
-      variants.push({
-        type: 'testid',
-        selector: '[data-testid="' + element.dataset.testid + '"]'
-      });
-    }
+    // Common implicit roles
+    const roleMap = {
+      'a': element.href ? 'link' : null,
+      'article': 'article',
+      'aside': 'complementary',
+      'button': 'button',
+      'dialog': 'dialog',
+      'form': 'form',
+      'h1': 'heading',
+      'h2': 'heading',
+      'h3': 'heading',
+      'h4': 'heading',
+      'h5': 'heading',
+      'h6': 'heading',
+      'header': 'banner',
+      'footer': 'contentinfo',
+      'img': 'img',
+      'input': getInputRole(type),
+      'li': 'listitem',
+      'main': 'main',
+      'nav': 'navigation',
+      'ol': 'list',
+      'option': 'option',
+      'progress': 'progressbar',
+      'section': 'region',
+      'select': 'combobox',
+      'table': 'table',
+      'textarea': 'textbox',
+      'ul': 'list',
+    };
 
-    // Try id
-    if (element.id) {
-      variants.push({
-        type: 'id',
-        selector: '#' + CSS.escape(element.id)
-      });
-    }
-
-    // Try class combination
-    if (element.className && typeof element.className === 'string') {
-      const classes = element.className.trim().split(/\\s+/).filter(c => c.length > 0);
-      if (classes.length > 0) {
-        const selector = '.' + classes.map(c => CSS.escape(c)).join('.');
-        variants.push({
-          type: 'class',
-          selector: selector
-        });
-      }
-    }
-
-    // Try label (for form elements, buttons, links)
-    const labelSelector = generateLabelSelector(element);
-    if (labelSelector) {
-      variants.push({
-        type: 'label',
-        selector: labelSelector
-      });
-    }
-
-    // Always add a fallback using nth-child
-    const fallbackSelector = generateFallbackSelector(element);
-    if (fallbackSelector) {
-      variants.push({
-        type: 'fallback',
-        selector: fallbackSelector
-      });
-    }
-
-    return variants;
+    return roleMap[tag] || null;
   }
 
-  // Generate a label-based selector (text content, aria-label, placeholder, etc.)
-  function generateLabelSelector(element) {
-    const tagName = element.tagName.toLowerCase();
+  function getInputRole(type) {
+    const inputRoles = {
+      'button': 'button',
+      'checkbox': 'checkbox',
+      'email': 'textbox',
+      'number': 'spinbutton',
+      'radio': 'radio',
+      'range': 'slider',
+      'search': 'searchbox',
+      'submit': 'button',
+      'tel': 'textbox',
+      'text': 'textbox',
+      'url': 'textbox',
+    };
+    return inputRoles[type] || 'textbox';
+  }
 
-    // For buttons and links, use text content
-    if (tagName === 'button' || tagName === 'a') {
-      const text = element.innerText.trim();
-      if (text && text.length < 50) {
-        return tagName + ':has-text("' + text.replace(/"/g, '\\\\"') + '")';
+  // Get accessible name for an element
+  function getAccessibleName(element) {
+    // Check aria-label first
+    if (element.getAttribute('aria-label')) {
+      return element.getAttribute('aria-label');
+    }
+
+    // Check aria-labelledby
+    const labelledBy = element.getAttribute('aria-labelledby');
+    if (labelledBy) {
+      const labelEl = document.getElementById(labelledBy);
+      if (labelEl) {
+        return labelEl.textContent.trim();
       }
     }
 
-    // For inputs, try placeholder or aria-label
-    if (tagName === 'input' || tagName === 'textarea') {
-      if (element.placeholder) {
-        return tagName + '[placeholder="' + element.placeholder.replace(/"/g, '\\\\"') + '"]';
-      }
-      if (element.getAttribute('aria-label')) {
-        return tagName + '[aria-label="' + element.getAttribute('aria-label').replace(/"/g, '\\\\"') + '"]';
-      }
-      // Try associated label
+    // For inputs, check associated label
+    if (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA' || element.tagName === 'SELECT') {
       if (element.id) {
         const label = document.querySelector('label[for="' + CSS.escape(element.id) + '"]');
-        if (label && label.innerText) {
-          return 'label:has-text("' + label.innerText.trim().replace(/"/g, '\\\\"') + '") >> ' + tagName;
+        if (label) {
+          return label.textContent.trim();
         }
+      }
+      // Check for wrapping label
+      const parentLabel = element.closest('label');
+      if (parentLabel) {
+        // Get text content excluding the input itself
+        const clone = parentLabel.cloneNode(true);
+        const inputs = clone.querySelectorAll('input, textarea, select');
+        inputs.forEach(function(input) { input.remove(); });
+        const text = clone.textContent.trim();
+        if (text) return text;
       }
     }
 
-    // For any element, try aria-label
-    if (element.getAttribute('aria-label')) {
-      return tagName + '[aria-label="' + element.getAttribute('aria-label').replace(/"/g, '\\\\"') + '"]';
+    // For buttons and links, use text content
+    const tag = element.tagName.toLowerCase();
+    if (tag === 'button' || tag === 'a') {
+      const text = element.textContent.trim();
+      if (text && text.length < 100) {
+        return text;
+      }
     }
 
-    // For any element, try title
+    // Check title attribute
     if (element.title) {
-      return tagName + '[title="' + element.title.replace(/"/g, '\\\\"') + '"]';
+      return element.title;
+    }
+
+    // For images, check alt
+    if (tag === 'img' && element.alt) {
+      return element.alt;
     }
 
     return null;
   }
 
-  // Generate a fallback selector using tag + nth-child
-  function generateFallbackSelector(element) {
-    const parent = element.parentElement;
-    if (parent) {
-      const siblings = Array.from(parent.children);
-      const index = siblings.indexOf(element);
-      const tagName = element.tagName.toLowerCase();
-      const parentSelector = parent === document.body ? 'body' : generateFallbackSelector(parent);
-      if (parentSelector) {
-        return parentSelector + ' > ' + tagName + ':nth-child(' + (index + 1) + ')';
-      }
-      return tagName + ':nth-child(' + (index + 1) + ')';
+  // Get element info for ancestry
+  function getElementInfo(element) {
+    const tag = element.tagName.toLowerCase();
+    const info = { tag: tag };
+
+    if (element.id) {
+      info.id = element.id;
     }
-    return element.tagName.toLowerCase();
+
+    if (element.className && typeof element.className === 'string' && element.className.trim()) {
+      info.className = element.className.trim();
+    }
+
+    if (element.name) {
+      info.name = element.name;
+    }
+
+    // Get role (explicit or implicit)
+    const explicitRole = element.getAttribute('role');
+    const role = explicitRole || getImplicitRole(element);
+    if (role) {
+      info.role = role;
+    }
+
+    // Get accessible name
+    const accessibleName = getAccessibleName(element);
+    if (accessibleName) {
+      info.accessibleName = accessibleName;
+    }
+
+    // For inputs, capture type
+    if (tag === 'input' && element.type) {
+      info.inputType = element.type.toLowerCase();
+    }
+
+    // Capture placeholder
+    if (element.placeholder) {
+      info.placeholder = element.placeholder;
+    }
+
+    return info;
   }
 
-  // Get the primary (best) selector from variants
-  function getPrimarySelector(variants) {
-    // Prefer testid > id > class > label > fallback
-    const priority = ['testid', 'id', 'class', 'label', 'fallback'];
-    for (const type of priority) {
-      const variant = variants.find(v => v.type === type);
-      if (variant) return variant.selector;
+  // Get full ancestry from element to body
+  function getAncestry(element) {
+    const ancestry = [];
+    let current = element;
+
+    while (current && current !== document.body && current !== document.documentElement) {
+      ancestry.push(getElementInfo(current));
+      current = current.parentElement;
     }
-    return variants[0]?.selector || '';
+
+    return ancestry;
   }
 
   // Check if element is part of our toolbar
@@ -141,8 +189,7 @@ export function createRecorderScript(): string {
     const target = event.target;
     if (!target || isToolbarElement(target)) return;
 
-    const variants = generateSelectorVariants(target);
-    const selector = getPrimarySelector(variants);
+    const ancestry = getAncestry(target);
 
     // Check if it's a checkbox or radio
     if (target.tagName === 'INPUT') {
@@ -151,14 +198,12 @@ export function createRecorderScript(): string {
         if (target.checked) {
           window.__latchkeyRecordAction && window.__latchkeyRecordAction({
             type: 'check',
-            selector: selector,
-            selectorVariants: variants
+            ancestry: ancestry
           });
         } else {
           window.__latchkeyRecordAction && window.__latchkeyRecordAction({
             type: 'uncheck',
-            selector: selector,
-            selectorVariants: variants
+            ancestry: ancestry
           });
         }
         return;
@@ -167,15 +212,14 @@ export function createRecorderScript(): string {
 
     window.__latchkeyRecordAction && window.__latchkeyRecordAction({
       type: 'click',
-      selector: selector,
-      selectorVariants: variants
+      ancestry: ancestry
     });
   }, true);
 
   // Track input/change for fill actions
   let lastInputElement = null;
   let lastInputValue = '';
-  let lastInputVariants = [];
+  let lastInputAncestry = [];
   let inputTimeout = null;
 
   document.addEventListener('input', (event) => {
@@ -191,22 +235,20 @@ export function createRecorderScript(): string {
 
       lastInputElement = target;
       lastInputValue = target.value || target.innerText || '';
-      lastInputVariants = generateSelectorVariants(target);
+      lastInputAncestry = getAncestry(target);
 
       // Debounce the recording to capture the final value
       if (inputTimeout) clearTimeout(inputTimeout);
       inputTimeout = setTimeout(() => {
         if (lastInputElement) {
-          const selector = getPrimarySelector(lastInputVariants);
           window.__latchkeyRecordAction && window.__latchkeyRecordAction({
             type: 'fill',
-            selector: selector,
-            selectorVariants: lastInputVariants,
+            ancestry: lastInputAncestry,
             value: lastInputValue
           });
           lastInputElement = null;
           lastInputValue = '';
-          lastInputVariants = [];
+          lastInputAncestry = [];
         }
       }, 500);
     }
@@ -218,13 +260,11 @@ export function createRecorderScript(): string {
     if (!target || isToolbarElement(target)) return;
 
     if (target.tagName === 'SELECT') {
-      const variants = generateSelectorVariants(target);
-      const selector = getPrimarySelector(variants);
+      const ancestry = getAncestry(target);
       const selectedValue = target.value;
       window.__latchkeyRecordAction && window.__latchkeyRecordAction({
         type: 'select',
-        selector: selector,
-        selectorVariants: variants,
+        ancestry: ancestry,
         value: selectedValue
       });
     }
@@ -238,12 +278,10 @@ export function createRecorderScript(): string {
     // Only record special keys
     const specialKeys = ['Enter', 'Tab', 'Escape', 'Backspace', 'Delete', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
     if (specialKeys.includes(event.key)) {
-      const variants = generateSelectorVariants(target);
-      const selector = getPrimarySelector(variants);
+      const ancestry = getAncestry(target);
       window.__latchkeyRecordAction && window.__latchkeyRecordAction({
         type: 'press',
-        selector: selector,
-        selectorVariants: variants,
+        ancestry: ancestry,
         key: event.key
       });
     }

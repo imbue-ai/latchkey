@@ -1,10 +1,10 @@
 /**
  * Generates TypeScript code from recorded actions.
- * Outputs multiple selector variants for each action to allow AI post-processing.
+ * Uses page.getByRole where possible and outputs element ancestry for AI post-processing.
  */
 
 import { writeFileSync } from 'node:fs';
-import type { RecordedAction, SelectorVariant } from './types.js';
+import type { ElementInfo, RecordedAction } from './types.js';
 
 export class CodeGenerator {
   private readonly actions: RecordedAction[] = [];
@@ -34,44 +34,92 @@ export class CodeGenerator {
       .replace(/\r/g, '\\r');
   }
 
-  private generateLocatorCall(selector: string, actionMethod: string): string {
-    return `await page.locator('${this.escapeString(selector)}').${actionMethod}`;
+  private generateGetByRole(element: ElementInfo): string | null {
+    if (!element.role) return null;
+
+    const role = element.role;
+    const name = element.accessibleName;
+
+    if (name) {
+      return `page.getByRole('${role}', { name: '${this.escapeString(name)}' })`;
+    }
+    return `page.getByRole('${role}')`;
+  }
+
+  private generateGetByPlaceholder(element: ElementInfo): string | null {
+    if (!element.placeholder) return null;
+    return `page.getByPlaceholder('${this.escapeString(element.placeholder)}')`;
+  }
+
+  private generateGetByLabel(element: ElementInfo): string | null {
+    if (!element.accessibleName) return null;
+    if (element.tag !== 'input' && element.tag !== 'textarea' && element.tag !== 'select') return null;
+    return `page.getByLabel('${this.escapeString(element.accessibleName)}')`;
+  }
+
+  private formatElementInfo(element: ElementInfo): string {
+    const parts: string[] = [`tag: ${element.tag}`];
+
+    if (element.id) {
+      parts.push(`id: "${element.id}"`);
+    }
+    if (element.className) {
+      parts.push(`class: "${element.className}"`);
+    }
+    if (element.name) {
+      parts.push(`name: "${element.name}"`);
+    }
+    if (element.role) {
+      parts.push(`role: ${element.role}`);
+    }
+    if (element.accessibleName) {
+      parts.push(`accessibleName: "${this.escapeString(element.accessibleName)}"`);
+    }
+    if (element.inputType) {
+      parts.push(`type: ${element.inputType}`);
+    }
+    if (element.placeholder) {
+      parts.push(`placeholder: "${this.escapeString(element.placeholder)}"`);
+    }
+
+    return `{ ${parts.join(', ')} }`;
   }
 
   private generateActionCode(action: RecordedAction): string {
-    // Navigation doesn't need selector variants
+    // Navigation doesn't need ancestry
     if (action.type === 'navigate') {
       return `  await page.goto('${this.escapeString(action.url ?? '')}');`;
     }
 
-    // Get selector variants or create a single variant from the primary selector
-    const variants: readonly SelectorVariant[] = action.selectorVariants ??
-      (action.selector ? [{ type: 'fallback' as const, selector: action.selector }] : []);
-
-    if (variants.length === 0) {
-      return `  // Action ${action.type} with no selector`;
+    const ancestry = action.ancestry ?? [];
+    const target = ancestry[0];
+    if (!target) {
+      return `  // Action ${action.type} with no element info`;
     }
 
-    // Determine the action method based on type
+    this.actionCounter++;
+    const actionId = this.actionCounter;
+
+    // Determine the action method
     let actionMethod: string;
     switch (action.type) {
       case 'click':
-        actionMethod = 'click();';
+        actionMethod = '.click()';
         break;
       case 'fill':
-        actionMethod = `fill('${this.escapeString(action.value ?? '')}');`;
+        actionMethod = `.fill('${this.escapeString(action.value ?? '')}')`;
         break;
       case 'press':
-        actionMethod = `press('${this.escapeString(action.key ?? '')}');`;
+        actionMethod = `.press('${this.escapeString(action.key ?? '')}')`;
         break;
       case 'select':
-        actionMethod = `selectOption('${this.escapeString(action.value ?? '')}');`;
+        actionMethod = `.selectOption('${this.escapeString(action.value ?? '')}')`;
         break;
       case 'check':
-        actionMethod = 'check();';
+        actionMethod = '.check()';
         break;
       case 'uncheck':
-        actionMethod = 'uncheck();';
+        actionMethod = '.uncheck()';
         break;
       default: {
         const unknownType: never = action.type;
@@ -79,28 +127,56 @@ export class CodeGenerator {
       }
     }
 
-    this.actionCounter++;
-    const actionId = this.actionCounter;
+    // Generate the primary locator using getByRole if possible
+    let primaryLocator = this.generateGetByRole(target);
+    let locatorType = 'getByRole';
 
-    // Generate code with all variants clearly marked for AI post-processing
+    if (!primaryLocator) {
+      primaryLocator = this.generateGetByPlaceholder(target);
+      locatorType = 'getByPlaceholder';
+    }
+
+    if (!primaryLocator) {
+      primaryLocator = this.generateGetByLabel(target);
+      locatorType = 'getByLabel';
+    }
+
+    if (!primaryLocator) {
+      // Fallback to locator with a simple selector
+      if (target.id) {
+        primaryLocator = `page.locator('#${target.id}')`;
+        locatorType = 'id';
+      } else if (target.className) {
+        const firstClass = target.className.split(/\s+/)[0] ?? '';
+        primaryLocator = `page.locator('.${firstClass}')`;
+        locatorType = 'class';
+      } else {
+        primaryLocator = `page.locator('${target.tag}')`;
+        locatorType = 'tag';
+      }
+    }
+
+    // Build the output with ancestry information
     const lines: string[] = [];
-    lines.push(`  // ===== ACTION ${String(actionId)} START: ${action.type} =====`);
-    lines.push(`  // AI: Pick ONE of the following selector variants for this ${action.type} action.`);
-    lines.push(`  // Delete the others and remove the comment markers.`);
+    lines.push(`  // ===== ACTION ${String(actionId)}: ${action.type} =====`);
+    lines.push(`  // Target element: ${this.formatElementInfo(target)}`);
 
-    for (const variant of variants) {
-      const variantLabel = variant.type.toUpperCase();
-      const code = this.generateLocatorCall(variant.selector, actionMethod);
-      lines.push(`  // VARIANT [${variantLabel}]: ${code}`);
+    // Output ancestry (skip target, which is index 0)
+    if (ancestry.length > 1) {
+      lines.push(`  // Ancestry (target -> root):`);
+      for (let i = 1; i < ancestry.length && i < 6; i++) {
+        const ancestor = ancestry[i];
+        if (ancestor) {
+          lines.push(`  //   [${String(i)}] ${this.formatElementInfo(ancestor)}`);
+        }
+      }
+      if (ancestry.length > 6) {
+        lines.push(`  //   ... (${String(ancestry.length - 6)} more ancestors)`);
+      }
     }
 
-    // Add the primary selector as the active line (for immediate executability)
-    const primaryVariant = variants[0];
-    if (primaryVariant) {
-      lines.push(`  ${this.generateLocatorCall(primaryVariant.selector, actionMethod)} // ACTIVE - using ${primaryVariant.type.toUpperCase()}`);
-    }
-
-    lines.push(`  // ===== ACTION ${String(actionId)} END =====`);
+    lines.push(`  // Locator strategy: ${locatorType}`);
+    lines.push(`  await ${primaryLocator}${actionMethod};`);
     lines.push('');
 
     return lines.join('\n');
@@ -111,9 +187,8 @@ export class CodeGenerator {
     this.actionCounter = 0;
 
     const header = `// Generated by Latchkey Codegen
-// This file contains multiple selector variants for each action.
-// An AI post-processor should select the most appropriate selector for each action.
-// Look for "===== ACTION N START =====" blocks and pick one VARIANT per action.
+// Each action includes element ancestry for AI post-processing to synthesize optimal selectors.
+// The active locator uses page.getByRole where possible (Playwright best practice).
 
 const { chromium } = require('playwright');
 

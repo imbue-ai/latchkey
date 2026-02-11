@@ -18,10 +18,10 @@ import { CodeGenerator } from './codeGenerator.js';
 import { createRecorderScript } from './recorderScript.js';
 import { RequestMetadataCollector } from './requestMetadataCollector.js';
 import { createToolbarScript } from './toolbarScript.js';
-import type { CodegenOptions, CodegenResult, RecordedAction, RecordingPhase, SelectorVariant } from './types.js';
+import type { CodegenOptions, CodegenResult, ElementInfo, RecordedAction, RecordingPhase } from './types.js';
 
 // Re-export types for external use
-export type { CodegenOptions, CodegenResult, RecordedAction, RecordingPhase, RequestMetadata, SelectorVariant } from './types.js';
+export type { CodegenOptions, CodegenResult, ElementInfo, RecordedAction, RecordingPhase, RequestMetadata } from './types.js';
 export { CodegenError } from './types.js';
 
 /**
@@ -74,8 +74,7 @@ export async function runCodegen(options: CodegenOptions): Promise<CodegenResult
     '__latchkeyRecordAction',
     (action: {
       type: string;
-      selector?: string;
-      selectorVariants?: SelectorVariant[];
+      ancestry?: ElementInfo[];
       value?: string;
       key?: string;
       url?: string;
@@ -87,8 +86,7 @@ export async function runCodegen(options: CodegenOptions): Promise<CodegenResult
 
       codeGenerator.addAction({
         type: action.type as RecordedAction['type'],
-        selector: action.selector,
-        selectorVariants: action.selectorVariants,
+        ancestry: action.ancestry,
         value: action.value,
         key: action.key,
         url: action.url,
