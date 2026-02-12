@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, rmSync, existsSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execSync, ExecSyncOptionsWithStringEncoding } from 'node:child_process';
@@ -870,81 +870,20 @@ describe('CLI commands with dependency injection', () => {
       expect(capturedArgs).toContain('Authorization: Bearer stored-token');
     });
 
-    it('should call login when no credentials in store', async () => {
+    it('should return error when no credentials in store', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      const browserStatePath = join(tempDir, 'browser_state.json');
-      const configPath = join(tempDir, 'config.json');
-      const fakeBrowserPath = join(tempDir, 'fake-browser');
       writeSecureFile(storePath, '{}');
-      // Create a fake browser executable so loadBrowserConfig validation passes
-      writeFileSync(fakeBrowserPath, '#!/bin/sh\necho fake', { mode: 0o755 });
-      // Create a config file so the command doesn't fail
-      writeFileSync(
-        configPath,
-        JSON.stringify({
-          browser: {
-            executablePath: fakeBrowserPath,
-            source: 'system',
-            discoveredAt: new Date().toISOString(),
-          },
-        }),
-        { mode: 0o600 }
-      );
-
-      const mockLogin = vi
-        .fn()
-        .mockResolvedValue(new SlackApiCredentials('new-token', 'new-cookie'));
-      const mockSlackService: Service = {
-        name: 'slack',
-        displayName: 'Slack',
-        baseApiUrls: ['https://slack.com/api/'],
-        loginUrl: 'https://slack.com/signin',
-        info: 'Test info for Slack service.',
-        credentialCheckCurlArguments: [],
-        checkApiCredentials: vi.fn(),
-        getSession: vi.fn().mockReturnValue({ login: mockLogin }),
-      };
 
       const deps = createMockDependencies({
-        registry: new Registry([mockSlackService]),
-        config: createMockConfig({ credentialStorePath: storePath, browserStatePath, configPath }),
+        config: createMockConfig({ credentialStorePath: storePath }),
       });
 
       await runCommand(['curl', 'https://slack.com/api/test'], deps);
 
-      expect(mockLogin).toHaveBeenCalledWith(
-        expect.any(EncryptedStorage),
-        expect.any(Object),
-        undefined
-      );
-      expect(capturedArgs).toContain('Authorization: Bearer new-token');
-    });
-
-    it('should return error when service does not support browser login and no credentials', async () => {
-      const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(storePath, '{}');
-
-      const noLoginService: Service = {
-        name: 'nologin',
-        displayName: 'No Login Service',
-        baseApiUrls: ['https://nologin.example.com/api/'],
-        loginUrl: 'https://nologin.example.com',
-        info: 'A service without browser login support.',
-        credentialCheckCurlArguments: [],
-        checkApiCredentials: vi.fn(),
-        // No getSession - service doesn't support browser login
-      };
-
-      const deps = createMockDependencies({
-        registry: new Registry([noLoginService]),
-        config: createMockConfig({ credentialStorePath: storePath }),
-      });
-
-      await runCommand(['curl', 'https://nologin.example.com/api/test'], deps);
-
       expect(exitCode).toBe(1);
-      const expectedMessage = new BrowserFlowsNotSupportedError('nologin').message;
-      expect(errorLogs.some((log) => log.includes(expectedMessage))).toBe(true);
+      expect(errorLogs.some((log) => log.includes('No credentials found for slack'))).toBe(true);
+      expect(errorLogs.some((log) => log.includes('browser-login'))).toBe(true);
+      expect(errorLogs.some((log) => log.includes('insert-auth'))).toBe(true);
     });
 
     it('should work when service does not have getSession but credentials exist', async () => {
@@ -980,7 +919,7 @@ describe('CLI commands with dependency injection', () => {
     });
   });
 
-  describe('login command', () => {
+  describe('browser-login command', () => {
     it('should return error when service does not support browser login', async () => {
       const noLoginService: Service = {
         name: 'nologin',
@@ -997,7 +936,7 @@ describe('CLI commands with dependency injection', () => {
         registry: new Registry([noLoginService]),
       });
 
-      await runCommand(['login', 'nologin'], deps);
+      await runCommand(['browser-login', 'nologin'], deps);
 
       expect(exitCode).toBe(1);
       const expectedMessage = new BrowserFlowsNotSupportedError('nologin').message;
@@ -1043,20 +982,19 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
       expect(result.stderr).toContain('https://unknown-api.example.com');
     });
 
-    it('should return error when browser is disabled via LATCHKEY_DISABLE_BROWSER', () => {
+    it('should return error when no credentials exist', () => {
       writeSecureFile(testEnv.LATCHKEY_STORE, '{}');
-      const result = runCli(['curl', 'https://slack.com/api/test'], {
-        ...testEnv,
-        LATCHKEY_DISABLE_BROWSER: '1',
-      });
+      const result = runCli(['curl', 'https://slack.com/api/test'], testEnv);
       expect(result.exitCode).toBe(1);
-      expect(result.stderr).toContain('Browser login is disabled');
+      expect(result.stderr).toContain('No credentials found for slack');
+      expect(result.stderr).toContain('browser-login');
+      expect(result.stderr).toContain('insert-auth');
     });
   });
 
-  describe('login command', () => {
+  describe('browser-login command', () => {
     it('should return error when browser is disabled via LATCHKEY_DISABLE_BROWSER', () => {
-      const result = runCli(['login', 'slack'], {
+      const result = runCli(['browser-login', 'slack'], {
         ...testEnv,
         LATCHKEY_DISABLE_BROWSER: '1',
       });

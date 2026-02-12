@@ -18,9 +18,13 @@ Latchkey is a command-line tool that injects credentials to curl requests to kno
 	- Get a list of available third-party services (Slack, Google Workspace, Linear, GitHub, etc.).
 	- By default, only shows services that either support browser login (when not disabled) or have stored credentials.
 	- Use `--all` to see all known services.
+- `latchkey browser-login <service_name>`
+	- Open a browser for login and store the resulting API credentials.
+- `latchkey insert-auth <service_name> <curl_arguments>`
+	- Manually store credentials for a service as arbitrary curl arguments.
 - `latchkey curl <arguments>`
 	- Automatically inject credentials to your otherwise standard curl calls to public APIs.
-	- (The first time you access a service, a browser pop-up with a login screen appears.)
+	- Credentials must already exist (via `browser-login` or `insert-auth`).
 
 Latchkey is primarily designed for AI agents. By invoking Latchkey, agents can
 prompt the user to authenticate when needed, then continue interacting with
@@ -100,14 +104,24 @@ latchkey curl -X POST 'https://slack.com/api/conversations.create' \
   -d '{"name":"something-urgent"}'
 ```
 
-Notice that `-H 'Authorization: Bearer ...'` is absent. This is because Latchkey:
+Notice that `-H 'Authorization: Bearer ...'` is absent. This is because Latchkey
+injects stored credentials automatically. To set up credentials for a service, run:
 
-- Opens the browser with a login screen.
-- After the user logs in, Latchkey extracts the necessary API credentials from the browser session.
-- The browser is closed, the credentials are injected into the arguments, and `curl` is invoked.
-- The credentials are stored so that they can be reused the next time.
+```
+latchkey browser-login slack
+```
 
-Otherwise, `latchkey curl` passes your arguments straight
+This opens the browser with a login screen. After you log in, Latchkey extracts
+the necessary API credentials from the browser session, closes the browser and
+stores the credentials so that they can be reused.
+
+Alternatively, you can manually provide credentials:
+
+```
+latchkey insert-auth slack -H "Authorization: Bearer xoxb-your-token"
+```
+
+`latchkey curl` passes your arguments straight
 through to `curl` so you can use the same interface you are used
 to. The return code, stdin and stdout are passed back from curl
 to the caller of `latchkey`.
@@ -142,14 +156,12 @@ latchkey status discord
 
 If the result is `invalid` , meaning the Unauthorized/Forbidden responses are
 caused by invalid or expired credentials rather than insufficient permissions,
-force a new login in the next `latchkey curl` call by clearing the remembered
-API credentials for the service in question, e.g.:
+clear the remembered API credentials for the service in question and log in again:
 
 ```
 latchkey clear discord
+latchkey browser-login discord
 ```
-
-The next `latchkey curl` call will then trigger a new login flow.
 
 To clear all stored data (both the credentials store and browser
 state file), run:
@@ -172,7 +184,7 @@ the browser used for the login popup
 - `LATCHKEY_CONFIG`: path to the configuration file
 (defaults to `~/.latchkey/config.json`)
 - `LATCHKEY_KEYRING_SERVICE_NAME`, `LATCHKEY_KEYRING_ACCOUNT_NAME`: identifiers that are used to store the encryption password in your keyring
-- `LATCHKEY_DISABLE_BROWSER`: when set (to any non-empty value), disables the browser login flow; commands that would trigger a browser login (`login`, `curl`, `prepare`) will fail with an error instead
+- `LATCHKEY_DISABLE_BROWSER`: when set (to any non-empty value), disables the browser login flow; commands that would trigger a browser login (`browser-login`, `prepare`) will fail with an error instead
 
 
 ## Disclaimers

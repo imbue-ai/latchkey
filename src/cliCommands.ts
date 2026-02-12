@@ -440,8 +440,8 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     });
 
   program
-    .command('login')
-    .description('Login to a service and store the API credentials.')
+    .command('browser-login')
+    .description('Login to a service via the browser and store the API credentials.')
     .argument('<service_name>', 'Name of the service to login to')
     .action(async (serviceName: string) => {
       const service = deps.registry.getByName(serviceName);
@@ -572,49 +572,23 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       // Check if credentials exist but are expired
       const isExpired = apiCredentials?.isExpired() === true;
 
-      if (apiCredentials === null || isExpired) {
-        // Check if service requires preparation first
-        if (service.getSession?.().prepare && apiCredentials === null) {
-          deps.errorLog(`Error: Service ${service.name} requires preparation first.`);
-          deps.errorLog(`Run 'latchkey prepare ${service.name}' before using curl.`);
-          deps.exit(1);
-        }
+      if (apiCredentials === null) {
+        deps.errorLog(`Error: No credentials found for ${service.name}.`);
+        deps.errorLog(
+          `Run 'latchkey browser-login ${service.name}' or 'latchkey insert-auth ${service.name}' first.`
+        );
+        deps.exit(1);
+      }
 
-        // Try to refresh credentials if the service supports it and credentials are expired
-        if (isExpired && apiCredentials !== null) {
-          apiCredentials = await maybeRefreshCredentials(
-            service,
-            apiCredentials,
-            apiCredentialStore
+      if (isExpired) {
+        apiCredentials = await maybeRefreshCredentials(service, apiCredentials, apiCredentialStore);
+
+        if (apiCredentials.isExpired() === true) {
+          deps.errorLog(`Error: Credentials for ${service.name} are expired.`);
+          deps.errorLog(
+            `Run 'latchkey browser-login ${service.name}' or 'latchkey insert-auth ${service.name}' to refresh them.`
           );
-        }
-
-        // If we still don't have valid credentials, perform login
-        if (apiCredentials === null || apiCredentials.isExpired() === true) {
-          const session = service.getSession?.();
-          if (!session) {
-            deps.errorLog(new BrowserFlowsNotSupportedError(service.name).message);
-            deps.exit(1);
-          }
-          const launchOptions = getBrowserLaunchOptionsOrExit(deps);
-
-          try {
-            // Pass old credentials to login() if they're expired (to reuse client ID/secret)
-            const oldCredentials =
-              isExpired && apiCredentials !== null ? apiCredentials : undefined;
-            apiCredentials = await session.login(encryptedStorage, launchOptions, oldCredentials);
-            apiCredentialStore.save(service.name, apiCredentials);
-          } catch (error) {
-            if (error instanceof LoginCancelledError) {
-              deps.errorLog('Login cancelled.');
-              deps.exit(1);
-            }
-            if (error instanceof LoginFailedError) {
-              deps.errorLog(error.message);
-              deps.exit(1);
-            }
-            throw error;
-          }
+          deps.exit(1);
         }
       }
 
