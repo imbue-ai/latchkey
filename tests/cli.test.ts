@@ -267,7 +267,7 @@ describe('CLI commands with dependency injection', () => {
 
       expect(logs).toHaveLength(1);
       const info = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
-      expect(info.loginOptions).toEqual(['auth browser-login', 'auth insert']);
+      expect(info.authOptions).toEqual(['browser-login', 'insert']);
       expect(info.credentialStatus).toBe('missing');
       expect(info.developerNotes).toBe('Test info for Slack service.');
     });
@@ -293,7 +293,7 @@ describe('CLI commands with dependency injection', () => {
       await runCommand(['services', 'info', 'nologin'], deps);
 
       const info = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
-      expect(info.loginOptions).toEqual(['auth insert']);
+      expect(info.authOptions).toEqual(['insert']);
     });
 
     it('should show valid credentials status when credentials are valid', async () => {
@@ -1020,7 +1020,7 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
       expect(result.exitCode).toBe(0);
 
       const info = JSON.parse(result.stdout) as Record<string, unknown>;
-      expect(info.loginOptions).toEqual(['auth browser-login', 'auth insert']);
+      expect(info.authOptions).toEqual(['browser-login', 'insert']);
       expect(info.credentialStatus).toBe('missing');
       expect(info.developerNotes).toEqual(expect.any(String));
     });
@@ -1032,7 +1032,7 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
       expect(result.exitCode).toBe(0);
 
       const info = JSON.parse(result.stdout) as Record<string, unknown>;
-      expect(info.loginOptions).toEqual(['auth insert']);
+      expect(info.authOptions).toEqual(['insert']);
     });
 
     it('should return error for unknown service', () => {
