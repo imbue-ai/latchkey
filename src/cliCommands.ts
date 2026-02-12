@@ -176,7 +176,7 @@ function clearService(deps: CliDependencies, serviceName: string): void {
   const service = deps.registry.getByName(serviceName);
   if (service === null) {
     deps.errorLog(`Error: Unknown service: ${serviceName}`);
-    deps.errorLog("Use 'latchkey services' to see available services.");
+    deps.errorLog("Use 'latchkey services list' to see available services.");
     deps.exit(1);
   }
 
@@ -230,15 +230,19 @@ function getBrowserLaunchOptionsOrExit(deps: CliDependencies): {
  * Register all CLI commands on the given program.
  */
 export function registerCommands(program: Command, deps: CliDependencies): void {
-  program
+  const servicesCommand = program
     .command('services')
+    .description('Manage and inspect supported services.');
+
+  servicesCommand
+    .command('list')
     .description('List all supported services.')
     .action(() => {
       const serviceNames = deps.registry.services.map((service) => service.name);
       deps.log(serviceNames.join(' '));
     });
 
-  program
+  servicesCommand
     .command('info')
     .description('Show information about a service.')
     .argument('<service_name>', 'Name of the service to get info for')
@@ -246,7 +250,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       const service = deps.registry.getByName(serviceName);
       if (service === null) {
         deps.errorLog(`Error: Unknown service: ${serviceName}`);
-        deps.errorLog("Use 'latchkey services' to see available services.");
+        deps.errorLog("Use 'latchkey services list' to see available services.");
         deps.exit(1);
       }
 
@@ -364,7 +368,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       const service = deps.registry.getByName(serviceName);
       if (service === null) {
         deps.errorLog(`Error: Unknown service: ${serviceName}`);
-        deps.errorLog("Use 'latchkey services' to see available services.");
+        deps.errorLog("Use 'latchkey services list' to see available services.");
         deps.exit(1);
       }
 
@@ -397,7 +401,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       const service = deps.registry.getByName(serviceName);
       if (service === null) {
         deps.errorLog(`Error: Unknown service: ${serviceName}`);
-        deps.errorLog("Use 'latchkey services' to see available services.");
+        deps.errorLog("Use 'latchkey services list' to see available services.");
         deps.exit(1);
       }
 
@@ -450,7 +454,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       const service = deps.registry.getByName(serviceName);
       if (service === null) {
         deps.errorLog(`Error: Unknown service: ${serviceName}`);
-        deps.errorLog("Use 'latchkey services' to see available services.");
+        deps.errorLog("Use 'latchkey services list' to see available services.");
         deps.exit(1);
       }
 

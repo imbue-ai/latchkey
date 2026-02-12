@@ -50,7 +50,7 @@ should be able to determine usage by consulting the documentation.
 
 ### Service info
 
-Every service must include an `info` property that provides developer notes. This information is accessible via `latchkey info <service_name>` and helps agents and users understand service-specific details such as:
+Every service must include an `info` property that provides developer notes. This information is accessible via `latchkey services info <service_name>` and helps agents and users understand service-specific details such as:
 
 - Links to API documentation
 - Special requirements (e.g., need to run `latchkey auth prepare` first)

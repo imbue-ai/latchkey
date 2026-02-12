@@ -14,7 +14,7 @@ latchkey curl -X POST 'https://slack.com/api/conversations.create' \
 
 Latchkey is a command-line tool that injects credentials to curl requests to known public APIs.
 
-- `latchkey services`
+- `latchkey services list`
 	- Get a list of supported third-party services (Slack, Google Workspace, Linear, GitHub, etc.).
 - `latchkey auth insert <service_name> <curl_arguments>`
 	- Manually store credentials for a service in the form of arbitrary curl arguments.
@@ -134,7 +134,7 @@ encrypted.
 
 ### Inspecting the status of stored credentials
 
-Calling `latchkey info <service_name>` will show information
+Calling `latchkey services info <service_name>` will show information
 about the service, including the credentials status. The
 credentials status line will show one of:
 
@@ -146,10 +146,10 @@ credentials status line will show one of:
 
 Remembered API credentials can expire. The caller of `latchkey
 curl` will typically notice this because the calls will start returning
-HTTP 401 or 403. To verify that, first call `latchkey info`, e.g.:
+HTTP 401 or 403. To verify that, first call `latchkey services info`, e.g.:
 
 ```
-latchkey info discord
+latchkey services info discord
 ```
 
 If the credentials status is `invalid`, it means the Unauthorized/Forbidden

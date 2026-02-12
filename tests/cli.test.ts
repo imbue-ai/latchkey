@@ -244,10 +244,10 @@ describe('CLI commands with dependency injection', () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  describe('services command', () => {
+  describe('services list command', () => {
     it('should list all services', async () => {
       const deps = createMockDependencies();
-      await runCommand(['services'], deps);
+      await runCommand(['services', 'list'], deps);
 
       expect(logs).toHaveLength(1);
       const services = (logs[0] ?? '').split(' ');
@@ -255,7 +255,7 @@ describe('CLI commands with dependency injection', () => {
     });
   });
 
-  describe('info command', () => {
+  describe('services info command', () => {
     it('should show login options, credentials status, and developer notes', async () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(storePath, '{}');
@@ -263,7 +263,7 @@ describe('CLI commands with dependency injection', () => {
       const deps = createMockDependencies({
         config: createMockConfig({ credentialStorePath: storePath }),
       });
-      await runCommand(['info', 'slack'], deps);
+      await runCommand(['services', 'info', 'slack'], deps);
 
       expect(logs).toHaveLength(1);
       const info = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
@@ -290,7 +290,7 @@ describe('CLI commands with dependency injection', () => {
         registry: new Registry([noLoginService]),
         config: createMockConfig({ credentialStorePath: storePath }),
       });
-      await runCommand(['info', 'nologin'], deps);
+      await runCommand(['services', 'info', 'nologin'], deps);
 
       const info = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
       expect(info.loginOptions).toEqual(['auth insert']);
@@ -309,7 +309,7 @@ describe('CLI commands with dependency injection', () => {
         config: createMockConfig({ credentialStorePath: storePath }),
       });
 
-      await runCommand(['info', 'slack'], deps);
+      await runCommand(['services', 'info', 'slack'], deps);
 
       const info = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
       expect(info.credentialStatus).toBe('valid');
@@ -318,7 +318,7 @@ describe('CLI commands with dependency injection', () => {
     it('should return error for unknown service', async () => {
       const deps = createMockDependencies();
 
-      await runCommand(['info', 'unknown-service'], deps);
+      await runCommand(['services', 'info', 'unknown-service'], deps);
 
       expect(exitCode).toBe(1);
       expect(errorLogs.some((log) => log.includes('Unknown service'))).toBe(true);
@@ -906,9 +906,9 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
     });
   });
 
-  describe('services command', () => {
+  describe('services list command', () => {
     it('should list all services', () => {
-      const result = runCli(['services'], testEnv);
+      const result = runCli(['services', 'list'], testEnv);
       expect(result.exitCode).toBe(0);
 
       const services = result.stdout.trim().split(' ');
@@ -920,11 +920,11 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
     });
   });
 
-  describe('info command', () => {
+  describe('services info command', () => {
     it('should show login options, credentials status, and developer notes as JSON', () => {
       writeSecureFile(testEnv.LATCHKEY_STORE, '{}');
 
-      const result = runCli(['info', 'slack'], testEnv);
+      const result = runCli(['services', 'info', 'slack'], testEnv);
       expect(result.exitCode).toBe(0);
 
       const info = JSON.parse(result.stdout) as Record<string, unknown>;
@@ -936,7 +936,7 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
     it('should show auth insert only for services without browser login', () => {
       writeSecureFile(testEnv.LATCHKEY_STORE, '{}');
 
-      const result = runCli(['info', 'mailchimp'], testEnv);
+      const result = runCli(['services', 'info', 'mailchimp'], testEnv);
       expect(result.exitCode).toBe(0);
 
       const info = JSON.parse(result.stdout) as Record<string, unknown>;
@@ -944,7 +944,7 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
     });
 
     it('should return error for unknown service', () => {
-      const result = runCli(['info', 'unknown-service'], testEnv);
+      const result = runCli(['services', 'info', 'unknown-service'], testEnv);
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain('Unknown service');
     });
