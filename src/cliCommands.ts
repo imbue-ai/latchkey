@@ -420,7 +420,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       const oldCredentials = apiCredentialStore.get(service.name);
       if (session.prepare && oldCredentials === null) {
         deps.errorLog(`Error: Service ${serviceName} requires preparation first.`);
-        deps.errorLog(`Run 'latchkey auth prepare ${serviceName}' before logging in.`);
+        deps.errorLog(`Run 'latchkey auth browser-prepare ${serviceName}' before logging in.`);
         deps.exit(1);
       }
       const launchOptions = getBrowserLaunchOptionsOrExit(deps);
@@ -447,7 +447,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     });
 
   authCommand
-    .command('prepare')
+    .command('browser-prepare')
     .description('Prepare a service for use.')
     .argument('<service_name>', 'Name of the service to prepare')
     .action(async (serviceName: string) => {
@@ -460,7 +460,9 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
 
       const session = service.getSession?.();
       if (!session?.prepare) {
-        deps.errorLog(`Error: Service ${serviceName} does not support the prepare command.`);
+        deps.errorLog(
+          `Error: Service ${serviceName} does not support the browser-prepare command.`
+        );
         deps.exit(1);
       }
 

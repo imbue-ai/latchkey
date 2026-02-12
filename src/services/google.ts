@@ -319,7 +319,7 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     // Require existing credentials with client ID and secret
     if (!(oldCredentials instanceof OAuthCredentials)) {
       throw new LoginFailedError(
-        'Google login requires existing OAuth client credentials. Run prepare first.'
+        'Google login requires existing OAuth client credentials. Run browser-prepare first.'
       );
     }
 
@@ -441,7 +441,7 @@ export class Google extends Service {
   readonly loginUrl = 'https://console.cloud.google.com/';
   readonly info =
     'Supports some Google Workspace APIs: Gmail, Calendar, Drive, Sheets, Docs, and Contacts. ' +
-    'If needed, run "latchkey auth prepare google" to create an OAuth client first. ' +
+    'If needed, run "latchkey auth browser-prepare google" to create an OAuth client first. ' +
     'It may take a few minutes before the OAuth client is ready to use.';
 
   readonly credentialCheckCurlArguments = [
