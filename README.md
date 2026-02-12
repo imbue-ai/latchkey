@@ -14,7 +14,7 @@ latchkey curl -X POST 'https://slack.com/api/conversations.create' \
 
 Latchkey is a command-line tool that injects credentials to curl requests to known public APIs.
 
-- `latchkey services --all`
+- `latchkey services`
 	- Get a list of supported third-party services (Slack, Google Workspace, Linear, GitHub, etc.).
 - `latchkey insert-auth <service_name> <curl_arguments>`
 	- Manually store credentials for a service in the form of arbitrary curl arguments.

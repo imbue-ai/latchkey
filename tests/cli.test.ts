@@ -245,7 +245,7 @@ describe('CLI commands with dependency injection', () => {
   });
 
   describe('services command', () => {
-    it('should list services with browser login support when browser is enabled', async () => {
+    it('should list all services', async () => {
       const deps = createMockDependencies();
       await runCommand(['services'], deps);
 
@@ -254,85 +254,7 @@ describe('CLI commands with dependency injection', () => {
       expect(services).toContain('slack');
     });
 
-    it('should list all services with --all flag', async () => {
-      const deps = createMockDependencies();
-      await runCommand(['services', '--all'], deps);
-
-      expect(logs).toHaveLength(1);
-      const services = (logs[0] ?? '').split(' ');
-      expect(services).toContain('slack');
-    });
-
-    it('should not list services without browser support when browser is disabled and no credentials', async () => {
-      const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(storePath, '{}');
-
-      const mockSlackService: Service = {
-        name: 'slack',
-        displayName: 'Slack',
-        baseApiUrls: ['https://slack.com/api/'],
-        loginUrl: 'https://slack.com/signin',
-        info: 'Test info for Slack service.',
-        credentialCheckCurlArguments: ['https://slack.com/api/auth.test'],
-        checkApiCredentials: vi.fn().mockReturnValue(ApiCredentialStatus.Valid),
-        getSession: vi.fn().mockReturnValue({
-          login: vi
-            .fn()
-            .mockResolvedValue(new SlackApiCredentials('xoxc-test-token', 'test-cookie')),
-        }),
-      };
-
-      const deps = createMockDependencies({
-        registry: new Registry([mockSlackService]),
-        config: createMockConfig({ credentialStorePath: storePath, browserDisabled: true }),
-      });
-
-      await runCommand(['services'], deps);
-
-      expect(logs).toHaveLength(1);
-      expect(logs[0]).toBe('');
-    });
-
-    it('should list services with stored credentials even when browser is disabled', async () => {
-      const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(
-        storePath,
-        JSON.stringify({
-          slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
-        })
-      );
-
-      const mockSlackService: Service = {
-        name: 'slack',
-        displayName: 'Slack',
-        baseApiUrls: ['https://slack.com/api/'],
-        loginUrl: 'https://slack.com/signin',
-        info: 'Test info for Slack service.',
-        credentialCheckCurlArguments: ['https://slack.com/api/auth.test'],
-        checkApiCredentials: vi.fn().mockReturnValue(ApiCredentialStatus.Valid),
-        getSession: vi.fn().mockReturnValue({
-          login: vi
-            .fn()
-            .mockResolvedValue(new SlackApiCredentials('xoxc-test-token', 'test-cookie')),
-        }),
-      };
-
-      const deps = createMockDependencies({
-        registry: new Registry([mockSlackService]),
-        config: createMockConfig({ credentialStorePath: storePath, browserDisabled: true }),
-      });
-
-      await runCommand(['services'], deps);
-
-      expect(logs).toHaveLength(1);
-      const services = (logs[0] ?? '').split(' ');
-      expect(services).toContain('slack');
-    });
-
-    it('should not list services without browser support when browser is enabled but service has no getSession', async () => {
-      const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(storePath, '{}');
-
+    it('should list all services including those without browser support', async () => {
       const noBrowserService: Service = {
         name: 'nobrowser',
         displayName: 'No Browser Service',
@@ -346,68 +268,9 @@ describe('CLI commands with dependency injection', () => {
 
       const deps = createMockDependencies({
         registry: new Registry([noBrowserService]),
-        config: createMockConfig({ credentialStorePath: storePath }),
       });
 
       await runCommand(['services'], deps);
-
-      expect(logs).toHaveLength(1);
-      expect(logs[0]).toBe('');
-    });
-
-    it('should list services without browser support when they have stored credentials', async () => {
-      const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(
-        storePath,
-        JSON.stringify({
-          nobrowser: { objectType: 'rawCurl', curlArguments: ['-H', 'X-API-Key: secret'] },
-        })
-      );
-
-      const noBrowserService: Service = {
-        name: 'nobrowser',
-        displayName: 'No Browser Service',
-        baseApiUrls: ['https://nobrowser.example.com/api/'],
-        loginUrl: 'https://nobrowser.example.com',
-        info: 'A service without browser login support.',
-        credentialCheckCurlArguments: [],
-        checkApiCredentials: vi.fn(),
-        // No getSession - service doesn't support browser login
-      };
-
-      const deps = createMockDependencies({
-        registry: new Registry([noBrowserService]),
-        config: createMockConfig({ credentialStorePath: storePath }),
-      });
-
-      await runCommand(['services'], deps);
-
-      expect(logs).toHaveLength(1);
-      const services = (logs[0] ?? '').split(' ');
-      expect(services).toContain('nobrowser');
-    });
-
-    it('should list all services with --all flag even without browser support or credentials', async () => {
-      const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(storePath, '{}');
-
-      const noBrowserService: Service = {
-        name: 'nobrowser',
-        displayName: 'No Browser Service',
-        baseApiUrls: ['https://nobrowser.example.com/api/'],
-        loginUrl: 'https://nobrowser.example.com',
-        info: 'A service without browser login support.',
-        credentialCheckCurlArguments: [],
-        checkApiCredentials: vi.fn(),
-        // No getSession - service doesn't support browser login
-      };
-
-      const deps = createMockDependencies({
-        registry: new Registry([noBrowserService]),
-        config: createMockConfig({ credentialStorePath: storePath, browserDisabled: true }),
-      });
-
-      await runCommand(['services', '--all'], deps);
 
       expect(logs).toHaveLength(1);
       const services = (logs[0] ?? '').split(' ');
@@ -1136,7 +999,7 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
   });
 
   describe('services command', () => {
-    it('should list available services (all have browser support)', () => {
+    it('should list all services', () => {
       const result = runCli(['services'], testEnv);
       expect(result.exitCode).toBe(0);
 
@@ -1146,60 +1009,6 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
       expect(services).toContain('github');
       expect(services).toContain('dropbox');
       expect(services).toContain('linear');
-    });
-
-    it('should list all services with --all flag', () => {
-      const result = runCli(['services', '--all'], testEnv);
-      expect(result.exitCode).toBe(0);
-
-      const services = result.stdout.trim().split(' ');
-      expect(services).toContain('slack');
-      expect(services).toContain('discord');
-      expect(services).toContain('github');
-      expect(services).toContain('dropbox');
-      expect(services).toContain('linear');
-    });
-
-    it('should return empty list when browser is disabled and no credentials', () => {
-      writeSecureFile(testEnv.LATCHKEY_STORE, '{}');
-      const result = runCli(['services'], {
-        ...testEnv,
-        LATCHKEY_DISABLE_BROWSER: '1',
-      });
-      expect(result.exitCode).toBe(0);
-      expect(result.stdout.trim()).toBe('');
-    });
-
-    it('should list services with stored credentials even when browser is disabled', () => {
-      writeSecureFile(
-        testEnv.LATCHKEY_STORE,
-        JSON.stringify({
-          slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
-        })
-      );
-      const result = runCli(['services'], {
-        ...testEnv,
-        LATCHKEY_DISABLE_BROWSER: '1',
-      });
-      expect(result.exitCode).toBe(0);
-      const services = result.stdout.trim().split(' ');
-      expect(services).toContain('slack');
-      // Other services should not be listed (no credentials, no browser)
-      expect(services).not.toContain('discord');
-    });
-
-    it('should list all services with --all flag even when browser is disabled', () => {
-      writeSecureFile(testEnv.LATCHKEY_STORE, '{}');
-      const result = runCli(['services', '--all'], {
-        ...testEnv,
-        LATCHKEY_DISABLE_BROWSER: '1',
-      });
-      expect(result.exitCode).toBe(0);
-
-      const services = result.stdout.trim().split(' ');
-      expect(services).toContain('slack');
-      expect(services).toContain('discord');
-      expect(services).toContain('github');
     });
   });
 

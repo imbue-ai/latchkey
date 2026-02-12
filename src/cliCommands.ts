@@ -232,38 +232,9 @@ function getBrowserLaunchOptionsOrExit(deps: CliDependencies): {
 export function registerCommands(program: Command, deps: CliDependencies): void {
   program
     .command('services')
-    .description('List available services (those with browser login or stored credentials).')
-    .option('-a, --all', 'List all known services, not just available ones')
-    .action((options: { all?: boolean }) => {
-      if (options.all) {
-        const serviceNames = deps.registry.services.map((service) => service.name);
-        deps.log(serviceNames.join(' '));
-        return;
-      }
-
-      // Filter to services that are available:
-      // - Browser login is supported (getSession exists) AND browser is not disabled, OR
-      // - Credentials are already stored
-      const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
-      const apiCredentialStore = new ApiCredentialStore(
-        deps.config.credentialStorePath,
-        encryptedStorage
-      );
-
-      const availableServices = deps.registry.services.filter((service) => {
-        // Check if credentials exist
-        const hasCredentials = apiCredentialStore.get(service.name) !== null;
-        if (hasCredentials) {
-          return true;
-        }
-
-        // Check if browser login is available
-        const supportsBrowserLogin = service.getSession !== undefined;
-        const browserEnabled = !deps.config.browserDisabled;
-        return supportsBrowserLogin && browserEnabled;
-      });
-
-      const serviceNames = availableServices.map((service) => service.name);
+    .description('List all known services.')
+    .action(() => {
+      const serviceNames = deps.registry.services.map((service) => service.name);
       deps.log(serviceNames.join(' '));
     });
 

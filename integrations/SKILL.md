@@ -60,14 +60,7 @@ Only do this when you notice that your previous call ended up not being authenti
 latchkey services
 ```
 
-By default, this lists services that are currently available (have browser login enabled or have stored credentials).
-
-### List all known services
-```bash
-latchkey services --all
-```
-
-Use `--all` to see all services that latchkey knows about, even if they're not currently available.
+Lists all services that latchkey knows about.
 
 ### Get service-specific info
 ```bash
