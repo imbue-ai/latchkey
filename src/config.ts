@@ -28,7 +28,7 @@ export class CurlNotFoundError extends Error {
 const LATCHKEY_STORE_ENV_VAR = 'LATCHKEY_STORE';
 const LATCHKEY_BROWSER_STATE_ENV_VAR = 'LATCHKEY_BROWSER_STATE';
 const LATCHKEY_CONFIG_ENV_VAR = 'LATCHKEY_CONFIG';
-const LATCHKEY_CURL_PATH_ENV_VAR = 'LATCHKEY_CURL_PATH';
+const LATCHKEY_CURL_ENV_VAR = 'LATCHKEY_CURL';
 const LATCHKEY_ENCRYPTION_KEY_ENV_VAR = 'LATCHKEY_ENCRYPTION_KEY';
 const LATCHKEY_KEYRING_SERVICE_NAME_ENV_VAR = 'LATCHKEY_KEYRING_SERVICE_NAME';
 const LATCHKEY_KEYRING_ACCOUNT_NAME_ENV_VAR = 'LATCHKEY_KEYRING_ACCOUNT_NAME';
@@ -104,7 +104,7 @@ export class Config {
   readonly browserDisabled: boolean;
 
   constructor(getEnv: (name: string) => string | undefined = (name) => process.env[name]) {
-    this.curlCommand = getEnv(LATCHKEY_CURL_PATH_ENV_VAR) ?? 'curl';
+    this.curlCommand = getEnv(LATCHKEY_CURL_ENV_VAR) ?? 'curl';
     this.encryptionKeyOverride = getEnv(LATCHKEY_ENCRYPTION_KEY_ENV_VAR) ?? null;
     this.serviceName =
       getEnv(LATCHKEY_KEYRING_SERVICE_NAME_ENV_VAR) ?? DEFAULT_KEYRING_SERVICE_NAME;
