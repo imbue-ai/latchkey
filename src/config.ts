@@ -32,6 +32,7 @@ const LATCHKEY_CURL_PATH_ENV_VAR = 'LATCHKEY_CURL_PATH';
 const LATCHKEY_ENCRYPTION_KEY_ENV_VAR = 'LATCHKEY_ENCRYPTION_KEY';
 const LATCHKEY_KEYRING_SERVICE_NAME_ENV_VAR = 'LATCHKEY_KEYRING_SERVICE_NAME';
 const LATCHKEY_KEYRING_ACCOUNT_NAME_ENV_VAR = 'LATCHKEY_KEYRING_ACCOUNT_NAME';
+const LATCHKEY_KEEP_BROWSER_OPEN_ENV_VAR = 'LATCHKEY_KEEP_BROWSER_OPEN';
 
 export const DEFAULT_KEYRING_SERVICE_NAME = 'latchkey';
 export const DEFAULT_KEYRING_ACCOUNT_NAME = 'encryption-key';
@@ -96,6 +97,12 @@ export class Config {
   readonly encryptionKeyOverride: string | null;
   readonly serviceName: string;
   readonly accountName: string;
+  /**
+   * Keep browser open on error for debugging.
+   * When true, browser automation errors will pause execution with the browser
+   * still open, allowing manual inspection and debugging.
+   */
+  readonly keepBrowserOpen: boolean;
 
   constructor(getEnv: (name: string) => string | undefined = (name) => process.env[name]) {
     this.curlCommand = getEnv(LATCHKEY_CURL_PATH_ENV_VAR) ?? 'curl';
@@ -104,6 +111,7 @@ export class Config {
       getEnv(LATCHKEY_KEYRING_SERVICE_NAME_ENV_VAR) ?? DEFAULT_KEYRING_SERVICE_NAME;
     this.accountName =
       getEnv(LATCHKEY_KEYRING_ACCOUNT_NAME_ENV_VAR) ?? DEFAULT_KEYRING_ACCOUNT_NAME;
+    this.keepBrowserOpen = getEnv(LATCHKEY_KEEP_BROWSER_OPEN_ENV_VAR) === '1';
 
     // Determine if encryption will be enabled (either via key override or keychain)
     const encryptionEnabled =

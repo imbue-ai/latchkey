@@ -172,6 +172,7 @@ describe('CLI commands with dependency injection', () => {
       encryptionKeyOverride: overrides.encryptionKeyOverride ?? TEST_ENCRYPTION_KEY,
       serviceName: overrides.serviceName ?? defaultConfig.serviceName,
       accountName: overrides.accountName ?? defaultConfig.accountName,
+      keepBrowserOpen: overrides.keepBrowserOpen ?? defaultConfig.keepBrowserOpen,
       checkSensitiveFilePermissions: () => undefined,
       checkSystemPrerequisites: () => undefined,
     };

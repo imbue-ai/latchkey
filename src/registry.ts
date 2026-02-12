@@ -11,6 +11,7 @@ import {
   LINEAR,
   NOTION,
   GOOGLE,
+  WORDPRESSCOM,
 } from './services/index.js';
 
 export class Registry {
@@ -41,4 +42,13 @@ export class Registry {
   }
 }
 
-export const REGISTRY = new Registry([SLACK, DISCORD, DROPBOX, GITHUB, LINEAR, NOTION, GOOGLE]);
+export const REGISTRY = new Registry([
+  SLACK,
+  DISCORD,
+  DROPBOX,
+  GITHUB,
+  LINEAR,
+  NOTION,
+  GOOGLE,
+  WORDPRESSCOM,
+]);
