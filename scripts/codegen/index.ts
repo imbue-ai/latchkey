@@ -19,7 +19,13 @@ import { chromium } from 'playwright';
 import { CodeGenerator } from './codeGenerator.js';
 import { createInjectedScript } from './injectedScript.js';
 import { RequestMetadataCollector } from './requestMetadataCollector.js';
-import type { CodegenOptions, CodegenResult, ElementInfo, RecordedAction, RecordingPhase } from './types.js';
+import type {
+  CodegenOptions,
+  CodegenResult,
+  ElementInfo,
+  RecordedAction,
+  RecordingPhase,
+} from './types.js';
 
 // Get the directory of this module
 const __filename = fileURLToPath(import.meta.url);
@@ -29,7 +35,14 @@ const __dirname = dirname(__filename);
 const RECORDINGS_DIRECTORY = resolve(__dirname, '..', 'recordings');
 
 // Re-export types for external use
-export type { CodegenOptions, CodegenResult, ElementInfo, RecordedAction, RecordingPhase, RequestMetadata } from './types.js';
+export type {
+  CodegenOptions,
+  CodegenResult,
+  ElementInfo,
+  RecordedAction,
+  RecordingPhase,
+  RequestMetadata,
+} from './types.js';
 export { CodegenError } from './types.js';
 
 /**
@@ -227,7 +240,9 @@ export async function runCodegen(options: CodegenOptions): Promise<CodegenResult
   console.log(`  - requests.json: HTTP request metadata`);
   console.log(`  - prompt.txt: Instructions for creating a service definition`);
   if (apiKeyAncestry) {
-    console.log(`\nAPI key element ancestry captured with ${String(apiKeyAncestry.length)} elements`);
+    console.log(
+      `\nAPI key element ancestry captured with ${String(apiKeyAncestry.length)} elements`
+    );
   }
 
   return { apiKeyAncestry };

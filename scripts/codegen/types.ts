@@ -61,14 +61,7 @@ export interface ElementInfo {
  * Represents a recorded action.
  */
 export interface RecordedAction {
-  readonly type:
-    | 'navigate'
-    | 'click'
-    | 'fill'
-    | 'press'
-    | 'select'
-    | 'check'
-    | 'uncheck';
+  readonly type: 'navigate' | 'click' | 'fill' | 'press' | 'select' | 'check' | 'uncheck';
   /** Element ancestry from target to root (first element is the target) */
   readonly ancestry?: readonly ElementInfo[];
   readonly url?: string;

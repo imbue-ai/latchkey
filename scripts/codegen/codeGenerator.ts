@@ -59,7 +59,8 @@ export class CodeGenerator {
 
   private generateGetByLabel(element: ElementInfo): string | null {
     if (!element.accessibleName) return null;
-    if (element.tag !== 'input' && element.tag !== 'textarea' && element.tag !== 'select') return null;
+    if (element.tag !== 'input' && element.tag !== 'textarea' && element.tag !== 'select')
+      return null;
     return `page.getByLabel('${this.escapeString(element.accessibleName)}')`;
   }
 

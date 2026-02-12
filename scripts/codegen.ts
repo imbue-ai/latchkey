@@ -40,9 +40,13 @@ function printUsage(): void {
   console.log('  url     Initial URL to navigate to');
   console.log('');
   console.log('Output:');
-  console.log('  scripts/recordings/<name>/actions.js     Recorded user actions as TypeScript code');
+  console.log(
+    '  scripts/recordings/<name>/actions.js     Recorded user actions as TypeScript code'
+  );
   console.log('  scripts/recordings/<name>/requests.json  HTTP request metadata');
-  console.log('  scripts/recordings/<name>/prompt.txt     Instructions for creating a service definition');
+  console.log(
+    '  scripts/recordings/<name>/prompt.txt     Instructions for creating a service definition'
+  );
   console.log('');
   console.log('Examples:');
   console.log('  npx tsx scripts/codegen.ts wordpress https://wordpress.com/generate-api-key');
@@ -84,9 +88,7 @@ async function main(): Promise<void> {
 
   const browserConfig = loadBrowserConfig(CONFIG.configPath);
   if (!browserConfig) {
-    throw new InvalidArgumentsError(
-      "No browser configured. Run 'latchkey ensure-browser' first."
-    );
+    throw new InvalidArgumentsError("No browser configured. Run 'latchkey ensure-browser' first.");
   }
 
   await runCodegen({ name, url, executablePath: browserConfig.executablePath });

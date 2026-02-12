@@ -523,5 +523,4 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       const result = deps.runCurl(allArguments);
       deps.exit(result.returncode);
     });
-
 }
