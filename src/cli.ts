@@ -6,15 +6,16 @@
 
 import { program } from 'commander';
 import { registerCommands, createDefaultDependencies } from './cliCommands.js';
-import { InsecureFilePermissionsError } from './config.js';
+import { CurlNotFoundError, InsecureFilePermissionsError } from './config.js';
 import packageJson from '../package.json' with { type: 'json' };
 
 const deps = createDefaultDependencies();
 
 try {
   deps.config.checkSensitiveFilePermissions();
+  deps.config.checkSystemPrerequisites();
 } catch (error) {
-  if (error instanceof InsecureFilePermissionsError) {
+  if (error instanceof InsecureFilePermissionsError || error instanceof CurlNotFoundError) {
     console.error(`Error: ${error.message}`);
     process.exit(1);
   }

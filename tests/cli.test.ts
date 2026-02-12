@@ -176,6 +176,7 @@ describe('CLI commands with dependency injection', () => {
       accountName: overrides.accountName ?? defaultConfig.accountName,
       browserDisabled: overrides.browserDisabled ?? false,
       checkSensitiveFilePermissions: () => undefined,
+      checkSystemPrerequisites: () => undefined,
     };
   }
 
