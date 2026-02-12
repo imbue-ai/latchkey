@@ -267,12 +267,12 @@ describe('CLI commands with dependency injection', () => {
 
       expect(logs).toHaveLength(1);
       const info = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
-      expect(info.loginOptions).toEqual(['browser-login', 'insert-auth']);
+      expect(info.loginOptions).toEqual(['auth browser-login', 'auth insert']);
       expect(info.credentialStatus).toBe('missing');
       expect(info.developerNotes).toBe('Test info for Slack service.');
     });
 
-    it('should show insert-auth only for services without browser login', async () => {
+    it('should show auth insert only for services without browser login', async () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(storePath, '{}');
 
@@ -293,7 +293,7 @@ describe('CLI commands with dependency injection', () => {
       await runCommand(['info', 'nologin'], deps);
 
       const info = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
-      expect(info.loginOptions).toEqual(['insert-auth']);
+      expect(info.loginOptions).toEqual(['auth insert']);
     });
 
     it('should show valid credentials status when credentials are valid', async () => {
@@ -339,7 +339,7 @@ describe('CLI commands with dependency injection', () => {
         config: createMockConfig({ credentialStorePath: storePath }),
       });
 
-      await runCommand(['clear', 'slack'], deps);
+      await runCommand(['auth', 'clear', 'slack'], deps);
 
       expect(logs.some((log) => log.includes('have been cleared'))).toBe(true);
       const storedData = JSON.parse(readSecureFile(storePath) ?? '{}') as StoredCredentials;
@@ -354,7 +354,7 @@ describe('CLI commands with dependency injection', () => {
         config: createMockConfig({ credentialStorePath: storePath }),
       });
 
-      await runCommand(['clear', 'slack'], deps);
+      await runCommand(['auth', 'clear', 'slack'], deps);
 
       expect(logs.some((log) => log.includes('No API credentials found'))).toBe(true);
     });
@@ -366,7 +366,7 @@ describe('CLI commands with dependency injection', () => {
         config: createMockConfig({ credentialStorePath: storePath }),
       });
 
-      await runCommand(['clear', 'unknown-service'], deps);
+      await runCommand(['auth', 'clear', 'unknown-service'], deps);
 
       expect(exitCode).toBe(1);
       expect(errorLogs.some((log) => log.includes('Unknown service'))).toBe(true);
@@ -375,7 +375,7 @@ describe('CLI commands with dependency injection', () => {
     it('should use default config paths', async () => {
       const deps = createMockDependencies();
 
-      await runCommand(['clear', 'slack'], deps);
+      await runCommand(['auth', 'clear', 'slack'], deps);
 
       // With default paths, should report no credentials found (not error about missing env var)
       expect(logs.some((log) => log.includes('No API credentials found'))).toBe(true);
@@ -395,7 +395,7 @@ describe('CLI commands with dependency injection', () => {
         config: createMockConfig({ credentialStorePath: storePath }),
       });
 
-      await runCommand(['clear', 'slack'], deps);
+      await runCommand(['auth', 'clear', 'slack'], deps);
 
       const storedData = JSON.parse(readSecureFile(storePath) ?? '{}') as StoredCredentials;
       expect(storedData.slack).toBeUndefined();
@@ -416,7 +416,7 @@ describe('CLI commands with dependency injection', () => {
         config: createMockConfig({ credentialStorePath: storePath, browserStatePath }),
       });
 
-      await runCommand(['clear', '-y'], deps);
+      await runCommand(['auth', 'clear', '-y'], deps);
 
       expect(existsSync(storePath)).toBe(false);
       expect(existsSync(browserStatePath)).toBe(false);
@@ -432,13 +432,13 @@ describe('CLI commands with dependency injection', () => {
         config: createMockConfig({ credentialStorePath: storePath, browserStatePath }),
       });
 
-      await runCommand(['clear', '-y'], deps);
+      await runCommand(['auth', 'clear', '-y'], deps);
 
       expect(logs.some((log) => log.includes('No files to delete'))).toBe(true);
     });
   });
 
-  describe('insert-auth command', () => {
+  describe('auth insert command', () => {
     it('should store raw curl credentials', async () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(storePath, '{}');
@@ -448,7 +448,7 @@ describe('CLI commands with dependency injection', () => {
       });
 
       await runCommand(
-        ['insert-auth', 'slack', '-H', 'X-Token: secret', '-H', 'X-Other: value'],
+        ['auth', 'insert', 'slack', '-H', 'X-Token: secret', '-H', 'X-Other: value'],
         deps
       );
 
@@ -464,7 +464,7 @@ describe('CLI commands with dependency injection', () => {
     it('should return error for empty curl arguments', async () => {
       const deps = createMockDependencies();
 
-      await runCommand(['insert-auth', 'slack'], deps);
+      await runCommand(['auth', 'insert', 'slack'], deps);
 
       expect(exitCode).toBe(1);
       expect(errorLogs.some((log) => log.includes("don't look like valid curl options"))).toBe(
@@ -476,7 +476,7 @@ describe('CLI commands with dependency injection', () => {
     it('should return error when arguments lack curl switches', async () => {
       const deps = createMockDependencies();
 
-      await runCommand(['insert-auth', 'slack', 'my-raw-token-value'], deps);
+      await runCommand(['auth', 'insert', 'slack', 'my-raw-token-value'], deps);
 
       expect(exitCode).toBe(1);
       expect(errorLogs.some((log) => log.includes("don't look like valid curl options"))).toBe(
@@ -488,7 +488,7 @@ describe('CLI commands with dependency injection', () => {
     it('should return error for unknown service', async () => {
       const deps = createMockDependencies();
 
-      await runCommand(['insert-auth', 'unknown-service', '-H', 'X-Token: secret'], deps);
+      await runCommand(['auth', 'insert', 'unknown-service', '-H', 'X-Token: secret'], deps);
 
       expect(exitCode).toBe(1);
       expect(errorLogs.some((log) => log.includes('Unknown service'))).toBe(true);
@@ -507,7 +507,7 @@ describe('CLI commands with dependency injection', () => {
         config: createMockConfig({ credentialStorePath: storePath }),
       });
 
-      await runCommand(['insert-auth', 'slack', '-H', 'X-Token: new-secret'], deps);
+      await runCommand(['auth', 'insert', 'slack', '-H', 'X-Token: new-secret'], deps);
 
       expect(logs).toContain('Credentials stored.');
 
@@ -699,8 +699,8 @@ describe('CLI commands with dependency injection', () => {
 
       expect(exitCode).toBe(1);
       expect(errorLogs.some((log) => log.includes('No credentials found for slack'))).toBe(true);
-      expect(errorLogs.some((log) => log.includes('browser-login'))).toBe(true);
-      expect(errorLogs.some((log) => log.includes('insert-auth'))).toBe(true);
+      expect(errorLogs.some((log) => log.includes('auth browser-login'))).toBe(true);
+      expect(errorLogs.some((log) => log.includes('auth insert'))).toBe(true);
     });
 
     it('should work when service does not have getSession but credentials exist', async () => {
@@ -736,7 +736,7 @@ describe('CLI commands with dependency injection', () => {
     });
   });
 
-  describe('browser-login command', () => {
+  describe('auth browser-login command', () => {
     it('should return error when service does not support browser login', async () => {
       const noLoginService: Service = {
         name: 'nologin',
@@ -753,7 +753,7 @@ describe('CLI commands with dependency injection', () => {
         registry: new Registry([noLoginService]),
       });
 
-      await runCommand(['browser-login', 'nologin'], deps);
+      await runCommand(['auth', 'browser-login', 'nologin'], deps);
 
       expect(exitCode).toBe(1);
       const expectedMessage = new BrowserFlowsNotSupportedError('nologin').message;
@@ -804,14 +804,14 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
       const result = runCli(['curl', 'https://slack.com/api/test'], testEnv);
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain('No credentials found for slack');
-      expect(result.stderr).toContain('browser-login');
-      expect(result.stderr).toContain('insert-auth');
+      expect(result.stderr).toContain('auth browser-login');
+      expect(result.stderr).toContain('auth insert');
     });
   });
 
-  describe('browser-login command', () => {
+  describe('auth browser-login command', () => {
     it('should return error when browser is disabled via LATCHKEY_DISABLE_BROWSER', () => {
-      const result = runCli(['browser-login', 'slack'], {
+      const result = runCli(['auth', 'browser-login', 'slack'], {
         ...testEnv,
         LATCHKEY_DISABLE_BROWSER: '1',
       });
@@ -829,7 +829,7 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
         })
       );
 
-      const result = runCli(['clear', 'slack'], testEnv);
+      const result = runCli(['auth', 'clear', 'slack'], testEnv);
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('API credentials for slack have been cleared');
 
@@ -842,13 +842,13 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
     it('should report no credentials found when service has no stored credentials', () => {
       writeSecureFile(testEnv.LATCHKEY_STORE, '{}');
 
-      const result = runCli(['clear', 'slack'], testEnv);
+      const result = runCli(['auth', 'clear', 'slack'], testEnv);
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('No API credentials found for slack');
     });
 
     it('should return error for unknown service', () => {
-      const result = runCli(['clear', 'unknown-service'], testEnv);
+      const result = runCli(['auth', 'clear', 'unknown-service'], testEnv);
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain('Unknown service: unknown-service');
     });
@@ -862,7 +862,7 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
         })
       );
 
-      const result = runCli(['clear', 'slack'], testEnv);
+      const result = runCli(['auth', 'clear', 'slack'], testEnv);
       expect(result.exitCode).toBe(0);
 
       const storedData = JSON.parse(
@@ -880,7 +880,7 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
       );
       writeSecureFile(testEnv.LATCHKEY_BROWSER_STATE, '{}');
 
-      const result = runCli(['clear', '-y'], testEnv);
+      const result = runCli(['auth', 'clear', '-y'], testEnv);
       expect(result.exitCode).toBe(0);
       expect(existsSync(testEnv.LATCHKEY_STORE)).toBe(false);
       expect(existsSync(testEnv.LATCHKEY_BROWSER_STATE)).toBe(false);
@@ -892,7 +892,7 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
       writeSecureFile(testEnv.LATCHKEY_STORE, '{}');
       // browser_state does not exist
 
-      const result = runCli(['clear', '-y'], testEnv);
+      const result = runCli(['auth', 'clear', '-y'], testEnv);
       expect(result.exitCode).toBe(0);
       expect(existsSync(testEnv.LATCHKEY_STORE)).toBe(false);
       expect(result.stdout).toContain(`Deleted credentials store: ${testEnv.LATCHKEY_STORE}`);
@@ -900,7 +900,7 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
     });
 
     it('should report no files to delete when none exist', () => {
-      const result = runCli(['clear', '-y'], testEnv);
+      const result = runCli(['auth', 'clear', '-y'], testEnv);
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('No files to delete');
     });
@@ -928,19 +928,19 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
       expect(result.exitCode).toBe(0);
 
       const info = JSON.parse(result.stdout) as Record<string, unknown>;
-      expect(info.loginOptions).toEqual(['browser-login', 'insert-auth']);
+      expect(info.loginOptions).toEqual(['auth browser-login', 'auth insert']);
       expect(info.credentialStatus).toBe('missing');
       expect(info.developerNotes).toEqual(expect.any(String));
     });
 
-    it('should show insert-auth only for services without browser login', () => {
+    it('should show auth insert only for services without browser login', () => {
       writeSecureFile(testEnv.LATCHKEY_STORE, '{}');
 
       const result = runCli(['info', 'mailchimp'], testEnv);
       expect(result.exitCode).toBe(0);
 
       const info = JSON.parse(result.stdout) as Record<string, unknown>;
-      expect(info.loginOptions).toEqual(['insert-auth']);
+      expect(info.loginOptions).toEqual(['auth insert']);
     });
 
     it('should return error for unknown service', () => {

@@ -3,7 +3,7 @@
  *
  * This service does not support browser flows. Users must manually obtain
  * an API key from https://mailchimp.com/help/about-api-keys/ and use
- * `latchkey insert-auth` to add credentials.
+ * `latchkey auth insert` to add credentials.
  */
 
 import { Service } from './base.js';
@@ -19,7 +19,7 @@ export class Mailchimp extends Service {
   readonly info =
     'https://mailchimp.com/developer/marketing/api/. ' +
     'Browser login is not supported. ' +
-    'Use `latchkey insert-auth mailchimp -H "Authorization: Bearer <token>"` to add credentials manually.';
+    'Use `latchkey auth insert mailchimp -H "Authorization: Bearer <token>"` to add credentials manually.';
 
   readonly credentialCheckCurlArguments = ['https://login.mailchimp.com/oauth2/metadata'] as const;
 

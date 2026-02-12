@@ -253,8 +253,8 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       // Login options
       const supportsBrowserLogin = service.getSession !== undefined;
       const loginOptions = supportsBrowserLogin
-        ? ['browser-login', 'insert-auth']
-        : ['insert-auth'];
+        ? ['auth browser-login', 'auth insert']
+        : ['auth insert'];
 
       // Credentials status
       const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
@@ -329,7 +329,9 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       }
     });
 
-  program
+  const authCommand = program.command('auth').description('Manage authentication credentials.');
+
+  authCommand
     .command('clear')
     .description('Clear stored API credentials.')
     .argument('[service_name]', 'Name of the service to clear API credentials for')
@@ -342,13 +344,13 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       }
     });
 
-  program
-    .command('insert-auth')
+  authCommand
+    .command('insert')
     .description('Store credentials for a service in the form of arbitrary curl arguments.')
     .argument('<service_name>', 'Name of the service to store credentials for')
     .addHelpText(
       'after',
-      `\nExample:\n  $ latchkey insert-auth slack -H "Authorization: Bearer xoxb-your-token"`
+      `\nExample:\n  $ latchkey auth insert slack -H "Authorization: Bearer xoxb-your-token"`
     )
     .allowUnknownOption()
     .allowExcessArguments()
@@ -371,7 +373,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           "Error: Arguments don't look like valid curl options (expected at least one switch starting with '-')."
         );
         deps.errorLog(
-          `Example: latchkey insert-auth ${serviceName} -H "Authorization: Bearer <token>"`
+          `Example: latchkey auth insert ${serviceName} -H "Authorization: Bearer <token>"`
         );
         deps.exit(1);
       }
@@ -387,7 +389,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       deps.log('Credentials stored.');
     });
 
-  program
+  authCommand
     .command('browser-login')
     .description('Login to a service via the browser and store the API credentials.')
     .argument('<service_name>', 'Name of the service to login to')
@@ -414,7 +416,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       const oldCredentials = apiCredentialStore.get(service.name);
       if (session.prepare && oldCredentials === null) {
         deps.errorLog(`Error: Service ${serviceName} requires preparation first.`);
-        deps.errorLog(`Run 'latchkey prepare ${serviceName}' before logging in.`);
+        deps.errorLog(`Run 'latchkey auth prepare ${serviceName}' before logging in.`);
         deps.exit(1);
       }
       const launchOptions = getBrowserLaunchOptionsOrExit(deps);
@@ -440,7 +442,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       }
     });
 
-  program
+  authCommand
     .command('prepare')
     .description('Prepare a service for use.')
     .argument('<service_name>', 'Name of the service to prepare')
@@ -523,7 +525,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       if (apiCredentials === null) {
         deps.errorLog(`Error: No credentials found for ${service.name}.`);
         deps.errorLog(
-          `Run 'latchkey browser-login ${service.name}' or 'latchkey insert-auth ${service.name}' first.`
+          `Run 'latchkey auth browser-login ${service.name}' or 'latchkey auth insert ${service.name}' first.`
         );
         deps.exit(1);
       }
@@ -534,7 +536,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         if (apiCredentials.isExpired() === true) {
           deps.errorLog(`Error: Credentials for ${service.name} are expired.`);
           deps.errorLog(
-            `Run 'latchkey browser-login ${service.name}' or 'latchkey insert-auth ${service.name}' to refresh them.`
+            `Run 'latchkey auth browser-login ${service.name}' or 'latchkey auth insert ${service.name}' to refresh them.`
           );
           deps.exit(1);
         }
