@@ -293,56 +293,6 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       deps.log(JSON.stringify(info, null, 2));
     });
 
-  program
-    .command('skill-md')
-    .description('Print the SKILL.md file for AI agent integration.')
-    .action(async () => {
-      deps.log(await getSkillMdContent());
-    });
-
-  program
-    .command('ensure-browser')
-    .description('Ensure a Chrome/Chromium browser is available for Latchkey to use.')
-    .option(
-      '--source <sources>',
-      `Comma-separated list of sources to try in order: ${BROWSER_SOURCES.join(', ')}`,
-      DEFAULT_BROWSER_SOURCES.join(',')
-    )
-    .action(async (options: { source: string }) => {
-      const configPath = deps.config.configPath;
-
-      // Parse and validate sources
-      const sourceList = options.source.split(',').map((s) => s.trim());
-      const invalidSources = sourceList.filter(
-        (s) => !BROWSER_SOURCES.includes(s as BrowserSource)
-      );
-      if (invalidSources.length > 0) {
-        deps.errorLog(`Error: Invalid source(s): ${invalidSources.join(', ')}`);
-        deps.errorLog(`Valid sources: ${BROWSER_SOURCES.join(', ')}`);
-        deps.exit(1);
-      }
-      const sources = sourceList as BrowserSource[];
-
-      deps.log(`Discovering browser using sources: ${sources.join(', ')}`);
-
-      try {
-        const { config, source } = await ensureBrowser(configPath, sources);
-        deps.log('');
-        deps.log('Browser configured successfully:');
-        deps.log(`  Path: ${config.executablePath}`);
-        deps.log(`  Found via: ${source}`);
-        if (source !== 'existing-config') {
-          deps.log(`  Config saved to: ${configPath}`);
-        }
-      } catch (error) {
-        if (error instanceof BrowserNotFoundError) {
-          deps.errorLog(`Error: ${error.message}`);
-          deps.exit(1);
-        }
-        throw error;
-      }
-    });
-
   const authCommand = program.command('auth').description('Manage authentication credentials.');
 
   authCommand
@@ -593,5 +543,55 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       const allArguments = [...apiCredentials.asCurlArguments(), ...curlArguments];
       const result = deps.runCurl(allArguments);
       deps.exit(result.returncode);
+    });
+
+  program
+    .command('skill-md')
+    .description('Print the SKILL.md file for AI agent integration.')
+    .action(async () => {
+      deps.log(await getSkillMdContent());
+    });
+
+  program
+    .command('ensure-browser')
+    .description('Ensure a Chrome/Chromium browser is available for Latchkey to use.')
+    .option(
+      '--source <sources>',
+      `Comma-separated list of sources to try in order: ${BROWSER_SOURCES.join(', ')}`,
+      DEFAULT_BROWSER_SOURCES.join(',')
+    )
+    .action(async (options: { source: string }) => {
+      const configPath = deps.config.configPath;
+
+      // Parse and validate sources
+      const sourceList = options.source.split(',').map((s) => s.trim());
+      const invalidSources = sourceList.filter(
+        (s) => !BROWSER_SOURCES.includes(s as BrowserSource)
+      );
+      if (invalidSources.length > 0) {
+        deps.errorLog(`Error: Invalid source(s): ${invalidSources.join(', ')}`);
+        deps.errorLog(`Valid sources: ${BROWSER_SOURCES.join(', ')}`);
+        deps.exit(1);
+      }
+      const sources = sourceList as BrowserSource[];
+
+      deps.log(`Discovering browser using sources: ${sources.join(', ')}`);
+
+      try {
+        const { config, source } = await ensureBrowser(configPath, sources);
+        deps.log('');
+        deps.log('Browser configured successfully:');
+        deps.log(`  Path: ${config.executablePath}`);
+        deps.log(`  Found via: ${source}`);
+        if (source !== 'existing-config') {
+          deps.log(`  Config saved to: ${configPath}`);
+        }
+      } catch (error) {
+        if (error instanceof BrowserNotFoundError) {
+          deps.errorLog(`Error: ${error.message}`);
+          deps.exit(1);
+        }
+        throw error;
+      }
     });
 }
