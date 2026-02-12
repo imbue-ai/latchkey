@@ -240,9 +240,9 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
 
   program
     .command('info')
-    .description('Show developer notes about a service.')
+    .description('Show information about a service.')
     .argument('<service_name>', 'Name of the service to get info for')
-    .action((serviceName: string) => {
+    .action(async (serviceName: string) => {
       const service = deps.registry.getByName(serviceName);
       if (service === null) {
         deps.errorLog(`Error: Unknown service: ${serviceName}`);
@@ -250,7 +250,29 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         deps.exit(1);
       }
 
-      deps.log(service.info);
+      // Login options
+      const supportsBrowserLogin = service.getSession !== undefined;
+      const loginOptions = supportsBrowserLogin ? 'browser-login, insert-auth' : 'insert-auth';
+      deps.log(`Login options: ${loginOptions}`);
+
+      // Credentials status
+      const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
+      const apiCredentialStore = new ApiCredentialStore(
+        deps.config.credentialStorePath,
+        encryptedStorage
+      );
+      let apiCredentials = apiCredentialStore.get(serviceName);
+      let credentialStatus: ApiCredentialStatus;
+      if (apiCredentials === null) {
+        credentialStatus = ApiCredentialStatus.Missing;
+      } else {
+        apiCredentials = await maybeRefreshCredentials(service, apiCredentials, apiCredentialStore);
+        credentialStatus = service.checkApiCredentials(apiCredentials);
+      }
+      deps.log(`Credentials status: ${credentialStatus}`);
+
+      // Developer notes
+      deps.log(`Developer notes: ${service.info}`);
     });
 
   program
@@ -359,55 +381,6 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       const credentials = new RawCurlCredentials(curlArguments);
       apiCredentialStore.save(serviceName, credentials);
       deps.log('Credentials stored.');
-    });
-
-  program
-    .command('status')
-    .description('Check the API credential status for a service.')
-    .argument('[service_name]', 'Name of the service to check status for')
-    .action(async (serviceName: string | undefined) => {
-      const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
-      const apiCredentialStore = new ApiCredentialStore(
-        deps.config.credentialStorePath,
-        encryptedStorage
-      );
-
-      if (serviceName === undefined) {
-        for (const service of deps.registry.services) {
-          let apiCredentials = apiCredentialStore.get(service.name);
-          if (apiCredentials === null) {
-            deps.log(`${service.name}: ${ApiCredentialStatus.Missing}`);
-          } else {
-            apiCredentials = await maybeRefreshCredentials(
-              service,
-              apiCredentials,
-              apiCredentialStore
-            );
-            const status = service.checkApiCredentials(apiCredentials);
-            deps.log(`${service.name}: ${status}`);
-          }
-        }
-        return;
-      }
-
-      const service = deps.registry.getByName(serviceName);
-      if (service === null) {
-        deps.errorLog(`Error: Unknown service: ${serviceName}`);
-        deps.errorLog("Use 'latchkey services' to see available services.");
-        deps.exit(1);
-      }
-
-      let apiCredentials = apiCredentialStore.get(serviceName);
-
-      if (apiCredentials === null) {
-        deps.log(ApiCredentialStatus.Missing);
-        return;
-      }
-
-      apiCredentials = await maybeRefreshCredentials(service, apiCredentials, apiCredentialStore);
-
-      const apiCredentialStatus = service.checkApiCredentials(apiCredentials);
-      deps.log(apiCredentialStatus);
     });
 
   program

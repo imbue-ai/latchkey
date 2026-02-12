@@ -134,9 +134,9 @@ encrypted.
 
 ### Inspecting the status of stored credentials
 
-Calling `latchkey status <service_name>` will give you
-information about the status of remembered credentials for the
-given service. Possible results are:
+Calling `latchkey info <service_name>` will show information
+about the service, including the credentials status. The
+credentials status line will show one of:
 
 - `missing`
 - `invalid`
@@ -146,15 +146,15 @@ given service. Possible results are:
 
 Remembered API credentials can expire. The caller of `latchkey
 curl` will typically notice this because the calls will start returning
-HTTP 401 or 403. To verify that, first call `latchkey status`, e.g.:
+HTTP 401 or 403. To verify that, first call `latchkey info`, e.g.:
 
 ```
-latchkey status discord
+latchkey info discord
 ```
 
-If the result is `invalid`, it means the Unauthorized/Forbidden responses are
-caused by invalid or expired credentials rather than insufficient permissions.
-In that case, log in again:
+If the credentials status is `invalid`, it means the Unauthorized/Forbidden
+responses are caused by invalid or expired credentials rather than insufficient
+permissions. In that case, log in again:
 
 ```
 latchkey login discord

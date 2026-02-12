@@ -16,13 +16,13 @@ Usage:
 
 1. **Use `latchkey curl`** instead of regular `curl` for supported services.
 2. **Use `latchkey services`** to get a list of supported services.
-2. **Use `latchkey info <service_name>`** to get developer notes about a specific service (API docs links, special requirements, etc.).
-3. **If necessary, get credentials first`.** Run `latchkey browser-login <service_name>` to open a browser login popup if supported.
+2. **Use `latchkey info <service_name>`** to get information about a specific service (login options, credentials status, API docs links, special requirements, etc.).
+3. **If necessary, get credentials first.** Run `latchkey browser-login <service_name>` to open a browser login popup if supported.
 4. **Look for the newest documentation of the desired public API online.** If using browser-login, avoid bot-only endpoints.
 5. **Pass through all regular curl arguments** - latchkey is a transparent wrapper.
-6. **Use `latchkey status <service_name>`** when you notice potentially expired credentials.
-7. When the status is `invalid`, **force a new login by calling `latchkey browser-login <service_name>`**, and retry the curl command.
-8. **Do not force a new login if the status is `valid`** - the user might just not have the necessary permissions.
+6. **Use `latchkey info <service_name>`** when you notice potentially expired credentials, and check the credentials status line.
+7. When the credentials status is `invalid`, **force a new login by calling `latchkey browser-login <service_name>`**, and retry the curl command.
+8. **Do not force a new login if the credentials status is `valid`** - the user might just not have the necessary permissions.
 
 
 ## Examples
@@ -48,7 +48,7 @@ latchkey curl 'https://discord.com/api/v10/users/@me'
 
 ### Detect expired credentials and force a new login to Discord
 ```bash
-latchkey status discord  # Returns "invalid"
+latchkey info discord  # Check "Credentials status" line - shows "invalid"
 latchkey browser-login discord
 latchkey curl 'https://discord.com/api/v10/users/@me'
 ```
@@ -67,7 +67,7 @@ Lists all services that latchkey knows about.
 latchkey info slack
 ```
 
-Returns developer notes about the service, including API documentation links and any special requirements.
+Returns login options, credentials status, and developer notes about the service.
 
 ## Notes
 
