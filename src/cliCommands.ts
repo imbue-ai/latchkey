@@ -267,7 +267,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       }
 
       // Login options
-      const supportsBrowser = service.getSession !== undefined;
+      const supportsBrowser = service.getSession !== undefined && !deps.config.browserDisabled;
       const authOptions = supportsBrowser ? ['browser', 'insert'] : ['insert'];
 
       // Credentials status

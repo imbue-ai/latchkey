@@ -296,6 +296,19 @@ describe('CLI commands with dependency injection', () => {
       expect(info.authOptions).toEqual(['insert']);
     });
 
+    it('should not list browser in authOptions when LATCHKEY_DISABLE_BROWSER is in effect', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(storePath, '{}');
+
+      const deps = createMockDependencies({
+        config: createMockConfig({ credentialStorePath: storePath, browserDisabled: true }),
+      });
+      await runCommand(['services', 'info', 'slack'], deps);
+
+      const info = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
+      expect(info.authOptions).toEqual(['insert']);
+    });
+
     it('should show valid credentials status when credentials are valid', async () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
