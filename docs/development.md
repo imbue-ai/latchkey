@@ -21,8 +21,8 @@ then use the version you just built.
 
 ## Before you submit a PR
 
-- Run `npm lint` and `npm test` to validate your changes.
-- Run `npm format` to apply autoformatting.
+- Run `npm run lint` and `npm test` to validate your changes.
+- Run `npm run format` to apply autoformatting.
 
 
 ## Adding a new service

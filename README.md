@@ -12,7 +12,7 @@ latchkey curl -X POST 'https://slack.com/api/conversations.create' \
 
 ## Overview
 
-Latchkey is a command-line tool that injects credentials to curl
+Latchkey is a command-line tool that injects credentials into curl
 requests to known public APIs.
 
 - `latchkey services list`
@@ -67,7 +67,7 @@ Playwright.
 
 Warning: giving AI agents access to your API credentials is
 potentially dangerous, especially when using the `auth browser`
-feature.  They will be able to perform most of the actions you
+feature. They will be able to perform most of the actions you
 can. Only do this if you're willing to accept the risks.
 
 
@@ -113,14 +113,14 @@ latchkey curl -X POST 'https://slack.com/api/conversations.create' \
 
 Notice that `-H 'Authorization: Bearer ...'` is absent. This is
 because Latchkey injects stored credentials automatically. To
-set up credentials for a service (slack in this example), run:
+set up credentials for a service (Slack in this example), run:
 
 ```
 latchkey auth browser slack
 ```
 
 This opens the browser with a login screen. After you log in, Latchkey extracts
-the necessary API credentials from the browser session, closes the browser and
+the necessary API credentials from the browser session, closes the browser, and
 stores the credentials so that they can be reused.
 
 Alternatively, you can provide credentials manually:
@@ -131,7 +131,7 @@ latchkey auth insert slack -H "Authorization: Bearer xoxb-your-token"
 
 `latchkey curl` passes your arguments straight through to `curl`
 so you can use the same interface you are used to. The return
-code, stdin and stdout are passed back from curl to the caller
+code, stdout and stderr are passed back from curl to the caller
 of `latchkey`.
 
 ### Remembering API credentials

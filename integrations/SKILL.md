@@ -1,6 +1,6 @@
 ---
 name: latchkey
-description: Interact with third-party services (Slack, Google Workspace, Dropbox, GitHub, Linear...) on user's behalf using their public APIs.
+description: Interact with third-party services (Slack, Google Workspace, Dropbox, GitHub, Linear...) on the user's behalf using their public APIs.
 compatibility: Requires node.js, curl and latchkey (npm install -g latchkey). A desktop/GUI environment is required for the browser functionality.
 ---
 
@@ -10,7 +10,7 @@ compatibility: Requires node.js, curl and latchkey (npm install -g latchkey). A 
 
 Latchkey is a CLI tool that automatically injects credentials into curl commands for supported public APIs. Credentials (mostly API tokens) can be either manually managed or, for some services, Latchkey can open a browser login pop-up window and extract API credentials from the session.
 
-Use this skill when the user asks you to work with third-party services like Slack, Discord, Dropbox, Github, Linear and others on their behalf.
+Use this skill when the user asks you to work with third-party services like Slack, Discord, Dropbox, GitHub, Linear and others on their behalf.
 
 Usage:
 
@@ -66,7 +66,7 @@ latchkey services info slack
 ```
 
 Returns auth options, credentials status, and developer notes
-about the service.  If `browser` is not present in the
+about the service. If `browser` is not present in the
 `authOptions` field, the service requires the user to directly
 insert API credentials via `latchkey auth insert` before making
 requests.
@@ -74,4 +74,4 @@ requests.
 ## Notes
 
 - All curl arguments are passed through unchanged
-- Return codes, stdin, and stdout are passed back from curl
+- Return code, stdout and stderr are passed back from curl
