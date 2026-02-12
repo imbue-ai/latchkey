@@ -11,7 +11,8 @@
  */
 
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { BrowserContext, Page, Request, Response } from 'playwright';
 import { chromium } from 'playwright';
 
@@ -19,6 +20,13 @@ import { CodeGenerator } from './codeGenerator.js';
 import { createInjectedScript } from './injectedScript.js';
 import { RequestMetadataCollector } from './requestMetadataCollector.js';
 import type { CodegenOptions, CodegenResult, ElementInfo, RecordedAction, RecordingPhase } from './types.js';
+
+// Get the directory of this module
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Recordings directory relative to this module (scripts/recordings)
+const RECORDINGS_DIRECTORY = resolve(__dirname, '..', 'recordings');
 
 // Re-export types for external use
 export type { CodegenOptions, CodegenResult, ElementInfo, RecordedAction, RecordingPhase, RequestMetadata } from './types.js';
@@ -34,14 +42,14 @@ Typically, in a browser login session, the user will need to log in manually, an
 
 To help you derive this logic, I have recorded a sample user session:
 
-The metadata of all requests during the session is recorded in recordings/${name}/requests.json. Each element contains a "phase" field that tells you whether this is before or after login.
+The metadata of all requests during the session is recorded in scripts/recordings/${name}/requests.json. Each element contains a "phase" field that tells you whether this is before or after login.
 Note that because the phase is derived from the user clicking a button that says "I'm logged in", some requests immediately after logging in may be marked incorrectly as pre-login. Examine the difference between these two sets of data and try to derive the simplest possible criteria. Some good candidates are:
 
 - A request to the original URL with a difference in HTTP status code (the pre-login one will be a redirection, the post-login one will be 200). Note that the post-login request is likely to be marked incorrectly as pre-login because it's the very first request after login. Use the timestamp to figure out if that's the case.
 
 - The presence of some kind of "auth" or "user" header in the request header.
 
-The actions for generating an API key after the user has logged in is recorded in recordings/${name}/actions.js. For each element, think about how to derive a stable selector that doesn't depend on the user's language. Usually this means using readable IDs or CSS classes, which are unlikely to change. Some elements, such as submit buttons, may already be unique when matched by the type. If everything fails, fall back to using role + label.
+The actions for generating an API key after the user has logged in is recorded in scripts/recordings/${name}/actions.js. For each element, think about how to derive a stable selector that doesn't depend on the user's language. Usually this means using readable IDs or CSS classes, which are unlikely to change. Some elements, such as submit buttons, may already be unique when matched by the type. If everything fails, fall back to using role + label.
 
 Reference other service implementations to understand which patterns we use.
 `;
@@ -51,7 +59,7 @@ Reference other service implementations to understand which patterns we use.
  * Run the codegen which opens a browser with recording enabled.
  * Injects a custom toolbar and records user actions and HTTP request metadata.
  *
- * Creates a recordings/$name/ directory with:
+ * Creates a scripts/recordings/$name/ directory with:
  * - actions.js: Recorded user actions
  * - requests.json: HTTP request metadata
  * - prompt.txt: Instructions for creating a service definition
@@ -62,7 +70,7 @@ export async function runCodegen(options: CodegenOptions): Promise<CodegenResult
   const { name, url } = options;
 
   // Create recordings directory
-  const recordingsDirectory = join('recordings', name);
+  const recordingsDirectory = join(RECORDINGS_DIRECTORY, name);
   if (!existsSync(recordingsDirectory)) {
     mkdirSync(recordingsDirectory, { recursive: true });
   }

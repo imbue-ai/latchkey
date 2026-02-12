@@ -40,9 +40,9 @@ function printUsage(): void {
   console.log('  url     Initial URL to navigate to');
   console.log('');
   console.log('Output:');
-  console.log('  recordings/<name>/actions.js     Recorded user actions as TypeScript code');
-  console.log('  recordings/<name>/requests.json  HTTP request metadata');
-  console.log('  recordings/<name>/prompt.txt     Instructions for creating a service definition');
+  console.log('  scripts/recordings/<name>/actions.js     Recorded user actions as TypeScript code');
+  console.log('  scripts/recordings/<name>/requests.json  HTTP request metadata');
+  console.log('  scripts/recordings/<name>/prompt.txt     Instructions for creating a service definition');
   console.log('');
   console.log('Examples:');
   console.log('  npx tsx scripts/codegen.ts wordpress https://wordpress.com/generate-api-key');
