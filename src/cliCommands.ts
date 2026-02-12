@@ -269,8 +269,8 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       // Login options
       const supportsBrowserLogin = service.getSession !== undefined;
       const loginOptions = supportsBrowserLogin
-        ? ['auth browser-login', 'auth insert']
-        : ['auth insert'];
+        ? ['browser-login', 'insert']
+        : ['insert'];
 
       // Credentials status
       const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
