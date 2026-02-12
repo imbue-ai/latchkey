@@ -10,6 +10,8 @@
  * - Post-login: User interactions are recorded, requests marked as post-login
  */
 
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { BrowserContext, Page, Request, Response } from 'playwright';
 import { chromium } from 'playwright';
 
@@ -23,14 +25,54 @@ export type { CodegenOptions, CodegenResult, ElementInfo, RecordedAction, Record
 export { CodegenError } from './types.js';
 
 /**
+ * Generate the prompt.txt content for creating a service definition.
+ */
+function generatePromptContent(name: string): string {
+  return `Create a new service definition for ${name} with browser login support.
+
+Typically, in a browser login session, the user will need to log in manually, and then the automation kicks in to generate an API key. The code needs to detect when the login stage has finished, and then use the Playwright API to perform automatic interactions, and finally retrieve the API key.
+
+To help you derive this logic, I have recorded a sample user session:
+
+The metadata of all requests during the session is recorded in recordings/${name}/requests.json. Each element contains a "phase" field that tells you whether this is before or after login.
+Note that because the phase is derived from the user clicking a button that says "I'm logged in", some requests immediately after logging in may be marked incorrectly as pre-login. Examine the difference between these two sets of data and try to derive the simplest possible criteria. Some good candidates are:
+
+- A request to the original URL with a difference in HTTP status code (the pre-login one will be a redirection, the post-login one will be 200). Note that the post-login request is likely to be marked incorrectly as pre-login because it's the very first request after login. Use the timestamp to figure out if that's the case.
+
+- The presence of some kind of "auth" or "user" header in the request header.
+
+The actions for generating an API key after the user has logged in is recorded in recordings/${name}/actions.js. For each element, think about how to derive a stable selector that doesn't depend on the user's language. Usually this means using readable IDs or CSS classes, which are unlikely to change. Some elements, such as submit buttons, may already be unique when matched by the type. If everything fails, fall back to using role + label.
+
+Reference other service implementations to understand which patterns we use.
+`;
+}
+
+/**
  * Run the codegen which opens a browser with recording enabled.
  * Injects a custom toolbar and records user actions and HTTP request metadata.
+ *
+ * Creates a recordings/$name/ directory with:
+ * - actions.js: Recorded user actions
+ * - requests.json: HTTP request metadata
+ * - prompt.txt: Instructions for creating a service definition
  *
  * @returns Result containing the API key ancestry if selected by the user
  */
 export async function runCodegen(options: CodegenOptions): Promise<CodegenResult> {
-  const outputFile = options.outputFile ?? 'tmp.js';
-  const requestsFile = options.requestsFile ?? 'requests.json';
+  const { name, url } = options;
+
+  // Create recordings directory
+  const recordingsDirectory = join('recordings', name);
+  if (!existsSync(recordingsDirectory)) {
+    mkdirSync(recordingsDirectory, { recursive: true });
+  }
+
+  const actionsFile = join(recordingsDirectory, 'actions.js');
+  const requestsFile = join(recordingsDirectory, 'requests.json');
+  const promptFile = join(recordingsDirectory, 'prompt.txt');
+
+  // Write prompt.txt
+  writeFileSync(promptFile, generatePromptContent(name), 'utf-8');
 
   const launchOptions: Parameters<typeof chromium.launch>[0] = {
     headless: false,
@@ -44,7 +86,7 @@ export async function runCodegen(options: CodegenOptions): Promise<CodegenResult
   const context: BrowserContext = await browser.newContext();
 
   const requestCollector = new RequestMetadataCollector(requestsFile);
-  const codeGenerator = new CodeGenerator(outputFile);
+  const codeGenerator = new CodeGenerator(actionsFile);
 
   // Session state
   let currentPhase: RecordingPhase = 'pre-login';
@@ -123,13 +165,11 @@ export async function runCodegen(options: CodegenOptions): Promise<CodegenResult
     }
   }
 
-  // Navigate to initial URL if provided
-  if (options.url) {
-    codeGenerator.setInitialUrl(options.url);
-    await page.goto(options.url);
-    // Inject script after page loads
-    await injectScriptIfNeeded(page);
-  }
+  // Navigate to initial URL
+  codeGenerator.setInitialUrl(url);
+  await page.goto(url);
+  // Inject script after page loads
+  await injectScriptIfNeeded(page);
 
   // Re-inject script after navigations
   page.on('load', () => {
@@ -174,10 +214,12 @@ export async function runCodegen(options: CodegenOptions): Promise<CodegenResult
   requestCollector.flush();
   codeGenerator.flush();
 
-  console.log(`Generated code saved to: ${outputFile}`);
-  console.log(`Request metadata saved to: ${requestsFile}`);
+  console.log(`\nRecording saved to ${recordingsDirectory}/`);
+  console.log(`  - actions.js: Recorded user actions`);
+  console.log(`  - requests.json: HTTP request metadata`);
+  console.log(`  - prompt.txt: Instructions for creating a service definition`);
   if (apiKeyAncestry) {
-    console.log(`API key element ancestry captured with ${String(apiKeyAncestry.length)} elements`);
+    console.log(`\nAPI key element ancestry captured with ${String(apiKeyAncestry.length)} elements`);
   }
 
   return { apiKeyAncestry };

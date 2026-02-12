@@ -27,14 +27,12 @@ export interface RequestMetadata {
  * Options for the codegen runner.
  */
 export interface CodegenOptions {
+  /** Name of the service being recorded (used for output directory). */
+  readonly name: string;
+  /** Initial URL to navigate to. */
+  readonly url: string;
   /** Path to the browser executable. */
   readonly executablePath?: string;
-  /** Initial URL to navigate to. */
-  readonly url?: string;
-  /** Path to output the generated TypeScript code. Defaults to 'tmp.js'. */
-  readonly outputFile?: string;
-  /** Path to output the request metadata JSON. Defaults to 'requests.json'. */
-  readonly requestsFile?: string;
 }
 
 /**

@@ -3,8 +3,7 @@
  */
 
 import type { Command } from 'commander';
-import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, unlinkSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { ApiCredentialStore } from './apiCredentialStore.js';
 import { ApiCredentialStatus, ApiCredentials } from './apiCredentials.js';
@@ -529,53 +528,20 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
   program
     .command('codegen')
     .description(
-      'Open a browser with code recording enabled, generating TypeScript code and capturing HTTP request metadata.'
+      'Record a browser session for creating a new service definition. ' +
+        'Generates TypeScript code and captures HTTP request metadata.'
     )
     .argument('<name>', 'Name of the service to record (used for output directory)')
     .argument('<url>', 'Initial URL to navigate to')
     .action(async (name: string, url: string) => {
       const launchOptions = getBrowserLaunchOptionsOrExit(deps);
 
-      // Create recordings directory
-      const recordingsDir = join('recordings', name);
-      if (!existsSync(recordingsDir)) {
-        mkdirSync(recordingsDir, { recursive: true });
-      }
-
-      const actionsFile = join(recordingsDir, 'actions.js');
-      const requestsFile = join(recordingsDir, 'requests.json');
-
-      // Write prompt.txt
-      const promptContent = `Create a new service definition for ${name} with browser login support.
-
-Typically, in a browser login session, the user will need to log in manually, and then the automation kicks in to generate an API key. The code needs to detect when the login stage has finished, and then use the Playwright API to perform automatic interactions, and finally retrieve the API key.
-
-To help you derive this logic, I have recorded a sample user session:
-
-The metadata of all requests during the session is recorded in recordings/${name}/requests.json. Each element contains a "phase" field that tells you whether this is before or after login.
-Note that because the phase is derived from the user clicking a button that says "I'm logged in", some requests immediately after logging in may be marked incorrectly as pre-login. Examine the difference between these two sets of data and try to derive the simplest possible criteria. Some good candidates are:
-
-- A request to the original URL with a difference in HTTP status code (the pre-login one will be a redirection, the post-login one will be 200). Note that the post-login request is likely to be marked incorrectly as pre-login because it's the very first request after login. Use the timestamp to figure out if that's the case.
-
-- The presence of some kind of "auth" or "user" header in the request header.
-
-The actions for generating an API key after the user has logged in is recorded in recordings/${name}/actions.js. For each element, think about how to derive a stable selector that doesn't depend on the user's language. Usually this means using readable IDs or CSS classes, which are unlikely to change. Some elements, such as submit buttons, may already be unique when matched by the type. If everything fails, fall back to using role + label.
-
-Reference other service implementations to understand which patterns we use.
-`;
-      writeFileSync(join(recordingsDir, 'prompt.txt'), promptContent, 'utf-8');
-
       try {
         await runCodegen({
-          executablePath: launchOptions.executablePath,
+          name,
           url,
-          outputFile: actionsFile,
-          requestsFile: requestsFile,
+          executablePath: launchOptions.executablePath,
         });
-        deps.log(`\nRecording saved to ${recordingsDir}/`);
-        deps.log(`  - actions.js: Recorded user actions`);
-        deps.log(`  - requests.json: HTTP request metadata`);
-        deps.log(`  - prompt.txt: Instructions for creating a service definition`);
       } catch (error) {
         if (error instanceof Error) {
           deps.errorLog(`Error: ${error.message}`);
