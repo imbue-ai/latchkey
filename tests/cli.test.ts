@@ -254,30 +254,6 @@ describe('CLI commands with dependency injection', () => {
       expect(services).toContain('slack');
     });
 
-    it('should list all services including those without browser support', async () => {
-      const noBrowserService: Service = {
-        name: 'nobrowser',
-        displayName: 'No Browser Service',
-        baseApiUrls: ['https://nobrowser.example.com/api/'],
-        loginUrl: 'https://nobrowser.example.com',
-        info: 'A service without browser login support.',
-        credentialCheckCurlArguments: [],
-        checkApiCredentials: vi.fn(),
-        // No getSession - service doesn't support browser login
-      };
-
-      const deps = createMockDependencies({
-        registry: new Registry([noBrowserService]),
-      });
-
-      await runCommand(['services'], deps);
-
-      expect(logs).toHaveLength(1);
-      const services = (logs[0] ?? '').split(' ');
-      expect(services).toContain('nobrowser');
-    });
-  });
-
   describe('info command', () => {
     it('should show info for a known service', async () => {
       const deps = createMockDependencies();

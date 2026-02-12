@@ -232,7 +232,7 @@ function getBrowserLaunchOptionsOrExit(deps: CliDependencies): {
 export function registerCommands(program: Command, deps: CliDependencies): void {
   program
     .command('services')
-    .description('List all known services.')
+    .description('List all supported services.')
     .action(() => {
       const serviceNames = deps.registry.services.map((service) => service.name);
       deps.log(serviceNames.join(' '));
