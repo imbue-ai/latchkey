@@ -68,9 +68,8 @@ async function waitForWordPressLogin(page: Page): Promise<void> {
 /**
  * Solve the arithmetic captcha by extracting and evaluating the expression.
  * The captcha question is in the format "What is X + Y?" or "What is X - Y?", etc.
- * Exported for testing.
  */
-export function solveMathCaptcha(question: string): string {
+function solveMathCaptcha(question: string): string {
   // Extract the mathematical expression from the question
   // Example: "What is 7 + 1?" -> "7 + 1"
   const regex = /What is (.+)\?/i;

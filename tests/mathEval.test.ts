@@ -104,8 +104,8 @@ describe('evaluateMathExpression', () => {
 
   describe('security', () => {
     it('should timeout on infinite loops', () => {
-      // The VM has a 1000ms timeout
-      expect(() => evaluateMathExpression('(function(){while(true){}})() || 5')).toThrow(
+      // Use a short timeout for testing
+      expect(() => evaluateMathExpression('(function(){while(true){}})() || 5', 10)).toThrow(
         MathEvalError
       );
     });
