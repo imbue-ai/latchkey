@@ -16,24 +16,26 @@ Latchkey is a command-line tool that injects credentials to curl requests to kno
 
 - `latchkey services list`
 	- Get a list of supported third-party services (Slack, Google Workspace, Linear, GitHub, etc.).
+- `latchkey curl <arguments>`
+	- Automatically inject credentials to your otherwise standard curl calls to public APIs.
+	- Credentials must already exist (see below).
 - `latchkey auth insert <service_name> <curl_arguments>`
 	- Manually store credentials for a service in the form of arbitrary curl arguments.
 - `latchkey auth browser-login <service_name>`
-	- Open a browser for login and store the resulting API credentials.
-    - Only some of the services support this option.
-- `latchkey curl <arguments>`
-	- Automatically inject credentials to your otherwise standard curl calls to public APIs.
-	- Credentials must already exist (via `auth browser-login` or `auth insert`).
+	- Open a browser login pop-up window and store the resulting API credentials.
+    - Only some services support this option.
 
 Latchkey is primarily designed for AI agents. By invoking Latchkey, agents can
 prompt the user to authenticate when needed, then continue interacting with
 third-party APIs using standard curl syntax - no custom integrations or embedded
 credentials required.
 
-Unlike OAuth-based flows or typical MCP-style integrations, Latchkey does not
-introduce an intermediary between the agent and the service. Requests are made
-directly on the user’s behalf, which enables greater flexibility at the cost of
-formal delegation: agents authenticate as the user.
+Unlike OAuth-based flows or typical MCP-style integrations,
+Latchkey does not introduce an intermediary between the agent
+and the service. When `browser-login` is used, requests are made
+directly on the user’s behalf, which enables greater flexibility
+at the cost of formal delegation: agents authenticate as the
+user.
 
 If a service you need isn’t supported yet, contributions are welcome!
 See the [development docs](docs/development.md) for details.
@@ -54,7 +56,10 @@ npm install -g latchkey
 latchkey ensure-browser
 ```
 
-The `ensure-browser` command discovers and configures a browser for Latchkey to use. It searches for Chrome, Chromium, or Edge on your system. If none is found, it downloads Chromium via Playwright.
+The `ensure-browser` command discovers and configures a browser
+for Latchkey to use. It searches for Chrome, Chromium, or Edge
+on your system. If none is found, it downloads Chromium via
+Playwright.
 
 ## Integrations
 
@@ -84,7 +89,9 @@ latchkey skill-md > ~/.codex/skills/latchkey/SKILL.md
 
 ### Passepartout
 
-Check out our [Passepartout demo app](https://github.com/imbue-ai/passepartout) for an idea of how to build AI assistants for non-technical users on top of Latchkey.
+Check out our [Passepartout demo app](https://github.com/imbue-ai/passepartout)
+for an idea of how to build AI assistants for non-technical
+users on top of Latchkey.
 
 
 ## Demo
@@ -102,8 +109,9 @@ latchkey curl -X POST 'https://slack.com/api/conversations.create' \
   -d '{"name":"something-urgent"}'
 ```
 
-Notice that `-H 'Authorization: Bearer ...'` is absent. This is because Latchkey
-injects stored credentials automatically. To set up credentials for a service, run:
+Notice that `-H 'Authorization: Bearer ...'` is absent. This is
+because Latchkey injects stored credentials automatically. To
+set up credentials for a service (slack in this example), run:
 
 ```
 latchkey auth browser-login slack
