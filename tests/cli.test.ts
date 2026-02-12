@@ -265,10 +265,11 @@ describe('CLI commands with dependency injection', () => {
       });
       await runCommand(['info', 'slack'], deps);
 
-      expect(logs).toHaveLength(3);
-      expect(logs[0]).toBe('Login options: browser-login, insert-auth');
-      expect(logs[1]).toBe('Credentials status: missing');
-      expect(logs[2]).toBe('Developer notes: Test info for Slack service.');
+      expect(logs).toHaveLength(1);
+      const info = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
+      expect(info.loginOptions).toEqual(['browser-login', 'insert-auth']);
+      expect(info.credentialStatus).toBe('missing');
+      expect(info.developerNotes).toBe('Test info for Slack service.');
     });
 
     it('should show insert-auth only for services without browser login', async () => {
@@ -291,7 +292,8 @@ describe('CLI commands with dependency injection', () => {
       });
       await runCommand(['info', 'nologin'], deps);
 
-      expect(logs[0]).toBe('Login options: insert-auth');
+      const info = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
+      expect(info.loginOptions).toEqual(['insert-auth']);
     });
 
     it('should show valid credentials status when credentials are valid', async () => {
@@ -309,7 +311,8 @@ describe('CLI commands with dependency injection', () => {
 
       await runCommand(['info', 'slack'], deps);
 
-      expect(logs[1]).toBe('Credentials status: valid');
+      const info = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
+      expect(info.credentialStatus).toBe('valid');
     });
 
     it('should return error for unknown service', async () => {
@@ -918,16 +921,16 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
   });
 
   describe('info command', () => {
-    it('should show login options, credentials status, and developer notes', () => {
+    it('should show login options, credentials status, and developer notes as JSON', () => {
       writeSecureFile(testEnv.LATCHKEY_STORE, '{}');
 
       const result = runCli(['info', 'slack'], testEnv);
       expect(result.exitCode).toBe(0);
 
-      const lines = result.stdout.trim().split('\n');
-      expect(lines[0]).toBe('Login options: browser-login, insert-auth');
-      expect(lines[1]).toBe('Credentials status: missing');
-      expect(lines[2]).toMatch(/^Developer notes: /);
+      const info = JSON.parse(result.stdout) as Record<string, unknown>;
+      expect(info.loginOptions).toEqual(['browser-login', 'insert-auth']);
+      expect(info.credentialStatus).toBe('missing');
+      expect(info.developerNotes).toEqual(expect.any(String));
     });
 
     it('should show insert-auth only for services without browser login', () => {
@@ -936,8 +939,8 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
       const result = runCli(['info', 'mailchimp'], testEnv);
       expect(result.exitCode).toBe(0);
 
-      const lines = result.stdout.trim().split('\n');
-      expect(lines[0]).toBe('Login options: insert-auth');
+      const info = JSON.parse(result.stdout) as Record<string, unknown>;
+      expect(info.loginOptions).toEqual(['insert-auth']);
     });
 
     it('should return error for unknown service', () => {

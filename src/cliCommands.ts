@@ -252,8 +252,9 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
 
       // Login options
       const supportsBrowserLogin = service.getSession !== undefined;
-      const loginOptions = supportsBrowserLogin ? 'browser-login, insert-auth' : 'insert-auth';
-      deps.log(`Login options: ${loginOptions}`);
+      const loginOptions = supportsBrowserLogin
+        ? ['browser-login', 'insert-auth']
+        : ['insert-auth'];
 
       // Credentials status
       const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
@@ -269,10 +270,13 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         apiCredentials = await maybeRefreshCredentials(service, apiCredentials, apiCredentialStore);
         credentialStatus = service.checkApiCredentials(apiCredentials);
       }
-      deps.log(`Credentials status: ${credentialStatus}`);
 
-      // Developer notes
-      deps.log(`Developer notes: ${service.info}`);
+      const info = {
+        loginOptions,
+        credentialStatus,
+        developerNotes: service.info,
+      };
+      deps.log(JSON.stringify(info, null, 2));
     });
 
   program
