@@ -21,7 +21,7 @@
  *   npx tsx scripts/codegen.ts slack https://api.slack.com/apps
  */
 
-import { runCodegen } from '../src/codegen/index.js';
+import { runCodegen } from './codegen/index.js';
 
 class InvalidArgumentsError extends Error {
   constructor(message: string) {
