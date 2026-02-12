@@ -349,6 +349,10 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .command('insert-auth')
     .description('Store credentials for a service in the form of arbitrary curl arguments.')
     .argument('<service_name>', 'Name of the service to store credentials for')
+    .addHelpText(
+      'after',
+      `\nExample:\n  $ latchkey insert-auth slack -H "Authorization: Bearer xoxb-your-token"`
+    )
     .allowUnknownOption()
     .allowExcessArguments()
     .action((_serviceName: string, _options: unknown, command: { args: string[] }) => {
