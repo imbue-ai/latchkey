@@ -268,9 +268,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
 
       // Login options
       const supportsBrowserLogin = service.getSession !== undefined;
-      const authOptions = supportsBrowserLogin
-        ? ['browser-login', 'insert']
-        : ['insert'];
+      const authOptions = supportsBrowserLogin ? ['browser-login', 'insert'] : ['insert'];
 
       // Credentials status
       const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
@@ -440,7 +438,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
 
   authCommand
     .command('browser-prepare')
-    .description('Prepare a service for use.')
+    .description('Prepare a service to be used with browser-login.')
     .argument('<service_name>', 'Name of the service to prepare')
     .action(async (serviceName: string) => {
       const service = deps.registry.getByName(serviceName);
