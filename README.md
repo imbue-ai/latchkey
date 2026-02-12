@@ -12,7 +12,8 @@ latchkey curl -X POST 'https://slack.com/api/conversations.create' \
 
 ## Overview
 
-Latchkey is a command-line tool that injects credentials to curl requests to known public APIs.
+Latchkey is a command-line tool that injects credentials to curl
+requests to known public APIs.
 
 - `latchkey services list`
 	- Get a list of supported third-party services (Slack, Google Workspace, Linear, GitHub, etc.).
@@ -25,10 +26,11 @@ Latchkey is a command-line tool that injects credentials to curl requests to kno
 	- Open a browser login pop-up window and store the resulting API credentials.
     - Only some services support this option.
 
-Latchkey is primarily designed for AI agents. By invoking Latchkey, agents can
-prompt the user to authenticate when needed, then continue interacting with
-third-party APIs using standard curl syntax - no custom integrations or embedded
-credentials required.
+Latchkey is primarily designed for AI agents. By invoking
+Latchkey, agents can prompt the user to authenticate when needed,
+then continue interacting with third-party APIs using standard
+curl syntax - no custom integrations or embedded credentials
+required.
 
 Unlike OAuth-based flows or typical MCP-style integrations,
 Latchkey does not introduce an intermediary between the agent
@@ -166,15 +168,18 @@ permissions. In that case, log in again:
 
 ```
 latchkey auth browser discord
+```
 
-# Alternatively:
+Or alternatively:
+
+```
 latchkey auth insert discord -H "Authorization: ..."
 ```
 
 
 ### Clearing credentials and logins
 
-In case you want to forget stored API credentials, use the `auth clear` subcommand.
+In case you want to remove stored API credentials, use the `auth clear` subcommand.
 
 ```
 latchkey auth clear discord

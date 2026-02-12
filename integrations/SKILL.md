@@ -1,28 +1,26 @@
 ---
 name: latchkey
 description: Interact with third-party services (Slack, Google Workspace, Dropbox, GitHub, Linear...) on user's behalf using their public APIs.
-compatibility: Requires node.js, curl and latchkey (npm install -g latchkey). A desktop/GUI environment is required for the browser login functionality.
+compatibility: Requires node.js, curl and latchkey (npm install -g latchkey). A desktop/GUI environment is required for the browser functionality.
 ---
 
 # Latchkey
 
 ## Instructions
 
-Latchkey is a CLI tool that automatically injects credentials into curl commands for supported public APIs. Credentials (mostly API tokens) can be either manually managed or, for some services, latchkey can open a browser for login and extract API credentials from the session.
+Latchkey is a CLI tool that automatically injects credentials into curl commands for supported public APIs. Credentials (mostly API tokens) can be either manually managed or, for some services, Latchkey can open a browser login pop-up window and extract API credentials from the session.
 
 Use this skill when the user asks you to work with third-party services like Slack, Discord, Dropbox, Github, Linear and others on their behalf.
 
 Usage:
 
 1. **Use `latchkey curl`** instead of regular `curl` for supported services.
-2. **Use `latchkey services list`** to get a list of supported services.
-2. **Use `latchkey services info <service_name>`** to get information about a specific service (login options, credentials status, API docs links, special requirements, etc.).
-3. **If necessary, get credentials first.** Run `latchkey auth browser <service_name>` to open a browser login popup if supported.
-4. **Look for the newest documentation of the desired public API online.** If using the browser command, avoid bot-only endpoints.
-5. **Pass through all regular curl arguments** - latchkey is a transparent wrapper.
-6. **Use `latchkey services info <service_name>`** when you notice potentially expired credentials, and check the credentials status line.
-7. When the credentials status is `invalid`, **force a new login by calling `latchkey auth browser <service_name>`**, and retry the curl command.
-8. **Do not force a new login if the credentials status is `valid`** - the user might just not have the necessary permissions.
+2. **Pass through all regular curl arguments** - latchkey is a transparent wrapper.
+3. **Use `latchkey services list`** to get a list of supported services.
+4. **Use `latchkey services info <service_name>`** to get information about a specific service (auth options, credentials status, API docs links, special requirements, etc.).
+5. **If necessary, get or renew credentials first.** Run `latchkey auth browser <service_name>` to open a browser login pop-up window if supported.
+6. **Look for the newest documentation of the desired public API online.** If using the `browser` auth command, avoid bot-only endpoints.
+7. **Do not initiate a new login if the credentials status is `valid`** - the user might just not have the necessary permissions for the action you're trying to do.
 
 
 ## Examples
@@ -48,7 +46,7 @@ latchkey curl 'https://discord.com/api/v10/users/@me'
 
 ### Detect expired credentials and force a new login to Discord
 ```bash
-latchkey services info discord  # Check "Credentials status" line - shows "invalid"
+latchkey services info discord  # Check the "credentialStatus" field - shows "invalid"
 latchkey auth browser discord
 latchkey curl 'https://discord.com/api/v10/users/@me'
 ```
@@ -67,7 +65,11 @@ Lists all services that latchkey knows about.
 latchkey services info slack
 ```
 
-Returns login options, credentials status, and developer notes about the service.
+Returns auth options, credentials status, and developer notes
+about the service.  If `browser` is not present in the
+`authOptions` field, the service requires the user to directly
+insert API credentials via `latchkey auth insert` before making
+requests.
 
 ## Notes
 

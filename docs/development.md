@@ -27,9 +27,29 @@ then use the version you just built.
 
 ## Adding a new service
 
+Services in Latchkey come in two tiers:
+
+- With basic support that requires users to directly insert
+API credentials via `latchkey auth insert`.
+- With support for browser-based authentication.
+
+### Basic support
+
+If you only want to make Latchkey aware of the existence of
+a particular service, you just need to implement a Service class
+with a few attributes (like a name, base API URL(s) and a few
+others). As an example, see the [Mailchimp](../src/services/mailchimp.ts)
+service.
+
+
+### Support for browser-based authentication
+
+In this case, you will typically need to add several additional
+methods to the implementation from the previous section.
+
 Each third-party service needs to be approached slightly
-differently. When adding support for a new service, you need to
-start by asking yourself the following question:
+differently. You need to start by asking yourself the following
+question:
 
 
 _Can public API credentials be extracted from the network traffic that flows between the browser and the service's website during or after login?_
