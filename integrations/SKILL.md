@@ -17,11 +17,11 @@ Usage:
 1. **Use `latchkey curl`** instead of regular `curl` for supported services.
 2. **Use `latchkey services list`** to get a list of supported services.
 2. **Use `latchkey services info <service_name>`** to get information about a specific service (login options, credentials status, API docs links, special requirements, etc.).
-3. **If necessary, get credentials first.** Run `latchkey auth browser-login <service_name>` to open a browser login popup if supported.
-4. **Look for the newest documentation of the desired public API online.** If using browser-login, avoid bot-only endpoints.
+3. **If necessary, get credentials first.** Run `latchkey auth browser <service_name>` to open a browser login popup if supported.
+4. **Look for the newest documentation of the desired public API online.** If using the browser command, avoid bot-only endpoints.
 5. **Pass through all regular curl arguments** - latchkey is a transparent wrapper.
 6. **Use `latchkey services info <service_name>`** when you notice potentially expired credentials, and check the credentials status line.
-7. When the credentials status is `invalid`, **force a new login by calling `latchkey auth browser-login <service_name>`**, and retry the curl command.
+7. When the credentials status is `invalid`, **force a new login by calling `latchkey auth browser <service_name>`**, and retry the curl command.
 8. **Do not force a new login if the credentials status is `valid`** - the user might just not have the necessary permissions.
 
 
@@ -49,7 +49,7 @@ latchkey curl 'https://discord.com/api/v10/users/@me'
 ### Detect expired credentials and force a new login to Discord
 ```bash
 latchkey services info discord  # Check "Credentials status" line - shows "invalid"
-latchkey auth browser-login discord
+latchkey auth browser discord
 latchkey curl 'https://discord.com/api/v10/users/@me'
 ```
 

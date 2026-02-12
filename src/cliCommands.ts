@@ -267,8 +267,8 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       }
 
       // Login options
-      const supportsBrowserLogin = service.getSession !== undefined;
-      const authOptions = supportsBrowserLogin ? ['browser-login', 'insert'] : ['insert'];
+      const supportsBrowser = service.getSession !== undefined;
+      const authOptions = supportsBrowser ? ['browser', 'insert'] : ['insert'];
 
       // Credentials status
       const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
@@ -384,7 +384,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     });
 
   authCommand
-    .command('browser-login')
+    .command('browser')
     .description('Login to a service via the browser and store the API credentials.')
     .argument('<service_name>', 'Name of the service to login to')
     .action(async (serviceName: string) => {
@@ -438,7 +438,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
 
   authCommand
     .command('browser-prepare')
-    .description('Prepare a service to be used with browser-login.')
+    .description('Prepare a service to be used with the browser command.')
     .argument('<service_name>', 'Name of the service to prepare')
     .action(async (serviceName: string) => {
       const service = deps.registry.getByName(serviceName);
@@ -519,7 +519,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       if (apiCredentials === null) {
         deps.errorLog(`Error: No credentials found for ${service.name}.`);
         deps.errorLog(
-          `Run 'latchkey auth browser-login ${service.name}' or 'latchkey auth insert ${service.name}' first.`
+          `Run 'latchkey auth browser ${service.name}' or 'latchkey auth insert ${service.name}' first.`
         );
         deps.exit(1);
       }
@@ -530,7 +530,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         if (apiCredentials.isExpired() === true) {
           deps.errorLog(`Error: Credentials for ${service.name} are expired.`);
           deps.errorLog(
-            `Run 'latchkey auth browser-login ${service.name}' or 'latchkey auth insert ${service.name}' to refresh them.`
+            `Run 'latchkey auth browser ${service.name}' or 'latchkey auth insert ${service.name}' to refresh them.`
           );
           deps.exit(1);
         }

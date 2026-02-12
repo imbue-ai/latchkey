@@ -21,7 +21,7 @@ Latchkey is a command-line tool that injects credentials to curl requests to kno
 	- Credentials must already exist (see below).
 - `latchkey auth insert <service_name> <curl_arguments>`
 	- Manually store credentials for a service in the form of arbitrary curl arguments.
-- `latchkey auth browser-login <service_name>`
+- `latchkey auth browser <service_name>`
 	- Open a browser login pop-up window and store the resulting API credentials.
     - Only some services support this option.
 
@@ -32,7 +32,7 @@ credentials required.
 
 Unlike OAuth-based flows or typical MCP-style integrations,
 Latchkey does not introduce an intermediary between the agent
-and the service. When `browser-login` is used, requests are made
+and the service. When `browser` is used, requests are made
 directly on the user’s behalf, which enables greater flexibility
 at the cost of formal delegation: agents authenticate as the
 user.
@@ -45,14 +45,14 @@ See the [development docs](docs/development.md) for details.
 ### Prerequisites
 
 - `curl`, `node` and `npm` need to be present on your system in reasonably recent versions.
-- The `latchkey auth browser-login` subcommand requires a graphical environment.
+- The `latchkey auth browser` subcommand requires a graphical environment.
 
 ### Steps
 
 ```
 npm install -g latchkey
 
-# Optionally, if you intend to use `latchkey auth browser-login`:
+# Optionally, if you intend to use `latchkey auth browser`:
 latchkey ensure-browser
 ```
 
@@ -64,7 +64,7 @@ Playwright.
 ## Integrations
 
 Warning: giving AI agents access to your API credentials is
-potentially dangerous, especially when using the `auth browser-login`
+potentially dangerous, especially when using the `auth browser`
 feature.  They will be able to perform most of the actions you
 can. Only do this if you're willing to accept the risks.
 
@@ -114,7 +114,7 @@ because Latchkey injects stored credentials automatically. To
 set up credentials for a service (slack in this example), run:
 
 ```
-latchkey auth browser-login slack
+latchkey auth browser slack
 ```
 
 This opens the browser with a login screen. After you log in, Latchkey extracts
@@ -165,7 +165,7 @@ responses are caused by invalid or expired credentials rather than insufficient
 permissions. In that case, log in again:
 
 ```
-latchkey auth browser-login discord
+latchkey auth browser discord
 
 # Alternatively:
 latchkey auth insert discord -H "Authorization: ..."
@@ -201,14 +201,14 @@ the browser used for the login popup
 - `LATCHKEY_CONFIG`: path to the configuration file
 (defaults to `~/.latchkey/config.json`)
 - `LATCHKEY_KEYRING_SERVICE_NAME`, `LATCHKEY_KEYRING_ACCOUNT_NAME`: identifiers that are used to store the encryption password in your keyring
-- `LATCHKEY_DISABLE_BROWSER`: when set (to any non-empty value), disables the browser login flow; commands that would trigger a browser login (`auth browser-login`, `auth browser-prepare`) will fail with an error instead
+- `LATCHKEY_DISABLE_BROWSER`: when set (to any non-empty value), disables the browser login flow; commands that would trigger a browser login (`auth browser`, `auth browser-prepare`) will fail with an error instead
 
 
 ## Disclaimers
 
 - This is still a work in progress.
 - Latchkey has been created with the help of AI-assisted coding tools with careful human curation.
-- Invoking `latchkey auth browser-login ...` can sometimes have side effects in the form of
+- Invoking `latchkey auth browser ...` can sometimes have side effects in the form of
   new API keys being created in your accounts (through browser automation).
 - Using agents for automated access may be prohibited by some services' ToS.
 - We reserve the right to change the license of future releases of Latchkey.

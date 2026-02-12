@@ -267,7 +267,7 @@ describe('CLI commands with dependency injection', () => {
 
       expect(logs).toHaveLength(1);
       const info = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
-      expect(info.authOptions).toEqual(['browser-login', 'insert']);
+      expect(info.authOptions).toEqual(['browser', 'insert']);
       expect(info.credentialStatus).toBe('missing');
       expect(info.developerNotes).toBe('Test info for Slack service.');
     });
@@ -759,7 +759,7 @@ describe('CLI commands with dependency injection', () => {
 
       expect(exitCode).toBe(1);
       expect(errorLogs.some((log) => log.includes('No credentials found for slack'))).toBe(true);
-      expect(errorLogs.some((log) => log.includes('auth browser-login'))).toBe(true);
+      expect(errorLogs.some((log) => log.includes('auth browser'))).toBe(true);
       expect(errorLogs.some((log) => log.includes('auth insert'))).toBe(true);
     });
 
@@ -796,7 +796,7 @@ describe('CLI commands with dependency injection', () => {
     });
   });
 
-  describe('auth browser-login command', () => {
+  describe('auth browser command', () => {
     it('should return error when service does not support browser login', async () => {
       const noLoginService: Service = {
         name: 'nologin',
@@ -813,7 +813,7 @@ describe('CLI commands with dependency injection', () => {
         registry: new Registry([noLoginService]),
       });
 
-      await runCommand(['auth', 'browser-login', 'nologin'], deps);
+      await runCommand(['auth', 'browser', 'nologin'], deps);
 
       expect(exitCode).toBe(1);
       const expectedMessage = new BrowserFlowsNotSupportedError('nologin').message;
@@ -864,19 +864,19 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
       const result = runCli(['curl', 'https://slack.com/api/test'], testEnv);
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain('No credentials found for slack');
-      expect(result.stderr).toContain('auth browser-login');
+      expect(result.stderr).toContain('auth browser');
       expect(result.stderr).toContain('auth insert');
     });
   });
 
-  describe('auth browser-login command', () => {
+  describe('auth browser command', () => {
     it('should return error when browser is disabled via LATCHKEY_DISABLE_BROWSER', () => {
-      const result = runCli(['auth', 'browser-login', 'slack'], {
+      const result = runCli(['auth', 'browser', 'slack'], {
         ...testEnv,
         LATCHKEY_DISABLE_BROWSER: '1',
       });
       expect(result.exitCode).toBe(1);
-      expect(result.stderr).toContain('Browser login is disabled');
+      expect(result.stderr).toContain('Browser is disabled');
     });
   });
 
@@ -1020,7 +1020,7 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
       expect(result.exitCode).toBe(0);
 
       const info = JSON.parse(result.stdout) as Record<string, unknown>;
-      expect(info.authOptions).toEqual(['browser-login', 'insert']);
+      expect(info.authOptions).toEqual(['browser', 'insert']);
       expect(info.credentialStatus).toBe('missing');
       expect(info.developerNotes).toEqual(expect.any(String));
     });

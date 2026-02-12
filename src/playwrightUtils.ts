@@ -4,7 +4,7 @@
 
 export class BrowserDisabledError extends Error {
   constructor() {
-    super('Browser login is disabled via LATCHKEY_DISABLE_BROWSER environment variable.');
+    super('Browser is disabled via LATCHKEY_DISABLE_BROWSER environment variable.');
     this.name = 'BrowserDisabledError';
   }
 }
