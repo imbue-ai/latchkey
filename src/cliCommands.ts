@@ -44,6 +44,18 @@ async function maybeRefreshCredentials(
   return apiCredentials;
 }
 
+async function getCredentialStatus(
+  service: Service,
+  credentials: ApiCredentials | null,
+  apiCredentialStore: ApiCredentialStore
+): Promise<ApiCredentialStatus> {
+  if (credentials === null) {
+    return ApiCredentialStatus.Missing;
+  }
+  const refreshed = await maybeRefreshCredentials(service, credentials, apiCredentialStore);
+  return service.checkApiCredentials(refreshed);
+}
+
 // Curl flags that don't affect the HTTP request semantics but may not be supported by URL extraction.
 const CURL_PASSTHROUGH_FLAGS = new Set(['-v', '--verbose']);
 
@@ -266,14 +278,12 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         deps.config.credentialStorePath,
         encryptedStorage
       );
-      let apiCredentials = apiCredentialStore.get(serviceName);
-      let credentialStatus: ApiCredentialStatus;
-      if (apiCredentials === null) {
-        credentialStatus = ApiCredentialStatus.Missing;
-      } else {
-        apiCredentials = await maybeRefreshCredentials(service, apiCredentials, apiCredentialStore);
-        credentialStatus = service.checkApiCredentials(apiCredentials);
-      }
+      const apiCredentials = apiCredentialStore.get(serviceName);
+      const credentialStatus = await getCredentialStatus(
+        service,
+        apiCredentials,
+        apiCredentialStore
+      );
 
       const info = {
         loginOptions,
@@ -346,6 +356,38 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       } else {
         clearService(deps, serviceName);
       }
+    });
+
+  authCommand
+    .command('list')
+    .description('List all stored credentials and their status.')
+    .action(async () => {
+      const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
+      const apiCredentialStore = new ApiCredentialStore(
+        deps.config.credentialStorePath,
+        encryptedStorage
+      );
+
+      const allCredentials = apiCredentialStore.getAll();
+      const entries: Record<
+        string,
+        { credentialType: string; credentialStatus: ApiCredentialStatus }
+      > = {};
+
+      for (const [serviceName, credentials] of allCredentials) {
+        const service = deps.registry.getByName(serviceName);
+        const credentialStatus =
+          service !== null
+            ? await getCredentialStatus(service, credentials, apiCredentialStore)
+            : ApiCredentialStatus.Valid;
+
+        entries[serviceName] = {
+          credentialType: credentials.objectType,
+          credentialStatus,
+        };
+      }
+
+      deps.log(JSON.stringify(entries, null, 2));
     });
 
   authCommand

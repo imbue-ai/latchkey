@@ -438,6 +438,66 @@ describe('CLI commands with dependency injection', () => {
     });
   });
 
+  describe('auth list command', () => {
+    it('should list stored credentials with their status', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(
+        storePath,
+        JSON.stringify({
+          slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
+        })
+      );
+
+      const deps = createMockDependencies({
+        config: createMockConfig({ credentialStorePath: storePath }),
+      });
+      await runCommand(['auth', 'list'], deps);
+
+      expect(logs).toHaveLength(1);
+      const entries = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
+      expect(entries.slack).toEqual({
+        credentialType: 'slack',
+        credentialStatus: 'valid',
+      });
+    });
+
+    it('should output empty object when no credentials are stored', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(storePath, '{}');
+
+      const deps = createMockDependencies({
+        config: createMockConfig({ credentialStorePath: storePath }),
+      });
+      await runCommand(['auth', 'list'], deps);
+
+      expect(logs).toHaveLength(1);
+      const entries = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
+      expect(Object.keys(entries)).toHaveLength(0);
+    });
+
+    it('should treat unknown services as valid', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(
+        storePath,
+        JSON.stringify({
+          unknown: { objectType: 'rawCurl', curlArguments: ['-H', 'X-Token: secret'] },
+        })
+      );
+
+      const deps = createMockDependencies({
+        config: createMockConfig({ credentialStorePath: storePath }),
+      });
+      await runCommand(['auth', 'list'], deps);
+
+      expect(logs).toHaveLength(1);
+      const entries = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
+      expect(entries.unknown).toEqual({
+        credentialType: 'rawCurl',
+        credentialStatus: 'valid',
+      });
+    });
+  });
+
   describe('auth insert command', () => {
     it('should store raw curl credentials', async () => {
       const storePath = join(tempDir, 'credentials.json');
@@ -903,6 +963,38 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
       const result = runCli(['auth', 'clear', '-y'], testEnv);
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('No files to delete');
+    });
+  });
+
+  describe('auth list command', () => {
+    it('should list stored credentials as beautified JSON', () => {
+      writeSecureFile(
+        testEnv.LATCHKEY_STORE,
+        JSON.stringify({
+          slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
+        })
+      );
+
+      const result = runCli(['auth', 'list'], testEnv);
+      expect(result.exitCode).toBe(0);
+
+      const entries = JSON.parse(result.stdout) as Record<
+        string,
+        { credentialType: string; credentialStatus: string }
+      >;
+      expect(entries.slack).toBeDefined();
+      expect(entries.slack?.credentialType).toBe('slack');
+      expect(entries.slack?.credentialStatus).toEqual(expect.any(String));
+    });
+
+    it('should output empty object when no credentials are stored', () => {
+      writeSecureFile(testEnv.LATCHKEY_STORE, '{}');
+
+      const result = runCli(['auth', 'list'], testEnv);
+      expect(result.exitCode).toBe(0);
+
+      const entries = JSON.parse(result.stdout) as Record<string, unknown>;
+      expect(Object.keys(entries)).toHaveLength(0);
     });
   });
 
