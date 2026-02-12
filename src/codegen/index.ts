@@ -5,9 +5,8 @@
  * - Records all HTTP request metadata to a file
  * - Includes a custom toolbar with additional buttons
  *
- * The session has three phases:
+ * The session has two phases:
  * - Pre-login: No recording, requests marked as pre-login
- * - Logging-in: No recording, requests marked as logging-in
  * - Post-login: User interactions are recorded, requests marked as post-login
  */
 
@@ -98,14 +97,7 @@ export async function runCodegen(options: CodegenOptions): Promise<CodegenResult
     return currentPhase;
   });
 
-  // Expose function called when "Logging In" button is clicked
-  await context.exposeFunction('__latchkeyTransitionToLoggingIn', () => {
-    console.log('[Latchkey] Transitioning to logging-in phase');
-    currentPhase = 'logging-in';
-    requestCollector.setPhase('logging-in');
-  });
-
-  // Expose function called when "Logged In" button is clicked
+  // Expose function called when "I've logged in" button is clicked
   await context.exposeFunction('__latchkeyTransitionToPostLogin', () => {
     console.log('[Latchkey] Transitioning to post-login phase');
     currentPhase = 'post-login';
@@ -133,6 +125,7 @@ export async function runCodegen(options: CodegenOptions): Promise<CodegenResult
 
   // Navigate to initial URL if provided
   if (options.url) {
+    codeGenerator.setInitialUrl(options.url);
     await page.goto(options.url);
     // Inject script after page loads
     await injectScriptIfNeeded(page);

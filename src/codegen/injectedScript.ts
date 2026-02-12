@@ -181,6 +181,9 @@ export function createInjectedScript(): string {
     return element.closest && element.closest('#latchkey-recorder-toolbar');
   }
 
+  // Global flag to track API key selection mode (set by toolbar, checked by recorder)
+  window.__latchkeyIsSelectingApiKey = false;
+
   // ===== INTERACTION RECORDER =====
 
   // Don't inject recorder twice
@@ -190,7 +193,8 @@ export function createInjectedScript(): string {
     // Track clicks
     document.addEventListener('click', (event) => {
       const target = event.target;
-      if (!target || isToolbarElement(target)) return;
+      // Don't record clicks when selecting API key element
+      if (!target || isToolbarElement(target) || window.__latchkeyIsSelectingApiKey) return;
 
       const ancestry = getAncestry(target);
 
@@ -384,10 +388,6 @@ export function createInjectedScript(): string {
         color: #ff6b6b;
       }
 
-      .latchkey-toolbar-status.logging-in {
-        color: #fbbf24;
-      }
-
       .latchkey-toolbar-status.post-login {
         color: #4ade80;
       }
@@ -402,11 +402,6 @@ export function createInjectedScript(): string {
       .latchkey-phase-dot.pre-login {
         background: #ff4444;
         animation: latchkey-pulse 1.5s infinite;
-      }
-
-      .latchkey-phase-dot.logging-in {
-        background: #fbbf24;
-        animation: latchkey-pulse 1s infinite;
       }
 
       .latchkey-phase-dot.post-login {
@@ -481,29 +476,16 @@ export function createInjectedScript(): string {
     sep1.className = 'latchkey-toolbar-separator';
     toolbar.appendChild(sep1);
 
-    // "Logging In" button - transitions from pre-login to logging-in
-    const loggingInBtn = document.createElement('button');
-    loggingInBtn.className = 'latchkey-toolbar-button';
-    loggingInBtn.innerHTML = \`
-      <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-        <path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm2-3a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm4 8c0 1-1 1-1 1H3s-1 0-1-1 1-4 6-4 6 3 6 4zm-1-.004c-.001-.246-.154-.986-.832-1.664C11.516 10.68 10.289 10 8 10c-2.29 0-3.516.68-4.168 1.332-.678.678-.83 1.418-.832 1.664h10z"/>
-      </svg>
-      Logging In
-    \`;
-    loggingInBtn.title = 'Click when you are about to log in';
-    toolbar.appendChild(loggingInBtn);
-
-    // "Logged In" button - transitions from logging-in to post-login
+    // "I've logged in" button - transitions from pre-login to post-login
     const loggedInBtn = document.createElement('button');
     loggedInBtn.className = 'latchkey-toolbar-button';
-    loggedInBtn.disabled = true;
     loggedInBtn.innerHTML = \`
       <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
         <path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0z"/>
       </svg>
-      Logged In
+      I've logged in
     \`;
-    loggedInBtn.title = 'Click when you have successfully logged in';
+    loggedInBtn.title = 'Click after you have successfully logged in to start recording';
     toolbar.appendChild(loggedInBtn);
 
     // Separator
@@ -535,30 +517,17 @@ export function createInjectedScript(): string {
       status.className = 'latchkey-toolbar-status ' + phase;
       switch (phase) {
         case 'pre-login':
-          status.textContent = 'Pre-login (not recording)';
-          loggingInBtn.disabled = false;
-          loggedInBtn.disabled = true;
-          break;
-        case 'logging-in':
-          status.textContent = 'Logging in...';
-          loggingInBtn.disabled = true;
+          status.textContent = 'Not recording (log in first)';
           loggedInBtn.disabled = false;
           break;
         case 'post-login':
-          status.textContent = 'Recording (post-login)';
-          loggingInBtn.disabled = true;
+          status.textContent = 'Recording';
           loggedInBtn.disabled = true;
           break;
       }
     }
 
-    // Button handlers
-    loggingInBtn.onclick = () => {
-      if (loggingInBtn.disabled) return;
-      window.__latchkeyTransitionToLoggingIn && window.__latchkeyTransitionToLoggingIn();
-      updatePhaseUI('logging-in');
-    };
-
+    // Button handler
     loggedInBtn.onclick = () => {
       if (loggedInBtn.disabled) return;
       window.__latchkeyTransitionToPostLogin && window.__latchkeyTransitionToPostLogin();
@@ -567,6 +536,7 @@ export function createInjectedScript(): string {
 
     apiKeyBtn.onclick = () => {
       isSelectingApiKeyElement = !isSelectingApiKeyElement;
+      window.__latchkeyIsSelectingApiKey = isSelectingApiKeyElement;
       apiKeyBtn.classList.toggle('active', isSelectingApiKeyElement);
       highlightOverlay.style.display = isSelectingApiKeyElement ? 'block' : 'none';
       if (isSelectingApiKeyElement) {
@@ -612,6 +582,7 @@ export function createInjectedScript(): string {
         e.stopPropagation();
 
         isSelectingApiKeyElement = false;
+        window.__latchkeyIsSelectingApiKey = false;
         apiKeyBtn.classList.remove('active');
         highlightOverlay.style.display = 'none';
 

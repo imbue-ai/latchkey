@@ -4,11 +4,10 @@
 
 /**
  * Phase of the recording session.
- * - 'pre-login': Before the user indicates they will log in
- * - 'logging-in': After indicating login intent, during authentication process
- * - 'post-login': After the user confirms they have successfully logged in
+ * - 'pre-login': Before the user has logged in (not recording)
+ * - 'post-login': After the user confirms they have logged in (recording)
  */
-export type RecordingPhase = 'pre-login' | 'logging-in' | 'post-login';
+export type RecordingPhase = 'pre-login' | 'post-login';
 
 /**
  * Represents HTTP request metadata captured during recording.
