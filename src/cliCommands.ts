@@ -347,7 +347,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
 
   program
     .command('insert-auth')
-    .description('Store arbitrary curl arguments as credentials for a service.')
+    .description('Store credentials for a service in the form of arbitrary curl arguments.')
     .argument('<service_name>', 'Name of the service to store credentials for')
     .allowUnknownOption()
     .allowExcessArguments()
