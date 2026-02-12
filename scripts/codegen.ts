@@ -21,6 +21,8 @@
  *   npx tsx scripts/codegen.ts slack https://api.slack.com/apps
  */
 
+import { loadBrowserConfig } from '../src/browserConfig.js';
+import { CONFIG } from '../src/config.js';
 import { runCodegen } from './codegen/index.js';
 
 class InvalidArgumentsError extends Error {
@@ -80,7 +82,14 @@ async function main(): Promise<void> {
   console.log('  5. Close the browser when done');
   console.log('');
 
-  await runCodegen({ name, url });
+  const browserConfig = loadBrowserConfig(CONFIG.configPath);
+  if (!browserConfig) {
+    throw new InvalidArgumentsError(
+      "No browser configured. Run 'latchkey ensure-browser' first."
+    );
+  }
+
+  await runCodegen({ name, url, executablePath: browserConfig.executablePath });
 }
 
 void main().catch((error: unknown) => {
