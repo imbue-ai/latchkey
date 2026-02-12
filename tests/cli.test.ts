@@ -650,9 +650,22 @@ describe('CLI commands with dependency injection', () => {
       await runCommand(['insert-auth', 'slack'], deps);
 
       expect(exitCode).toBe(1);
-      expect(errorLogs.some((log) => log.includes('At least one curl argument is required'))).toBe(
+      expect(errorLogs.some((log) => log.includes("don't look like valid curl options"))).toBe(
         true
       );
+      expect(errorLogs.some((log) => log.includes('Authorization: Bearer'))).toBe(true);
+    });
+
+    it('should return error when arguments lack curl switches', async () => {
+      const deps = createMockDependencies();
+
+      await runCommand(['insert-auth', 'slack', 'my-raw-token-value'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs.some((log) => log.includes("don't look like valid curl options"))).toBe(
+        true
+      );
+      expect(errorLogs.some((log) => log.includes('Authorization: Bearer'))).toBe(true);
     });
 
     it('should return error for unknown service', async () => {

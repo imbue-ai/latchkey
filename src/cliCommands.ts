@@ -365,8 +365,13 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         deps.exit(1);
       }
 
-      if (curlArguments.length === 0) {
-        deps.errorLog('Error: At least one curl argument is required.');
+      if (!curlArguments.some((argument) => argument.startsWith('-'))) {
+        deps.errorLog(
+          "Error: Arguments don't look like valid curl options (expected at least one switch starting with '-')."
+        );
+        deps.errorLog(
+          `Example: latchkey insert-auth ${serviceName} -H "Authorization: Bearer <token>"`
+        );
         deps.exit(1);
       }
 
