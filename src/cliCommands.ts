@@ -22,7 +22,6 @@ import { Registry, REGISTRY } from './registry.js';
 import { LoginCancelledError, LoginFailedError, Service } from './services/index.js';
 import { run as curlRun } from './curl.js';
 import { getSkillMdContent } from './skillMd.js';
-import { runCodegen } from './codegen/index.js';
 
 /**
  * Try to refresh expired credentials if the service supports it.
@@ -525,29 +524,4 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       deps.exit(result.returncode);
     });
 
-  program
-    .command('codegen')
-    .description(
-      'Record a browser session for creating a new service definition. ' +
-        'Generates TypeScript code and captures HTTP request metadata.'
-    )
-    .argument('<name>', 'Name of the service to record (used for output directory)')
-    .argument('<url>', 'Initial URL to navigate to')
-    .action(async (name: string, url: string) => {
-      const launchOptions = getBrowserLaunchOptionsOrExit(deps);
-
-      try {
-        await runCodegen({
-          name,
-          url,
-          executablePath: launchOptions.executablePath,
-        });
-      } catch (error) {
-        if (error instanceof Error) {
-          deps.errorLog(`Error: ${error.message}`);
-          deps.exit(1);
-        }
-        throw error;
-      }
-    });
 }
