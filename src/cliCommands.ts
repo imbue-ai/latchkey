@@ -450,10 +450,8 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
 
       const session = service.getSession?.();
       if (!session?.prepare) {
-        deps.errorLog(
-          `Error: Service ${serviceName} does not support the browser-prepare command.`
-        );
-        deps.exit(1);
+        deps.log('This service does not require a preparation step.');
+        return;
       }
 
       const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
