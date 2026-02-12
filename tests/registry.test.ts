@@ -1,6 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { Registry, REGISTRY } from '../src/registry.js';
-import { SLACK, DISCORD, GITHUB, DROPBOX, LINEAR, NOTION, GOOGLE } from '../src/services/index.js';
+import {
+  SLACK,
+  DISCORD,
+  GITHUB,
+  DROPBOX,
+  LINEAR,
+  NOTION,
+  GOOGLE,
+  WORDPRESSCOM,
+} from '../src/services/index.js';
 
 describe('Registry', () => {
   describe('getByName', () => {
@@ -30,6 +39,10 @@ describe('Registry', () => {
 
     it('should find Notion by name', () => {
       expect(REGISTRY.getByName('notion')).toBe(NOTION);
+    });
+
+    it('should find WordPressCom by name', () => {
+      expect(REGISTRY.getByName('wordpressCom')).toBe(WORDPRESSCOM);
     });
 
     it('should return null for unknown service', () => {
@@ -80,6 +93,10 @@ describe('Registry', () => {
       expect(REGISTRY.getByUrl('https://api.notion.com/v1/users/me')).toBe(NOTION);
     });
 
+    it('should find WordPressCom by API URL', () => {
+      expect(REGISTRY.getByUrl('https://public-api.wordpress.com/rest/v1.1/me')).toBe(WORDPRESSCOM);
+    });
+
     it('should return null for unknown URL', () => {
       expect(REGISTRY.getByUrl('https://example.com/api')).toBeNull();
     });
@@ -92,7 +109,7 @@ describe('Registry', () => {
 
   describe('services', () => {
     it('should contain all services', () => {
-      expect(REGISTRY.services).toHaveLength(7);
+      expect(REGISTRY.services).toHaveLength(8);
       expect(REGISTRY.services).toContain(SLACK);
       expect(REGISTRY.services).toContain(DISCORD);
       expect(REGISTRY.services).toContain(GITHUB);
@@ -100,6 +117,7 @@ describe('Registry', () => {
       expect(REGISTRY.services).toContain(LINEAR);
       expect(REGISTRY.services).toContain(NOTION);
       expect(REGISTRY.services).toContain(GOOGLE);
+      expect(REGISTRY.services).toContain(WORDPRESSCOM);
     });
   });
 

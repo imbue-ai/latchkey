@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Browser, BrowserContext, Page, Locator, LaunchOptions } from 'playwright';
 import { chromium } from 'playwright';
+import { CONFIG } from './config.js';
 import { EncryptedStorage } from './encryptedStorage.js';
 
 export interface BrowserWithContext {
@@ -65,16 +66,32 @@ export async function withTempBrowserContext<T>(
     };
     const context = await browser.newContext(contextOptions);
 
-    const result = await callback({ browser, context });
+    try {
+      const result = await callback({ browser, context });
 
-    // Persist browser state back to encrypted storage
-    if (options.browserStatePath) {
-      await context.storageState({ path: tempFilePath });
-      const content = readFileSync(tempFilePath, 'utf-8');
-      encryptedStorage.writeFile(options.browserStatePath, content);
+      // Persist browser state back to encrypted storage
+      if (options.browserStatePath) {
+        await context.storageState({ path: tempFilePath });
+        const content = readFileSync(tempFilePath, 'utf-8');
+        encryptedStorage.writeFile(options.browserStatePath, content);
+      }
+
+      return result;
+    } catch (error: unknown) {
+      // If LATCHKEY_KEEP_BROWSER_OPEN is set, keep the browser open for debugging
+      if (CONFIG.keepBrowserOpen) {
+        console.error('\nError occurred during browser automation:');
+        console.error(error);
+        console.error(
+          '\nBrowser will remain open for debugging. Press Ctrl+C when done to exit.\n'
+        );
+        // Wait indefinitely - user will manually close with Ctrl+C
+        await new Promise(() => {
+          // Never resolves
+        });
+      }
+      throw error;
     }
-
-    return result;
   } finally {
     await browser.close();
     try {

@@ -8,8 +8,8 @@ import { LoginCancelledError, LoginFailedError } from './services/base.js';
 
 export interface OAuthTokenResponse {
   access_token: string;
-  refresh_token: string;
-  expires_in: number;
+  refresh_token?: string;
+  expires_in?: number;
   token_type: string;
 }
 
@@ -37,15 +37,16 @@ export interface OAuthCallbackServer {
 /**
  * Start a temporary HTTP server to receive OAuth callback.
  * Returns the assigned port and a promise that resolves with the authorization code.
- * The server uses port 0 to get an auto-assigned available port.
  * @param timeoutMs - Timeout in milliseconds
  * @param signal - Optional AbortSignal to cancel the server early
  * @param callbackPath - Path to listen for OAuth callback (default: '/oauth2callback')
+ * @param port - Port to listen on (default: 0 for auto-assign)
  */
 export function startOAuthCallbackServer(
   timeoutMs: number,
   signal?: AbortSignal,
-  callbackPath = '/oauth2callback'
+  callbackPath = '/oauth2callback',
+  port = 0
 ): Promise<OAuthCallbackServer> {
   const server = http.createServer();
 
@@ -54,7 +55,7 @@ export function startOAuthCallbackServer(
       rejectServer(error);
     });
 
-    server.listen(0, 'localhost', () => {
+    server.listen(port, 'localhost', () => {
       const address = server.address();
       if (address === null || typeof address === 'string') {
         server.close();
@@ -176,8 +177,10 @@ export function exchangeCodeForTokens(
 
   try {
     const response = JSON.parse(result.stdout) as OAuthTokenResponse;
-    if (!response.access_token || !response.refresh_token) {
-      throw new OAuthTokenExchangeError('Token response missing access_token or refresh_token.');
+    if (!response.access_token) {
+      throw new OAuthTokenExchangeError(
+        `Token response missing access_token. Response body: ${result.stdout}`
+      );
     }
     return response;
   } catch (error: unknown) {

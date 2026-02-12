@@ -104,6 +104,22 @@ The following environment variables can be set for development and debugging:
 
 - `LATCHKEY_DISABLE_SPINNER=1`: Disables the spinner overlay that normally hides browser activity during credential finalization. Useful for debugging browser automation sequences.
 
+- `LATCHKEY_KEEP_BROWSER_OPEN=1`: Keeps the browser window open when an error occurs during any browser automation operation (e.g., service preparation or login). This allows you to inspect the page state, test selectors in the browser console, and manually debug what went wrong. The process will wait indefinitely until you press Ctrl+C. Particularly useful when debugging selector timeouts or form automation issues.
+
+  Example usage:
+  ```bash
+  LATCHKEY_KEEP_BROWSER_OPEN=1 npx tsx src/cli.ts prepare wordpressCom
+  LATCHKEY_KEEP_BROWSER_OPEN=1 npx tsx src/cli.ts login google
+  LATCHKEY_KEEP_BROWSER_OPEN=1 npx tsx src/cli.ts prepare <any-service>
+  ```
+
+  When an error occurs, you can:
+  - Inspect the current page state in the browser
+  - Open DevTools and test selectors in the console (e.g., `document.querySelector('#title')`)
+  - Manually interact with the page to understand what went wrong
+  - Check for timing issues or dynamic content loading
+  - Test alternative selectors before updating the code
+
 
 ## Style guidelines
 

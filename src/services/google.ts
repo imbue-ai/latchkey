@@ -391,6 +391,13 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
         clientSecret,
         redirectUri
       );
+
+      if (!tokens.refresh_token || !tokens.expires_in) {
+        throw new LoginFailedError(
+          'Google token response missing required fields (refresh_token or expires_in)'
+        );
+      }
+
       const accessTokenExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
       // Google refresh tokens typically don't expire, so we don't set refreshTokenExpiresAt
@@ -498,7 +505,7 @@ export class Google implements Service {
       apiCredentials.clientSecret
     );
 
-    if (tokens === null) {
+    if (!tokens?.expires_in) {
       return Promise.resolve(null);
     }
 
