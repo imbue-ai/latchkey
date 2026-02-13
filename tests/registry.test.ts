@@ -9,6 +9,18 @@ import {
   NOTION,
   GOOGLE,
   MAILCHIMP,
+  GITLAB,
+  ZOOM,
+  TELEGRAM,
+  WHATSAPP,
+  SENTRY,
+  AWS,
+  STRIPE,
+  FIGMA,
+  GOOGLE_ANALYTICS,
+  CALENDLY,
+  GOOGLE_MAPS,
+  YELP,
 } from '../src/services/index.js';
 
 describe('Registry', () => {
@@ -117,7 +129,7 @@ describe('Registry', () => {
 
   describe('services', () => {
     it('should contain all services', () => {
-      expect(REGISTRY.services).toHaveLength(8);
+      expect(REGISTRY.services).toHaveLength(20);
       expect(REGISTRY.services).toContain(SLACK);
       expect(REGISTRY.services).toContain(DISCORD);
       expect(REGISTRY.services).toContain(GITHUB);
@@ -126,6 +138,18 @@ describe('Registry', () => {
       expect(REGISTRY.services).toContain(NOTION);
       expect(REGISTRY.services).toContain(GOOGLE);
       expect(REGISTRY.services).toContain(MAILCHIMP);
+      expect(REGISTRY.services).toContain(GITLAB);
+      expect(REGISTRY.services).toContain(ZOOM);
+      expect(REGISTRY.services).toContain(TELEGRAM);
+      expect(REGISTRY.services).toContain(WHATSAPP);
+      expect(REGISTRY.services).toContain(SENTRY);
+      expect(REGISTRY.services).toContain(AWS);
+      expect(REGISTRY.services).toContain(STRIPE);
+      expect(REGISTRY.services).toContain(FIGMA);
+      expect(REGISTRY.services).toContain(GOOGLE_ANALYTICS);
+      expect(REGISTRY.services).toContain(CALENDLY);
+      expect(REGISTRY.services).toContain(GOOGLE_MAPS);
+      expect(REGISTRY.services).toContain(YELP);
     });
   });
 
