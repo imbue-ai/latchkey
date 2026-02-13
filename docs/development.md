@@ -78,6 +78,22 @@ Every service must include an `info` property that provides developer notes. Thi
 
 ### Potentially useful helpers
 
+#### Codegen
+
+Use this tool to record a full session where you log into a service and generate an API key:
+
+```
+npx tsx scripts/codegen.ts <service_name> <initial_url>
+```
+
+This tool combines both the request/response recorder (see below) and Playwright's own codegen functionality.
+
+You can still use Playwright's own codegen if this tool is not sufficient:
+
+```
+npx playwright codegen --target=javascript https://login-page.example.com/
+```
+
 #### Request / response recorder
 
 Use this to record the request/response pairs of your browser
@@ -107,15 +123,6 @@ To do that, you can use `scripts/cryptFile.ts`. For example:
 npx tsx scripts/cryptFile.ts decrypt ~/.latchkey/credentials.json.enc
 ```
 
-
-#### Browser automation recorder
-
-When automating the browser login follow-up, you can sometimes
-use Playwright's codegen functionality, for example:
-
-```
-npx playwright codegen --target=javascript https://login-page.example.com/
-```
 
 
 ## Environment variables
