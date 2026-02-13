@@ -7,10 +7,6 @@ import { ApiCredentialStatus, ApiCredentials, SlackApiCredentials } from '../api
 import { runCaptured } from '../curl.js';
 import { Service, SimpleServiceSession } from './base.js';
 
-/**
- * Slack requires custom credential checking because the Slack API returns
- * 200 OK with JSON containing `ok: false` for invalid credentials.
- */
 
 class SlackServiceSession extends SimpleServiceSession {
   private pendingDCookie: string | null = null;

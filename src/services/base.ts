@@ -48,9 +48,6 @@ function isTimeoutError(error: Error): boolean {
 
 /**
  * Abstract base class for services that latchkey can authenticate with.
- * Provides default checkApiCredentials implementation using HTTP status code check:
- * returns Valid if 200, Missing if credentials lack required components
- * (e.g., OAuth without access token), Invalid otherwise.
  */
 export abstract class Service {
   abstract readonly name: string;
