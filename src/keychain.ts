@@ -90,16 +90,3 @@ export function deleteFromKeychain(serviceName: string, accountName: string): bo
     throw new KeychainNotAvailableError(`Failed to delete password from keychain: ${errorMessage}`);
   }
 }
-
-/**
- * Check if the system keychain is available.
- */
-export function isKeychainAvailable(serviceName: string, accountName: string): boolean {
-  try {
-    // Try to create an entry - this should work on all supported platforms
-    getEntry(serviceName, accountName);
-    return true;
-  } catch {
-    return false;
-  }
-}

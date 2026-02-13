@@ -12,12 +12,7 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'no
 import { dirname } from 'node:path';
 import { DEFAULT_KEYRING_SERVICE_NAME, DEFAULT_KEYRING_ACCOUNT_NAME } from './config.js';
 import { encrypt, decrypt, generateKey, DecryptionError } from './encryption.js';
-import {
-  isKeychainAvailable,
-  retrieveFromKeychain,
-  storeInKeychain,
-  KeychainNotAvailableError,
-} from './keychain.js';
+import { retrieveFromKeychain, storeInKeychain, KeychainNotAvailableError } from './keychain.js';
 
 const ENCRYPTED_FILE_PREFIX = 'LATCHKEY_ENCRYPTED:';
 
@@ -60,15 +55,6 @@ export class EncryptedStorage {
     const serviceName = options.serviceName ?? DEFAULT_KEYRING_SERVICE_NAME;
     const accountName = options.accountName ?? DEFAULT_KEYRING_ACCOUNT_NAME;
 
-    // Check if keychain is available
-    if (!isKeychainAvailable(serviceName, accountName)) {
-      throw new EncryptedStorageError(
-        'No encryption key available. ' +
-          'Set LATCHKEY_ENCRYPTION_KEY or ensure system keychain is accessible.'
-      );
-    }
-
-    // Try to retrieve from keychain
     try {
       const keychainKey = retrieveFromKeychain(serviceName, accountName);
       if (keychainKey) {

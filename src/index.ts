@@ -25,7 +25,6 @@ export {
   storeInKeychain,
   retrieveFromKeychain,
   deleteFromKeychain,
-  isKeychainAvailable,
   KeychainError,
   KeychainNotAvailableError,
 } from './keychain.js';

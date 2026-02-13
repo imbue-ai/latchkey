@@ -23,7 +23,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { CONFIG } from '../src/config.js';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { encrypt, generateKey } from '../src/encryption.js';
-import { isKeychainAvailable, retrieveFromKeychain } from '../src/keychain.js';
+import { retrieveFromKeychain, KeychainNotAvailableError } from '../src/keychain.js';
 
 const ENCRYPTED_FILE_PREFIX = 'LATCHKEY_ENCRYPTED:';
 
@@ -34,10 +34,14 @@ function getEncryptionKey(): string {
   }
 
   // 2. Check keychain
-  if (isKeychainAvailable(CONFIG.serviceName, CONFIG.accountName)) {
+  try {
     const keychainKey = retrieveFromKeychain(CONFIG.serviceName, CONFIG.accountName);
     if (keychainKey) {
       return keychainKey;
+    }
+  } catch (error) {
+    if (!(error instanceof KeychainNotAvailableError)) {
+      throw error;
     }
   }
 
