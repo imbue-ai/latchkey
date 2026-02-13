@@ -20,7 +20,7 @@ requests to known public APIs.
 - `latchkey curl <arguments>`
 	- Automatically inject credentials to your otherwise standard curl calls to public APIs.
 	- Credentials must already exist (see below).
-- `latchkey auth insert <service_name> <curl_arguments>`
+- `latchkey auth set <service_name> <curl_arguments>`
 	- Manually store credentials for a service in the form of arbitrary curl arguments.
 - `latchkey auth browser <service_name>`
 	- Open a browser login pop-up window and store the resulting API credentials.
@@ -126,7 +126,7 @@ stores the credentials so that they can be reused.
 Alternatively, you can provide credentials manually:
 
 ```
-latchkey auth insert slack -H "Authorization: Bearer xoxb-your-token"
+latchkey auth set slack -H "Authorization: Bearer xoxb-your-token"
 ```
 
 `latchkey curl` passes your arguments straight through to `curl`
@@ -173,7 +173,7 @@ latchkey auth browser discord
 Or alternatively:
 
 ```
-latchkey auth insert discord -H "Authorization: ..."
+latchkey auth set discord -H "Authorization: ..."
 ```
 
 

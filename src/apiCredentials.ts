@@ -145,7 +145,7 @@ export class SlackApiCredentials implements ApiCredentials {
 
 /**
  * Raw curl arguments stored directly as credentials.
- * Allows users to manually insert arbitrary curl arguments for a service.
+ * Allows users to manually set arbitrary curl arguments for a service.
  */
 export const RawCurlCredentialsSchema = z.object({
   objectType: z.literal('rawCurl'),

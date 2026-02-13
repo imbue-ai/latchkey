@@ -29,8 +29,8 @@ then use the version you just built.
 
 Services in Latchkey come in two tiers:
 
-- With basic support that requires users to directly insert
-API credentials via `latchkey auth insert`.
+- With basic support that requires users to directly set
+API credentials via `latchkey auth set`.
 - With support for browser-based authentication.
 
 ### Basic support

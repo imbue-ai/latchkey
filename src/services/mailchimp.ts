@@ -11,7 +11,7 @@ export class Mailchimp extends Service {
   readonly info =
     'https://mailchimp.com/developer/marketing/api/. ' +
     'Browser-based authentication is not supported. ' +
-    'Use `latchkey auth insert mailchimp -H "Authorization: Bearer <token>"` to add credentials manually.';
+    'Use `latchkey auth set mailchimp -H "Authorization: Bearer <token>"` to add credentials manually.';
 
   readonly credentialCheckCurlArguments = ['https://login.mailchimp.com/oauth2/metadata'] as const;
 }

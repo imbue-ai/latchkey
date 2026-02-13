@@ -268,7 +268,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
 
       // Login options
       const supportsBrowser = service.getSession !== undefined && !deps.config.browserDisabled;
-      const authOptions = supportsBrowser ? ['browser', 'insert'] : ['insert'];
+      const authOptions = supportsBrowser ? ['browser', 'set'] : ['set'];
 
       // Credentials status
       const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
@@ -339,12 +339,12 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     });
 
   authCommand
-    .command('insert')
+    .command('set')
     .description('Store credentials for a service in the form of arbitrary curl arguments.')
     .argument('<service_name>', 'Name of the service to store credentials for')
     .addHelpText(
       'after',
-      `\nExample:\n  $ latchkey auth insert slack -H "Authorization: Bearer xoxb-your-token"`
+      `\nExample:\n  $ latchkey auth set slack -H "Authorization: Bearer xoxb-your-token"`
     )
     .allowUnknownOption()
     .allowExcessArguments()
@@ -367,7 +367,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           "Error: Arguments don't look like valid curl options (expected at least one switch starting with '-')."
         );
         deps.errorLog(
-          `Example: latchkey auth insert ${serviceName} -H "Authorization: Bearer <token>"`
+          `Example: latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`
         );
         deps.exit(1);
       }
@@ -519,7 +519,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       if (apiCredentials === null) {
         deps.errorLog(`Error: No credentials found for ${service.name}.`);
         deps.errorLog(
-          `Run 'latchkey auth browser ${service.name}' or 'latchkey auth insert ${service.name}' first.`
+          `Run 'latchkey auth browser ${service.name}' or 'latchkey auth set ${service.name}' first.`
         );
         deps.exit(1);
       }
@@ -530,7 +530,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         if (apiCredentials.isExpired() === true) {
           deps.errorLog(`Error: Credentials for ${service.name} are expired.`);
           deps.errorLog(
-            `Run 'latchkey auth browser ${service.name}' or 'latchkey auth insert ${service.name}' to refresh them.`
+            `Run 'latchkey auth browser ${service.name}' or 'latchkey auth set ${service.name}' to refresh them.`
           );
           deps.exit(1);
         }
