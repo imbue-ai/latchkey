@@ -7,7 +7,6 @@ import { ApiCredentialStatus, ApiCredentials, SlackApiCredentials } from '../api
 import { runCaptured } from '../curl.js';
 import { Service, SimpleServiceSession } from './base.js';
 
-
 class SlackServiceSession extends SimpleServiceSession {
   private pendingDCookie: string | null = null;
 
