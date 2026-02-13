@@ -141,10 +141,8 @@ of `latchkey`.
 
 ### Remembering API credentials
 
-Your API credentials and browser state are stored by default
-under `~/.latchkey`. When a functioning keyring is detected
-(which is the case on most systems), the data is properly
-encrypted.
+Your API credentials and browser state are encrypted and stored
+by default under `~/.latchkey`.
 
 
 ### Inspecting the status of stored credentials
