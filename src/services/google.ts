@@ -417,7 +417,8 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
       // Google refresh tokens typically don't expire, so we don't set refreshTokenExpiresAt
       return {
         accessToken: tokens.access_token,
-        refreshToken: tokens.refresh_token,
+        // exchangeCodeForTokens() guarantees refresh_token is present
+        refreshToken: tokens.refresh_token!,
         accessTokenExpiresAt,
       };
     } catch (error: unknown) {
@@ -482,7 +483,7 @@ export class Google extends Service {
         apiCredentials.clientId,
         apiCredentials.clientSecret,
         tokens.access_token,
-        tokens.refresh_token,
+        tokens.refresh_token ?? apiCredentials.refreshToken,
         accessTokenExpiresAt,
         apiCredentials.refreshTokenExpiresAt
       )
