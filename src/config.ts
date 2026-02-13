@@ -6,7 +6,6 @@ import { accessSync, constants, existsSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { delimiter, isAbsolute, join, resolve } from 'node:path';
 import { getDefaultConfigPath } from './browserConfig.js';
-import { isKeychainAvailable } from './keychain.js';
 
 export class InsecureFilePermissionsError extends Error {
   constructor(filePath: string, permissions: number) {
@@ -37,14 +36,12 @@ const LATCHKEY_DISABLE_BROWSER_ENV_VAR = 'LATCHKEY_DISABLE_BROWSER';
 export const DEFAULT_KEYRING_SERVICE_NAME = 'latchkey';
 export const DEFAULT_KEYRING_ACCOUNT_NAME = 'encryption-key';
 
-function getDefaultCredentialStorePath(encryptionEnabled: boolean): string {
-  const filename = encryptionEnabled ? 'credentials.json.enc' : 'credentials.json';
-  return join(homedir(), '.latchkey', filename);
+function getDefaultCredentialStorePath(): string {
+  return join(homedir(), '.latchkey', 'credentials.json.enc');
 }
 
-function getDefaultBrowserStatePath(encryptionEnabled: boolean): string {
-  const filename = encryptionEnabled ? 'browser_state.json.enc' : 'browser_state.json';
-  return join(homedir(), '.latchkey', filename);
+function getDefaultBrowserStatePath(): string {
+  return join(homedir(), '.latchkey', 'browser_state.json.enc');
 }
 
 function resolvePathWithTildeExpansion(path: string): string {
@@ -114,20 +111,15 @@ export class Config {
     const browserDisabledEnv = getEnv(LATCHKEY_DISABLE_BROWSER_ENV_VAR);
     this.browserDisabled = browserDisabledEnv !== undefined && browserDisabledEnv !== '';
 
-    // Determine if encryption will be enabled (either via key override or keychain)
-    const encryptionEnabled =
-      this.encryptionKeyOverride !== null ||
-      isKeychainAvailable(this.serviceName, this.accountName);
-
     const credentialStoreEnv = getEnv(LATCHKEY_STORE_ENV_VAR);
     this.credentialStorePath = credentialStoreEnv
       ? resolvePathWithTildeExpansion(credentialStoreEnv)
-      : getDefaultCredentialStorePath(encryptionEnabled);
+      : getDefaultCredentialStorePath();
 
     const browserStateEnv = getEnv(LATCHKEY_BROWSER_STATE_ENV_VAR);
     this.browserStatePath = browserStateEnv
       ? resolvePathWithTildeExpansion(browserStateEnv)
-      : getDefaultBrowserStatePath(encryptionEnabled);
+      : getDefaultBrowserStatePath();
 
     const configEnv = getEnv(LATCHKEY_CONFIG_ENV_VAR);
     this.configPath = configEnv ? resolvePathWithTildeExpansion(configEnv) : getDefaultConfigPath();

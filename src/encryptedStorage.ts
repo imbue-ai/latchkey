@@ -5,19 +5,14 @@
  * 2. System keychain
  * 3. Generated and stored in keychain (first run)
  *
- * Falls back to unencrypted storage with chmod 600 if keychain is unavailable.
+ * Throws if neither a system keychain nor LATCHKEY_ENCRYPTION_KEY is available.
  */
 
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DEFAULT_KEYRING_SERVICE_NAME, DEFAULT_KEYRING_ACCOUNT_NAME } from './config.js';
 import { encrypt, decrypt, generateKey, DecryptionError } from './encryption.js';
-import {
-  isKeychainAvailable,
-  retrieveFromKeychain,
-  storeInKeychain,
-  KeychainNotAvailableError,
-} from './keychain.js';
+import { retrieveFromKeychain, storeInKeychain, KeychainNotAvailableError } from './keychain.js';
 
 const ENCRYPTED_FILE_PREFIX = 'LATCHKEY_ENCRYPTED:';
 
@@ -45,13 +40,13 @@ export interface EncryptedStorageOptions {
  * Manages encrypted file storage with automatic key handling.
  */
 export class EncryptedStorage {
-  private readonly key: string | null;
+  private readonly key: string;
 
   constructor(options: EncryptedStorageOptions = {}) {
     this.key = EncryptedStorage.initializeKey(options);
   }
 
-  private static initializeKey(options: EncryptedStorageOptions): string | null {
+  private static initializeKey(options: EncryptedStorageOptions): string {
     // If key was provided via override, use it
     if (options.encryptionKeyOverride !== undefined && options.encryptionKeyOverride !== null) {
       return options.encryptionKeyOverride;
@@ -60,12 +55,6 @@ export class EncryptedStorage {
     const serviceName = options.serviceName ?? DEFAULT_KEYRING_SERVICE_NAME;
     const accountName = options.accountName ?? DEFAULT_KEYRING_ACCOUNT_NAME;
 
-    // Check if keychain is available
-    if (!isKeychainAvailable(serviceName, accountName)) {
-      return null;
-    }
-
-    // Try to retrieve from keychain
     try {
       const keychainKey = retrieveFromKeychain(serviceName, accountName);
       if (keychainKey) {
@@ -78,15 +67,13 @@ export class EncryptedStorage {
       return newKey;
     } catch (error) {
       if (error instanceof KeychainNotAvailableError) {
-        // Fall back to unencrypted storage
-        return null;
+        throw new EncryptedStorageError(
+          'No encryption key available. ' +
+            'Set LATCHKEY_ENCRYPTION_KEY or ensure system keychain is accessible.'
+        );
       }
       throw error;
     }
-  }
-
-  private isEncryptionEnabled(): boolean {
-    return this.key !== null;
   }
 
   /**
@@ -104,30 +91,24 @@ export class EncryptedStorage {
 
     const content = readFileSync(filePath, 'utf-8');
 
-    // Check if the file is encrypted
-    if (content.startsWith(ENCRYPTED_FILE_PREFIX)) {
-      if (this.key === null) {
-        throw new EncryptedStorageError(
-          'File is encrypted but a key is not available. ' +
-            'Set LATCHKEY_ENCRYPTION_KEY or ensure system keychain is accessible.'
-        );
-      }
-
-      const encryptedData = content.slice(ENCRYPTED_FILE_PREFIX.length);
-      try {
-        return decrypt(encryptedData, this.key);
-      } catch (error) {
-        if (error instanceof DecryptionError) {
-          throw new EncryptedStorageError(
-            `Failed to decrypt file: ${error.message}. ` + 'The encryption key may have changed.'
-          );
-        }
-        throw error;
-      }
+    if (!content.startsWith(ENCRYPTED_FILE_PREFIX)) {
+      throw new EncryptedStorageError(
+        `File is not encrypted: ${filePath}. ` +
+          'Latchkey requires all stored data to be encrypted.'
+      );
     }
 
-    // File is not encrypted (fallback mode when keychain unavailable)
-    return content;
+    const encryptedData = content.slice(ENCRYPTED_FILE_PREFIX.length);
+    try {
+      return decrypt(encryptedData, this.key);
+    } catch (error) {
+      if (error instanceof DecryptionError) {
+        throw new EncryptedStorageError(
+          `Failed to decrypt file: ${error.message}. ` + 'The encryption key may have changed.'
+        );
+      }
+      throw error;
+    }
   }
 
   /**
@@ -147,14 +128,8 @@ export class EncryptedStorage {
       }
     }
 
-    let dataToWrite: string;
-    if (this.key !== null) {
-      const encryptedData = encrypt(content, this.key);
-      dataToWrite = ENCRYPTED_FILE_PREFIX + encryptedData;
-    } else {
-      // Fallback to unencrypted storage
-      dataToWrite = content;
-    }
+    const encryptedData = encrypt(content, this.key);
+    const dataToWrite = ENCRYPTED_FILE_PREFIX + encryptedData;
 
     writeFileSync(filePath, dataToWrite, { encoding: 'utf-8', mode: 0o600 });
   }
