@@ -6,7 +6,7 @@ import type { Command } from 'commander';
 import { existsSync, unlinkSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { ApiCredentialStore } from './apiCredentialStore.js';
-import { ApiCredentialStatus, ApiCredentials } from './apiCredentials.js';
+import { ApiCredentialStatus, ApiCredentials, RawCurlCredentials } from './apiCredentials.js';
 import {
   BROWSER_SOURCES,
   BrowserNotFoundError,
@@ -16,10 +16,11 @@ import {
   type BrowserSource,
 } from './browserConfig.js';
 import { Config, CONFIG } from './config.js';
+import { BrowserDisabledError, BrowserFlowsNotSupportedError } from './playwrightUtils.js';
 import type { CurlResult } from './curl.js';
 import { EncryptedStorage } from './encryptedStorage.js';
 import { Registry, REGISTRY } from './registry.js';
-import { LoginCancelledError, LoginFailedError, Service } from './services/index.js';
+import { LoginCancelledError, LoginFailedError, type Service } from './services/index.js';
 import { run as curlRun } from './curl.js';
 import { getSkillMdContent } from './skillMd.js';
 
@@ -41,6 +42,18 @@ async function maybeRefreshCredentials(
     return refreshedCredentials;
   }
   return apiCredentials;
+}
+
+async function getCredentialStatus(
+  service: Service,
+  credentials: ApiCredentials | null,
+  apiCredentialStore: ApiCredentialStore
+): Promise<ApiCredentialStatus> {
+  if (credentials === null) {
+    return ApiCredentialStatus.Missing;
+  }
+  const refreshed = await maybeRefreshCredentials(service, credentials, apiCredentialStore);
+  return service.checkApiCredentials(refreshed);
 }
 
 // Curl flags that don't affect the HTTP request semantics but may not be supported by URL extraction.
@@ -175,7 +188,7 @@ function clearService(deps: CliDependencies, serviceName: string): void {
   const service = deps.registry.getByName(serviceName);
   if (service === null) {
     deps.errorLog(`Error: Unknown service: ${serviceName}`);
-    deps.errorLog("Use 'latchkey services' to see available services.");
+    deps.errorLog("Use 'latchkey services list' to see available services.");
     deps.exit(1);
   }
 
@@ -194,13 +207,26 @@ function clearService(deps: CliDependencies, serviceName: string): void {
 }
 
 /**
+ * Check if browser login is disabled via environment variable.
+ * Exits with error if LATCHKEY_DISABLE_BROWSER is set.
+ */
+function checkBrowserNotDisabledOrExit(deps: CliDependencies): void {
+  if (deps.config.browserDisabled) {
+    deps.errorLog(new BrowserDisabledError().message);
+    deps.exit(1);
+  }
+}
+
+/**
  * Get the browser launch options from configuration, handling errors with CLI output.
- * Exits with error if no valid browser config exists.
+ * Exits with error if no valid browser config exists or if browser is disabled.
  */
 function getBrowserLaunchOptionsOrExit(deps: CliDependencies): {
   browserStatePath: string;
   executablePath: string;
 } {
+  checkBrowserNotDisabledOrExit(deps);
+
   const browserConfig = loadBrowserConfig(deps.config.configPath);
   if (!browserConfig) {
     deps.errorLog("Error: No browser configured. Run 'latchkey ensure-browser' first.");
@@ -216,27 +242,303 @@ function getBrowserLaunchOptionsOrExit(deps: CliDependencies): {
  * Register all CLI commands on the given program.
  */
 export function registerCommands(program: Command, deps: CliDependencies): void {
-  program
+  const servicesCommand = program
     .command('services')
-    .description('List known and supported third-party services.')
+    .description('Manage and inspect supported services.');
+
+  servicesCommand
+    .command('list')
+    .description('List all supported services.')
     .action(() => {
       const serviceNames = deps.registry.services.map((service) => service.name);
-      deps.log(serviceNames.join(' '));
+      deps.log(JSON.stringify(serviceNames, null, 2));
     });
 
-  program
+  servicesCommand
     .command('info')
-    .description('Show developer notes about a service.')
+    .description('Show information about a service.')
     .argument('<service_name>', 'Name of the service to get info for')
-    .action((serviceName: string) => {
+    .action(async (serviceName: string) => {
       const service = deps.registry.getByName(serviceName);
       if (service === null) {
         deps.errorLog(`Error: Unknown service: ${serviceName}`);
-        deps.errorLog("Use 'latchkey services' to see available services.");
+        deps.errorLog("Use 'latchkey services list' to see available services.");
         deps.exit(1);
       }
 
-      deps.log(service.info);
+      // Login options
+      const supportsBrowser = service.getSession !== undefined && !deps.config.browserDisabled;
+      const authOptions = supportsBrowser ? ['browser', 'set'] : ['set'];
+
+      // Credentials status
+      const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
+      const apiCredentialStore = new ApiCredentialStore(
+        deps.config.credentialStorePath,
+        encryptedStorage
+      );
+      const apiCredentials = apiCredentialStore.get(serviceName);
+      const credentialStatus = await getCredentialStatus(
+        service,
+        apiCredentials,
+        apiCredentialStore
+      );
+
+      const info = {
+        authOptions,
+        credentialStatus,
+        developerNotes: service.info,
+      };
+      deps.log(JSON.stringify(info, null, 2));
+    });
+
+  const authCommand = program.command('auth').description('Manage authentication credentials.');
+
+  authCommand
+    .command('clear')
+    .description('Clear stored API credentials.')
+    .argument('[service_name]', 'Name of the service to clear API credentials for')
+    .option('-y, --yes', 'Skip confirmation prompt when clearing all data')
+    .action(async (serviceName: string | undefined, options: { yes?: boolean }) => {
+      if (serviceName === undefined) {
+        await clearAll(deps, options.yes ?? false);
+      } else {
+        clearService(deps, serviceName);
+      }
+    });
+
+  authCommand
+    .command('list')
+    .description('List all stored credentials and their status.')
+    .action(async () => {
+      const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
+      const apiCredentialStore = new ApiCredentialStore(
+        deps.config.credentialStorePath,
+        encryptedStorage
+      );
+
+      const allCredentials = apiCredentialStore.getAll();
+      const entries: Record<
+        string,
+        { credentialType: string; credentialStatus: ApiCredentialStatus }
+      > = {};
+
+      for (const [serviceName, credentials] of allCredentials) {
+        const service = deps.registry.getByName(serviceName);
+        const credentialStatus =
+          service !== null
+            ? await getCredentialStatus(service, credentials, apiCredentialStore)
+            : ApiCredentialStatus.Valid;
+
+        entries[serviceName] = {
+          credentialType: credentials.objectType,
+          credentialStatus,
+        };
+      }
+
+      deps.log(JSON.stringify(entries, null, 2));
+    });
+
+  authCommand
+    .command('set')
+    .description('Store credentials for a service in the form of arbitrary curl arguments.')
+    .argument('<service_name>', 'Name of the service to store credentials for')
+    .addHelpText(
+      'after',
+      `\nExample:\n  $ latchkey auth set slack -H "Authorization: Bearer xoxb-your-token"`
+    )
+    .allowUnknownOption()
+    .allowExcessArguments()
+    .action((_serviceName: string, _options: unknown, command: { args: string[] }) => {
+      const [serviceName, ...curlArguments] = command.args;
+      if (serviceName === undefined) {
+        deps.errorLog('Error: Service name is required.');
+        deps.exit(1);
+      }
+
+      const service = deps.registry.getByName(serviceName);
+      if (service === null) {
+        deps.errorLog(`Error: Unknown service: ${serviceName}`);
+        deps.errorLog("Use 'latchkey services list' to see available services.");
+        deps.exit(1);
+      }
+
+      if (!curlArguments.some((argument) => argument.startsWith('-'))) {
+        deps.errorLog(
+          "Error: Arguments don't look like valid curl options (expected at least one switch starting with '-')."
+        );
+        deps.errorLog(
+          `Example: latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`
+        );
+        deps.exit(1);
+      }
+
+      const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
+      const apiCredentialStore = new ApiCredentialStore(
+        deps.config.credentialStorePath,
+        encryptedStorage
+      );
+
+      const credentials = new RawCurlCredentials(curlArguments);
+      apiCredentialStore.save(serviceName, credentials);
+      deps.log('Credentials stored.');
+    });
+
+  authCommand
+    .command('browser')
+    .description('Login to a service via the browser and store the API credentials.')
+    .argument('<service_name>', 'Name of the service to login to')
+    .action(async (serviceName: string) => {
+      const service = deps.registry.getByName(serviceName);
+      if (service === null) {
+        deps.errorLog(`Error: Unknown service: ${serviceName}`);
+        deps.errorLog("Use 'latchkey services list' to see available services.");
+        deps.exit(1);
+      }
+
+      const session = service.getSession?.();
+      if (!session) {
+        deps.errorLog(new BrowserFlowsNotSupportedError(service.name).message);
+        deps.exit(1);
+      }
+
+      const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
+      const apiCredentialStore = new ApiCredentialStore(
+        deps.config.credentialStorePath,
+        encryptedStorage
+      );
+
+      const oldCredentials = apiCredentialStore.get(service.name);
+      if (session.prepare && oldCredentials === null) {
+        deps.errorLog(`Error: Service ${serviceName} requires preparation first.`);
+        deps.errorLog(`Run 'latchkey auth browser-prepare ${serviceName}' before logging in.`);
+        deps.exit(1);
+      }
+      const launchOptions = getBrowserLaunchOptionsOrExit(deps);
+
+      try {
+        const apiCredentials = await session.login(
+          encryptedStorage,
+          launchOptions,
+          oldCredentials ?? undefined
+        );
+        apiCredentialStore.save(service.name, apiCredentials);
+        deps.log('Done');
+      } catch (error) {
+        if (error instanceof LoginCancelledError) {
+          deps.errorLog('Login cancelled.');
+          deps.exit(1);
+        }
+        if (error instanceof LoginFailedError) {
+          deps.errorLog(error.message);
+          deps.exit(1);
+        }
+        throw error;
+      }
+    });
+
+  authCommand
+    .command('browser-prepare')
+    .description('Prepare a service to be used with the browser command.')
+    .argument('<service_name>', 'Name of the service to prepare')
+    .action(async (serviceName: string) => {
+      const service = deps.registry.getByName(serviceName);
+      if (service === null) {
+        deps.errorLog(`Error: Unknown service: ${serviceName}`);
+        deps.errorLog("Use 'latchkey services list' to see available services.");
+        deps.exit(1);
+      }
+
+      const session = service.getSession?.();
+      if (!session?.prepare) {
+        deps.log('This service does not require a preparation step.');
+        return;
+      }
+
+      const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
+      const apiCredentialStore = new ApiCredentialStore(
+        deps.config.credentialStorePath,
+        encryptedStorage
+      );
+
+      // Check if already prepared (credentials exist)
+      const existingCredentials = apiCredentialStore.get(service.name);
+      if (existingCredentials !== null) {
+        deps.log('Already prepared.');
+        return;
+      }
+
+      const launchOptions = getBrowserLaunchOptionsOrExit(deps);
+
+      try {
+        const apiCredentials = await session.prepare(encryptedStorage, launchOptions);
+        apiCredentialStore.save(service.name, apiCredentials);
+        deps.log('Done');
+      } catch (error) {
+        if (error instanceof LoginCancelledError) {
+          deps.errorLog('Preparation cancelled.');
+          deps.exit(1);
+        }
+        if (error instanceof LoginFailedError) {
+          deps.errorLog(error.message);
+          deps.exit(1);
+        }
+        throw error;
+      }
+    });
+
+  program
+    .command('curl')
+    .description('Run curl with API credential injection.')
+    .allowUnknownOption()
+    .allowExcessArguments()
+    .action(async (_options: unknown, command: { args: string[] }) => {
+      const curlArguments = command.args;
+
+      const url = extractUrlFromCurlArguments(curlArguments);
+      if (url === null) {
+        deps.errorLog('Error: Could not extract URL from curl arguments.');
+        deps.exit(1);
+      }
+
+      const service = deps.registry.getByUrl(url);
+      if (service === null) {
+        deps.errorLog(`Error: No service matches URL: ${url}`);
+        deps.exit(1);
+      }
+
+      const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
+      const apiCredentialStore = new ApiCredentialStore(
+        deps.config.credentialStorePath,
+        encryptedStorage
+      );
+      let apiCredentials: ApiCredentials | null = apiCredentialStore.get(service.name);
+
+      // Check if credentials exist but are expired
+      const isExpired = apiCredentials?.isExpired() === true;
+
+      if (apiCredentials === null) {
+        deps.errorLog(`Error: No credentials found for ${service.name}.`);
+        deps.errorLog(
+          `Run 'latchkey auth browser ${service.name}' or 'latchkey auth set ${service.name}' first.`
+        );
+        deps.exit(1);
+      }
+
+      if (isExpired) {
+        apiCredentials = await maybeRefreshCredentials(service, apiCredentials, apiCredentialStore);
+
+        if (apiCredentials.isExpired() === true) {
+          deps.errorLog(`Error: Credentials for ${service.name} are expired.`);
+          deps.errorLog(
+            `Run 'latchkey auth browser ${service.name}' or 'latchkey auth set ${service.name}' to refresh them.`
+          );
+          deps.exit(1);
+        }
+      }
+
+      const allArguments = [...apiCredentials.asCurlArguments(), ...curlArguments];
+      const result = deps.runCurl(allArguments);
+      deps.exit(result.returncode);
     });
 
   program
@@ -287,240 +589,5 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         }
         throw error;
       }
-    });
-
-  program
-    .command('clear')
-    .description('Clear stored API credentials.')
-    .argument('[service_name]', 'Name of the service to clear API credentials for')
-    .option('-y, --yes', 'Skip confirmation prompt when clearing all data')
-    .action(async (serviceName: string | undefined, options: { yes?: boolean }) => {
-      if (serviceName === undefined) {
-        await clearAll(deps, options.yes ?? false);
-      } else {
-        clearService(deps, serviceName);
-      }
-    });
-
-  program
-    .command('status')
-    .description('Check the API credential status for a service.')
-    .argument('[service_name]', 'Name of the service to check status for')
-    .action(async (serviceName: string | undefined) => {
-      const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
-      const apiCredentialStore = new ApiCredentialStore(
-        deps.config.credentialStorePath,
-        encryptedStorage
-      );
-
-      if (serviceName === undefined) {
-        for (const service of deps.registry.services) {
-          let apiCredentials = apiCredentialStore.get(service.name);
-          if (apiCredentials === null) {
-            deps.log(`${service.name}: ${ApiCredentialStatus.Missing}`);
-          } else {
-            apiCredentials = await maybeRefreshCredentials(
-              service,
-              apiCredentials,
-              apiCredentialStore
-            );
-            const status = service.checkApiCredentials(apiCredentials);
-            deps.log(`${service.name}: ${status}`);
-          }
-        }
-        return;
-      }
-
-      const service = deps.registry.getByName(serviceName);
-      if (service === null) {
-        deps.errorLog(`Error: Unknown service: ${serviceName}`);
-        deps.errorLog("Use 'latchkey services' to see available services.");
-        deps.exit(1);
-      }
-
-      let apiCredentials = apiCredentialStore.get(serviceName);
-
-      if (apiCredentials === null) {
-        deps.log(ApiCredentialStatus.Missing);
-        return;
-      }
-
-      apiCredentials = await maybeRefreshCredentials(service, apiCredentials, apiCredentialStore);
-
-      const apiCredentialStatus = service.checkApiCredentials(apiCredentials);
-      deps.log(apiCredentialStatus);
-    });
-
-  program
-    .command('login')
-    .description('Login to a service and store the API credentials.')
-    .argument('<service_name>', 'Name of the service to login to')
-    .action(async (serviceName: string) => {
-      const service = deps.registry.getByName(serviceName);
-      if (service === null) {
-        deps.errorLog(`Error: Unknown service: ${serviceName}`);
-        deps.errorLog("Use 'latchkey services' to see available services.");
-        deps.exit(1);
-      }
-
-      const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
-      const apiCredentialStore = new ApiCredentialStore(
-        deps.config.credentialStorePath,
-        encryptedStorage
-      );
-
-      const oldCredentials = apiCredentialStore.get(service.name);
-      if (service.prepare && oldCredentials === null) {
-        deps.errorLog(`Error: Service ${serviceName} requires preparation first.`);
-        deps.errorLog(`Run 'latchkey prepare ${serviceName}' before logging in.`);
-        deps.exit(1);
-      }
-
-      const launchOptions = getBrowserLaunchOptionsOrExit(deps);
-
-      try {
-        const apiCredentials = await service
-          .getSession()
-          .login(encryptedStorage, launchOptions, oldCredentials ?? undefined);
-        apiCredentialStore.save(service.name, apiCredentials);
-        deps.log('Done');
-      } catch (error) {
-        if (error instanceof LoginCancelledError) {
-          deps.errorLog('Login cancelled.');
-          deps.exit(1);
-        }
-        if (error instanceof LoginFailedError) {
-          deps.errorLog(error.message);
-          deps.exit(1);
-        }
-        throw error;
-      }
-    });
-
-  program
-    .command('prepare')
-    .description('Prepare a service for use.')
-    .argument('<service_name>', 'Name of the service to prepare')
-    .action(async (serviceName: string) => {
-      const service = deps.registry.getByName(serviceName);
-      if (service === null) {
-        deps.errorLog(`Error: Unknown service: ${serviceName}`);
-        deps.errorLog("Use 'latchkey services' to see available services.");
-        deps.exit(1);
-      }
-
-      if (!service.prepare) {
-        deps.errorLog(`Error: Service ${serviceName} does not support the prepare command.`);
-        deps.exit(1);
-      }
-
-      const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
-      const apiCredentialStore = new ApiCredentialStore(
-        deps.config.credentialStorePath,
-        encryptedStorage
-      );
-
-      // Check if already prepared (credentials exist)
-      const existingCredentials = apiCredentialStore.get(service.name);
-      if (existingCredentials !== null) {
-        deps.log('Already prepared.');
-        return;
-      }
-
-      const launchOptions = getBrowserLaunchOptionsOrExit(deps);
-
-      try {
-        const apiCredentials = await service.prepare(encryptedStorage, launchOptions);
-        apiCredentialStore.save(service.name, apiCredentials);
-        deps.log('Done');
-      } catch (error) {
-        if (error instanceof LoginCancelledError) {
-          deps.errorLog('Preparation cancelled.');
-          deps.exit(1);
-        }
-        if (error instanceof LoginFailedError) {
-          deps.errorLog(error.message);
-          deps.exit(1);
-        }
-        throw error;
-      }
-    });
-
-  program
-    .command('curl')
-    .description('Run curl with API credential injection.')
-    .allowUnknownOption()
-    .allowExcessArguments()
-    .action(async (_options: unknown, command: { args: string[] }) => {
-      const curlArguments = command.args;
-
-      const url = extractUrlFromCurlArguments(curlArguments);
-      if (url === null) {
-        deps.errorLog('Error: Could not extract URL from curl arguments.');
-        deps.exit(1);
-      }
-
-      const service = deps.registry.getByUrl(url);
-      if (service === null) {
-        deps.errorLog(`Error: No service matches URL: ${url}`);
-        deps.exit(1);
-      }
-
-      const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
-      const apiCredentialStore = new ApiCredentialStore(
-        deps.config.credentialStorePath,
-        encryptedStorage
-      );
-      let apiCredentials: ApiCredentials | null = apiCredentialStore.get(service.name);
-
-      // Check if credentials exist but are expired
-      const isExpired = apiCredentials?.isExpired() === true;
-
-      if (apiCredentials === null || isExpired) {
-        // Check if service requires preparation first
-        if (service.prepare && apiCredentials === null) {
-          deps.errorLog(`Error: Service ${service.name} requires preparation first.`);
-          deps.errorLog(`Run 'latchkey prepare ${service.name}' before using curl.`);
-          deps.exit(1);
-        }
-
-        // Try to refresh credentials if the service supports it and credentials are expired
-        if (isExpired && apiCredentials !== null) {
-          apiCredentials = await maybeRefreshCredentials(
-            service,
-            apiCredentials,
-            apiCredentialStore
-          );
-        }
-
-        // If we still don't have valid credentials, perform login
-        if (apiCredentials === null || apiCredentials.isExpired() === true) {
-          const launchOptions = getBrowserLaunchOptionsOrExit(deps);
-
-          try {
-            // Pass old credentials to login() if they're expired (to reuse client ID/secret)
-            const oldCredentials =
-              isExpired && apiCredentials !== null ? apiCredentials : undefined;
-            apiCredentials = await service
-              .getSession()
-              .login(encryptedStorage, launchOptions, oldCredentials);
-            apiCredentialStore.save(service.name, apiCredentials);
-          } catch (error) {
-            if (error instanceof LoginCancelledError) {
-              deps.errorLog('Login cancelled.');
-              deps.exit(1);
-            }
-            if (error instanceof LoginFailedError) {
-              deps.errorLog(error.message);
-              deps.exit(1);
-            }
-            throw error;
-          }
-        }
-      }
-
-      const allArguments = [...apiCredentials.asCurlArguments(), ...curlArguments];
-      const result = deps.runCurl(allArguments);
-      deps.exit(result.returncode);
     });
 }

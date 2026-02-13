@@ -21,15 +21,35 @@ then use the version you just built.
 
 ## Before you submit a PR
 
-- Run `npm lint` and `npm test` to validate your changes.
-- Run `npm format` to apply autoformatting.
+- Run `npm run lint` and `npm test` to validate your changes.
+- Run `npm run format` to apply autoformatting.
 
 
 ## Adding a new service
 
+Services in Latchkey come in two tiers:
+
+- With basic support that requires users to directly set
+API credentials via `latchkey auth set`.
+- With support for browser-based authentication.
+
+### Basic support
+
+If you only want to make Latchkey aware of the existence of
+a particular service, you just need to implement a Service class
+with a few attributes (like a name, base API URL(s) and a few
+others). As an example, see the [Mailchimp](../src/services/mailchimp.ts)
+service.
+
+
+### Support for browser-based authentication
+
+In this case, you will typically need to add several additional
+methods to the implementation from the previous section.
+
 Each third-party service needs to be approached slightly
-differently. When adding support for a new service, you need to
-start by asking yourself the following question:
+differently. You need to start by asking yourself the following
+question:
 
 
 _Can public API credentials be extracted from the network traffic that flows between the browser and the service's website during or after login?_
@@ -50,10 +70,10 @@ should be able to determine usage by consulting the documentation.
 
 ### Service info
 
-Every service must include an `info` property that provides developer notes. This information is accessible via `latchkey info <service_name>` and helps agents and users understand service-specific details such as:
+Every service must include an `info` property that provides developer notes. This information is accessible via `latchkey services info <service_name>` and helps agents and users understand service-specific details such as:
 
 - Links to API documentation
-- Special requirements (e.g., need to run `latchkey prepare` first)
+- Special requirements (e.g., need to run `latchkey auth browser-prepare` first)
 - Any caveats or limitations
 
 ### Potentially useful helpers

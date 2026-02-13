@@ -28,10 +28,11 @@ export class CurlNotFoundError extends Error {
 const LATCHKEY_STORE_ENV_VAR = 'LATCHKEY_STORE';
 const LATCHKEY_BROWSER_STATE_ENV_VAR = 'LATCHKEY_BROWSER_STATE';
 const LATCHKEY_CONFIG_ENV_VAR = 'LATCHKEY_CONFIG';
-const LATCHKEY_CURL_PATH_ENV_VAR = 'LATCHKEY_CURL_PATH';
+const LATCHKEY_CURL_ENV_VAR = 'LATCHKEY_CURL';
 const LATCHKEY_ENCRYPTION_KEY_ENV_VAR = 'LATCHKEY_ENCRYPTION_KEY';
 const LATCHKEY_KEYRING_SERVICE_NAME_ENV_VAR = 'LATCHKEY_KEYRING_SERVICE_NAME';
 const LATCHKEY_KEYRING_ACCOUNT_NAME_ENV_VAR = 'LATCHKEY_KEYRING_ACCOUNT_NAME';
+const LATCHKEY_DISABLE_BROWSER_ENV_VAR = 'LATCHKEY_DISABLE_BROWSER';
 
 export const DEFAULT_KEYRING_SERVICE_NAME = 'latchkey';
 export const DEFAULT_KEYRING_ACCOUNT_NAME = 'encryption-key';
@@ -96,14 +97,22 @@ export class Config {
   readonly encryptionKeyOverride: string | null;
   readonly serviceName: string;
   readonly accountName: string;
+  /**
+   * When true, the browser login flow is disabled.
+   * Commands that require browser login will fail with an error.
+   */
+  readonly browserDisabled: boolean;
 
   constructor(getEnv: (name: string) => string | undefined = (name) => process.env[name]) {
-    this.curlCommand = getEnv(LATCHKEY_CURL_PATH_ENV_VAR) ?? 'curl';
+    this.curlCommand = getEnv(LATCHKEY_CURL_ENV_VAR) ?? 'curl';
     this.encryptionKeyOverride = getEnv(LATCHKEY_ENCRYPTION_KEY_ENV_VAR) ?? null;
     this.serviceName =
       getEnv(LATCHKEY_KEYRING_SERVICE_NAME_ENV_VAR) ?? DEFAULT_KEYRING_SERVICE_NAME;
     this.accountName =
       getEnv(LATCHKEY_KEYRING_ACCOUNT_NAME_ENV_VAR) ?? DEFAULT_KEYRING_ACCOUNT_NAME;
+
+    const browserDisabledEnv = getEnv(LATCHKEY_DISABLE_BROWSER_ENV_VAR);
+    this.browserDisabled = browserDisabledEnv !== undefined && browserDisabledEnv !== '';
 
     // Determine if encryption will be enabled (either via key override or keychain)
     const encryptionEnabled =

@@ -49,7 +49,7 @@ class SlackServiceSession extends SimpleServiceSession {
   }
 }
 
-export class Slack implements Service {
+export class Slack extends Service {
   readonly name = 'slack';
   readonly displayName = 'Slack';
   readonly baseApiUrls = ['https://slack.com/api/'] as const;
@@ -60,15 +60,11 @@ export class Slack implements Service {
 
   readonly credentialCheckCurlArguments = ['https://slack.com/api/auth.test'] as const;
 
-  getSession(): SlackServiceSession {
+  override getSession(): SlackServiceSession {
     return new SlackServiceSession(this);
   }
 
-  checkApiCredentials(apiCredentials: ApiCredentials): ApiCredentialStatus {
-    if (!(apiCredentials instanceof SlackApiCredentials)) {
-      return ApiCredentialStatus.Invalid;
-    }
-
+  override checkApiCredentials(apiCredentials: ApiCredentials): ApiCredentialStatus {
     const result = runCaptured(
       ['-s', ...apiCredentials.asCurlArguments(), ...this.credentialCheckCurlArguments],
       10

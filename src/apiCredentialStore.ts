@@ -75,6 +75,21 @@ export class ApiCredentialStore {
     this.saveStoreData(data);
   }
 
+  getAll(): ReadonlyMap<string, ApiCredentials> {
+    const data = this.loadStoreData();
+    const result = new Map<string, ApiCredentials>();
+    for (const [serviceName, credentialData] of Object.entries(data)) {
+      const parseResult = ApiCredentialsSchema.safeParse(credentialData);
+      if (!parseResult.success) {
+        throw new ApiCredentialStoreError(
+          `Invalid credential data for service ${serviceName}: ${parseResult.error.message}`
+        );
+      }
+      result.set(serviceName, deserializeCredentials(parseResult.data));
+    }
+    return result;
+  }
+
   delete(serviceName: string): boolean {
     const data = this.loadStoreData();
     if (!(serviceName in data)) {

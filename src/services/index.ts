@@ -2,8 +2,12 @@
  * Re-export all services.
  */
 
-export type { Service } from './base.js';
-export { ServiceSession, SimpleServiceSession, BrowserFollowupServiceSession } from './base.js';
+export {
+  Service,
+  ServiceSession,
+  SimpleServiceSession,
+  BrowserFollowupServiceSession,
+} from './base.js';
 export { LoginCancelledError, LoginFailedError } from './base.js';
 
 export { Slack, SLACK } from './slack.js';
@@ -13,3 +17,4 @@ export { Dropbox, DROPBOX } from './dropbox.js';
 export { Linear, LINEAR } from './linear.js';
 export { Google, GOOGLE } from './google.js';
 export { Notion, NOTION } from './notion.js';
+export { Mailchimp, MAILCHIMP } from './mailchimp.js';

@@ -3,8 +3,7 @@
  */
 
 import type { Response } from 'playwright';
-import { ApiCredentialStatus, ApiCredentials, AuthorizationBare } from '../apiCredentials.js';
-import { runCaptured } from '../curl.js';
+import { ApiCredentials, AuthorizationBare } from '../apiCredentials.js';
 import { Service, SimpleServiceSession } from './base.js';
 
 class DiscordServiceSession extends SimpleServiceSession {
@@ -34,7 +33,7 @@ class DiscordServiceSession extends SimpleServiceSession {
   }
 }
 
-export class Discord implements Service {
+export class Discord extends Service {
   readonly name = 'discord';
   readonly displayName = 'Discord';
   readonly baseApiUrls = ['https://discord.com/api/'] as const;
@@ -45,32 +44,8 @@ export class Discord implements Service {
 
   readonly credentialCheckCurlArguments = ['https://discord.com/api/v9/users/@me'] as const;
 
-  getSession(): DiscordServiceSession {
+  override getSession(): DiscordServiceSession {
     return new DiscordServiceSession(this);
-  }
-
-  checkApiCredentials(apiCredentials: ApiCredentials): ApiCredentialStatus {
-    if (!(apiCredentials instanceof AuthorizationBare)) {
-      return ApiCredentialStatus.Invalid;
-    }
-
-    const result = runCaptured(
-      [
-        '-s',
-        '-o',
-        '/dev/null',
-        '-w',
-        '%{http_code}',
-        ...apiCredentials.asCurlArguments(),
-        ...this.credentialCheckCurlArguments,
-      ],
-      10
-    );
-
-    if (result.stdout === '200') {
-      return ApiCredentialStatus.Valid;
-    }
-    return ApiCredentialStatus.Invalid;
   }
 }
 

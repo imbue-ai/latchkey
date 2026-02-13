@@ -3,8 +3,7 @@
  */
 
 import type { Response, BrowserContext } from 'playwright';
-import { ApiCredentialStatus, ApiCredentials, AuthorizationBearer } from '../apiCredentials.js';
-import { runCaptured } from '../curl.js';
+import { ApiCredentials, AuthorizationBearer } from '../apiCredentials.js';
 import { generateLatchkeyAppName, typeLikeHuman } from '../playwrightUtils.js';
 import { Service, BrowserFollowupServiceSession, LoginFailedError } from './base.js';
 
@@ -128,7 +127,7 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
   }
 }
 
-export class Dropbox implements Service {
+export class Dropbox extends Service {
   readonly name = 'dropbox';
   readonly displayName = 'Dropbox';
   readonly baseApiUrls = [
@@ -147,32 +146,8 @@ export class Dropbox implements Service {
     'https://api.dropboxapi.com/2/users/get_current_account',
   ] as const;
 
-  getSession(): DropboxServiceSession {
+  override getSession(): DropboxServiceSession {
     return new DropboxServiceSession(this);
-  }
-
-  checkApiCredentials(apiCredentials: ApiCredentials): ApiCredentialStatus {
-    if (!(apiCredentials instanceof AuthorizationBearer)) {
-      return ApiCredentialStatus.Invalid;
-    }
-
-    const result = runCaptured(
-      [
-        '-s',
-        '-o',
-        '/dev/null',
-        '-w',
-        '%{http_code}',
-        ...apiCredentials.asCurlArguments(),
-        ...this.credentialCheckCurlArguments,
-      ],
-      10
-    );
-
-    if (result.stdout === '200') {
-      return ApiCredentialStatus.Valid;
-    }
-    return ApiCredentialStatus.Invalid;
   }
 }
 

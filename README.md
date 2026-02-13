@@ -1,6 +1,6 @@
 # Latchkey
 
-Turn browser logins into usable credentials for local agents.
+Inject API credentials into local agent requests.
 
 ## Quick example
 
@@ -12,52 +12,63 @@ latchkey curl -X POST 'https://slack.com/api/conversations.create' \
 
 ## Overview
 
-Latchkey is a command-line tool that injects credentials to curl requests to known public APIs.
+Latchkey is a command-line tool that injects credentials into curl
+requests to known public APIs.
 
-- `latchkey services`
-	- Get a list of known and supported third-party services (Slack, Google Workspace, Linear, GitHub, etc.).
+- `latchkey services list`
+	- Get a list of supported third-party services (Slack, Google Workspace, Linear, GitHub, etc.).
 - `latchkey curl <arguments>`
 	- Automatically inject credentials to your otherwise standard curl calls to public APIs.
-	- (The first time you access a service, a browser pop-up with a login screen appears.)
+	- Credentials must already exist (see below).
+- `latchkey auth set <service_name> <curl_arguments>`
+	- Manually store credentials for a service in the form of arbitrary curl arguments.
+- `latchkey auth browser <service_name>`
+	- Open a browser login pop-up window and store the resulting API credentials.
+    - Only some services support this option.
 
-Latchkey is primarily designed for AI agents. By invoking Latchkey, agents can
-prompt the user to authenticate when needed, then continue interacting with
-third-party APIs using standard curl syntax - no custom integrations or embedded
-credentials required.
+Latchkey is primarily designed for AI agents. By invoking
+Latchkey, agents can prompt the user to authenticate when needed,
+then continue interacting with third-party APIs using standard
+curl syntax - no custom integrations or embedded credentials
+required.
 
-Unlike OAuth-based flows or typical MCP-style integrations, Latchkey does not
-introduce an intermediary between the agent and the service. Requests are made
-directly on the user’s behalf, which enables greater flexibility at the cost of
-formal delegation: agents authenticate as the user.
+Unlike OAuth-based flows or typical MCP-style integrations,
+Latchkey does not introduce an intermediary between the agent
+and the service. When `browser` is used, requests are made
+directly on the user’s behalf, which enables greater flexibility
+at the cost of formal delegation: agents authenticate as the
+user.
 
-If a service you need isn’t supported yet, contributions are welcome. Adding
-support typically involves writing a small browser automation class that
-extracts API credentials after login. See the [development docs](docs/development.md)
-for details.
+If a service you need isn’t supported yet, contributions are welcome!
+See the [development docs](docs/development.md) for details.
 
 ## Installation
 
 ### Prerequisites
 
 - `curl`, `node` and `npm` need to be present on your system in reasonably recent versions.
-- The browser requires a graphical environment.
+- The `latchkey auth browser` subcommand requires a graphical environment.
 
 ### Steps
 
 ```
 npm install -g latchkey
+
+# Optionally, if you intend to use `latchkey auth browser`:
 latchkey ensure-browser
 ```
 
-The `ensure-browser` command discovers and configures a browser for Latchkey to use. It searches for Chrome, Chromium, or Edge on your system. If none is found, it downloads Chromium via Playwright.
-
-**nvm users**: Global packages are per node version. If you switch versions, reinstall with `npm install -g latchkey`
+The `ensure-browser` command discovers and configures a browser
+for Latchkey to use. It searches for Chrome, Chromium, or Edge
+on your system. If none is found, it downloads Chromium via
+Playwright.
 
 ## Integrations
 
-Warning: giving AI agents access to your API credentials is potentially
-dangerous. They will be able to perform most of the actions you can. Only do this if
-you're willing to accept the risks.
+Warning: giving AI agents access to your API credentials is
+potentially dangerous, especially when using the `auth browser`
+feature. They will be able to perform most of the actions you
+can. Only do this if you're willing to accept the risks.
 
 
 ### OpenCode
@@ -80,7 +91,9 @@ latchkey skill-md > ~/.codex/skills/latchkey/SKILL.md
 
 ### Passepartout
 
-Check out our [Passepartout demo app](https://github.com/imbue-ai/passepartout) for an idea of how to build AI assistants for non-technical users on top of Latchkey.
+Check out our [Passepartout demo app](https://github.com/imbue-ai/passepartout)
+for an idea of how to build AI assistants for non-technical
+users on top of Latchkey.
 
 
 ## Demo
@@ -98,17 +111,28 @@ latchkey curl -X POST 'https://slack.com/api/conversations.create' \
   -d '{"name":"something-urgent"}'
 ```
 
-Notice that `-H 'Authorization: Bearer ...'` is absent. This is because Latchkey:
+Notice that `-H 'Authorization: Bearer ...'` is absent. This is
+because Latchkey injects stored credentials automatically. To
+set up credentials for a service (Slack in this example), run:
 
-- Opens the browser with a login screen.
-- After the user logs in, Latchkey extracts the necessary API credentials from the browser session.
-- The browser is closed, the credentials are injected into the arguments, and `curl` is invoked.
-- The credentials are stored so that they can be reused the next time.
+```
+latchkey auth browser slack
+```
 
-Otherwise, `latchkey curl` passes your arguments straight
-through to `curl` so you can use the same interface you are used
-to. The return code, stdin and stdout are passed back from curl
-to the caller of `latchkey`.
+This opens the browser with a login screen. After you log in, Latchkey extracts
+the necessary API credentials from the browser session, closes the browser, and
+stores the credentials so that they can be reused.
+
+Alternatively, you can provide credentials manually:
+
+```
+latchkey auth set slack -H "Authorization: Bearer xoxb-your-token"
+```
+
+`latchkey curl` passes your arguments straight through to `curl`
+so you can use the same interface you are used to. The return
+code, stdout and stderr are passed back from curl to the caller
+of `latchkey`.
 
 ### Remembering API credentials
 
@@ -120,9 +144,9 @@ encrypted.
 
 ### Inspecting the status of stored credentials
 
-Calling `latchkey status <service_name>` will give you
-information about the status of remembered credentials for the
-given service. Possible results are:
+Calling `latchkey services info <service_name>` will show information
+about the service, including the credentials status. The
+credentials status line will show one of:
 
 - `missing`
 - `invalid`
@@ -132,29 +156,41 @@ given service. Possible results are:
 
 Remembered API credentials can expire. The caller of `latchkey
 curl` will typically notice this because the calls will start returning
-HTTP 401 or 403. To verify that, first call `latchkey status`, e.g.:
+HTTP 401 or 403. To verify that, first call `latchkey services info`, e.g.:
 
 ```
-latchkey status discord
+latchkey services info discord
 ```
 
-If the result is `invalid` , meaning the Unauthorized/Forbidden responses are
-caused by invalid or expired credentials rather than insufficient permissions,
-force a new login in the next `latchkey curl` call by clearing the remembered
-API credentials for the service in question, e.g.:
+If the credentials status is `invalid`, it means the Unauthorized/Forbidden
+responses are caused by invalid or expired credentials rather than insufficient
+permissions. In that case, log in again:
 
 ```
-latchkey clear discord
+latchkey auth browser discord
 ```
 
-The next `latchkey curl` call will then trigger a new login flow.
-
-To clear all stored data (both the credentials store and browser
-state file), run:
+Or alternatively:
 
 ```
-latchkey clear
+latchkey auth set discord -H "Authorization: ..."
 ```
+
+
+### Clearing credentials and logins
+
+In case you want to remove stored API credentials, use the `auth clear` subcommand.
+
+```
+latchkey auth clear discord
+```
+
+To clear all stored data (both the credential store and browser state file), run:
+
+```
+latchkey auth clear
+```
+
 
 ### Advanced configuration
 
@@ -166,17 +202,18 @@ containing stored API credentials
 - `LATCHKEY_BROWSER_STATE`: path to the (typically encrypted) file
 containing the state (cookies, local storage, etc.) of
 the browser used for the login popup
-- `LATCHKEY_CURL_PATH`: path to the curl binary
+- `LATCHKEY_CURL`: path to the curl binary
 - `LATCHKEY_CONFIG`: path to the configuration file
 (defaults to `~/.latchkey/config.json`)
 - `LATCHKEY_KEYRING_SERVICE_NAME`, `LATCHKEY_KEYRING_ACCOUNT_NAME`: identifiers that are used to store the encryption password in your keyring
+- `LATCHKEY_DISABLE_BROWSER`: when set (to any non-empty value), disables the browser login flow; commands that would trigger a browser login (`auth browser`, `auth browser-prepare`) will fail with an error instead
 
 
 ## Disclaimers
 
 - This is still a work in progress.
 - Latchkey has been created with the help of AI-assisted coding tools with careful human curation.
-- Invoking `latchkey curl ...` can sometimes have side effects in the form of
+- Invoking `latchkey auth browser ...` can sometimes have side effects in the form of
   new API keys being created in your accounts (through browser automation).
 - Using agents for automated access may be prohibited by some services' ToS.
 - We reserve the right to change the license of future releases of Latchkey.

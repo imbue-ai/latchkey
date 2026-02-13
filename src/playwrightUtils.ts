@@ -2,6 +2,22 @@
  * Playwright utility functions for browser automation.
  */
 
+export class BrowserDisabledError extends Error {
+  constructor() {
+    super('Browser is disabled via LATCHKEY_DISABLE_BROWSER environment variable.');
+    this.name = 'BrowserDisabledError';
+  }
+}
+
+export class BrowserFlowsNotSupportedError extends Error {
+  constructor(serviceName: string) {
+    super(
+      `Service '${serviceName}' does not support browser flows. Use 'latchkey auth set ${serviceName}' to set credentials manually.`
+    );
+    this.name = 'BrowserFlowNotSupportedError';
+  }
+}
+
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

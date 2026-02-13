@@ -131,6 +131,12 @@ async function testServiceWithRecording(
     throw new InvalidRecordingError('No requests recorded');
   }
 
+  if (!service.getSession) {
+    throw new InvalidRecordingError(
+      `Service ${service.name} does not support browser login, cannot test with recordings`
+    );
+  }
+
   const session = service.getSession();
 
   if (!(session instanceof SimpleServiceSession)) {

@@ -39,7 +39,11 @@ export {
   resetCapturingSubprocessRunner,
 } from './curl.js';
 
-export { typeLikeHuman } from './playwrightUtils.js';
+export {
+  typeLikeHuman,
+  BrowserDisabledError,
+  BrowserFlowsNotSupportedError,
+} from './playwrightUtils.js';
 
 // Services
 export {

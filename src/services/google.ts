@@ -4,14 +4,13 @@
 
 import fs from 'node:fs/promises';
 import type { Browser, BrowserContext, Page, Response } from 'playwright';
-import { ApiCredentialStatus, ApiCredentials, OAuthCredentials } from '../apiCredentials.js';
+import { ApiCredentials, OAuthCredentials } from '../apiCredentials.js';
 import {
   generateLatchkeyAppName,
   showSpinnerPage,
   withTempBrowserContext,
   type BrowserLaunchOptions,
 } from '../playwrightUtils.js';
-import { runCaptured } from '../curl.js';
 import {
   exchangeCodeForTokens,
   refreshAccessToken,
@@ -320,7 +319,7 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     // Require existing credentials with client ID and secret
     if (!(oldCredentials instanceof OAuthCredentials)) {
       throw new LoginFailedError(
-        'Google login requires existing OAuth client credentials. Run prepare first.'
+        'Google login requires existing OAuth client credentials. Run browser-prepare first.'
       );
     }
 
@@ -341,6 +340,28 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
       accessTokenExpiresAt,
       refreshTokenExpiresAt
     );
+  }
+
+  override async prepare(
+    encryptedStorage: EncryptedStorage,
+    launchOptions?: BrowserLaunchOptions
+  ): Promise<ApiCredentials> {
+    return withTempBrowserContext(encryptedStorage, launchOptions ?? {}, async ({ context }) => {
+      const page = await context.newPage();
+      await page.goto(this.service.loginUrl);
+      await waitForGoogleLogin(page);
+
+      await showSpinnerPage(
+        context,
+        `Finalizing ${this.service.displayName} login...\nThis can take a few minutes.`
+      );
+      const projectSlug = await createProject(page);
+      await enableApis(page, projectSlug);
+      await configureBranding(page, projectSlug);
+      const { clientId, clientSecret } = await createOAuthClient(page);
+      await page.close();
+      return new OAuthCredentials(clientId, clientSecret);
+    });
   }
 
   private async performOAuthFlow(
@@ -413,76 +434,25 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
   }
 }
 
-export class Google implements Service {
+export class Google extends Service {
   readonly name = 'google';
   readonly displayName = 'Google Workspace';
   readonly baseApiUrls = ['https://www.googleapis.com/'] as const;
   readonly loginUrl = 'https://console.cloud.google.com/';
   readonly info =
     'Supports some Google Workspace APIs: Gmail, Calendar, Drive, Sheets, Docs, and Contacts. ' +
-    'If needed, run "latchkey prepare google" to create an OAuth client first. ' +
+    'If needed, run "latchkey auth browser-prepare google" to create an OAuth client first. ' +
     'It may take a few minutes before the OAuth client is ready to use.';
 
   readonly credentialCheckCurlArguments = [
     'https://www.googleapis.com/oauth2/v1/userinfo',
   ] as const;
 
-  getSession(): GoogleServiceSession {
+  override getSession(): GoogleServiceSession {
     return new GoogleServiceSession(this);
   }
 
-  checkApiCredentials(apiCredentials: ApiCredentials): ApiCredentialStatus {
-    if (!(apiCredentials instanceof OAuthCredentials)) {
-      return ApiCredentialStatus.Invalid;
-    }
-
-    // Credentials from prepare() don't have tokens yet
-    if (apiCredentials.accessToken === undefined) {
-      return ApiCredentialStatus.Missing;
-    }
-
-    const result = runCaptured(
-      [
-        '-s',
-        '-o',
-        '/dev/null',
-        '-w',
-        '%{http_code}',
-        ...apiCredentials.asCurlArguments(),
-        ...this.credentialCheckCurlArguments,
-      ],
-      10
-    );
-
-    if (result.stdout === '200') {
-      return ApiCredentialStatus.Valid;
-    }
-    return ApiCredentialStatus.Invalid;
-  }
-
-  async prepare(
-    encryptedStorage: EncryptedStorage,
-    launchOptions?: BrowserLaunchOptions
-  ): Promise<ApiCredentials> {
-    return withTempBrowserContext(encryptedStorage, launchOptions ?? {}, async ({ context }) => {
-      const page = await context.newPage();
-      await page.goto(this.loginUrl);
-      await waitForGoogleLogin(page);
-
-      await showSpinnerPage(
-        context,
-        `Finalizing ${this.displayName} login...\nThis can take a few minutes.`
-      );
-      const projectSlug = await createProject(page);
-      await enableApis(page, projectSlug);
-      await configureBranding(page, projectSlug);
-      const { clientId, clientSecret } = await createOAuthClient(page);
-      await page.close();
-      return new OAuthCredentials(clientId, clientSecret);
-    });
-  }
-
-  refreshCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentials | null> {
+  override refreshCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentials | null> {
     if (!(apiCredentials instanceof OAuthCredentials)) {
       return Promise.resolve(null);
     }
