@@ -7,9 +7,8 @@ export class Telegram extends Service {
   readonly loginUrl = 'https://web.telegram.org/';
   readonly info =
     'https://core.telegram.org/bots/api. ' +
-    'Browser-based authentication is not supported. ' +
-    'Use `latchkey auth set telegram -H "Authorization: Bearer <token>"` to add credentials manually. ' +
-    'Create a bot and obtain a token via @BotFather on Telegram.';
+    'Browser-based authentication is not yet supported. ' +
+    'Use `latchkey auth set telegram -H "Authorization: Bearer <token>"` to add credentials manually.';
 
   readonly credentialCheckCurlArguments = ['https://api.telegram.org/bot{token}/getMe'] as const;
 

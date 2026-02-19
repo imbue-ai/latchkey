@@ -7,9 +7,8 @@ export class Figma extends Service {
   readonly loginUrl = 'https://www.figma.com/login';
   readonly info =
     'https://www.figma.com/developers/api. ' +
-    'Browser-based authentication is not supported. ' +
-    'Use `latchkey auth set figma -H "Authorization: Bearer <token>"` to add credentials manually. ' +
-    'Create a personal access token at https://www.figma.com/developers/api#access-tokens.';
+    'Browser-based authentication is not yet supported. ' +
+    'Use e.g. `latchkey auth set figma -H "Authorization: Bearer <token>"` to add credentials manually.';
 
   readonly credentialCheckCurlArguments = ['https://api.figma.com/v1/me'] as const;
 }

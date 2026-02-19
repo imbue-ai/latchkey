@@ -10,9 +10,8 @@ export class GoogleAnalytics extends Service {
   readonly loginUrl = 'https://analytics.google.com/';
   readonly info =
     'https://developers.google.com/analytics/devguides/reporting/data/v1. ' +
-    'Browser-based authentication is not supported. ' +
-    'Use `latchkey auth set google-analytics -H "Authorization: Bearer <token>"` to add credentials manually. ' +
-    'Obtain an OAuth 2.0 access token via the Google Cloud Console at https://console.cloud.google.com/.';
+    'Browser-based authentication is not yet supported. ' +
+    'Use `latchkey auth set google-analytics -H "Authorization: Bearer <token>"` to add credentials manually.';
 
   readonly credentialCheckCurlArguments = [
     'https://analyticsadmin.googleapis.com/v1beta/accountSummaries',

@@ -7,9 +7,8 @@ export class Gitlab extends Service {
   readonly loginUrl = 'https://gitlab.com/users/sign_in';
   readonly info =
     'https://docs.gitlab.com/api/rest/. ' +
-    'Browser-based authentication is not supported. ' +
-    'Use `latchkey auth set gitlab -H "PRIVATE-TOKEN: <token>"` to add credentials manually. ' +
-    'Create a personal access token at https://gitlab.com/-/user_settings/personal_access_tokens.';
+    'Browser-based authentication is not yet supported. ' +
+    'Use e.g. `latchkey auth set gitlab -H "PRIVATE-TOKEN: <token>"` to add credentials manually.';
 
   readonly credentialCheckCurlArguments = ['https://gitlab.com/api/v4/user'] as const;
 }

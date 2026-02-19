@@ -7,9 +7,8 @@ export class Zoom extends Service {
   readonly loginUrl = 'https://zoom.us/signin';
   readonly info =
     'https://developers.zoom.us/docs/api/. ' +
-    'Browser-based authentication is not supported. ' +
-    'Use `latchkey auth set zoom -H "Authorization: Bearer <token>"` to add credentials manually. ' +
-    'Create a Server-to-Server OAuth app at https://marketplace.zoom.us/ to obtain an access token.';
+    'Browser-based authentication is not yet supported. ' +
+    'Use `latchkey auth set zoom -H "Authorization: Bearer <token>"` to add credentials manually.';
 
   readonly credentialCheckCurlArguments = ['https://api.zoom.us/v2/users/me'] as const;
 }
