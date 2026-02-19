@@ -22,6 +22,7 @@ import {
   GOOGLE_ANALYTICS,
   CALENDLY,
   YELP,
+  TELEGRAM,
 } from '../src/services/index.js';
 
 describe('Registry', () => {
@@ -144,7 +145,7 @@ describe('Registry', () => {
 
   describe('services', () => {
     it('should contain all services', () => {
-      expect(REGISTRY.services).toHaveLength(21);
+      expect(REGISTRY.services).toHaveLength(22);
       expect(REGISTRY.services).toContain(SLACK);
       expect(REGISTRY.services).toContain(DISCORD);
       expect(REGISTRY.services).toContain(GITHUB);
@@ -166,6 +167,7 @@ describe('Registry', () => {
       expect(REGISTRY.services).toContain(GOOGLE_ANALYTICS);
       expect(REGISTRY.services).toContain(CALENDLY);
       expect(REGISTRY.services).toContain(YELP);
+      expect(REGISTRY.services).toContain(TELEGRAM);
     });
   });
 

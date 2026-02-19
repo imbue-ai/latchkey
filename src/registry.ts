@@ -25,6 +25,7 @@ import {
   GOOGLE_ANALYTICS,
   CALENDLY,
   YELP,
+  TELEGRAM,
 } from './services/index.js';
 
 export class Registry {
@@ -83,4 +84,5 @@ export const REGISTRY = new Registry([
   GOOGLE_ANALYTICS,
   CALENDLY,
   YELP,
+  TELEGRAM,
 ]);

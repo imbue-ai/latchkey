@@ -16,6 +16,13 @@ import {
   type BrowserLaunchOptions,
 } from '../playwrightUtils.js';
 
+export class NoCurlCredentialsNotSupportedError extends Error {
+  constructor(serviceName: string) {
+    super(`Service '${serviceName}' does not support set-nocurl credentials.`);
+    this.name = 'NoCurlCredentialsNotSupportedError';
+  }
+}
+
 export class LoginCancelledError extends Error {
   constructor(message = 'Login was cancelled because the browser was closed.') {
     super(message);
@@ -92,6 +99,14 @@ export abstract class Service {
       return ApiCredentialStatus.Valid;
     }
     return ApiCredentialStatus.Invalid;
+  }
+
+  /**
+   * Set credentials from arbitrary (non-curl) arguments.
+   * Services that support this should override to validate and return typed credentials.
+   */
+  getCredentialsNoCurl(_arguments: readonly string[]): ApiCredentials {
+    throw new NoCurlCredentialsNotSupportedError(this.name);
   }
 
   /**

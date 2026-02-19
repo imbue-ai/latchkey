@@ -8,7 +8,11 @@ export {
   SimpleServiceSession,
   BrowserFollowupServiceSession,
 } from './base.js';
-export { LoginCancelledError, LoginFailedError } from './base.js';
+export {
+  LoginCancelledError,
+  LoginFailedError,
+  NoCurlCredentialsNotSupportedError,
+} from './base.js';
 
 export { Slack, SLACK } from './slack.js';
 export { Discord, DISCORD } from './discord.js';

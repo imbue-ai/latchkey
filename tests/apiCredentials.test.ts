@@ -4,6 +4,7 @@ import {
   AuthorizationBare,
   SlackApiCredentials,
   RawCurlCredentials,
+  TelegramBotCredentials,
   deserializeCredentials,
   serializeCredentials,
   ApiCredentialsSchema,
@@ -131,6 +132,62 @@ describe('RawCurlCredentials', () => {
   });
 });
 
+describe('TelegramBotCredentials', () => {
+  it('should inject token into telegram API URL path', () => {
+    const credentials = new TelegramBotCredentials('123456:ABC-DEF');
+    expect(credentials.injectIntoCurlCall(['https://api.telegram.org/getMe'])).toEqual([
+      'https://api.telegram.org/bot123456:ABC-DEF/getMe',
+    ]);
+  });
+
+  it('should inject token into URL with nested path', () => {
+    const credentials = new TelegramBotCredentials('123456:ABC-DEF');
+    expect(credentials.injectIntoCurlCall(['https://api.telegram.org/sendMessage'])).toEqual([
+      'https://api.telegram.org/bot123456:ABC-DEF/sendMessage',
+    ]);
+  });
+
+  it('should not modify non-telegram URLs', () => {
+    const credentials = new TelegramBotCredentials('123456:ABC-DEF');
+    expect(
+      credentials.injectIntoCurlCall([
+        '-H',
+        'Content-Type: application/json',
+        'https://other.example.com/api',
+      ])
+    ).toEqual(['-H', 'Content-Type: application/json', 'https://other.example.com/api']);
+  });
+
+  it('should preserve other curl arguments', () => {
+    const credentials = new TelegramBotCredentials('123456:ABC-DEF');
+    expect(
+      credentials.injectIntoCurlCall(['-X', 'POST', 'https://api.telegram.org/getMe'])
+    ).toEqual(['-X', 'POST', 'https://api.telegram.org/bot123456:ABC-DEF/getMe']);
+  });
+
+  it('should serialize to JSON', () => {
+    const credentials = new TelegramBotCredentials('123456:ABC-DEF');
+    expect(credentials.toJSON()).toEqual({
+      objectType: 'telegramBot',
+      token: '123456:ABC-DEF',
+    });
+  });
+
+  it('should deserialize from JSON', () => {
+    const data = {
+      objectType: 'telegramBot' as const,
+      token: '123456:ABC-DEF',
+    };
+    const credentials = TelegramBotCredentials.fromJSON(data);
+    expect(credentials.token).toBe('123456:ABC-DEF');
+  });
+
+  it('should return undefined for isExpired', () => {
+    const credentials = new TelegramBotCredentials('123456:ABC-DEF');
+    expect(credentials.isExpired()).toBeUndefined();
+  });
+});
+
 describe('deserializeCredentials', () => {
   it('should deserialize AuthorizationBearer', () => {
     const data = {
@@ -173,6 +230,16 @@ describe('deserializeCredentials', () => {
     expect(credentials).toBeInstanceOf(RawCurlCredentials);
     expect((credentials as RawCurlCredentials).curlArguments).toEqual(['-H', 'X-Token: test']);
   });
+
+  it('should deserialize TelegramBotCredentials', () => {
+    const data = {
+      objectType: 'telegramBot' as const,
+      token: '123456:ABC-DEF',
+    };
+    const credentials = deserializeCredentials(data);
+    expect(credentials).toBeInstanceOf(TelegramBotCredentials);
+    expect((credentials as TelegramBotCredentials).token).toBe('123456:ABC-DEF');
+  });
 });
 
 describe('serializeCredentials', () => {
@@ -212,6 +279,15 @@ describe('serializeCredentials', () => {
       curlArguments: ['-H', 'X-Token: test'],
     });
   });
+
+  it('should serialize TelegramBotCredentials', () => {
+    const credentials = new TelegramBotCredentials('123456:ABC-DEF');
+    const data = serializeCredentials(credentials);
+    expect(data).toEqual({
+      objectType: 'telegramBot',
+      token: '123456:ABC-DEF',
+    });
+  });
 });
 
 describe('ApiCredentialsSchema', () => {
@@ -244,6 +320,14 @@ describe('ApiCredentialsSchema', () => {
     const result = ApiCredentialsSchema.safeParse({
       objectType: 'rawCurl',
       curlArguments: ['-H', 'X-Token: test'],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('should validate TelegramBotCredentials', () => {
+    const result = ApiCredentialsSchema.safeParse({
+      objectType: 'telegramBot',
+      token: '123456:ABC-DEF',
     });
     expect(result.success).toBe(true);
   });

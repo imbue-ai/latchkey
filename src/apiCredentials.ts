@@ -4,6 +4,7 @@
  */
 
 import { z } from 'zod';
+import { extractUrlFromCurlArguments } from './curl.js';
 
 export enum ApiCredentialStatus {
   Missing = 'missing',
@@ -154,6 +155,52 @@ export class SlackApiCredentials implements ApiCredentials {
 }
 
 /**
+ * Telegram Bot API credentials.
+ * The bot token is embedded in the URL path as specified by the Telegram Bot API:
+ * https://api.telegram.org/bot<token>/METHOD_NAME
+ */
+export const TelegramBotCredentialsSchema = z.object({
+  objectType: z.literal('telegramBot'),
+  token: z.string(),
+});
+
+export type TelegramBotCredentialsData = z.infer<typeof TelegramBotCredentialsSchema>;
+
+export class TelegramBotCredentials implements ApiCredentials {
+  readonly objectType = 'telegramBot' as const;
+  readonly token: string;
+
+  constructor(token: string) {
+    this.token = token;
+  }
+
+  injectIntoCurlCall(curlArguments: readonly string[]): readonly string[] {
+    const url = extractUrlFromCurlArguments(curlArguments as string[]);
+    if (!url?.startsWith('https://api.telegram.org/')) {
+      return curlArguments;
+    }
+    const pathAfterBase = url.slice('https://api.telegram.org/'.length);
+    const rewrittenUrl = `https://api.telegram.org/bot${this.token}/${pathAfterBase}`;
+    return curlArguments.map((argument) => (argument === url ? rewrittenUrl : argument));
+  }
+
+  isExpired(): boolean | undefined {
+    return undefined;
+  }
+
+  toJSON(): TelegramBotCredentialsData {
+    return {
+      objectType: this.objectType,
+      token: this.token,
+    };
+  }
+
+  static fromJSON(data: TelegramBotCredentialsData): TelegramBotCredentials {
+    return new TelegramBotCredentials(data.token);
+  }
+}
+
+/**
  * Raw curl arguments stored directly as credentials.
  * Allows users to manually set arbitrary curl arguments for a service.
  */
@@ -293,6 +340,7 @@ export const ApiCredentialsSchema = z.discriminatedUnion('objectType', [
   SlackApiCredentialsSchema,
   OAuthCredentialsSchema,
   RawCurlCredentialsSchema,
+  TelegramBotCredentialsSchema,
 ]);
 
 export type ApiCredentialsData = z.infer<typeof ApiCredentialsSchema>;
@@ -312,6 +360,8 @@ export function deserializeCredentials(data: ApiCredentialsData): ApiCredentials
       return OAuthCredentials.fromJSON(data);
     case 'rawCurl':
       return RawCurlCredentials.fromJSON(data);
+    case 'telegramBot':
+      return TelegramBotCredentials.fromJSON(data);
     default: {
       const exhaustiveCheck: never = data;
       throw new ApiCredentialsSerializationError(
@@ -338,6 +388,9 @@ export function serializeCredentials(credentials: ApiCredentials): ApiCredential
     return credentials.toJSON();
   }
   if (credentials instanceof RawCurlCredentials) {
+    return credentials.toJSON();
+  }
+  if (credentials instanceof TelegramBotCredentials) {
     return credentials.toJSON();
   }
   throw new ApiCredentialsSerializationError(`Unknown credential type: ${credentials.objectType}`);

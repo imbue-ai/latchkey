@@ -11,7 +11,8 @@ import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { Config } from '../src/config.js';
 import { Registry } from '../src/registry.js';
 import { SlackApiCredentials, ApiCredentialStatus } from '../src/apiCredentials.js';
-import type { Service } from '../src/services/base.js';
+import { NoCurlCredentialsNotSupportedError, type Service } from '../src/services/base.js';
+import { TELEGRAM } from '../src/services/telegram.js';
 import type { CurlResult } from '../src/curl.js';
 
 // Use a fixed test key for deterministic test behavior (32 bytes = 256 bits, base64 encoded)
@@ -186,6 +187,9 @@ describe('CLI commands with dependency injection', () => {
       info: 'Test info for Slack service.',
       credentialCheckCurlArguments: ['https://slack.com/api/auth.test'],
       checkApiCredentials: vi.fn().mockReturnValue(ApiCredentialStatus.Valid),
+      getCredentialsNoCurl() {
+        throw new NoCurlCredentialsNotSupportedError('slack');
+      },
       getSession: vi.fn().mockReturnValue({
         login: vi.fn().mockResolvedValue(new SlackApiCredentials('xoxc-test-token', 'test-cookie')),
       }),
@@ -281,6 +285,9 @@ describe('CLI commands with dependency injection', () => {
         info: 'A service without browser login support.',
         credentialCheckCurlArguments: [],
         checkApiCredentials: vi.fn().mockReturnValue(ApiCredentialStatus.Missing),
+        getCredentialsNoCurl() {
+          throw new NoCurlCredentialsNotSupportedError('nologin');
+        },
       };
 
       const deps = createMockDependencies({
@@ -589,6 +596,70 @@ describe('CLI commands with dependency injection', () => {
     });
   });
 
+  describe('auth set-nocurl command', () => {
+    it('should store telegram bot credentials', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(storePath, '{}');
+
+      const deps = createMockDependencies({
+        registry: new Registry([TELEGRAM]),
+        config: createMockConfig({ credentialStorePath: storePath }),
+      });
+
+      await runCommand(['auth', 'set-nocurl', 'telegram', '123456:ABC-DEF'], deps);
+
+      expect(logs).toContain('Credentials stored.');
+
+      const storedData = JSON.parse(readSecureFile(storePath) ?? '{}') as Record<string, unknown>;
+      expect(storedData.telegram).toEqual({
+        objectType: 'telegramBot',
+        token: '123456:ABC-DEF',
+      });
+    });
+
+    it('should return error for unknown service', async () => {
+      const deps = createMockDependencies();
+
+      await runCommand(['auth', 'set-nocurl', 'unknown-service', 'some-arg'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs.some((log) => log.includes('Unknown service'))).toBe(true);
+    });
+
+    it('should return error when service does not support set-nocurl', async () => {
+      const deps = createMockDependencies();
+
+      await runCommand(['auth', 'set-nocurl', 'slack', 'some-token'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs.some((log) => log.includes('does not support set-nocurl'))).toBe(true);
+    });
+
+    it('should return error when telegram token is missing', async () => {
+      const deps = createMockDependencies({
+        registry: new Registry([TELEGRAM]),
+      });
+
+      await runCommand(['auth', 'set-nocurl', 'telegram'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs.some((log) => log.includes('Expected exactly one argument'))).toBe(true);
+    });
+
+    it('should return error when telegram token format is invalid', async () => {
+      const deps = createMockDependencies({
+        registry: new Registry([TELEGRAM]),
+      });
+
+      await runCommand(['auth', 'set-nocurl', 'telegram', 'not-a-valid-token'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs.some((log) => log.includes("doesn't look like a Telegram bot token"))).toBe(
+        true
+      );
+    });
+  });
+
   describe('curl command', () => {
     it('should pass arguments to subprocess', async () => {
       const storePath = join(tempDir, 'credentials.json');
@@ -743,6 +814,9 @@ describe('CLI commands with dependency injection', () => {
         info: 'Test info for Slack service.',
         credentialCheckCurlArguments: [],
         checkApiCredentials: vi.fn(),
+        getCredentialsNoCurl() {
+          throw new NoCurlCredentialsNotSupportedError('slack');
+        },
         getSession: vi.fn().mockReturnValue({ login: mockLogin }),
       };
 
@@ -773,6 +847,26 @@ describe('CLI commands with dependency injection', () => {
       expect(errorLogs.some((log) => log.includes('auth set'))).toBe(true);
     });
 
+    it('should inject telegram bot token into URL path', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(
+        storePath,
+        JSON.stringify({
+          telegram: { objectType: 'telegramBot', token: '123456:ABC-DEF' },
+        })
+      );
+
+      const deps = createMockDependencies({
+        registry: new Registry([TELEGRAM]),
+        config: createMockConfig({ credentialStorePath: storePath }),
+      });
+
+      await runCommand(['curl', 'https://api.telegram.org/getMe'], deps);
+
+      expect(capturedArgs).toEqual(['https://api.telegram.org/bot123456:ABC-DEF/getMe']);
+      expect(exitCode).toBe(0);
+    });
+
     it('should work when service does not have getSession but credentials exist', async () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
@@ -790,6 +884,9 @@ describe('CLI commands with dependency injection', () => {
         info: 'A service without browser login support.',
         credentialCheckCurlArguments: [],
         checkApiCredentials: vi.fn().mockReturnValue(ApiCredentialStatus.Valid),
+        getCredentialsNoCurl() {
+          throw new NoCurlCredentialsNotSupportedError('nologin');
+        },
         // No getSession - service doesn't support browser login
       };
 
@@ -816,6 +913,9 @@ describe('CLI commands with dependency injection', () => {
         info: 'A service without browser login support.',
         credentialCheckCurlArguments: [],
         checkApiCredentials: vi.fn(),
+        getCredentialsNoCurl() {
+          throw new NoCurlCredentialsNotSupportedError('nologin');
+        },
         // No getSession - service doesn't support browser login
       };
 

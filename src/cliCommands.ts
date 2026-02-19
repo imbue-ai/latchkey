@@ -20,7 +20,12 @@ import { BrowserDisabledError, BrowserFlowsNotSupportedError } from './playwrigh
 import type { CurlResult } from './curl.js';
 import { EncryptedStorage } from './encryptedStorage.js';
 import { Registry, REGISTRY } from './registry.js';
-import { LoginCancelledError, LoginFailedError, type Service } from './services/index.js';
+import {
+  LoginCancelledError,
+  LoginFailedError,
+  NoCurlCredentialsNotSupportedError,
+  type Service,
+} from './services/index.js';
 import { extractUrlFromCurlArguments, run as curlRun } from './curl.js';
 import { getSkillMdContent } from './skillMd.js';
 
@@ -345,6 +350,50 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       );
 
       const credentials = new RawCurlCredentials(curlArguments);
+      apiCredentialStore.save(serviceName, credentials);
+      deps.log('Credentials stored.');
+    });
+
+  authCommand
+    .command('set-nocurl')
+    .description('Store credentials for a service using service-specific arguments (not curl).')
+    .argument('<service_name>', 'Name of the service to store credentials for')
+    .addHelpText(
+      'after',
+      `\nExample:\n  $ latchkey auth set-nocurl telegram 123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11`
+    )
+    .allowExcessArguments()
+    .action((_serviceName: string, _options: unknown, command: { args: string[] }) => {
+      const [serviceName, ...noCurlArguments] = command.args;
+      if (serviceName === undefined) {
+        deps.errorLog('Error: Service name is required.');
+        deps.exit(1);
+      }
+
+      const service = deps.registry.getByName(serviceName);
+      if (service === null) {
+        deps.errorLog(`Error: Unknown service: ${serviceName}`);
+        deps.errorLog("Use 'latchkey services list' to see available services.");
+        deps.exit(1);
+      }
+
+      const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
+      const apiCredentialStore = new ApiCredentialStore(
+        deps.config.credentialStorePath,
+        encryptedStorage
+      );
+
+      let credentials: ApiCredentials;
+      try {
+        credentials = service.getCredentialsNoCurl(noCurlArguments);
+      } catch (error) {
+        if (error instanceof NoCurlCredentialsNotSupportedError) {
+          deps.errorLog(`Error: ${error.message}`);
+          deps.exit(1);
+        }
+        throw error;
+      }
+
       apiCredentialStore.save(serviceName, credentials);
       deps.log('Credentials stored.');
     });
