@@ -35,7 +35,7 @@ export { Sentry, SENTRY } from './sentry.js';
 export { Aws, AWS } from './aws.js';
 export { Stripe, STRIPE } from './stripe.js';
 export { Figma, FIGMA } from './figma.js';
-export { GoogleAnalytics, GOOGLE_ANALYTICS } from './googleAnalytics.js';
+export { GoogleAnalytics, GOOGLE_ANALYTICS } from './google/analytics.js';
 export { Calendly, CALENDLY } from './calendly.js';
 export { GoogleMaps, GOOGLE_MAPS } from './googleMaps.js';
 export { Yelp, YELP } from './yelp.js';
