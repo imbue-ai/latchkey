@@ -14,14 +14,11 @@ import {
   MAILCHIMP,
   GITLAB,
   ZOOM,
-  TELEGRAM,
   SENTRY,
-  AWS,
   STRIPE,
   FIGMA,
   GOOGLE_ANALYTICS,
   CALENDLY,
-  GOOGLE_MAPS,
   YELP,
 } from './services/index.js';
 
@@ -70,13 +67,10 @@ export const REGISTRY = new Registry([
   MAILCHIMP,
   GITLAB,
   ZOOM,
-  TELEGRAM,
   SENTRY,
-  AWS,
   STRIPE,
   FIGMA,
   GOOGLE_ANALYTICS,
   CALENDLY,
-  GOOGLE_MAPS,
   YELP,
 ]);

@@ -1,5 +1,6 @@
 import { Service } from './base.js';
 
+/** Work in progress — not yet registered in the service registry. */
 export class Aws extends Service {
   readonly name = 'aws';
   readonly displayName = 'AWS';
