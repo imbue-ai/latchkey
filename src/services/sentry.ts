@@ -10,7 +10,11 @@ export class Sentry extends Service {
     'Browser-based authentication is not yet supported. ' +
     'Use `latchkey auth set sentry -H "Authorization: Bearer <token>"` to add credentials manually.';
 
-  readonly credentialCheckCurlArguments = ['https://sentry.io/api/0/'] as const;
+  readonly credentialCheckCurlArguments = [
+    '-H',
+    'Content-Type: application/json',
+    'https://sentry.io/api/0/',
+  ] as const;
 }
 
 export const SENTRY = new Sentry();

@@ -10,7 +10,11 @@ export class Calendly extends Service {
     'Browser-based authentication is not yet supported. ' +
     'Use `latchkey auth set calendly -H "Authorization: Bearer <token>"` to add credentials manually.';
 
-  readonly credentialCheckCurlArguments = ['https://api.calendly.com/users/me'] as const;
+  readonly credentialCheckCurlArguments = [
+    '-H',
+    'Content-Type: application/json',
+    'https://api.calendly.com/users/me',
+  ] as const;
 }
 
 export const CALENDLY = new Calendly();

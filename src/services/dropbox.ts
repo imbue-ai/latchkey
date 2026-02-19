@@ -143,6 +143,8 @@ export class Dropbox extends Service {
   readonly credentialCheckCurlArguments = [
     '-X',
     'POST',
+    '-H',
+    'Content-Type: application/json',
     'https://api.dropboxapi.com/2/users/get_current_account',
   ] as const;
 
