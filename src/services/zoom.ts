@@ -13,7 +13,7 @@ export class Zoom extends Service {
   readonly credentialCheckCurlArguments = [
     '-H',
     'Content-Type: application/json',
-    'https://api.zoom.us/v2/users/me',
+    'https://api.zoom.us/v2/users?page_size=1',
   ] as const;
 }
 
