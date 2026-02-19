@@ -12,7 +12,6 @@ import {
   GITLAB,
   ZOOM,
   TELEGRAM,
-  WHATSAPP,
   SENTRY,
   AWS,
   STRIPE,
@@ -129,7 +128,7 @@ describe('Registry', () => {
 
   describe('services', () => {
     it('should contain all services', () => {
-      expect(REGISTRY.services).toHaveLength(20);
+      expect(REGISTRY.services).toHaveLength(19);
       expect(REGISTRY.services).toContain(SLACK);
       expect(REGISTRY.services).toContain(DISCORD);
       expect(REGISTRY.services).toContain(GITHUB);
@@ -141,7 +140,6 @@ describe('Registry', () => {
       expect(REGISTRY.services).toContain(GITLAB);
       expect(REGISTRY.services).toContain(ZOOM);
       expect(REGISTRY.services).toContain(TELEGRAM);
-      expect(REGISTRY.services).toContain(WHATSAPP);
       expect(REGISTRY.services).toContain(SENTRY);
       expect(REGISTRY.services).toContain(AWS);
       expect(REGISTRY.services).toContain(STRIPE);

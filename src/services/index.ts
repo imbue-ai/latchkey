@@ -21,7 +21,6 @@ export { Mailchimp, MAILCHIMP } from './mailchimp.js';
 export { Gitlab, GITLAB } from './gitlab.js';
 export { Zoom, ZOOM } from './zoom.js';
 export { Telegram, TELEGRAM } from './telegram.js';
-export { Whatsapp, WHATSAPP } from './whatsapp.js';
 export { Sentry, SENTRY } from './sentry.js';
 export { Aws, AWS } from './aws.js';
 export { Stripe, STRIPE } from './stripe.js';
