@@ -3,11 +3,8 @@ import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { ApiCredentialStore } from '../src/apiCredentialStore.js';
-import {
-  AuthorizationBearer,
-  AuthorizationBare,
-  SlackApiCredentials,
-} from '../src/apiCredentials.js';
+import { AuthorizationBearer, AuthorizationBare } from '../src/apiCredentials.js';
+import { SlackApiCredentials } from '../src/services/slack.js';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { generateKey } from '../src/encryption.js';
 

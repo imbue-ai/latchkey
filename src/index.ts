@@ -8,10 +8,9 @@ export {
   ApiCredentialStatus,
   AuthorizationBearer,
   AuthorizationBare,
-  SlackApiCredentials,
-  deserializeCredentials,
-  serializeCredentials,
 } from './apiCredentials.js';
+export { deserializeCredentials, serializeCredentials } from './apiCredentialsSerialization.js';
+export { SlackApiCredentials } from './services/slack.js';
 
 export { ApiCredentialStore, ApiCredentialStoreError } from './apiCredentialStore.js';
 

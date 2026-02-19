@@ -3,9 +3,58 @@
  */
 
 import type { Response } from 'playwright';
-import { ApiCredentialStatus, ApiCredentials, SlackApiCredentials } from '../apiCredentials.js';
+import { z } from 'zod';
+import { ApiCredentialStatus, type ApiCredentials } from '../apiCredentials.js';
 import { runCaptured } from '../curl.js';
 import { Service, SimpleServiceSession } from './base.js';
+
+/**
+ * Slack-specific credentials (token + d cookie).
+ */
+export const SlackApiCredentialsSchema = z.object({
+  objectType: z.literal('slack'),
+  token: z.string(),
+  dCookie: z.string(),
+});
+
+export type SlackApiCredentialsData = z.infer<typeof SlackApiCredentialsSchema>;
+
+export class SlackApiCredentials implements ApiCredentials {
+  readonly objectType = 'slack' as const;
+  readonly token: string;
+  readonly dCookie: string;
+
+  constructor(token: string, dCookie: string) {
+    this.token = token;
+    this.dCookie = dCookie;
+  }
+
+  injectIntoCurlCall(curlArguments: readonly string[]): readonly string[] {
+    return [
+      '-H',
+      `Authorization: Bearer ${this.token}`,
+      '-H',
+      `Cookie: d=${this.dCookie}`,
+      ...curlArguments,
+    ];
+  }
+
+  isExpired(): boolean | undefined {
+    return undefined;
+  }
+
+  toJSON(): SlackApiCredentialsData {
+    return {
+      objectType: this.objectType,
+      token: this.token,
+      dCookie: this.dCookie,
+    };
+  }
+
+  static fromJSON(data: SlackApiCredentialsData): SlackApiCredentials {
+    return new SlackApiCredentials(data.token, data.dCookie);
+  }
+}
 
 class SlackServiceSession extends SimpleServiceSession {
   private pendingDCookie: string | null = null;

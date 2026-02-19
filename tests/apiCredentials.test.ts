@@ -2,14 +2,16 @@ import { describe, it, expect } from 'vitest';
 import {
   AuthorizationBearer,
   AuthorizationBare,
-  SlackApiCredentials,
   RawCurlCredentials,
-  TelegramBotCredentials,
-  AwsCredentials,
+} from '../src/apiCredentials.js';
+import {
   deserializeCredentials,
   serializeCredentials,
   ApiCredentialsSchema,
-} from '../src/apiCredentials.js';
+} from '../src/apiCredentialsSerialization.js';
+import { SlackApiCredentials } from '../src/services/slack.js';
+import { TelegramBotCredentials } from '../src/services/telegram.js';
+import { AwsCredentials } from '../src/services/aws.js';
 
 describe('AuthorizationBearer', () => {
   it('should inject correct curl arguments', () => {
