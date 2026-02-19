@@ -13,11 +13,15 @@ export enum ApiCredentialStatus {
 
 /**
  * Base interface for all API credentials.
- * Each credential type must specify how to convert itself to curl arguments.
+ * Each credential type must specify how to inject itself into a curl call.
  */
 export interface ApiCredentials {
   readonly objectType: string;
-  asCurlArguments(): readonly string[];
+  /**
+   * Inject credentials into a curl call by modifying the given arguments array.
+   * Implementations may add headers, change the URL, or transform arguments in any way.
+   */
+  injectIntoCurlCall(curlArguments: readonly string[]): readonly string[];
   /**
    * Check if the credentials are expired.
    * Returns true if expired, false if valid, or undefined if expiration is unknown.
@@ -43,8 +47,8 @@ export class AuthorizationBearer implements ApiCredentials {
     this.token = token;
   }
 
-  asCurlArguments(): readonly string[] {
-    return ['-H', `Authorization: Bearer ${this.token}`];
+  injectIntoCurlCall(curlArguments: readonly string[]): readonly string[] {
+    return ['-H', `Authorization: Bearer ${this.token}`, ...curlArguments];
   }
 
   isExpired(): boolean | undefined {
@@ -81,8 +85,8 @@ export class AuthorizationBare implements ApiCredentials {
     this.token = token;
   }
 
-  asCurlArguments(): readonly string[] {
-    return ['-H', `Authorization: ${this.token}`];
+  injectIntoCurlCall(curlArguments: readonly string[]): readonly string[] {
+    return ['-H', `Authorization: ${this.token}`, ...curlArguments];
   }
 
   isExpired(): boolean | undefined {
@@ -122,8 +126,14 @@ export class SlackApiCredentials implements ApiCredentials {
     this.dCookie = dCookie;
   }
 
-  asCurlArguments(): readonly string[] {
-    return ['-H', `Authorization: Bearer ${this.token}`, '-H', `Cookie: d=${this.dCookie}`];
+  injectIntoCurlCall(curlArguments: readonly string[]): readonly string[] {
+    return [
+      '-H',
+      `Authorization: Bearer ${this.token}`,
+      '-H',
+      `Cookie: d=${this.dCookie}`,
+      ...curlArguments,
+    ];
   }
 
   isExpired(): boolean | undefined {
@@ -162,8 +172,8 @@ export class RawCurlCredentials implements ApiCredentials {
     this.curlArguments = curlArguments;
   }
 
-  asCurlArguments(): readonly string[] {
-    return this.curlArguments;
+  injectIntoCurlCall(curlArguments: readonly string[]): readonly string[] {
+    return [...this.curlArguments, ...curlArguments];
   }
 
   isExpired(): boolean | undefined {
@@ -225,13 +235,13 @@ export class OAuthCredentials implements ApiCredentials {
     this.refreshTokenExpiresAt = refreshTokenExpiresAt;
   }
 
-  asCurlArguments(): readonly string[] {
+  injectIntoCurlCall(curlArguments: readonly string[]): readonly string[] {
     if (this.accessToken === undefined) {
       throw new ApiCredentialsUsageError(
         'OAuth credentials missing access token. Run login to obtain access tokens.'
       );
     }
-    return ['-H', `Authorization: Bearer ${this.accessToken}`];
+    return ['-H', `Authorization: Bearer ${this.accessToken}`, ...curlArguments];
   }
 
   isExpired(): boolean | undefined {

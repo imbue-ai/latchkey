@@ -536,7 +536,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         }
       }
 
-      const allArguments = [...apiCredentials.asCurlArguments(), ...curlArguments];
+      const allArguments = apiCredentials.injectIntoCurlCall(curlArguments);
       const result = deps.runCurl(allArguments);
       deps.exit(result.returncode);
     });

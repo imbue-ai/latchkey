@@ -66,7 +66,7 @@ export class Slack extends Service {
 
   override checkApiCredentials(apiCredentials: ApiCredentials): ApiCredentialStatus {
     const result = runCaptured(
-      ['-s', ...apiCredentials.asCurlArguments(), ...this.credentialCheckCurlArguments],
+      apiCredentials.injectIntoCurlCall(['-s', ...this.credentialCheckCurlArguments]),
       10
     );
 

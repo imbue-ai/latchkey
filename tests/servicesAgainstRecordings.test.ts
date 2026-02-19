@@ -229,7 +229,7 @@ describe('Services Against Recordings', () => {
       // Verify API credentials are valid
       expect(apiCredentials).not.toBeNull();
 
-      const curlArgs = apiCredentials.asCurlArguments();
+      const curlArgs = apiCredentials.injectIntoCurlCall([]);
       expect(curlArgs.length).toBeGreaterThan(0);
     });
   }

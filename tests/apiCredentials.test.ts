@@ -10,9 +10,12 @@ import {
 } from '../src/apiCredentials.js';
 
 describe('AuthorizationBearer', () => {
-  it('should generate correct curl arguments', () => {
+  it('should inject correct curl arguments', () => {
     const credentials = new AuthorizationBearer('test-token-123');
-    expect(credentials.asCurlArguments()).toEqual(['-H', 'Authorization: Bearer test-token-123']);
+    expect(credentials.injectIntoCurlCall([])).toEqual([
+      '-H',
+      'Authorization: Bearer test-token-123',
+    ]);
   });
 
   it('should serialize to JSON', () => {
@@ -34,9 +37,9 @@ describe('AuthorizationBearer', () => {
 });
 
 describe('AuthorizationBare', () => {
-  it('should generate correct curl arguments', () => {
+  it('should inject correct curl arguments', () => {
     const credentials = new AuthorizationBare('raw-token-456');
-    expect(credentials.asCurlArguments()).toEqual(['-H', 'Authorization: raw-token-456']);
+    expect(credentials.injectIntoCurlCall([])).toEqual(['-H', 'Authorization: raw-token-456']);
   });
 
   it('should serialize to JSON', () => {
@@ -58,9 +61,9 @@ describe('AuthorizationBare', () => {
 });
 
 describe('SlackApiCredentials', () => {
-  it('should generate correct curl arguments with token and cookie', () => {
+  it('should inject correct curl arguments with token and cookie', () => {
     const credentials = new SlackApiCredentials('xoxc-token', 'd-cookie-value');
-    expect(credentials.asCurlArguments()).toEqual([
+    expect(credentials.injectIntoCurlCall([])).toEqual([
       '-H',
       'Authorization: Bearer xoxc-token',
       '-H',
@@ -90,9 +93,9 @@ describe('SlackApiCredentials', () => {
 });
 
 describe('RawCurlCredentials', () => {
-  it('should generate correct curl arguments', () => {
+  it('should inject correct curl arguments', () => {
     const credentials = new RawCurlCredentials(['-H', 'X-Token: secret', '-H', 'X-Other: value']);
-    expect(credentials.asCurlArguments()).toEqual([
+    expect(credentials.injectIntoCurlCall([])).toEqual([
       '-H',
       'X-Token: secret',
       '-H',
@@ -102,7 +105,7 @@ describe('RawCurlCredentials', () => {
 
   it('should handle empty curl arguments', () => {
     const credentials = new RawCurlCredentials([]);
-    expect(credentials.asCurlArguments()).toEqual([]);
+    expect(credentials.injectIntoCurlCall([])).toEqual([]);
   });
 
   it('should serialize to JSON', () => {

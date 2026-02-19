@@ -69,9 +69,16 @@ export abstract class Service {
    * Check if the given API credentials are valid for this service.
    */
   checkApiCredentials(apiCredentials: ApiCredentials): ApiCredentialStatus {
-    let curlArgs: readonly string[];
+    let allCurlArgs: readonly string[];
     try {
-      curlArgs = apiCredentials.asCurlArguments();
+      allCurlArgs = apiCredentials.injectIntoCurlCall([
+        '-s',
+        '-o',
+        '/dev/null',
+        '-w',
+        '%{http_code}',
+        ...this.credentialCheckCurlArguments,
+      ]);
     } catch (error) {
       if (error instanceof ApiCredentialsUsageError) {
         return ApiCredentialStatus.Missing;
@@ -79,18 +86,7 @@ export abstract class Service {
       throw error;
     }
 
-    const result = runCaptured(
-      [
-        '-s',
-        '-o',
-        '/dev/null',
-        '-w',
-        '%{http_code}',
-        ...curlArgs,
-        ...this.credentialCheckCurlArguments,
-      ],
-      10
-    );
+    const result = runCaptured(allCurlArgs, 10);
 
     if (result.stdout === '200') {
       return ApiCredentialStatus.Valid;

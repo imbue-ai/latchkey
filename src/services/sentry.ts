@@ -23,9 +23,9 @@ export class Sentry extends Service {
   ] as const;
 
   override checkApiCredentials(apiCredentials: ApiCredentials): ApiCredentialStatus {
-    let curlArgs: readonly string[];
+    let allCurlArgs: readonly string[];
     try {
-      curlArgs = apiCredentials.asCurlArguments();
+      allCurlArgs = apiCredentials.injectIntoCurlCall(['-s', ...this.credentialCheckCurlArguments]);
     } catch (error) {
       if (error instanceof ApiCredentialsUsageError) {
         return ApiCredentialStatus.Missing;
@@ -33,7 +33,7 @@ export class Sentry extends Service {
       throw error;
     }
 
-    const result = runCaptured(['-s', ...curlArgs, ...this.credentialCheckCurlArguments], 10);
+    const result = runCaptured(allCurlArgs, 10);
 
     try {
       const data = JSON.parse(result.stdout) as { user?: unknown };
