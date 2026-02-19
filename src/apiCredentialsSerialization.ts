@@ -21,6 +21,10 @@ import {
 import { AwsCredentials, AwsCredentialsSchema } from './services/aws.js';
 import { SlackApiCredentials, SlackApiCredentialsSchema } from './services/slack.js';
 import { TelegramBotCredentials, TelegramBotCredentialsSchema } from './services/telegram.js';
+import {
+  GoogleMapsApiKeyCredentials,
+  GoogleMapsApiKeyCredentialsSchema,
+} from './services/google/maps.js';
 
 /**
  * Union schema for all credential types.
@@ -33,6 +37,7 @@ export const ApiCredentialsSchema = z.discriminatedUnion('objectType', [
   RawCurlCredentialsSchema,
   TelegramBotCredentialsSchema,
   AwsCredentialsSchema,
+  GoogleMapsApiKeyCredentialsSchema,
 ]);
 
 export type ApiCredentialsData = z.infer<typeof ApiCredentialsSchema>;
@@ -56,6 +61,8 @@ export function deserializeCredentials(data: ApiCredentialsData): ApiCredentials
       return TelegramBotCredentials.fromJSON(data);
     case 'aws':
       return AwsCredentials.fromJSON(data);
+    case 'googleMapsApiKey':
+      return GoogleMapsApiKeyCredentials.fromJSON(data);
     default: {
       const exhaustiveCheck: never = data;
       throw new ApiCredentialsSerializationError(
@@ -88,6 +95,9 @@ export function serializeCredentials(credentials: ApiCredentials): ApiCredential
     return credentials.toJSON();
   }
   if (credentials instanceof AwsCredentials) {
+    return credentials.toJSON();
+  }
+  if (credentials instanceof GoogleMapsApiKeyCredentials) {
     return credentials.toJSON();
   }
   throw new ApiCredentialsSerializationError(`Unknown credential type: ${credentials.objectType}`);

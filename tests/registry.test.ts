@@ -24,6 +24,7 @@ import {
   YELP,
   TELEGRAM,
   AWS,
+  GOOGLE_MAPS,
 } from '../src/services/index.js';
 
 describe('Registry', () => {
@@ -158,7 +159,7 @@ describe('Registry', () => {
 
   describe('services', () => {
     it('should contain all services', () => {
-      expect(REGISTRY.services).toHaveLength(23);
+      expect(REGISTRY.services).toHaveLength(24);
       expect(REGISTRY.services).toContain(SLACK);
       expect(REGISTRY.services).toContain(DISCORD);
       expect(REGISTRY.services).toContain(GITHUB);
@@ -182,6 +183,7 @@ describe('Registry', () => {
       expect(REGISTRY.services).toContain(YELP);
       expect(REGISTRY.services).toContain(TELEGRAM);
       expect(REGISTRY.services).toContain(AWS);
+      expect(REGISTRY.services).toContain(GOOGLE_MAPS);
     });
   });
 
