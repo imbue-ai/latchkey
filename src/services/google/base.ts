@@ -1,63 +1,42 @@
 /**
- * Google service implementation with OAuth flow.
+ * Shared base class and helpers for Google OAuth services.
+ *
+ * Each concrete Google service (Gmail, Drive, etc.) extends GoogleService
+ * and provides its own API, scopes, and credential check endpoint.
+ * The OAuth / browser-prepare flow is self-contained per service.
  */
 
 import fs from 'node:fs/promises';
 import type { Browser, BrowserContext, Page, Response } from 'playwright';
-import { ApiCredentials, OAuthCredentials } from '../apiCredentials.js';
+import { ApiCredentials, OAuthCredentials } from '../../apiCredentials.js';
 import {
   generateLatchkeyAppName,
   showSpinnerPage,
   withTempBrowserContext,
   type BrowserLaunchOptions,
-} from '../playwrightUtils.js';
+} from '../../playwrightUtils.js';
 import {
   exchangeCodeForTokens,
   refreshAccessToken,
   startOAuthCallbackServer,
-} from '../oauthUtils.js';
+} from '../../oauthUtils.js';
 import {
   Service,
   BrowserFollowupServiceSession,
   LoginFailedError,
   LoginCancelledError,
   isBrowserClosedError,
-} from './base.js';
-import type { EncryptedStorage } from '../encryptedStorage.js';
+} from '../base.js';
+import type { EncryptedStorage } from '../../encryptedStorage.js';
 
 const DEFAULT_TIMEOUT_MS = 8000;
 const LOGIN_TIMEOUT_MS = 120000;
 const GOOGLE_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
-const APIS = [
-  'gmail.googleapis.com',
-  'calendar-json.googleapis.com',
-  'drive.googleapis.com',
-  'sheets.googleapis.com',
-  'docs.googleapis.com',
-  'people.googleapis.com', // Contacts API
-];
-const OAUTH_SCOPES = [
-  // User info (for credential validation)
+
+/** Scopes always requested alongside service-specific scopes (for credential validation). */
+const COMMON_SCOPES = [
   'https://www.googleapis.com/auth/userinfo.profile',
   'https://www.googleapis.com/auth/userinfo.email',
-  // Gmail API
-  'https://www.googleapis.com/auth/gmail.readonly',
-  'https://www.googleapis.com/auth/gmail.modify',
-  'https://www.googleapis.com/auth/gmail.compose',
-  'https://www.googleapis.com/auth/gmail.send',
-  // Calendar API
-  'https://www.googleapis.com/auth/calendar',
-  'https://www.googleapis.com/auth/calendar.events',
-  // Drive API
-  'https://www.googleapis.com/auth/drive',
-  'https://www.googleapis.com/auth/drive.file',
-  // Sheets API
-  'https://www.googleapis.com/auth/spreadsheets',
-  // Docs API
-  'https://www.googleapis.com/auth/documents',
-  // Contacts API
-  'https://www.googleapis.com/auth/contacts',
-  'https://www.googleapis.com/auth/contacts.readonly',
 ] as const;
 
 interface ClientSecretJson {
@@ -73,9 +52,6 @@ interface ClientSecretJson {
   };
 }
 
-/**
- * Parse client_secret.json content.
- */
 function parseClientSecretJson(content: string): { clientId: string; clientSecret: string } {
   try {
     const json = JSON.parse(content) as ClientSecretJson;
@@ -101,20 +77,18 @@ function parseClientSecretJson(content: string): { clientId: string; clientSecre
   }
 }
 
-async function createProject(page: Page): Promise<string> {
-  // Navigate to the projects page
+async function createProject(page: Page, appName: string): Promise<string> {
   await page.goto('https://console.cloud.google.com/projectselector2/home/dashboard', {
     timeout: DEFAULT_TIMEOUT_MS,
   });
 
-  // Always create a new project
   const createProjectButton = page.locator('.projectselector-project-create');
   await createProjectButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
   await createProjectButton.click();
 
   const projectNameInput = page.locator('proj-name-id-input input');
   await projectNameInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS * 100 });
-  await projectNameInput.fill(generateLatchkeyAppName());
+  await projectNameInput.fill(appName);
 
   const createButton = page.locator('button[type="submit"]');
   await createButton.click();
@@ -130,12 +104,6 @@ async function createProject(page: Page): Promise<string> {
   return projectId;
 }
 
-async function enableApis(page: Page, projectSlug: string): Promise<void> {
-  for (const api of APIS) {
-    await enableApi(page, projectSlug, api);
-  }
-}
-
 async function enableApi(page: Page, projectSlug: string, apiName: string): Promise<void> {
   await page.goto(
     `https://console.cloud.google.com/apis/library/${apiName}?project=${projectSlug}`,
@@ -144,7 +112,7 @@ async function enableApi(page: Page, projectSlug: string, apiName: string): Prom
     }
   );
 
-  const successIcon = page.locator('.cfc-icon-status-success'); // Present when API is already enabled.
+  const successIcon = page.locator('.cfc-icon-status-success');
   const enableButton = page
     .locator('.mp-details-cta-button-primary button .mdc-button__label')
     .filter({ visible: true });
@@ -160,7 +128,7 @@ async function enableApi(page: Page, projectSlug: string, apiName: string): Prom
   await stopIndicator.waitFor({ timeout: 18000 });
 }
 
-async function configureBranding(page: Page, projectSlug: string): Promise<void> {
+async function configureBranding(page: Page, projectSlug: string, appName: string): Promise<void> {
   await page.goto(`https://console.cloud.google.com/auth/branding?project=${projectSlug}`, {
     timeout: DEFAULT_TIMEOUT_MS,
   });
@@ -169,7 +137,7 @@ async function configureBranding(page: Page, projectSlug: string): Promise<void>
   await getStartedButton.click();
   const appNameInput = page.locator('input[formcontrolname="displayName"]');
   await appNameInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-  await appNameInput.fill(generateLatchkeyAppName());
+  await appNameInput.fill(appName);
   const emailSelector = page.locator('svg[data-icon-name="arrowDropDownIcon"]').nth(0);
   await emailSelector.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
   await emailSelector.click();
@@ -200,18 +168,18 @@ async function configureBranding(page: Page, projectSlug: string): Promise<void>
   await createButton.click();
 }
 
-async function createOAuthClient(page: Page): Promise<{ clientId: string; clientSecret: string }> {
-  // Navigate to credentials page
+async function createOAuthClient(
+  page: Page,
+  appName: string
+): Promise<{ clientId: string; clientSecret: string }> {
   await page.goto('https://console.cloud.google.com/apis/credentials', {
     timeout: DEFAULT_TIMEOUT_MS,
   });
 
-  // Click "Create Credentials" button
   const createCredentialsButton = page.locator('services-create-credentials-menu button');
   await createCredentialsButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
   await createCredentialsButton.click();
 
-  // Click "OAuth client ID"
   const oauthClientIdOption = page.locator('cfc-menu-item[track-metadata-type="OAUTH_CLIENT"]');
   await oauthClientIdOption.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
   await oauthClientIdOption.click();
@@ -226,13 +194,11 @@ async function createOAuthClient(page: Page): Promise<{ clientId: string; client
 
   const clientNameInput = page.locator('input[formcontrolname="displayName"]');
   await clientNameInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-  await clientNameInput.fill(generateLatchkeyAppName());
+  await clientNameInput.fill(appName);
 
-  // Click Create
   const createButton = page.locator('cfc-progress-button button');
   await createButton.click();
 
-  // Download the JSON file
   const downloadButton = page.locator('cfc-icon[icon="download"]');
   await downloadButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
   const [download] = await Promise.all([page.waitForEvent('download'), downloadButton.click()]);
@@ -255,11 +221,9 @@ function checkGoogleLoginResponse(
   }
 
   const request = response.request();
-  // Detect successful login by checking for Google account access
   if (request.url().startsWith('https://console.cloud.google.com/')) {
     if (response.status() === 200) {
       void response.text().then((text) => {
-        // Check if we're actually logged in (not on login page)
         if (!text.includes('accounts.google.com/signin')) {
           loginDetector.isLoggedIn = true;
         }
@@ -284,8 +248,24 @@ async function waitForGoogleLogin(page: Page): Promise<void> {
   page.off('response', responseHandler);
 }
 
+/**
+ * Configuration for a specific Google API service.
+ */
+export interface GoogleServiceConfig {
+  /** The Google API identifier (e.g., 'gmail.googleapis.com'). */
+  readonly api: string;
+  /** OAuth scopes required by this service. */
+  readonly scopes: readonly string[];
+}
+
 class GoogleServiceSession extends BrowserFollowupServiceSession {
   private readonly loginDetector = { isLoggedIn: false };
+  private readonly config: GoogleServiceConfig;
+
+  constructor(service: GoogleService, config: GoogleServiceConfig) {
+    super(service);
+    this.config = config;
+  }
 
   onResponse(response: Response): void {
     checkGoogleLoginResponse(response, this.loginDetector);
@@ -295,10 +275,6 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     return this.loginDetector.isLoggedIn;
   }
 
-  /**
-   * Override to skip the spinner page since the OAuth flow requires user interaction
-   * (granting consent on Google's authorization page).
-   */
   protected override finalizeCredentials(
     _browser: Browser,
     context: BrowserContext,
@@ -316,17 +292,15 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
       throw new LoginFailedError('No page available in browser context.');
     }
 
-    // Require existing credentials with client ID and secret
     if (!(oldCredentials instanceof OAuthCredentials)) {
       throw new LoginFailedError(
-        'Google login requires existing OAuth client credentials. Run browser-prepare first.'
+        `${this.service.displayName} login requires existing OAuth client credentials. Run browser-prepare first.`
       );
     }
 
     const clientId = oldCredentials.clientId;
     const clientSecret = oldCredentials.clientSecret;
 
-    // Perform OAuth flow with localhost server
     const { accessToken, refreshToken, accessTokenExpiresAt, refreshTokenExpiresAt } =
       await this.performOAuthFlow(context, page, clientId, clientSecret);
 
@@ -351,14 +325,16 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
       await page.goto(this.service.loginUrl);
       await waitForGoogleLogin(page);
 
+      const appName = generateLatchkeyAppName();
+
       await showSpinnerPage(
         context,
         `Finalizing ${this.service.displayName} login...\nThis can take a few minutes.`
       );
-      const projectSlug = await createProject(page);
-      await enableApis(page, projectSlug);
-      await configureBranding(page, projectSlug);
-      const { clientId, clientSecret } = await createOAuthClient(page);
+      const projectSlug = await createProject(page, appName);
+      await enableApi(page, projectSlug, this.config.api);
+      await configureBranding(page, projectSlug, appName);
+      const { clientId, clientSecret } = await createOAuthClient(page, appName);
       await page.close();
       return new OAuthCredentials(clientId, clientSecret);
     });
@@ -375,9 +351,6 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     accessTokenExpiresAt?: string;
     refreshTokenExpiresAt?: string;
   }> {
-    // Use an AbortController to signal the OAuth callback server to shut down
-    // when the browser is closed. Listen to both page and context close events
-    // to handle all cases where the user might close the browser.
     const abortController = new AbortController();
     const closeHandler = () => {
       abortController.abort();
@@ -385,8 +358,9 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     page.on('close', closeHandler);
     context.on('close', closeHandler);
 
+    const allScopes = [...COMMON_SCOPES, ...this.config.scopes];
+
     try {
-      // Start the callback server first to get the auto-assigned port
       const { port, codePromise } = await startOAuthCallbackServer(
         LOGIN_TIMEOUT_MS,
         abortController.signal
@@ -397,13 +371,12 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
       authUrl.searchParams.set('client_id', clientId);
       authUrl.searchParams.set('redirect_uri', redirectUri);
       authUrl.searchParams.set('response_type', 'code');
-      authUrl.searchParams.set('scope', OAUTH_SCOPES.join(' '));
+      authUrl.searchParams.set('scope', allScopes.join(' '));
       authUrl.searchParams.set('access_type', 'offline');
       authUrl.searchParams.set('prompt', 'consent');
 
       await page.goto(authUrl.toString());
 
-      // Wait for the authorization code from the callback
       const code = await codePromise;
       const tokens = exchangeCodeForTokens(
         GOOGLE_TOKEN_ENDPOINT,
@@ -414,7 +387,6 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
       );
       const accessTokenExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
-      // Google refresh tokens typically don't expire, so we don't set refreshTokenExpiresAt
       return {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token,
@@ -426,30 +398,26 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
       }
       throw error;
     } finally {
-      // Remove the close handlers to prevent them from firing when context
-      // is closed normally during cleanup
       page.off('close', closeHandler);
       context.off('close', closeHandler);
     }
   }
 }
 
-export class Google extends Service {
-  readonly name = 'google';
-  readonly displayName = 'Google Workspace';
-  readonly baseApiUrls = ['https://www.googleapis.com/'] as const;
+/**
+ * Abstract base class for individual Google API services.
+ *
+ * Each subclass declares the specific API, scopes, and credential-check endpoint
+ * it needs. The OAuth and browser-prepare flows are handled here and scoped
+ * to that single API.
+ */
+export abstract class GoogleService extends Service {
   readonly loginUrl = 'https://console.cloud.google.com/';
-  readonly info =
-    'Supports some Google Workspace APIs: Gmail, Calendar, Drive, Sheets, Docs, and Contacts. ' +
-    'If needed, run "latchkey auth browser-prepare google" to create an OAuth client first. ' +
-    'It may take a few minutes before the OAuth client is ready to use.';
 
-  readonly credentialCheckCurlArguments = [
-    'https://www.googleapis.com/oauth2/v1/userinfo',
-  ] as const;
+  protected abstract readonly config: GoogleServiceConfig;
 
   override getSession(): GoogleServiceSession {
-    return new GoogleServiceSession(this);
+    return new GoogleServiceSession(this, this.config);
   }
 
   override refreshCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentials | null> {
@@ -472,11 +440,8 @@ export class Google extends Service {
       return Promise.resolve(null);
     }
 
-    // Calculate access token expiration from the expires_in field
     const accessTokenExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
-    // Return new credentials with refreshed access token
-    // Keep the same refresh token unless a new one is provided
     return Promise.resolve(
       new OAuthCredentials(
         apiCredentials.clientId,
@@ -489,5 +454,3 @@ export class Google extends Service {
     );
   }
 }
-
-export const GOOGLE = new Google();

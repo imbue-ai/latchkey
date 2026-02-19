@@ -7,7 +7,12 @@ import {
   DROPBOX,
   LINEAR,
   NOTION,
-  GOOGLE,
+  GOOGLE_GMAIL,
+  GOOGLE_CALENDAR,
+  GOOGLE_DRIVE,
+  GOOGLE_SHEETS,
+  GOOGLE_DOCS,
+  GOOGLE_PEOPLE,
   MAILCHIMP,
   GITLAB,
   ZOOM,
@@ -41,8 +46,13 @@ describe('Registry', () => {
       expect(REGISTRY.getByName('linear')).toBe(LINEAR);
     });
 
-    it('should find Google by name', () => {
-      expect(REGISTRY.getByName('google')).toBe(GOOGLE);
+    it('should find Google services by name', () => {
+      expect(REGISTRY.getByName('google-gmail')).toBe(GOOGLE_GMAIL);
+      expect(REGISTRY.getByName('google-calendar')).toBe(GOOGLE_CALENDAR);
+      expect(REGISTRY.getByName('google-drive')).toBe(GOOGLE_DRIVE);
+      expect(REGISTRY.getByName('google-sheets')).toBe(GOOGLE_SHEETS);
+      expect(REGISTRY.getByName('google-docs')).toBe(GOOGLE_DOCS);
+      expect(REGISTRY.getByName('google-people')).toBe(GOOGLE_PEOPLE);
     });
 
     it('should find Notion by name', () => {
@@ -91,10 +101,19 @@ describe('Registry', () => {
       expect(REGISTRY.getByUrl('https://api.linear.app/graphql')).toBe(LINEAR);
     });
 
-    it('should find Google by API URL', () => {
-      expect(REGISTRY.getByUrl('https://www.googleapis.com/gmail/v1/users/me/profile')).toBe(
-        GOOGLE
+    it('should find Google services by API URL', () => {
+      expect(REGISTRY.getByUrl('https://gmail.googleapis.com/gmail/v1/users/me/profile')).toBe(
+        GOOGLE_GMAIL
       );
+      expect(REGISTRY.getByUrl('https://www.googleapis.com/calendar/v3/calendars/primary')).toBe(
+        GOOGLE_CALENDAR
+      );
+      expect(REGISTRY.getByUrl('https://www.googleapis.com/drive/v3/files')).toBe(GOOGLE_DRIVE);
+      expect(REGISTRY.getByUrl('https://sheets.googleapis.com/v4/spreadsheets')).toBe(
+        GOOGLE_SHEETS
+      );
+      expect(REGISTRY.getByUrl('https://docs.googleapis.com/v1/documents/abc')).toBe(GOOGLE_DOCS);
+      expect(REGISTRY.getByUrl('https://people.googleapis.com/v1/people/me')).toBe(GOOGLE_PEOPLE);
     });
 
     it('should find Notion by API URL', () => {
@@ -125,14 +144,19 @@ describe('Registry', () => {
 
   describe('services', () => {
     it('should contain all services', () => {
-      expect(REGISTRY.services).toHaveLength(16);
+      expect(REGISTRY.services).toHaveLength(21);
       expect(REGISTRY.services).toContain(SLACK);
       expect(REGISTRY.services).toContain(DISCORD);
       expect(REGISTRY.services).toContain(GITHUB);
       expect(REGISTRY.services).toContain(DROPBOX);
       expect(REGISTRY.services).toContain(LINEAR);
       expect(REGISTRY.services).toContain(NOTION);
-      expect(REGISTRY.services).toContain(GOOGLE);
+      expect(REGISTRY.services).toContain(GOOGLE_GMAIL);
+      expect(REGISTRY.services).toContain(GOOGLE_CALENDAR);
+      expect(REGISTRY.services).toContain(GOOGLE_DRIVE);
+      expect(REGISTRY.services).toContain(GOOGLE_SHEETS);
+      expect(REGISTRY.services).toContain(GOOGLE_DOCS);
+      expect(REGISTRY.services).toContain(GOOGLE_PEOPLE);
       expect(REGISTRY.services).toContain(MAILCHIMP);
       expect(REGISTRY.services).toContain(GITLAB);
       expect(REGISTRY.services).toContain(ZOOM);
