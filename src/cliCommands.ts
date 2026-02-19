@@ -21,7 +21,7 @@ import type { CurlResult } from './curl.js';
 import { EncryptedStorage } from './encryptedStorage.js';
 import { Registry, REGISTRY } from './registry.js';
 import { LoginCancelledError, LoginFailedError, type Service } from './services/index.js';
-import { run as curlRun } from './curl.js';
+import { extractUrlFromCurlArguments, run as curlRun } from './curl.js';
 import { getSkillMdContent } from './skillMd.js';
 
 /**
@@ -56,9 +56,6 @@ async function getCredentialStatus(
   return service.checkApiCredentials(refreshed);
 }
 
-// Curl flags that don't affect the HTTP request semantics but may not be supported by URL extraction.
-const CURL_PASSTHROUGH_FLAGS = new Set(['-v', '--verbose']);
-
 /**
  * Dependencies that can be injected for testing.
  */
@@ -89,37 +86,6 @@ export function createDefaultDependencies(): CliDependencies {
       console.error(message);
     },
   };
-}
-
-function filterPassthroughFlags(args: string[]): string[] {
-  return args.filter((arg) => !CURL_PASSTHROUGH_FLAGS.has(arg));
-}
-
-export function extractUrlFromCurlArguments(args: string[]): string | null {
-  const filteredArgs = filterPassthroughFlags(args);
-
-  // Simple URL extraction: look for arguments that look like URLs
-  // or parse known curl argument patterns
-  for (let i = 0; i < filteredArgs.length; i++) {
-    const arg = filteredArgs[i];
-    if (arg === undefined) continue;
-
-    // Skip flags and their values
-    if (arg.startsWith('-')) {
-      // Skip flags that take a value
-      if (['-H', '-d', '-X', '-o', '-w', '-u', '-A', '-e', '-b', '-c', '-F', '-T'].includes(arg)) {
-        i++; // Skip the next argument which is the value
-      }
-      continue;
-    }
-
-    // This looks like a URL
-    if (arg.startsWith('http://') || arg.startsWith('https://')) {
-      return arg;
-    }
-  }
-
-  return null;
 }
 
 async function defaultConfirm(message: string): Promise<boolean> {

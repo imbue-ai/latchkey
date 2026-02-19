@@ -4,11 +4,8 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execSync, ExecSyncOptionsWithStringEncoding } from 'node:child_process';
 import { Command } from 'commander';
-import {
-  extractUrlFromCurlArguments,
-  registerCommands,
-  type CliDependencies,
-} from '../src/cliCommands.js';
+import { registerCommands, type CliDependencies } from '../src/cliCommands.js';
+import { extractUrlFromCurlArguments } from '../src/curl.js';
 import { BrowserFlowsNotSupportedError } from '../src/playwrightUtils.js';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { Config } from '../src/config.js';
