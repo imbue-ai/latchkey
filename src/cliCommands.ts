@@ -283,23 +283,23 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       );
 
       const allCredentials = apiCredentialStore.getAll();
-      const entries: Record<
-        string,
-        { credentialType: string; credentialStatus: ApiCredentialStatus }
-      > = {};
 
-      for (const [serviceName, credentials] of allCredentials) {
-        const service = deps.registry.getByName(serviceName);
-        const credentialStatus =
-          service !== null
-            ? await getCredentialStatus(service, credentials, apiCredentialStore)
-            : ApiCredentialStatus.Valid;
+      const statusChecks = Array.from(
+        allCredentials,
+        async ([serviceName, credentials]): Promise<
+          readonly [string, { credentialType: string; credentialStatus: ApiCredentialStatus }]
+        > => {
+          const service = deps.registry.getByName(serviceName);
+          const credentialStatus =
+            service !== null
+              ? await getCredentialStatus(service, credentials, apiCredentialStore)
+              : ApiCredentialStatus.Valid;
 
-        entries[serviceName] = {
-          credentialType: credentials.objectType,
-          credentialStatus,
-        };
-      }
+          return [serviceName, { credentialType: credentials.objectType, credentialStatus }];
+        }
+      );
+
+      const entries = Object.fromEntries(await Promise.all(statusChecks));
 
       deps.log(JSON.stringify(entries, null, 2));
     });
