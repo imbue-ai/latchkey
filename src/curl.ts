@@ -84,6 +84,74 @@ function filterPassthroughFlags(args: string[]): string[] {
   return args.filter((arg) => !CURL_PASSTHROUGH_FLAGS.has(arg));
 }
 
+/**
+ * Parse the HTTP method from curl arguments. Defaults to GET unless -d / --data* is present
+ * (which implies POST) or -X / --request overrides it.
+ */
+export function extractMethodFromCurlArguments(curlArguments: readonly string[]): string {
+  let method: string | undefined;
+  let hasData = false;
+  for (let i = 0; i < curlArguments.length; i++) {
+    const argument = curlArguments[i]!;
+    if (argument === '-X' || argument === '--request') {
+      method = curlArguments[i + 1]?.toUpperCase();
+      i++;
+    } else if (
+      argument === '-d' ||
+      argument === '--data' ||
+      argument === '--data-raw' ||
+      argument === '--data-binary' ||
+      argument === '--data-urlencode'
+    ) {
+      hasData = true;
+      i++;
+    }
+  }
+  if (method !== undefined) {
+    return method;
+  }
+  return hasData ? 'POST' : 'GET';
+}
+
+/** Extract the request body from -d / --data* curl arguments. */
+export function extractBodyFromCurlArguments(curlArguments: readonly string[]): string {
+  for (let i = 0; i < curlArguments.length; i++) {
+    const argument = curlArguments[i]!;
+    if (
+      argument === '-d' ||
+      argument === '--data' ||
+      argument === '--data-raw' ||
+      argument === '--data-binary'
+    ) {
+      return curlArguments[i + 1] ?? '';
+    }
+  }
+  return '';
+}
+
+/** Extract headers already present in curl arguments. */
+export function extractHeadersFromCurlArguments(
+  curlArguments: readonly string[]
+): Record<string, string> {
+  const headers: Record<string, string> = {};
+  for (let i = 0; i < curlArguments.length; i++) {
+    const argument = curlArguments[i]!;
+    if (argument === '-H' || argument === '--header') {
+      const headerValue = curlArguments[i + 1];
+      if (headerValue !== undefined) {
+        const colonIndex = headerValue.indexOf(':');
+        if (colonIndex > 0) {
+          const name = headerValue.slice(0, colonIndex).trim().toLowerCase();
+          const value = headerValue.slice(colonIndex + 1).trim();
+          headers[name] = value;
+        }
+      }
+      i++;
+    }
+  }
+  return headers;
+}
+
 export function extractUrlFromCurlArguments(args: string[]): string | null {
   const filteredArgs = filterPassthroughFlags(args);
 

@@ -5,6 +5,7 @@ import {
   SlackApiCredentials,
   RawCurlCredentials,
   TelegramBotCredentials,
+  AwsCredentials,
   deserializeCredentials,
   serializeCredentials,
   ApiCredentialsSchema,
@@ -188,6 +189,95 @@ describe('TelegramBotCredentials', () => {
   });
 });
 
+describe('AwsCredentials', () => {
+  it('should inject Authorization, x-amz-date, and x-amz-content-sha256 headers', () => {
+    const credentials = new AwsCredentials('AKIAIOSFODNN7EXAMPLE', 'wJalrXUtnFEMI/K7MDENG');
+    const result = credentials.injectIntoCurlCall([
+      'https://sts.amazonaws.com/?Action=GetCallerIdentity&Version=2011-06-15',
+    ]);
+    const resultStrings = result as string[];
+    // Should have the original URL plus 6 new arguments (3 header pairs)
+    expect(resultStrings).toHaveLength(7);
+    expect(resultStrings[0]).toBe('-H');
+    expect(resultStrings[1]).toMatch(
+      /^Authorization: AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE\//
+    );
+    expect(resultStrings[2]).toBe('-H');
+    expect(resultStrings[3]).toMatch(/^x-amz-date: \d{8}T\d{6}Z$/);
+    expect(resultStrings[4]).toBe('-H');
+    expect(resultStrings[5]).toMatch(/^x-amz-content-sha256: [a-f0-9]{64}$/);
+    expect(resultStrings[6]).toBe(
+      'https://sts.amazonaws.com/?Action=GetCallerIdentity&Version=2011-06-15'
+    );
+  });
+
+  it('should preserve existing curl arguments', () => {
+    const credentials = new AwsCredentials('AKIAIOSFODNN7EXAMPLE', 'wJalrXUtnFEMI/K7MDENG');
+    const result = credentials.injectIntoCurlCall([
+      '-X',
+      'POST',
+      '-d',
+      '{"key": "value"}',
+      'https://s3.us-east-1.amazonaws.com/bucket/key',
+    ]);
+    const resultStrings = result as string[];
+    // Signing headers (6) + original args (5)
+    expect(resultStrings).toHaveLength(11);
+    expect(resultStrings.slice(6)).toEqual([
+      '-X',
+      'POST',
+      '-d',
+      '{"key": "value"}',
+      'https://s3.us-east-1.amazonaws.com/bucket/key',
+    ]);
+  });
+
+  it('should pass through arguments unchanged when no URL is present', () => {
+    const credentials = new AwsCredentials('AKIAIOSFODNN7EXAMPLE', 'wJalrXUtnFEMI/K7MDENG');
+    const result = credentials.injectIntoCurlCall(['-v']);
+    expect(result).toEqual(['-v']);
+  });
+
+  it('should include content-type in signed headers when present', () => {
+    const credentials = new AwsCredentials('AKIAIOSFODNN7EXAMPLE', 'wJalrXUtnFEMI/K7MDENG');
+    const result = credentials.injectIntoCurlCall([
+      '-H',
+      'Content-Type: application/json',
+      '-d',
+      '{}',
+      'https://lambda.us-east-1.amazonaws.com/2015-03-31/functions',
+    ]);
+    const resultStrings = result as string[];
+    const authHeader = resultStrings[1]!;
+    expect(authHeader).toContain('SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date');
+  });
+
+  it('should serialize to JSON', () => {
+    const credentials = new AwsCredentials('AKIAIOSFODNN7EXAMPLE', 'secret123');
+    expect(credentials.toJSON()).toEqual({
+      objectType: 'aws',
+      accessKeyId: 'AKIAIOSFODNN7EXAMPLE',
+      secretAccessKey: 'secret123',
+    });
+  });
+
+  it('should deserialize from JSON', () => {
+    const data = {
+      objectType: 'aws' as const,
+      accessKeyId: 'AKIAIOSFODNN7EXAMPLE',
+      secretAccessKey: 'secret123',
+    };
+    const credentials = AwsCredentials.fromJSON(data);
+    expect(credentials.accessKeyId).toBe('AKIAIOSFODNN7EXAMPLE');
+    expect(credentials.secretAccessKey).toBe('secret123');
+  });
+
+  it('should return undefined for isExpired', () => {
+    const credentials = new AwsCredentials('AKIAIOSFODNN7EXAMPLE', 'secret123');
+    expect(credentials.isExpired()).toBeUndefined();
+  });
+});
+
 describe('deserializeCredentials', () => {
   it('should deserialize AuthorizationBearer', () => {
     const data = {
@@ -240,6 +330,18 @@ describe('deserializeCredentials', () => {
     expect(credentials).toBeInstanceOf(TelegramBotCredentials);
     expect((credentials as TelegramBotCredentials).token).toBe('123456:ABC-DEF');
   });
+
+  it('should deserialize AwsCredentials', () => {
+    const data = {
+      objectType: 'aws' as const,
+      accessKeyId: 'AKIAIOSFODNN7EXAMPLE',
+      secretAccessKey: 'secret123',
+    };
+    const credentials = deserializeCredentials(data);
+    expect(credentials).toBeInstanceOf(AwsCredentials);
+    expect((credentials as AwsCredentials).accessKeyId).toBe('AKIAIOSFODNN7EXAMPLE');
+    expect((credentials as AwsCredentials).secretAccessKey).toBe('secret123');
+  });
 });
 
 describe('serializeCredentials', () => {
@@ -288,6 +390,16 @@ describe('serializeCredentials', () => {
       token: '123456:ABC-DEF',
     });
   });
+
+  it('should serialize AwsCredentials', () => {
+    const credentials = new AwsCredentials('AKIAIOSFODNN7EXAMPLE', 'secret123');
+    const data = serializeCredentials(credentials);
+    expect(data).toEqual({
+      objectType: 'aws',
+      accessKeyId: 'AKIAIOSFODNN7EXAMPLE',
+      secretAccessKey: 'secret123',
+    });
+  });
 });
 
 describe('ApiCredentialsSchema', () => {
@@ -328,6 +440,15 @@ describe('ApiCredentialsSchema', () => {
     const result = ApiCredentialsSchema.safeParse({
       objectType: 'telegramBot',
       token: '123456:ABC-DEF',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('should validate AwsCredentials', () => {
+    const result = ApiCredentialsSchema.safeParse({
+      objectType: 'aws',
+      accessKeyId: 'AKIAIOSFODNN7EXAMPLE',
+      secretAccessKey: 'secret',
     });
     expect(result.success).toBe(true);
   });

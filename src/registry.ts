@@ -26,6 +26,7 @@ import {
   CALENDLY,
   YELP,
   TELEGRAM,
+  AWS,
 } from './services/index.js';
 
 export class Registry {
@@ -85,4 +86,5 @@ export const REGISTRY = new Registry([
   CALENDLY,
   YELP,
   TELEGRAM,
+  AWS,
 ]);

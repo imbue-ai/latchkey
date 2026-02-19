@@ -23,6 +23,7 @@ import {
   CALENDLY,
   YELP,
   TELEGRAM,
+  AWS,
 } from '../src/services/index.js';
 
 describe('Registry', () => {
@@ -62,6 +63,10 @@ describe('Registry', () => {
 
     it('should find Mailchimp by name', () => {
       expect(REGISTRY.getByName('mailchimp')).toBe(MAILCHIMP);
+    });
+
+    it('should find AWS by name', () => {
+      expect(REGISTRY.getByName('aws')).toBe(AWS);
     });
 
     it('should return null for unknown service', () => {
@@ -133,6 +138,14 @@ describe('Registry', () => {
       );
     });
 
+    it('should find AWS by API URL', () => {
+      expect(REGISTRY.getByUrl('https://sts.amazonaws.com/?Action=GetCallerIdentity')).toBe(AWS);
+      expect(REGISTRY.getByUrl('https://s3.us-east-1.amazonaws.com/my-bucket')).toBe(AWS);
+      expect(
+        REGISTRY.getByUrl('https://bedrock-runtime.us-west-2.amazonaws.com/model/invoke')
+      ).toBe(AWS);
+    });
+
     it('should return null for unknown URL', () => {
       expect(REGISTRY.getByUrl('https://example.com/api')).toBeNull();
     });
@@ -145,7 +158,7 @@ describe('Registry', () => {
 
   describe('services', () => {
     it('should contain all services', () => {
-      expect(REGISTRY.services).toHaveLength(22);
+      expect(REGISTRY.services).toHaveLength(23);
       expect(REGISTRY.services).toContain(SLACK);
       expect(REGISTRY.services).toContain(DISCORD);
       expect(REGISTRY.services).toContain(GITHUB);
@@ -168,6 +181,7 @@ describe('Registry', () => {
       expect(REGISTRY.services).toContain(CALENDLY);
       expect(REGISTRY.services).toContain(YELP);
       expect(REGISTRY.services).toContain(TELEGRAM);
+      expect(REGISTRY.services).toContain(AWS);
     });
   });
 
