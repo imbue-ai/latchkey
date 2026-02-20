@@ -27,7 +27,7 @@ import {
   YELP,
   TELEGRAM,
   AWS,
-  GOOGLE_MAPS,
+  GOOGLE_DIRECTIONS,
 } from './services/index.js';
 
 export class Registry {
@@ -88,5 +88,5 @@ export const REGISTRY = new Registry([
   YELP,
   TELEGRAM,
   AWS,
-  GOOGLE_MAPS,
+  GOOGLE_DIRECTIONS,
 ]);

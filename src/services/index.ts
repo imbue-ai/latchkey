@@ -37,5 +37,5 @@ export { Stripe, STRIPE } from './stripe.js';
 export { Figma, FIGMA } from './figma.js';
 export { GoogleAnalytics, GOOGLE_ANALYTICS } from './google/analytics.js';
 export { Calendly, CALENDLY } from './calendly.js';
-export { GoogleMaps, GOOGLE_MAPS } from './google/maps.js';
+export { GoogleDirections, GOOGLE_DIRECTIONS } from './google/directions.js';
 export { Yelp, YELP } from './yelp.js';

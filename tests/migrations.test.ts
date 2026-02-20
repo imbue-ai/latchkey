@@ -145,7 +145,7 @@ describe('migrations', () => {
       expect(store['google-people']).toEqual(googleCredentials);
       // analytics and maps should NOT be created
       expect(store).not.toHaveProperty('google-analytics');
-      expect(store).not.toHaveProperty('google-maps');
+      expect(store).not.toHaveProperty('google-directions');
     });
 
     it('should not overwrite existing individual service credentials', () => {

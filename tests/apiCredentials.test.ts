@@ -12,7 +12,6 @@ import {
 import { SlackApiCredentials } from '../src/services/slack.js';
 import { TelegramBotCredentials } from '../src/services/telegram.js';
 import { AwsCredentials } from '../src/services/aws.js';
-import { GoogleMapsApiKeyCredentials } from '../src/services/google/maps.js';
 
 describe('AuthorizationBearer', () => {
   it('should inject correct curl arguments', () => {
@@ -188,93 +187,6 @@ describe('TelegramBotCredentials', () => {
 
   it('should return undefined for isExpired', () => {
     const credentials = new TelegramBotCredentials('123456:ABC-DEF');
-    expect(credentials.isExpired()).toBeUndefined();
-  });
-});
-
-describe('GoogleMapsApiKeyCredentials', () => {
-  it('should inject key into URL without query params', () => {
-    const credentials = new GoogleMapsApiKeyCredentials('AIzaSyTestKey123');
-    expect(
-      credentials.injectIntoCurlCall(['https://maps.googleapis.com/maps/api/geocode/json'])
-    ).toEqual(['https://maps.googleapis.com/maps/api/geocode/json?key=AIzaSyTestKey123']);
-  });
-
-  it('should inject key into URL with existing query params', () => {
-    const credentials = new GoogleMapsApiKeyCredentials('AIzaSyTestKey123');
-    expect(
-      credentials.injectIntoCurlCall([
-        'https://maps.googleapis.com/maps/api/geocode/json?address=1600+Amphitheatre+Parkway',
-      ])
-    ).toEqual([
-      'https://maps.googleapis.com/maps/api/geocode/json?address=1600+Amphitheatre+Parkway&key=AIzaSyTestKey123',
-    ]);
-  });
-
-  it('should not duplicate key if already present in URL', () => {
-    const credentials = new GoogleMapsApiKeyCredentials('AIzaSyTestKey123');
-    const urlWithKey =
-      'https://maps.googleapis.com/maps/api/geocode/json?key=AIzaSyOtherKey&address=test';
-    expect(credentials.injectIntoCurlCall([urlWithKey])).toEqual([urlWithKey]);
-  });
-
-  it('should not modify non-Google Maps URLs', () => {
-    const credentials = new GoogleMapsApiKeyCredentials('AIzaSyTestKey123');
-    expect(
-      credentials.injectIntoCurlCall([
-        '-H',
-        'Content-Type: application/json',
-        'https://other.example.com/api',
-      ])
-    ).toEqual(['-H', 'Content-Type: application/json', 'https://other.example.com/api']);
-  });
-
-  it('should preserve other curl arguments', () => {
-    const credentials = new GoogleMapsApiKeyCredentials('AIzaSyTestKey123');
-    expect(
-      credentials.injectIntoCurlCall([
-        '-s',
-        '-o',
-        '/dev/null',
-        'https://maps.googleapis.com/maps/api/geocode/json?address=test',
-      ])
-    ).toEqual([
-      '-s',
-      '-o',
-      '/dev/null',
-      'https://maps.googleapis.com/maps/api/geocode/json?address=test&key=AIzaSyTestKey123',
-    ]);
-  });
-
-  it('should properly encode special characters in params', () => {
-    const credentials = new GoogleMapsApiKeyCredentials('AIzaSyTestKey123');
-    const result = credentials.injectIntoCurlCall([
-      'https://maps.googleapis.com/maps/api/geocode/json?address=New%20York%2C%20NY',
-    ]);
-    expect(result).toEqual([
-      'https://maps.googleapis.com/maps/api/geocode/json?address=New+York%2C+NY&key=AIzaSyTestKey123',
-    ]);
-  });
-
-  it('should serialize to JSON', () => {
-    const credentials = new GoogleMapsApiKeyCredentials('AIzaSyTestKey123');
-    expect(credentials.toJSON()).toEqual({
-      objectType: 'googleMapsApiKey',
-      apiKey: 'AIzaSyTestKey123',
-    });
-  });
-
-  it('should deserialize from JSON', () => {
-    const data = {
-      objectType: 'googleMapsApiKey' as const,
-      apiKey: 'AIzaSyTestKey123',
-    };
-    const credentials = GoogleMapsApiKeyCredentials.fromJSON(data);
-    expect(credentials.apiKey).toBe('AIzaSyTestKey123');
-  });
-
-  it('should return undefined for isExpired', () => {
-    const credentials = new GoogleMapsApiKeyCredentials('AIzaSyTestKey123');
     expect(credentials.isExpired()).toBeUndefined();
   });
 });
