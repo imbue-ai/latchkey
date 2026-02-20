@@ -77,6 +77,7 @@ function findInPath(command: string): boolean {
  * Configuration for Latchkey, sourced from environment variables with sensible defaults.
  */
 export class Config {
+  readonly directory: string;
   readonly credentialStorePath: string;
   readonly browserStatePath: string;
   readonly configPath: string;
@@ -107,13 +108,11 @@ export class Config {
     this.browserDisabled = browserDisabledEnv !== undefined && browserDisabledEnv !== '';
 
     const directoryEnv = getEnv(LATCHKEY_DIRECTORY_ENV_VAR);
-    const directory = directoryEnv
-      ? resolvePathWithTildeExpansion(directoryEnv)
-      : DEFAULT_DIRECTORY;
+    this.directory = directoryEnv ? resolvePathWithTildeExpansion(directoryEnv) : DEFAULT_DIRECTORY;
 
-    this.credentialStorePath = join(directory, CREDENTIAL_STORE_FILENAME);
-    this.browserStatePath = join(directory, BROWSER_STATE_FILENAME);
-    this.configPath = join(directory, CONFIG_FILENAME);
+    this.credentialStorePath = join(this.directory, CREDENTIAL_STORE_FILENAME);
+    this.browserStatePath = join(this.directory, BROWSER_STATE_FILENAME);
+    this.configPath = join(this.directory, CONFIG_FILENAME);
   }
 
   /**

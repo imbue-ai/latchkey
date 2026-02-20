@@ -165,6 +165,7 @@ describe('CLI commands with dependency injection', () => {
   function createMockConfig(overrides: Partial<Config> = {}): Config {
     const defaultConfig = new Config(() => undefined);
     return {
+      directory: overrides.directory ?? tempDir,
       credentialStorePath: overrides.credentialStorePath ?? join(tempDir, 'credentials.json'),
       browserStatePath: overrides.browserStatePath ?? join(tempDir, 'browser_state.json'),
       configPath: overrides.configPath ?? join(tempDir, 'config.json'),
