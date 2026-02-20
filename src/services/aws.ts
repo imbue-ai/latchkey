@@ -259,8 +259,7 @@ export class Aws extends Service {
   readonly info =
     'https://docs.aws.amazon.com/. ' +
     'Browser-based authentication is not supported. ' +
-    'Use `latchkey auth set-nocurl aws <access-key-id> <secret-access-key>` to store credentials. ' +
-    'Create access keys at https://console.aws.amazon.com/iam/home#/security_credentials.';
+    'Use `latchkey auth set-nocurl aws <access-key-id> <secret-access-key>` to store credentials.';
 
   readonly credentialCheckCurlArguments = [
     'https://sts.amazonaws.com/?Action=GetCallerIdentity&Version=2011-06-15',
