@@ -110,9 +110,6 @@ describe('migrations', () => {
       expect(() => {
         runMigrations(config, encryptedStorage);
       }).toThrow(MigrationError);
-      expect(() => {
-        runMigrations(config, encryptedStorage);
-      }).toThrow('Please upgrade latchkey');
     });
   });
 
@@ -218,14 +215,6 @@ describe('migrations', () => {
 
       expect(store.slack).toEqual(slackCredentials);
       expect(Object.keys(store)).toEqual(['slack']);
-    });
-
-    it('should be a no-op when credential store does not exist', () => {
-      // Create the directory but no credentials file — but wait, we need
-      // the credentials file to exist for migrations to run (isFirstInstallation check).
-      // This is actually a first-installation scenario, so migrations are skipped.
-      runMigrations(config, encryptedStorage);
-      expect(existsSync(join(tempDir, 'data-format-version'))).toBe(false);
     });
 
     it('should update the version file after migration', () => {

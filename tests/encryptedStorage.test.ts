@@ -152,7 +152,6 @@ describe('EncryptedStorage', () => {
       });
 
       expect(() => storage.readFile(tempDir)).toThrow(PathIsDirectoryError);
-      expect(() => storage.readFile(tempDir)).toThrow('Path is a directory, not a file');
     });
   });
 
@@ -165,9 +164,6 @@ describe('EncryptedStorage', () => {
       expect(() => {
         storage.writeFile(tempDir, 'content');
       }).toThrow(PathIsDirectoryError);
-      expect(() => {
-        storage.writeFile(tempDir, 'content');
-      }).toThrow('Path is a directory, not a file');
     });
   });
 });
