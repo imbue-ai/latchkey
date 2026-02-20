@@ -9,7 +9,7 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { homedir, platform } from 'node:os';
+import { platform } from 'node:os';
 import { dirname, join } from 'node:path';
 import { chromium } from 'playwright';
 import { z } from 'zod';
@@ -67,13 +67,6 @@ export class BrowserConfigError extends Error {
     super(message);
     this.name = 'BrowserConfigError';
   }
-}
-
-/**
- * Get the default path for the configuration file.
- */
-export function getDefaultConfigPath(): string {
-  return join(homedir(), '.latchkey', 'config.json');
 }
 
 /**
@@ -318,7 +311,7 @@ export function loadBrowserConfig(configPath: string): BrowserConfig | null {
  * Tries sources in the specified order, saves the result to the config file.
  */
 export async function ensureBrowser(
-  configPath: string = getDefaultConfigPath(),
+  configPath: string,
   sources: readonly BrowserSource[] = DEFAULT_BROWSER_SOURCES
 ): Promise<{ config: BrowserConfig; source: BrowserSource }> {
   const result = await discoverBrowserFromSources(sources, configPath);

@@ -2,12 +2,12 @@
  * API credential store for persisting and loading API credentials.
  */
 
+import type { ApiCredentials } from './apiCredentials.js';
 import {
-  ApiCredentials,
   ApiCredentialsSchema,
   deserializeCredentials,
   serializeCredentials,
-} from './apiCredentials.js';
+} from './apiCredentialsSerialization.js';
 import { EncryptedStorage } from './encryptedStorage.js';
 
 export class ApiCredentialStoreError extends Error {

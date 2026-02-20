@@ -16,12 +16,17 @@ import {
   type BrowserSource,
 } from './browserConfig.js';
 import { Config, CONFIG } from './config.js';
-import { BrowserDisabledError, BrowserFlowsNotSupportedError } from './playwrightUtils.js';
+import { BrowserDisabledError } from './playwrightUtils.js';
 import type { CurlResult } from './curl.js';
 import { EncryptedStorage } from './encryptedStorage.js';
 import { Registry, REGISTRY } from './registry.js';
-import { LoginCancelledError, LoginFailedError, type Service } from './services/index.js';
-import { run as curlRun } from './curl.js';
+import {
+  LoginCancelledError,
+  LoginFailedError,
+  NoCurlCredentialsNotSupportedError,
+  Service,
+} from './services/index.js';
+import { extractUrlFromCurlArguments, run as curlRun } from './curl.js';
 import { getSkillMdContent } from './skillMd.js';
 
 /**
@@ -56,9 +61,6 @@ async function getCredentialStatus(
   return service.checkApiCredentials(refreshed);
 }
 
-// Curl flags that don't affect the HTTP request semantics but may not be supported by URL extraction.
-const CURL_PASSTHROUGH_FLAGS = new Set(['-v', '--verbose']);
-
 /**
  * Dependencies that can be injected for testing.
  */
@@ -89,37 +91,6 @@ export function createDefaultDependencies(): CliDependencies {
       console.error(message);
     },
   };
-}
-
-function filterPassthroughFlags(args: string[]): string[] {
-  return args.filter((arg) => !CURL_PASSTHROUGH_FLAGS.has(arg));
-}
-
-export function extractUrlFromCurlArguments(args: string[]): string | null {
-  const filteredArgs = filterPassthroughFlags(args);
-
-  // Simple URL extraction: look for arguments that look like URLs
-  // or parse known curl argument patterns
-  for (let i = 0; i < filteredArgs.length; i++) {
-    const arg = filteredArgs[i];
-    if (arg === undefined) continue;
-
-    // Skip flags and their values
-    if (arg.startsWith('-')) {
-      // Skip flags that take a value
-      if (['-H', '-d', '-X', '-o', '-w', '-u', '-A', '-e', '-b', '-c', '-F', '-T'].includes(arg)) {
-        i++; // Skip the next argument which is the value
-      }
-      continue;
-    }
-
-    // This looks like a URL
-    if (arg.startsWith('http://') || arg.startsWith('https://')) {
-      return arg;
-    }
-  }
-
-  return null;
 }
 
 async function defaultConfirm(message: string): Promise<boolean> {
@@ -177,10 +148,13 @@ async function clearAll(deps: CliDependencies, yes: boolean): Promise<void> {
 }
 
 function createEncryptedStorageFromConfig(config: Config) {
+  const hasEncryptedData =
+    existsSync(config.credentialStorePath) || existsSync(config.browserStatePath);
   return new EncryptedStorage({
     encryptionKeyOverride: config.encryptionKeyOverride,
     serviceName: config.serviceName,
     accountName: config.accountName,
+    allowKeyGeneration: !hasEncryptedData,
   });
 }
 
@@ -286,6 +260,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       const info = {
         authOptions,
         credentialStatus,
+        setCredentialsExample: service.setCredentialsExample(serviceName),
         developerNotes: service.info,
       };
       deps.log(JSON.stringify(info, null, 2));
@@ -317,23 +292,23 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       );
 
       const allCredentials = apiCredentialStore.getAll();
-      const entries: Record<
-        string,
-        { credentialType: string; credentialStatus: ApiCredentialStatus }
-      > = {};
 
-      for (const [serviceName, credentials] of allCredentials) {
-        const service = deps.registry.getByName(serviceName);
-        const credentialStatus =
-          service !== null
-            ? await getCredentialStatus(service, credentials, apiCredentialStore)
-            : ApiCredentialStatus.Valid;
+      const statusChecks = Array.from(
+        allCredentials,
+        async ([serviceName, credentials]): Promise<
+          readonly [string, { credentialType: string; credentialStatus: ApiCredentialStatus }]
+        > => {
+          const service = deps.registry.getByName(serviceName);
+          const credentialStatus =
+            service !== null
+              ? await getCredentialStatus(service, credentials, apiCredentialStore)
+              : ApiCredentialStatus.Valid;
 
-        entries[serviceName] = {
-          credentialType: credentials.objectType,
-          credentialStatus,
-        };
-      }
+          return [serviceName, { credentialType: credentials.objectType, credentialStatus }];
+        }
+      );
+
+      const entries = Object.fromEntries(await Promise.all(statusChecks));
 
       deps.log(JSON.stringify(entries, null, 2));
     });
@@ -384,6 +359,55 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     });
 
   authCommand
+    .command('set-nocurl')
+    .description(
+      'Store credentials using service-specific arguments (not curl). ' +
+        'Useful for services that cannot express their credentials ' +
+        'as static curl arguments. Arguments are passed to the service ' +
+        'implementation to modify latchkey curl requests on the fly.'
+    )
+    .argument('<service_name>', 'Name of the service to store credentials for')
+    .addHelpText(
+      'after',
+      `\nExample:\n  $ latchkey auth set-nocurl aws <access-key-id> <secret-access-key>`
+    )
+    .allowExcessArguments()
+    .action((_serviceName: string, _options: unknown, command: { args: string[] }) => {
+      const [serviceName, ...noCurlArguments] = command.args;
+      if (serviceName === undefined) {
+        deps.errorLog('Error: Service name is required.');
+        deps.exit(1);
+      }
+
+      const service = deps.registry.getByName(serviceName);
+      if (service === null) {
+        deps.errorLog(`Error: Unknown service: ${serviceName}`);
+        deps.errorLog("Use 'latchkey services list' to see available services.");
+        deps.exit(1);
+      }
+
+      const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
+      const apiCredentialStore = new ApiCredentialStore(
+        deps.config.credentialStorePath,
+        encryptedStorage
+      );
+
+      let credentials: ApiCredentials;
+      try {
+        credentials = service.getCredentialsNoCurl(noCurlArguments);
+      } catch (error) {
+        if (error instanceof NoCurlCredentialsNotSupportedError) {
+          deps.errorLog(`Error: ${error.message}`);
+          deps.exit(1);
+        }
+        throw error;
+      }
+
+      apiCredentialStore.save(serviceName, credentials);
+      deps.log('Credentials stored.');
+    });
+
+  authCommand
     .command('browser')
     .description('Login to a service via the browser and store the API credentials.')
     .argument('<service_name>', 'Name of the service to login to')
@@ -397,7 +421,10 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
 
       const session = service.getSession?.();
       if (!session) {
-        deps.errorLog(new BrowserFlowsNotSupportedError(service.name).message);
+        deps.errorLog(
+          `Service '${serviceName}' does not support browser flows. ` +
+            `Use '${service.setCredentialsExample(serviceName)}' to set credentials manually.`
+        );
         deps.exit(1);
       }
 
@@ -536,7 +563,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         }
       }
 
-      const allArguments = [...apiCredentials.asCurlArguments(), ...curlArguments];
+      const allArguments = apiCredentials.injectIntoCurlCall(curlArguments);
       const result = deps.runCurl(allArguments);
       deps.exit(result.returncode);
     });

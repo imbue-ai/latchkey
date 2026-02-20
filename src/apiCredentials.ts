@@ -1,6 +1,5 @@
 /**
- * Serialized API credentials types and utilities.
- *
+ * Base API credentials types and generic credential implementations.
  */
 
 import { z } from 'zod';
@@ -13,11 +12,15 @@ export enum ApiCredentialStatus {
 
 /**
  * Base interface for all API credentials.
- * Each credential type must specify how to convert itself to curl arguments.
+ * Each credential type must specify how to inject itself into a curl call.
  */
 export interface ApiCredentials {
   readonly objectType: string;
-  asCurlArguments(): readonly string[];
+  /**
+   * Inject credentials into a curl call by modifying the given arguments array.
+   * Implementations may add headers, change the URL, or transform arguments in any way.
+   */
+  injectIntoCurlCall(curlArguments: readonly string[]): readonly string[];
   /**
    * Check if the credentials are expired.
    * Returns true if expired, false if valid, or undefined if expiration is unknown.
@@ -43,8 +46,8 @@ export class AuthorizationBearer implements ApiCredentials {
     this.token = token;
   }
 
-  asCurlArguments(): readonly string[] {
-    return ['-H', `Authorization: Bearer ${this.token}`];
+  injectIntoCurlCall(curlArguments: readonly string[]): readonly string[] {
+    return ['-H', `Authorization: Bearer ${this.token}`, ...curlArguments];
   }
 
   isExpired(): boolean | undefined {
@@ -81,8 +84,8 @@ export class AuthorizationBare implements ApiCredentials {
     this.token = token;
   }
 
-  asCurlArguments(): readonly string[] {
-    return ['-H', `Authorization: ${this.token}`];
+  injectIntoCurlCall(curlArguments: readonly string[]): readonly string[] {
+    return ['-H', `Authorization: ${this.token}`, ...curlArguments];
   }
 
   isExpired(): boolean | undefined {
@@ -98,48 +101,6 @@ export class AuthorizationBare implements ApiCredentials {
 
   static fromJSON(data: AuthorizationBareData): AuthorizationBare {
     return new AuthorizationBare(data.token);
-  }
-}
-
-/**
- * Slack-specific credentials (token + d cookie).
- */
-export const SlackApiCredentialsSchema = z.object({
-  objectType: z.literal('slack'),
-  token: z.string(),
-  dCookie: z.string(),
-});
-
-export type SlackApiCredentialsData = z.infer<typeof SlackApiCredentialsSchema>;
-
-export class SlackApiCredentials implements ApiCredentials {
-  readonly objectType = 'slack' as const;
-  readonly token: string;
-  readonly dCookie: string;
-
-  constructor(token: string, dCookie: string) {
-    this.token = token;
-    this.dCookie = dCookie;
-  }
-
-  asCurlArguments(): readonly string[] {
-    return ['-H', `Authorization: Bearer ${this.token}`, '-H', `Cookie: d=${this.dCookie}`];
-  }
-
-  isExpired(): boolean | undefined {
-    return undefined;
-  }
-
-  toJSON(): SlackApiCredentialsData {
-    return {
-      objectType: this.objectType,
-      token: this.token,
-      dCookie: this.dCookie,
-    };
-  }
-
-  static fromJSON(data: SlackApiCredentialsData): SlackApiCredentials {
-    return new SlackApiCredentials(data.token, data.dCookie);
   }
 }
 
@@ -162,8 +123,8 @@ export class RawCurlCredentials implements ApiCredentials {
     this.curlArguments = curlArguments;
   }
 
-  asCurlArguments(): readonly string[] {
-    return this.curlArguments;
+  injectIntoCurlCall(curlArguments: readonly string[]): readonly string[] {
+    return [...this.curlArguments, ...curlArguments];
   }
 
   isExpired(): boolean | undefined {
@@ -225,13 +186,13 @@ export class OAuthCredentials implements ApiCredentials {
     this.refreshTokenExpiresAt = refreshTokenExpiresAt;
   }
 
-  asCurlArguments(): readonly string[] {
+  injectIntoCurlCall(curlArguments: readonly string[]): readonly string[] {
     if (this.accessToken === undefined) {
       throw new ApiCredentialsUsageError(
         'OAuth credentials missing access token. Run login to obtain access tokens.'
       );
     }
-    return ['-H', `Authorization: Bearer ${this.accessToken}`];
+    return ['-H', `Authorization: Bearer ${this.accessToken}`, ...curlArguments];
   }
 
   isExpired(): boolean | undefined {
@@ -271,71 +232,5 @@ export class ApiCredentialsUsageError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'ApiCredentialsUsageError';
-  }
-}
-
-/**
- * Union schema for all credential types.
- */
-export const ApiCredentialsSchema = z.discriminatedUnion('objectType', [
-  AuthorizationBearerSchema,
-  AuthorizationBareSchema,
-  SlackApiCredentialsSchema,
-  OAuthCredentialsSchema,
-  RawCurlCredentialsSchema,
-]);
-
-export type ApiCredentialsData = z.infer<typeof ApiCredentialsSchema>;
-
-/**
- * Deserialize credentials from JSON data.
- */
-export function deserializeCredentials(data: ApiCredentialsData): ApiCredentials {
-  switch (data.objectType) {
-    case 'authorizationBearer':
-      return AuthorizationBearer.fromJSON(data);
-    case 'authorizationBare':
-      return AuthorizationBare.fromJSON(data);
-    case 'slack':
-      return SlackApiCredentials.fromJSON(data);
-    case 'oauth':
-      return OAuthCredentials.fromJSON(data);
-    case 'rawCurl':
-      return RawCurlCredentials.fromJSON(data);
-    default: {
-      const exhaustiveCheck: never = data;
-      throw new ApiCredentialsSerializationError(
-        `Unknown credential type: ${(exhaustiveCheck as { objectType: string }).objectType}`
-      );
-    }
-  }
-}
-
-/**
- * Serialize credentials to JSON data.
- */
-export function serializeCredentials(credentials: ApiCredentials): ApiCredentialsData {
-  if (credentials instanceof AuthorizationBearer) {
-    return credentials.toJSON();
-  }
-  if (credentials instanceof AuthorizationBare) {
-    return credentials.toJSON();
-  }
-  if (credentials instanceof SlackApiCredentials) {
-    return credentials.toJSON();
-  }
-  if (credentials instanceof OAuthCredentials) {
-    return credentials.toJSON();
-  }
-  if (credentials instanceof RawCurlCredentials) {
-    return credentials.toJSON();
-  }
-  throw new ApiCredentialsSerializationError(`Unknown credential type: ${credentials.objectType}`);
-}
-
-export class ApiCredentialsSerializationError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'ApiCredentialsSerializationError';
   }
 }

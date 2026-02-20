@@ -104,6 +104,10 @@ export class Linear extends Service {
     'https://api.linear.app/graphql',
   ] as const;
 
+  setCredentialsExample(serviceName: string): string {
+    return `latchkey auth set ${serviceName} -H "Authorization: <token>"`;
+  }
+
   override getSession(): LinearServiceSession {
     return new LinearServiceSession(this);
   }

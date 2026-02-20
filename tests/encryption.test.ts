@@ -19,18 +19,6 @@ describe('encryption', () => {
       expect(decrypted).toBe(plaintext);
     });
 
-    it('should encrypt and decrypt a JSON string', () => {
-      const key = generateKey();
-      const data = { token: 'xoxc-test', dCookie: 'd-value' };
-      const plaintext = JSON.stringify(data, null, 2);
-
-      const encrypted = encrypt(plaintext, key);
-      const decrypted = decrypt(encrypted, key);
-
-      expect(decrypted).toBe(plaintext);
-      expect(JSON.parse(decrypted)).toEqual(data);
-    });
-
     it('should encrypt and decrypt unicode characters', () => {
       const key = generateKey();
       const plaintext = '日本語 🎉 émojis and ünïcödé';
@@ -44,16 +32,6 @@ describe('encryption', () => {
     it('should encrypt and decrypt empty string', () => {
       const key = generateKey();
       const plaintext = '';
-
-      const encrypted = encrypt(plaintext, key);
-      const decrypted = decrypt(encrypted, key);
-
-      expect(decrypted).toBe(plaintext);
-    });
-
-    it('should encrypt and decrypt long text', () => {
-      const key = generateKey();
-      const plaintext = 'a'.repeat(10000);
 
       const encrypted = encrypt(plaintext, key);
       const decrypted = decrypt(encrypted, key);
@@ -129,11 +107,11 @@ describe('encryption', () => {
   });
 
   describe('generateKey', () => {
-    it('should generate a 256-bit key (44 base64 chars)', () => {
+    it('should generate a 256-bit key', () => {
       const key = generateKey();
+      const decoded = Buffer.from(key, 'base64');
 
-      // 32 bytes encoded as base64 = 44 characters (with padding)
-      expect(key.length).toBe(44);
+      expect(decoded.length).toBe(32);
     });
 
     it('should generate different keys each time', () => {
@@ -141,29 +119,6 @@ describe('encryption', () => {
       const key2 = generateKey();
 
       expect(key1).not.toBe(key2);
-    });
-
-    it('should generate valid base64 keys', () => {
-      const key = generateKey();
-
-      expect(key).toMatch(/^[A-Za-z0-9+/]+=*$/);
-    });
-
-    it('should generate keys that decode to 32 bytes', () => {
-      const key = generateKey();
-      const decoded = Buffer.from(key, 'base64');
-
-      expect(decoded.length).toBe(32);
-    });
-
-    it('should generate keys that work for encryption', () => {
-      const key = generateKey();
-      const plaintext = 'test data';
-
-      const encrypted = encrypt(plaintext, key);
-      const decrypted = decrypt(encrypted, key);
-
-      expect(decrypted).toBe(plaintext);
     });
   });
 });

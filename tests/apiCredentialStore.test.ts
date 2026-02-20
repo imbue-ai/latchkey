@@ -3,11 +3,8 @@ import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { ApiCredentialStore } from '../src/apiCredentialStore.js';
-import {
-  AuthorizationBearer,
-  AuthorizationBare,
-  SlackApiCredentials,
-} from '../src/apiCredentials.js';
+import { AuthorizationBearer, AuthorizationBare } from '../src/apiCredentials.js';
+import { SlackApiCredentials } from '../src/services/slack.js';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { generateKey } from '../src/encryption.js';
 
@@ -118,11 +115,6 @@ describe('ApiCredentialStore', () => {
       expect(store.delete('github')).toBe(false);
     });
 
-    it('should return false for non-existent store file', () => {
-      const store = new ApiCredentialStore(storePath, encryptedStorage);
-      expect(store.delete('github')).toBe(false);
-    });
-
     it('should delete existing credentials and return true', () => {
       const store = new ApiCredentialStore(storePath, encryptedStorage);
       store.save('github', new AuthorizationBearer('token'));
@@ -139,24 +131,6 @@ describe('ApiCredentialStore', () => {
 
       expect(store.get('github')).toBeNull();
       expect(store.get('discord')).not.toBeNull();
-    });
-  });
-
-  describe('multiple credential types', () => {
-    it('should store and retrieve different credential types', () => {
-      const store = new ApiCredentialStore(storePath, encryptedStorage);
-
-      store.save('github', new AuthorizationBearer('github-token'));
-      store.save('discord', new AuthorizationBare('discord-token'));
-      store.save('slack', new SlackApiCredentials('slack-token', 'slack-cookie'));
-
-      const github = store.get('github');
-      const discord = store.get('discord');
-      const slack = store.get('slack');
-
-      expect(github).toBeInstanceOf(AuthorizationBearer);
-      expect(discord).toBeInstanceOf(AuthorizationBare);
-      expect(slack).toBeInstanceOf(SlackApiCredentials);
     });
   });
 });

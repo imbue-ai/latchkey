@@ -139,6 +139,25 @@ so you can use the same interface you are used to. The return
 code, stdout and stderr are passed back from curl to the caller
 of `latchkey`.
 
+### Indirect credentials
+
+Some services can't express their credentials as static curl
+arguments. For example:
+
+- AWS requires a signature that changes with each request.
+- Telegram expects bot tokens to be directly part of the URL.
+
+In similar cases, when supported, you can use the `latchkey auth set-nocurl` command, e.g.
+like this:
+
+```
+latchkey auth set-nocurl telegram <bot-token>
+```
+
+Latchkey will then modify subsequent `latchkey curl` requests as
+needed. You can find more information (including the expected
+signature) by calling `latchkey services info <service_name>`.
+
 ### Remembering API credentials
 
 Your API credentials and browser state are encrypted and stored
@@ -200,14 +219,8 @@ latchkey auth clear
 You can set these environment variables to override certain
 defaults:
 
-- `LATCHKEY_STORE`: path to the (typically encrypted) file
-containing stored API credentials
-- `LATCHKEY_BROWSER_STATE`: path to the (typically encrypted) file
-containing the state (cookies, local storage, etc.) of
-the browser used for the login popup
+- `LATCHKEY_DIRECTORY`: path to the directory where Latchkey stores its data (defaults to `~/.latchkey`)
 - `LATCHKEY_CURL`: path to the curl binary
-- `LATCHKEY_CONFIG`: path to the configuration file
-(defaults to `~/.latchkey/config.json`)
 - `LATCHKEY_KEYRING_SERVICE_NAME`, `LATCHKEY_KEYRING_ACCOUNT_NAME`: identifiers that are used to store the encryption password in your keyring
 - `LATCHKEY_ENCRYPTION_KEY`: override the encryption key, e.g. when a keyring is not available. Example: `export LATCHKEY_ENCRYPTION_KEY="$(openssl rand -base64 32)"`
 - `LATCHKEY_DISABLE_BROWSER`: when set (to any non-empty value), disables the browser login flow; commands that would trigger a browser login (`auth browser`, `auth browser-prepare`) will fail with an error instead
@@ -222,3 +235,10 @@ the browser used for the login popup
 - Using agents for automated access may be prohibited by some services' ToS.
 - We reserve the right to change the license of future releases of Latchkey.
 - Latchkey was not tested on Windows.
+
+## Currently supported services
+
+Latchkey currently offers varying levels of support for the
+following services: AWS, Calendly, Discord, Dropbox, Figma, GitHub, GitLab,
+Gmail, Google Analytics, Google Calendar, Google Docs, Google Drive, Google Sheets,
+Linear, Mailchimp, Notion, Sentry, Slack, Stripe, Telegram, Yelp, Zoom, and more.

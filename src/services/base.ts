@@ -16,6 +16,13 @@ import {
   type BrowserLaunchOptions,
 } from '../playwrightUtils.js';
 
+export class NoCurlCredentialsNotSupportedError extends Error {
+  constructor(serviceName: string) {
+    super(`Service '${serviceName}' does not support set-nocurl credentials.`);
+    this.name = 'NoCurlCredentialsNotSupportedError';
+  }
+}
+
 export class LoginCancelledError extends Error {
   constructor(message = 'Login was cancelled because the browser was closed.') {
     super(message);
@@ -69,9 +76,16 @@ export abstract class Service {
    * Check if the given API credentials are valid for this service.
    */
   checkApiCredentials(apiCredentials: ApiCredentials): ApiCredentialStatus {
-    let curlArgs: readonly string[];
+    let allCurlArgs: readonly string[];
     try {
-      curlArgs = apiCredentials.asCurlArguments();
+      allCurlArgs = apiCredentials.injectIntoCurlCall([
+        '-s',
+        '-o',
+        '/dev/null',
+        '-w',
+        '%{http_code}',
+        ...this.credentialCheckCurlArguments,
+      ]);
     } catch (error) {
       if (error instanceof ApiCredentialsUsageError) {
         return ApiCredentialStatus.Missing;
@@ -79,23 +93,27 @@ export abstract class Service {
       throw error;
     }
 
-    const result = runCaptured(
-      [
-        '-s',
-        '-o',
-        '/dev/null',
-        '-w',
-        '%{http_code}',
-        ...curlArgs,
-        ...this.credentialCheckCurlArguments,
-      ],
-      10
-    );
+    const result = runCaptured(allCurlArgs, 10);
 
     if (result.stdout === '200') {
       return ApiCredentialStatus.Valid;
     }
     return ApiCredentialStatus.Invalid;
+  }
+
+  /**
+   * Return an example showing how to set credentials for this service via the CLI.
+   * The service name is passed as a parameter (not baked in) so the same example
+   * can be reused for aliased services in the future.
+   */
+  abstract setCredentialsExample(serviceName: string): string;
+
+  /**
+   * Set credentials from arbitrary (non-curl) arguments.
+   * Services that support this should override to validate and return typed credentials.
+   */
+  getCredentialsNoCurl(_arguments: readonly string[]): ApiCredentials {
+    throw new NoCurlCredentialsNotSupportedError(this.name);
   }
 
   /**

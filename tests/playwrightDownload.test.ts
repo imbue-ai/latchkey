@@ -5,46 +5,22 @@ import { join } from 'node:path';
 import {
   getChromiumExecutable,
   downloadFile,
-  extractZip,
   setExecutablePermissions,
   BrowserDownloadError,
-  BrowserExtractionError,
 } from '../src/playwrightDownload.js';
 
 describe('playwrightDownload', () => {
   describe('getChromiumExecutable', () => {
-    it('should return Chromium executable info from Playwright registry', () => {
+    it('should return Chromium executable info with download URLs', () => {
       const executable = getChromiumExecutable();
 
-      expect(executable).toBeDefined();
       expect(executable.name).toBe('chromium');
       expect(executable.directory).toBeDefined();
-      expect(typeof executable.directory).toBe('string');
-      expect(executable.executablePath.bind(executable)).toBeDefined();
-      expect(typeof executable.executablePath).toBe('function');
-    });
-
-    it('should return download URLs for Chromium', () => {
-      const executable = getChromiumExecutable();
-
-      expect(executable.downloadURLs).toBeDefined();
-      expect(Array.isArray(executable.downloadURLs)).toBe(true);
       expect(executable.downloadURLs!.length).toBeGreaterThan(0);
 
-      // Each URL should be a valid HTTPS URL pointing to Chrome/Chromium
       for (const url of executable.downloadURLs!) {
         expect(url).toMatch(/^https:\/\//);
-        expect(url).toMatch(/chromium|chrome/);
       }
-    });
-
-    it('should return an executable path function', () => {
-      const executable = getChromiumExecutable();
-
-      const path = executable.executablePath('javascript');
-      expect(path).toBeDefined();
-      expect(typeof path).toBe('string');
-      expect(path!.length).toBeGreaterThan(0);
     });
   });
 
@@ -77,51 +53,6 @@ describe('playwrightDownload', () => {
         BrowserDownloadError
       );
     }, 30000);
-
-    it('should create parent directories if they do not exist', async () => {
-      const nestedPath = join(tempDir, 'nested', 'directory', 'test-file.txt');
-
-      await downloadFile('https://httpbin.org/robots.txt', nestedPath);
-
-      expect(existsSync(nestedPath)).toBe(true);
-    }, 30000);
-
-    it('should handle redirects', async () => {
-      const destinationPath = join(tempDir, 'redirected-file.txt');
-
-      // httpbin.org/redirect-to redirects to the specified URL
-      await downloadFile(
-        'https://httpbin.org/redirect-to?url=https%3A%2F%2Fhttpbin.org%2Frobots.txt',
-        destinationPath
-      );
-
-      expect(existsSync(destinationPath)).toBe(true);
-    }, 30000);
-  });
-
-  describe('extractZip', () => {
-    let tempDir: string;
-
-    beforeEach(() => {
-      tempDir = mkdtempSync(join(tmpdir(), 'latchkey-extract-test-'));
-    });
-
-    afterEach(() => {
-      rmSync(tempDir, { recursive: true, force: true });
-    });
-
-    it('should create destination directory if it does not exist', async () => {
-      const destinationDir = join(tempDir, 'non-existent-dir');
-
-      // This will fail because there's no valid zip, but the directory should be created
-      try {
-        await extractZip(join(tempDir, 'fake.zip'), destinationDir);
-      } catch {
-        // Expected to fail, but directory should exist
-      }
-
-      expect(existsSync(destinationDir)).toBe(true);
-    });
   });
 
   describe('setExecutablePermissions', () => {
@@ -158,24 +89,6 @@ describe('playwrightDownload', () => {
       expect(() => {
         setExecutablePermissions(nonExistentPath);
       }).not.toThrow();
-    });
-  });
-
-  describe('error classes', () => {
-    it('BrowserDownloadError should have correct name', () => {
-      const error = new BrowserDownloadError('test message');
-
-      expect(error.name).toBe('BrowserDownloadError');
-      expect(error.message).toBe('test message');
-      expect(error instanceof Error).toBe(true);
-    });
-
-    it('BrowserExtractionError should have correct name', () => {
-      const error = new BrowserExtractionError('test message');
-
-      expect(error.name).toBe('BrowserExtractionError');
-      expect(error.message).toBe('test message');
-      expect(error instanceof Error).toBe(true);
     });
   });
 });

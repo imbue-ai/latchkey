@@ -44,6 +44,10 @@ export class Discord extends Service {
 
   readonly credentialCheckCurlArguments = ['https://discord.com/api/v9/users/@me'] as const;
 
+  setCredentialsExample(serviceName: string): string {
+    return `latchkey auth set ${serviceName} -H "Authorization: Bot <token>"`;
+  }
+
   override getSession(): DiscordServiceSession {
     return new DiscordServiceSession(this);
   }

@@ -8,10 +8,9 @@ export {
   ApiCredentialStatus,
   AuthorizationBearer,
   AuthorizationBare,
-  SlackApiCredentials,
-  deserializeCredentials,
-  serializeCredentials,
 } from './apiCredentials.js';
+export { deserializeCredentials, serializeCredentials } from './apiCredentialsSerialization.js';
+export { SlackApiCredentials } from './services/slack.js';
 
 export { ApiCredentialStore, ApiCredentialStoreError } from './apiCredentialStore.js';
 
@@ -19,7 +18,11 @@ export { Config, CONFIG, InsecureFilePermissionsError } from './config.js';
 
 export { encrypt, decrypt, generateKey, EncryptionError, DecryptionError } from './encryption.js';
 
-export { EncryptedStorage, EncryptedStorageError } from './encryptedStorage.js';
+export {
+  EncryptedStorage,
+  EncryptedStorageError,
+  EncryptionKeyLostError,
+} from './encryptedStorage.js';
 
 export {
   storeInKeychain,

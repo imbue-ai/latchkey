@@ -68,10 +68,17 @@ latchkey services info slack
 Returns auth options, credentials status, and developer notes
 about the service. If `browser` is not present in the
 `authOptions` field, the service requires the user to directly
-set API credentials via `latchkey auth set` before making
-requests.
+set API credentials via `latchkey auth set` or `latchkey auth
+set-nocurl` before making requests.
 
 ## Notes
 
 - All curl arguments are passed through unchanged
 - Return code, stdout and stderr are passed back from curl
+
+## Currently supported services
+
+Latchkey currently offers varying levels of support for the
+following services: AWS, Calendly, Discord, Dropbox, Figma, GitHub, GitLab,
+Gmail, Google Analytics, Google Calendar, Google Docs, Google Drive, Google Sheets,
+Linear, Mailchimp, Notion, Sentry, Slack, Stripe, Telegram, Yelp, Zoom, and more.
