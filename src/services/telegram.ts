@@ -3,6 +3,8 @@ import { ApiCredentialStatus, type ApiCredentials } from '../apiCredentials.js';
 import { extractUrlFromCurlArguments, runCaptured } from '../curl.js';
 import { NoCurlCredentialsNotSupportedError, Service } from './base.js';
 
+const BASE_API_URL = 'https://api.telegram.org/';
+
 /**
  * Telegram Bot API credentials.
  * The bot token is embedded in the URL path as specified by the Telegram Bot API:
@@ -25,11 +27,11 @@ export class TelegramBotCredentials implements ApiCredentials {
 
   injectIntoCurlCall(curlArguments: readonly string[]): readonly string[] {
     const url = extractUrlFromCurlArguments(curlArguments as string[]);
-    if (!url?.startsWith('https://api.telegram.org/')) {
+    if (!url?.startsWith(BASE_API_URL)) {
       return curlArguments;
     }
-    const pathAfterBase = url.slice('https://api.telegram.org/'.length);
-    const rewrittenUrl = `https://api.telegram.org/bot${this.token}/${pathAfterBase}`;
+    const pathAfterBase = url.slice(BASE_API_URL.length);
+    const rewrittenUrl = `${BASE_API_URL}bot${this.token}/${pathAfterBase}`;
     return curlArguments.map((argument) => (argument === url ? rewrittenUrl : argument));
   }
 
@@ -52,14 +54,14 @@ export class TelegramBotCredentials implements ApiCredentials {
 export class Telegram extends Service {
   readonly name = 'telegram';
   readonly displayName = 'Telegram';
-  readonly baseApiUrls = ['https://api.telegram.org/'] as const;
+  readonly baseApiUrls = [BASE_API_URL] as const;
   readonly loginUrl = 'https://web.telegram.org/';
   readonly info =
     'https://core.telegram.org/bots/api. ' +
     'Browser-based authentication is not yet supported. ' +
     'Use `latchkey auth set-nocurl telegram <bot-token>` to add credentials.';
 
-  readonly credentialCheckCurlArguments = ['https://api.telegram.org/getMe'] as const;
+  readonly credentialCheckCurlArguments = [`${BASE_API_URL}getMe`] as const;
 
   override getCredentialsNoCurl(arguments_: readonly string[]): ApiCredentials {
     if (arguments_.length !== 1 || arguments_[0] === undefined) {
