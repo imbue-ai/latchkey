@@ -1,12 +1,11 @@
 import { createHash, createHmac } from 'node:crypto';
 import { z } from 'zod';
-import { ApiCredentialStatus, type ApiCredentials } from '../apiCredentials.js';
+import { type ApiCredentials } from '../apiCredentials.js';
 import {
   extractBodyFromCurlArguments,
   extractHeadersFromCurlArguments,
   extractMethodFromCurlArguments,
   extractUrlFromCurlArguments,
-  runCaptured,
 } from '../curl.js';
 import { NoCurlCredentialsNotSupportedError, Service } from './base.js';
 
@@ -297,24 +296,6 @@ export class Aws extends Service {
       );
     }
     return new AwsCredentials(accessKeyId, secretAccessKey);
-  }
-
-  override checkApiCredentials(apiCredentials: ApiCredentials): ApiCredentialStatus {
-    const allCurlArgs = apiCredentials.injectIntoCurlCall([
-      '-s',
-      '-o',
-      '/dev/null',
-      '-w',
-      '%{http_code}',
-      ...this.credentialCheckCurlArguments,
-    ]);
-
-    const result = runCaptured(allCurlArgs, 10);
-
-    if (result.stdout === '200') {
-      return ApiCredentialStatus.Valid;
-    }
-    return ApiCredentialStatus.Invalid;
   }
 }
 
