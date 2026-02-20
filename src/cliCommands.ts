@@ -360,9 +360,12 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
 
   authCommand
     .command('set-nocurl')
-    .description('Store credentials for a service using service-specific arguments (not curl).')
+    .description('Store credentials using service-specific arguments (not curl). ' +
+      'Useful for services that cannot express their credentials ' +
+      'as static curl arguments. Arguments are passed to the service ' +
+      'implementation to modify latchkey curl requests on the fly.')
     .argument('<service_name>', 'Name of the service to store credentials for')
-    .addHelpText('after', `\nExample:\n  $ latchkey auth set-nocurl telegram <bot-token>`)
+    .addHelpText('after', `\nExample:\n  $ latchkey auth set-nocurl aws <access-key-id> <secret-access-key>`)
     .allowExcessArguments()
     .action((_serviceName: string, _options: unknown, command: { args: string[] }) => {
       const [serviceName, ...noCurlArguments] = command.args;

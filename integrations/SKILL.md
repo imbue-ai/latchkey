@@ -68,8 +68,8 @@ latchkey services info slack
 Returns auth options, credentials status, and developer notes
 about the service. If `browser` is not present in the
 `authOptions` field, the service requires the user to directly
-set API credentials via `latchkey auth set` before making
-requests.
+set API credentials via `latchkey auth set` or `latchkey auth
+set-nocurl` before making requests.
 
 ## Notes
 

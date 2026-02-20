@@ -30,7 +30,8 @@ then use the version you just built.
 Services in Latchkey come in two tiers:
 
 - With basic support that requires users to directly set
-API credentials via `latchkey auth set`.
+API credentials via `latchkey auth set` or `latchkey auth
+set-nocurl`.
 - With support for browser-based authentication.
 
 ### Basic support
