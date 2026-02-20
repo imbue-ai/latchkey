@@ -5,7 +5,6 @@
 import { accessSync, constants, existsSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { delimiter, isAbsolute, join, resolve } from 'node:path';
-import { getDefaultConfigPath } from './browserConfig.js';
 
 export class InsecureFilePermissionsError extends Error {
   constructor(filePath: string, permissions: number) {
@@ -24,9 +23,7 @@ export class CurlNotFoundError extends Error {
   }
 }
 
-const LATCHKEY_STORE_ENV_VAR = 'LATCHKEY_STORE';
-const LATCHKEY_BROWSER_STATE_ENV_VAR = 'LATCHKEY_BROWSER_STATE';
-const LATCHKEY_CONFIG_ENV_VAR = 'LATCHKEY_CONFIG';
+const LATCHKEY_DIRECTORY_ENV_VAR = 'LATCHKEY_DIRECTORY';
 const LATCHKEY_CURL_ENV_VAR = 'LATCHKEY_CURL';
 const LATCHKEY_ENCRYPTION_KEY_ENV_VAR = 'LATCHKEY_ENCRYPTION_KEY';
 const LATCHKEY_KEYRING_SERVICE_NAME_ENV_VAR = 'LATCHKEY_KEYRING_SERVICE_NAME';
@@ -36,13 +33,11 @@ const LATCHKEY_DISABLE_BROWSER_ENV_VAR = 'LATCHKEY_DISABLE_BROWSER';
 export const DEFAULT_KEYRING_SERVICE_NAME = 'latchkey';
 export const DEFAULT_KEYRING_ACCOUNT_NAME = 'encryption-key';
 
-function getDefaultCredentialStorePath(): string {
-  return join(homedir(), '.latchkey', 'credentials.json.enc');
-}
+const DEFAULT_DIRECTORY = join(homedir(), '.latchkey');
 
-function getDefaultBrowserStatePath(): string {
-  return join(homedir(), '.latchkey', 'browser_state.json.enc');
-}
+const CREDENTIAL_STORE_FILENAME = 'credentials.json.enc';
+const BROWSER_STATE_FILENAME = 'browser_state.json.enc';
+const CONFIG_FILENAME = 'config.json';
 
 function resolvePathWithTildeExpansion(path: string): string {
   if (path.startsWith('~')) {
@@ -111,18 +106,14 @@ export class Config {
     const browserDisabledEnv = getEnv(LATCHKEY_DISABLE_BROWSER_ENV_VAR);
     this.browserDisabled = browserDisabledEnv !== undefined && browserDisabledEnv !== '';
 
-    const credentialStoreEnv = getEnv(LATCHKEY_STORE_ENV_VAR);
-    this.credentialStorePath = credentialStoreEnv
-      ? resolvePathWithTildeExpansion(credentialStoreEnv)
-      : getDefaultCredentialStorePath();
+    const directoryEnv = getEnv(LATCHKEY_DIRECTORY_ENV_VAR);
+    const directory = directoryEnv
+      ? resolvePathWithTildeExpansion(directoryEnv)
+      : DEFAULT_DIRECTORY;
 
-    const browserStateEnv = getEnv(LATCHKEY_BROWSER_STATE_ENV_VAR);
-    this.browserStatePath = browserStateEnv
-      ? resolvePathWithTildeExpansion(browserStateEnv)
-      : getDefaultBrowserStatePath();
-
-    const configEnv = getEnv(LATCHKEY_CONFIG_ENV_VAR);
-    this.configPath = configEnv ? resolvePathWithTildeExpansion(configEnv) : getDefaultConfigPath();
+    this.credentialStorePath = join(directory, CREDENTIAL_STORE_FILENAME);
+    this.browserStatePath = join(directory, BROWSER_STATE_FILENAME);
+    this.configPath = join(directory, CONFIG_FILENAME);
   }
 
   /**
