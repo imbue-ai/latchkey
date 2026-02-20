@@ -492,7 +492,7 @@ export abstract class GoogleService extends Service {
         apiCredentials.clientId,
         apiCredentials.clientSecret,
         tokens.access_token,
-        tokens.refresh_token,
+        tokens.refresh_token ?? apiCredentials.refreshToken,
         accessTokenExpiresAt,
         apiCredentials.refreshTokenExpiresAt
       )

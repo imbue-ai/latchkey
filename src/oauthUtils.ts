@@ -8,9 +8,13 @@ import { LoginCancelledError, LoginFailedError } from './services/base.js';
 
 export interface OAuthTokenResponse {
   access_token: string;
-  refresh_token: string;
+  refresh_token?: string;
   expires_in: number;
   token_type: string;
+}
+
+export interface OAuthTokenExchangeResponse extends OAuthTokenResponse {
+  refresh_token: string;
 }
 
 export class OAuthTokenExchangeError extends Error {
@@ -145,7 +149,7 @@ export function exchangeCodeForTokens(
   clientId: string,
   clientSecret: string,
   redirectUri: string
-): OAuthTokenResponse {
+): OAuthTokenExchangeResponse {
   const body = new URLSearchParams({
     code,
     client_id: clientId,
@@ -179,7 +183,7 @@ export function exchangeCodeForTokens(
     if (!response.access_token || !response.refresh_token) {
       throw new OAuthTokenExchangeError('Token response missing access_token or refresh_token.');
     }
-    return response;
+    return response as OAuthTokenExchangeResponse;
   } catch (error: unknown) {
     if (error instanceof OAuthTokenExchangeError) {
       throw error;
