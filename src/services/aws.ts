@@ -263,14 +263,14 @@ export class Aws extends Service {
   ] as const;
 
   setCredentialsExample(serviceName: string): string {
-    return `latchkey auth set-nocurl ${serviceName} AKIAIOSFODNN7EXAMPLE wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY`;
+    return `latchkey auth set-nocurl ${serviceName} <access-key-id> <secret-access-key>`;
   }
 
   override getCredentialsNoCurl(arguments_: readonly string[]): ApiCredentials {
     if (arguments_.length !== 2 || arguments_[0] === undefined || arguments_[1] === undefined) {
       throw new AwsCredentialError(
         'Expected exactly two arguments: <access-key-id> <secret-access-key>.\n' +
-          'Example: latchkey auth set-nocurl aws AKIAIOSFODNN7EXAMPLE wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY'
+          'Example: latchkey auth set-nocurl aws <access-key-id> <secret-access-key>'
       );
     }
     const accessKeyId = arguments_[0];
@@ -279,7 +279,7 @@ export class Aws extends Service {
       throw new AwsCredentialError(
         "The provided access key ID doesn't look like an AWS access key ID " +
           '(expected to start with AKIA or ASIA).\n' +
-          'Example: AKIAIOSFODNN7EXAMPLE'
+          'Example: <access-key-id>'
       );
     }
     return new AwsCredentials(accessKeyId, secretAccessKey);

@@ -359,10 +359,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .command('set-nocurl')
     .description('Store credentials for a service using service-specific arguments (not curl).')
     .argument('<service_name>', 'Name of the service to store credentials for')
-    .addHelpText(
-      'after',
-      `\nExample:\n  $ latchkey auth set-nocurl telegram 123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11`
-    )
+    .addHelpText('after', `\nExample:\n  $ latchkey auth set-nocurl telegram <bot-token>`)
     .allowExcessArguments()
     .action((_serviceName: string, _options: unknown, command: { args: string[] }) => {
       const [serviceName, ...noCurlArguments] = command.args;

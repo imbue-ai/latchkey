@@ -61,21 +61,21 @@ export class Telegram extends Service {
   readonly credentialCheckCurlArguments = [`${BASE_API_URL}getMe`] as const;
 
   setCredentialsExample(serviceName: string): string {
-    return `latchkey auth set-nocurl ${serviceName} 123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11`;
+    return `latchkey auth set-nocurl ${serviceName} <bot-token>`;
   }
 
   override getCredentialsNoCurl(arguments_: readonly string[]): ApiCredentials {
     if (arguments_.length !== 1 || arguments_[0] === undefined) {
       throw new TelegramCredentialError(
         'Expected exactly one argument: the bot token.\n' +
-          'Example: latchkey auth set-nocurl telegram 123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11'
+          'Example: latchkey auth set-nocurl telegram <bot-token>'
       );
     }
     const token = arguments_[0];
     if (!token.includes(':')) {
       throw new TelegramCredentialError(
         "The provided token doesn't look like a Telegram bot token (expected format: <id>:<hash>).\n" +
-          'Example: 123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11'
+          'Example: <bot-token>'
       );
     }
     return new TelegramBotCredentials(token);

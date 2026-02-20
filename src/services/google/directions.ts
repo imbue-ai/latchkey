@@ -29,21 +29,20 @@ export class GoogleDirections extends Service {
   ] as const;
 
   setCredentialsExample(serviceName: string): string {
-    return `latchkey auth set-nocurl ${serviceName} AIzaSyA1B2C3D4E5F6G7H8I9J0`;
+    return `latchkey auth set-nocurl ${serviceName} <api-key>`;
   }
 
   override getCredentialsNoCurl(arguments_: readonly string[]): ApiCredentials {
     if (arguments_.length !== 1 || arguments_[0] === undefined) {
       throw new GoogleDirectionsCredentialError(
         'Expected exactly one argument: the API key.\n' +
-          'Example: latchkey auth set-nocurl google-directions AIzaSyA1B2C3D4E5F6G7H8I9J0'
+          'Example: latchkey auth set-nocurl google-directions <api-key>'
       );
     }
     const apiKey = arguments_[0];
     if (apiKey.length < 10) {
       throw new GoogleDirectionsCredentialError(
-        "The provided key doesn't look like a Google API key (too short).\n" +
-          'Example: AIzaSyA1B2C3D4E5F6G7H8I9J0'
+        "The provided key doesn't look like a Google API key (too short).\n" + 'Example: <api-key>'
       );
     }
     return new GoogleApiKeyCredentials(apiKey);
