@@ -164,11 +164,18 @@ describe('CLI commands with dependency injection', () => {
 
   function createMockConfig(overrides: Partial<Config> = {}): Config {
     const defaultConfig = new Config(() => undefined);
+    const directory = overrides.directory ?? tempDir;
     return {
-      directory: overrides.directory ?? tempDir,
-      credentialStorePath: overrides.credentialStorePath ?? join(tempDir, 'credentials.json'),
-      browserStatePath: overrides.browserStatePath ?? join(tempDir, 'browser_state.json'),
-      configPath: overrides.configPath ?? join(tempDir, 'config.json'),
+      directory,
+      get credentialStorePath() {
+        return join(directory, 'credentials.json');
+      },
+      get browserStatePath() {
+        return join(directory, 'browser_state.json');
+      },
+      get configPath() {
+        return join(directory, 'config.json');
+      },
       curlCommand: overrides.curlCommand ?? defaultConfig.curlCommand,
       encryptionKeyOverride: overrides.encryptionKeyOverride ?? TEST_ENCRYPTION_KEY,
       serviceName: overrides.serviceName ?? defaultConfig.serviceName,
@@ -262,9 +269,7 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(storePath, '{}');
 
-      const deps = createMockDependencies({
-        config: createMockConfig({ credentialStorePath: storePath }),
-      });
+      const deps = createMockDependencies();
       await runCommand(['services', 'info', 'slack'], deps);
 
       expect(logs).toHaveLength(1);
@@ -293,7 +298,6 @@ describe('CLI commands with dependency injection', () => {
 
       const deps = createMockDependencies({
         registry: new Registry([noLoginService]),
-        config: createMockConfig({ credentialStorePath: storePath }),
       });
       await runCommand(['services', 'info', 'nologin'], deps);
 
@@ -306,7 +310,7 @@ describe('CLI commands with dependency injection', () => {
       writeSecureFile(storePath, '{}');
 
       const deps = createMockDependencies({
-        config: createMockConfig({ credentialStorePath: storePath, browserDisabled: true }),
+        config: createMockConfig({ browserDisabled: true }),
       });
       await runCommand(['services', 'info', 'slack'], deps);
 
@@ -323,9 +327,7 @@ describe('CLI commands with dependency injection', () => {
         })
       );
 
-      const deps = createMockDependencies({
-        config: createMockConfig({ credentialStorePath: storePath }),
-      });
+      const deps = createMockDependencies();
 
       await runCommand(['services', 'info', 'slack'], deps);
 
@@ -353,9 +355,7 @@ describe('CLI commands with dependency injection', () => {
         })
       );
 
-      const deps = createMockDependencies({
-        config: createMockConfig({ credentialStorePath: storePath }),
-      });
+      const deps = createMockDependencies();
 
       await runCommand(['auth', 'clear', 'slack'], deps);
 
@@ -368,9 +368,7 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(storePath, '{}');
 
-      const deps = createMockDependencies({
-        config: createMockConfig({ credentialStorePath: storePath }),
-      });
+      const deps = createMockDependencies();
 
       await runCommand(['auth', 'clear', 'slack'], deps);
 
@@ -378,11 +376,7 @@ describe('CLI commands with dependency injection', () => {
     });
 
     it('should return error for unknown service', async () => {
-      const storePath = join(tempDir, 'credentials.json');
-
-      const deps = createMockDependencies({
-        config: createMockConfig({ credentialStorePath: storePath }),
-      });
+      const deps = createMockDependencies();
 
       await runCommand(['auth', 'clear', 'unknown-service'], deps);
 
@@ -409,9 +403,7 @@ describe('CLI commands with dependency injection', () => {
         })
       );
 
-      const deps = createMockDependencies({
-        config: createMockConfig({ credentialStorePath: storePath }),
-      });
+      const deps = createMockDependencies();
 
       await runCommand(['auth', 'clear', 'slack'], deps);
 
@@ -430,9 +422,7 @@ describe('CLI commands with dependency injection', () => {
       );
       writeSecureFile(browserStatePath, '{}');
 
-      const deps = createMockDependencies({
-        config: createMockConfig({ credentialStorePath: storePath, browserStatePath }),
-      });
+      const deps = createMockDependencies();
 
       await runCommand(['auth', 'clear', '-y'], deps);
 
@@ -443,12 +433,7 @@ describe('CLI commands with dependency injection', () => {
     });
 
     it('should report no files to delete when none exist', async () => {
-      const storePath = join(tempDir, 'nonexistent_store.json');
-      const browserStatePath = join(tempDir, 'nonexistent_browser_state.json');
-
-      const deps = createMockDependencies({
-        config: createMockConfig({ credentialStorePath: storePath, browserStatePath }),
-      });
+      const deps = createMockDependencies();
 
       await runCommand(['auth', 'clear', '-y'], deps);
 
@@ -466,9 +451,7 @@ describe('CLI commands with dependency injection', () => {
         })
       );
 
-      const deps = createMockDependencies({
-        config: createMockConfig({ credentialStorePath: storePath }),
-      });
+      const deps = createMockDependencies();
       await runCommand(['auth', 'list'], deps);
 
       expect(logs).toHaveLength(1);
@@ -483,9 +466,7 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(storePath, '{}');
 
-      const deps = createMockDependencies({
-        config: createMockConfig({ credentialStorePath: storePath }),
-      });
+      const deps = createMockDependencies();
       await runCommand(['auth', 'list'], deps);
 
       expect(logs).toHaveLength(1);
@@ -502,9 +483,7 @@ describe('CLI commands with dependency injection', () => {
         })
       );
 
-      const deps = createMockDependencies({
-        config: createMockConfig({ credentialStorePath: storePath }),
-      });
+      const deps = createMockDependencies();
       await runCommand(['auth', 'list'], deps);
 
       expect(logs).toHaveLength(1);
@@ -521,9 +500,7 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(storePath, '{}');
 
-      const deps = createMockDependencies({
-        config: createMockConfig({ credentialStorePath: storePath }),
-      });
+      const deps = createMockDependencies();
 
       await runCommand(
         ['auth', 'set', 'slack', '-H', 'X-Token: secret', '-H', 'X-Other: value'],
@@ -581,9 +558,7 @@ describe('CLI commands with dependency injection', () => {
         })
       );
 
-      const deps = createMockDependencies({
-        config: createMockConfig({ credentialStorePath: storePath }),
-      });
+      const deps = createMockDependencies();
 
       await runCommand(['auth', 'set', 'slack', '-H', 'X-Token: new-secret'], deps);
 
@@ -604,7 +579,6 @@ describe('CLI commands with dependency injection', () => {
 
       const deps = createMockDependencies({
         registry: new Registry([TELEGRAM]),
-        config: createMockConfig({ credentialStorePath: storePath }),
       });
 
       await runCommand(['auth', 'set-nocurl', 'telegram', '123456:ABC-DEF'], deps);
@@ -671,9 +645,7 @@ describe('CLI commands with dependency injection', () => {
         })
       );
 
-      const deps = createMockDependencies({
-        config: createMockConfig({ credentialStorePath: storePath }),
-      });
+      const deps = createMockDependencies();
 
       await runCommand(['curl', 'https://slack.com/api/test'], deps);
 
@@ -696,9 +668,7 @@ describe('CLI commands with dependency injection', () => {
         })
       );
 
-      const deps = createMockDependencies({
-        config: createMockConfig({ credentialStorePath: storePath }),
-      });
+      const deps = createMockDependencies();
 
       await runCommand(['curl', 'https://slack.com/api/test'], deps);
 
@@ -715,9 +685,7 @@ describe('CLI commands with dependency injection', () => {
         })
       );
 
-      const deps = createMockDependencies({
-        config: createMockConfig({ credentialStorePath: storePath }),
-      });
+      const deps = createMockDependencies();
 
       await runCommand(
         [
@@ -750,7 +718,6 @@ describe('CLI commands with dependency injection', () => {
       );
 
       const deps = createMockDependencies({
-        config: createMockConfig({ credentialStorePath: storePath }),
         runCurl: (): CurlResult => ({ returncode: 42, stdout: '', stderr: '' }),
       });
 
@@ -786,9 +753,7 @@ describe('CLI commands with dependency injection', () => {
         })
       );
 
-      const deps = createMockDependencies({
-        config: createMockConfig({ credentialStorePath: storePath }),
-      });
+      const deps = createMockDependencies();
 
       await runCommand(['curl', '--', '-v', 'https://slack.com/api/conversations.list'], deps);
 
@@ -823,7 +788,6 @@ describe('CLI commands with dependency injection', () => {
 
       const deps = createMockDependencies({
         registry: new Registry([mockSlackService]),
-        config: createMockConfig({ credentialStorePath: storePath }),
       });
 
       await runCommand(['curl', 'https://slack.com/api/test'], deps);
@@ -836,9 +800,7 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(storePath, '{}');
 
-      const deps = createMockDependencies({
-        config: createMockConfig({ credentialStorePath: storePath }),
-      });
+      const deps = createMockDependencies();
 
       await runCommand(['curl', 'https://slack.com/api/test'], deps);
 
@@ -859,7 +821,6 @@ describe('CLI commands with dependency injection', () => {
 
       const deps = createMockDependencies({
         registry: new Registry([TELEGRAM]),
-        config: createMockConfig({ credentialStorePath: storePath }),
       });
 
       await runCommand(['curl', 'https://api.telegram.org/getMe'], deps);
@@ -893,7 +854,6 @@ describe('CLI commands with dependency injection', () => {
 
       const deps = createMockDependencies({
         registry: new Registry([noLoginService]),
-        config: createMockConfig({ credentialStorePath: storePath }),
       });
 
       await runCommand(['curl', 'https://nologin.example.com/api/test'], deps);

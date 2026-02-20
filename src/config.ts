@@ -78,9 +78,6 @@ function findInPath(command: string): boolean {
  */
 export class Config {
   readonly directory: string;
-  readonly credentialStorePath: string;
-  readonly browserStatePath: string;
-  readonly configPath: string;
   readonly curlCommand: string;
   /**
    * Encryption key override from environment variable.
@@ -109,10 +106,18 @@ export class Config {
 
     const directoryEnv = getEnv(LATCHKEY_DIRECTORY_ENV_VAR);
     this.directory = directoryEnv ? resolvePathWithTildeExpansion(directoryEnv) : DEFAULT_DIRECTORY;
+  }
 
-    this.credentialStorePath = join(this.directory, CREDENTIAL_STORE_FILENAME);
-    this.browserStatePath = join(this.directory, BROWSER_STATE_FILENAME);
-    this.configPath = join(this.directory, CONFIG_FILENAME);
+  get credentialStorePath(): string {
+    return join(this.directory, CREDENTIAL_STORE_FILENAME);
+  }
+
+  get browserStatePath(): string {
+    return join(this.directory, BROWSER_STATE_FILENAME);
+  }
+
+  get configPath(): string {
+    return join(this.directory, CONFIG_FILENAME);
   }
 
   /**
