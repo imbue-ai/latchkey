@@ -27,8 +27,12 @@ export class GoogleMapsApiKeyCredentials implements ApiCredentials {
     if (!url?.startsWith('https://maps.googleapis.com/')) {
       return curlArguments;
     }
-    const separator = url.includes('?') ? '&' : '?';
-    const rewrittenUrl = `${url}${separator}key=${this.apiKey}`;
+    const parsed = new URL(url);
+    if (parsed.searchParams.has('key')) {
+      return curlArguments;
+    }
+    parsed.searchParams.set('key', this.apiKey);
+    const rewrittenUrl = parsed.toString();
     return curlArguments.map((argument) => (argument === url ? rewrittenUrl : argument));
   }
 
