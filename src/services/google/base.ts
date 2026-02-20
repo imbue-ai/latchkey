@@ -370,7 +370,8 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
       await page.goto(this.service.loginUrl);
       await waitForGoogleLogin(page);
 
-      const appName = generateLatchkeyAppName();
+      const serviceSuffix = this.service.name.replace(/^google/, '');
+      const appName = generateLatchkeyAppName(serviceSuffix);
 
       await showSpinnerPage(
         context,

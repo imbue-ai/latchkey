@@ -42,10 +42,10 @@ export interface BrowserLaunchOptions {
  * Generate a random Latchkey-prefixed app name.
  * Used for creating unique names when registering API keys, apps, or tokens.
  */
-export function generateLatchkeyAppName(): string {
+export function generateLatchkeyAppName(suffix?: string): string {
   const date = new Date().toISOString().slice(0, 10);
   const randomSuffix = randomUUID().slice(0, 4);
-  return `Latchkey-${date}-${randomSuffix}`;
+  return `Latchkey-${date}-${randomSuffix}${suffix ?? ''}`;
 }
 
 /**
