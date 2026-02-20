@@ -12,7 +12,7 @@ import { Config } from '../src/config.js';
 import { Registry } from '../src/registry.js';
 import { ApiCredentialStatus } from '../src/apiCredentials.js';
 import { SlackApiCredentials } from '../src/services/slack.js';
-import { NoCurlCredentialsNotSupportedError, type Service } from '../src/services/base.js';
+import { NoCurlCredentialsNotSupportedError, Service } from '../src/services/base.js';
 import { TELEGRAM } from '../src/services/telegram.js';
 import type { CurlResult } from '../src/curl.js';
 
@@ -874,9 +874,8 @@ describe('CLI commands with dependency injection', () => {
         info: 'A service without browser login support.',
         credentialCheckCurlArguments: [],
         checkApiCredentials: vi.fn(),
-        getCredentialsNoCurl() {
-          throw new NoCurlCredentialsNotSupportedError('nologin');
-        },
+        // eslint-disable-next-line @typescript-eslint/unbound-method
+        getCredentialsNoCurl: Service.prototype.getCredentialsNoCurl,
         // No getSession - service doesn't support browser login
       };
 

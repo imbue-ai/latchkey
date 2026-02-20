@@ -24,7 +24,7 @@ import {
   LoginCancelledError,
   LoginFailedError,
   NoCurlCredentialsNotSupportedError,
-  type Service,
+  Service,
 } from './services/index.js';
 import { extractUrlFromCurlArguments, run as curlRun } from './curl.js';
 import { getSkillMdContent } from './skillMd.js';
@@ -62,12 +62,7 @@ async function getCredentialStatus(
 }
 
 function supportsNoCurlCredentials(service: Service): boolean {
-  try {
-    service.getCredentialsNoCurl([]);
-    return true;
-  } catch (error) {
-    return !(error instanceof NoCurlCredentialsNotSupportedError);
-  }
+  return service.getCredentialsNoCurl !== Service.prototype.getCredentialsNoCurl;
 }
 
 /**
