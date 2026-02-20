@@ -29,7 +29,7 @@ export class EncryptionKeyLostError extends EncryptedStorageError {
       'The encryption key was lost from the system keychain and encrypted data already exists. ' +
         'Generating a new key would make existing data unreadable. ' +
         'Restore the keychain or set LATCHKEY_ENCRYPTION_KEY, ' +
-        'or delete the encrypted files and start fresh with `latchkey clear`.'
+        'or delete the encrypted files and start fresh with `latchkey auth clear`.'
     );
     this.name = 'EncryptionKeyLostError';
   }
