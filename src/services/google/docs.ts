@@ -15,7 +15,7 @@ export class GoogleDocs extends GoogleService {
     'It may take a few minutes before the OAuth client is ready to use.';
 
   readonly credentialCheckCurlArguments = [
-    'https://www.googleapis.com/oauth2/v1/userinfo',
+    "https://www.googleapis.com/drive/v3/files?pageSize=1&fields=files(id)&q=mimeType%3D'application/vnd.google-apps.document'",
   ] as const;
 
   protected readonly config = CONFIG;
