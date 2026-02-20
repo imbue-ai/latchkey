@@ -1,18 +1,22 @@
-import { GoogleService, type GoogleServiceConfig } from './base.js';
+import type { ApiCredentials } from '../../apiCredentials.js';
+import { Service, NoCurlCredentialsNotSupportedError } from '../base.js';
+import { GoogleApiKeyCredentials } from './base.js';
 
-const CONFIG: GoogleServiceConfig = {
-  api: 'routes.googleapis.com',
-  scopes: ['https://www.googleapis.com/auth/cloud-platform'],
-};
-
-export class GoogleDirections extends GoogleService {
+export class GoogleDirections extends Service {
   readonly name = 'google-directions';
   readonly displayName = 'Google Directions';
   readonly baseApiUrls = ['https://routes.googleapis.com/'] as const;
+  readonly loginUrl = 'https://console.cloud.google.com/google/maps-apis/';
   readonly info =
     'https://developers.google.com/maps/documentation/routes/reference/rest. ' +
-    'If needed, run "latchkey auth browser-prepare google-directions" to create an OAuth client first. ' +
-    'It may take a few minutes before the OAuth client is ready to use.';
+    'Browser-based authentication is not yet supported. ' +
+    'Use `latchkey auth set-nocurl google-directions <api-key>` to add credentials. ' +
+    'Example invocation: `latchkey curl google-directions -X POST ' +
+    '-H "Content-Type: application/json" ' +
+    '-H "X-Goog-FieldMask: routes.duration,routes.distanceMeters" ' +
+    '-d \'{"origin":{"address":"New York"},"destination":{"address":"Boston"},"travelMode":"DRIVE"}\' ' +
+    'https://routes.googleapis.com/directions/v2:computeRoutes` ' +
+    '(the API key will be added automatically).';
 
   readonly credentialCheckCurlArguments = [
     '-X',
@@ -26,7 +30,30 @@ export class GoogleDirections extends GoogleService {
     'https://routes.googleapis.com/directions/v2:computeRoutes',
   ] as const;
 
-  protected readonly config = CONFIG;
+  override getCredentialsNoCurl(arguments_: readonly string[]): ApiCredentials {
+    if (arguments_.length !== 1 || arguments_[0] === undefined) {
+      throw new GoogleDirectionsCredentialError(
+        'Expected exactly one argument: the API key.\n' +
+          'Example: latchkey auth set-nocurl google-directions AIzaSyA1B2C3D4E5F6G7H8I9J0'
+      );
+    }
+    const apiKey = arguments_[0];
+    if (apiKey.length < 10) {
+      throw new GoogleDirectionsCredentialError(
+        "The provided key doesn't look like a Google API key (too short).\n" +
+          'Example: AIzaSyA1B2C3D4E5F6G7H8I9J0'
+      );
+    }
+    return new GoogleApiKeyCredentials(apiKey);
+  }
+}
+
+class GoogleDirectionsCredentialError extends NoCurlCredentialsNotSupportedError {
+  constructor(message: string) {
+    super('google-directions');
+    this.message = message;
+    this.name = 'GoogleDirectionsCredentialError';
+  }
 }
 
 export const GOOGLE_DIRECTIONS = new GoogleDirections();

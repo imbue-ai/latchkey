@@ -7,8 +7,10 @@
  */
 
 import fs from 'node:fs/promises';
+import { z } from 'zod';
 import type { Browser, BrowserContext, Page, Response } from 'playwright';
-import { ApiCredentials, OAuthCredentials } from '../../apiCredentials.js';
+import { type ApiCredentials, OAuthCredentials } from '../../apiCredentials.js';
+import { extractUrlFromCurlArguments } from '../../curl.js';
 import {
   generateLatchkeyAppName,
   showSpinnerPage,
@@ -28,6 +30,49 @@ import {
   isBrowserClosedError,
 } from '../base.js';
 import type { EncryptedStorage } from '../../encryptedStorage.js';
+
+/**
+ * Google API key credentials.
+ * The API key is injected as an `X-Goog-Api-Key` header.
+ */
+export const GoogleApiKeyCredentialsSchema = z.object({
+  objectType: z.literal('googleApiKey'),
+  apiKey: z.string(),
+});
+
+export type GoogleApiKeyCredentialsData = z.infer<typeof GoogleApiKeyCredentialsSchema>;
+
+export class GoogleApiKeyCredentials implements ApiCredentials {
+  readonly objectType = 'googleApiKey' as const;
+  readonly apiKey: string;
+
+  constructor(apiKey: string) {
+    this.apiKey = apiKey;
+  }
+
+  injectIntoCurlCall(curlArguments: readonly string[]): readonly string[] {
+    const url = extractUrlFromCurlArguments(curlArguments as string[]);
+    if (!url?.startsWith('https://') || !url.includes('.googleapis.com')) {
+      return curlArguments;
+    }
+    return ['-H', `X-Goog-Api-Key: ${this.apiKey}`, ...curlArguments];
+  }
+
+  isExpired(): boolean | undefined {
+    return undefined;
+  }
+
+  toJSON(): GoogleApiKeyCredentialsData {
+    return {
+      objectType: this.objectType,
+      apiKey: this.apiKey,
+    };
+  }
+
+  static fromJSON(data: GoogleApiKeyCredentialsData): GoogleApiKeyCredentials {
+    return new GoogleApiKeyCredentials(data.apiKey);
+  }
+}
 
 const DEFAULT_TIMEOUT_MS = 8000;
 const LOGIN_TIMEOUT_MS = 120000;

@@ -12,6 +12,7 @@ import {
 import { SlackApiCredentials } from '../src/services/slack.js';
 import { TelegramBotCredentials } from '../src/services/telegram.js';
 import { AwsCredentials } from '../src/services/aws.js';
+import { GoogleApiKeyCredentials } from '../src/services/google/base.js';
 
 describe('AuthorizationBearer', () => {
   it('should inject correct curl arguments', () => {
@@ -191,6 +192,75 @@ describe('TelegramBotCredentials', () => {
   });
 });
 
+describe('GoogleApiKeyCredentials', () => {
+  it('should inject X-Goog-Api-Key header for googleapis.com URLs', () => {
+    const credentials = new GoogleApiKeyCredentials('AIzaSyTestKey123');
+    expect(
+      credentials.injectIntoCurlCall(['https://routes.googleapis.com/directions/v2:computeRoutes'])
+    ).toEqual([
+      '-H',
+      'X-Goog-Api-Key: AIzaSyTestKey123',
+      'https://routes.googleapis.com/directions/v2:computeRoutes',
+    ]);
+  });
+
+  it('should not modify non-googleapis.com URLs', () => {
+    const credentials = new GoogleApiKeyCredentials('AIzaSyTestKey123');
+    expect(
+      credentials.injectIntoCurlCall([
+        '-H',
+        'Content-Type: application/json',
+        'https://other.example.com/api',
+      ])
+    ).toEqual(['-H', 'Content-Type: application/json', 'https://other.example.com/api']);
+  });
+
+  it('should preserve other curl arguments', () => {
+    const credentials = new GoogleApiKeyCredentials('AIzaSyTestKey123');
+    expect(
+      credentials.injectIntoCurlCall([
+        '-s',
+        '-o',
+        '/dev/null',
+        '-X',
+        'POST',
+        'https://routes.googleapis.com/directions/v2:computeRoutes',
+      ])
+    ).toEqual([
+      '-H',
+      'X-Goog-Api-Key: AIzaSyTestKey123',
+      '-s',
+      '-o',
+      '/dev/null',
+      '-X',
+      'POST',
+      'https://routes.googleapis.com/directions/v2:computeRoutes',
+    ]);
+  });
+
+  it('should serialize to JSON', () => {
+    const credentials = new GoogleApiKeyCredentials('AIzaSyTestKey123');
+    expect(credentials.toJSON()).toEqual({
+      objectType: 'googleApiKey',
+      apiKey: 'AIzaSyTestKey123',
+    });
+  });
+
+  it('should deserialize from JSON', () => {
+    const data = {
+      objectType: 'googleApiKey' as const,
+      apiKey: 'AIzaSyTestKey123',
+    };
+    const credentials = GoogleApiKeyCredentials.fromJSON(data);
+    expect(credentials.apiKey).toBe('AIzaSyTestKey123');
+  });
+
+  it('should return undefined for isExpired', () => {
+    const credentials = new GoogleApiKeyCredentials('AIzaSyTestKey123');
+    expect(credentials.isExpired()).toBeUndefined();
+  });
+});
+
 describe('AwsCredentials', () => {
   it('should inject Authorization, x-amz-date, and x-amz-content-sha256 headers', () => {
     const credentials = new AwsCredentials('AKIAIOSFODNN7EXAMPLE', 'wJalrXUtnFEMI/K7MDENG');
@@ -344,6 +414,16 @@ describe('deserializeCredentials', () => {
     expect((credentials as AwsCredentials).accessKeyId).toBe('AKIAIOSFODNN7EXAMPLE');
     expect((credentials as AwsCredentials).secretAccessKey).toBe('secret123');
   });
+
+  it('should deserialize GoogleApiKeyCredentials', () => {
+    const data = {
+      objectType: 'googleApiKey' as const,
+      apiKey: 'AIzaSyTestKey123',
+    };
+    const credentials = deserializeCredentials(data);
+    expect(credentials).toBeInstanceOf(GoogleApiKeyCredentials);
+    expect((credentials as GoogleApiKeyCredentials).apiKey).toBe('AIzaSyTestKey123');
+  });
 });
 
 describe('serializeCredentials', () => {
@@ -402,6 +482,15 @@ describe('serializeCredentials', () => {
       secretAccessKey: 'secret123',
     });
   });
+
+  it('should serialize GoogleApiKeyCredentials', () => {
+    const credentials = new GoogleApiKeyCredentials('AIzaSyTestKey123');
+    const data = serializeCredentials(credentials);
+    expect(data).toEqual({
+      objectType: 'googleApiKey',
+      apiKey: 'AIzaSyTestKey123',
+    });
+  });
 });
 
 describe('ApiCredentialsSchema', () => {
@@ -451,6 +540,14 @@ describe('ApiCredentialsSchema', () => {
       objectType: 'aws',
       accessKeyId: 'AKIAIOSFODNN7EXAMPLE',
       secretAccessKey: 'secret',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('should validate GoogleApiKeyCredentials', () => {
+    const result = ApiCredentialsSchema.safeParse({
+      objectType: 'googleApiKey',
+      apiKey: 'AIzaSyTestKey123',
     });
     expect(result.success).toBe(true);
   });
