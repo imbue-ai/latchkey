@@ -10,9 +10,9 @@ export class BrowserDisabledError extends Error {
 }
 
 export class BrowserFlowsNotSupportedError extends Error {
-  constructor(serviceName: string) {
+  constructor(serviceName: string, authSubcommand: 'set' | 'set-nocurl' = 'set') {
     super(
-      `Service '${serviceName}' does not support browser flows. Use 'latchkey auth set ${serviceName}' to set credentials manually.`
+      `Service '${serviceName}' does not support browser flows. Use 'latchkey auth ${authSubcommand} ${serviceName}' to set credentials manually.`
     );
     this.name = 'BrowserFlowNotSupportedError';
   }

@@ -890,6 +890,36 @@ describe('CLI commands with dependency injection', () => {
       const expectedMessage = new BrowserFlowsNotSupportedError('nologin').message;
       expect(errorLogs.some((log) => log.includes(expectedMessage))).toBe(true);
     });
+
+    it('should suggest set-nocurl when service supports nocurl credentials', async () => {
+      const nocurlService: Service = {
+        name: 'nocurl-only',
+        displayName: 'NoCurl Only Service',
+        baseApiUrls: ['https://nocurl.example.com/api/'],
+        loginUrl: 'https://nocurl.example.com',
+        info: 'A service with nocurl credentials but no browser login.',
+        credentialCheckCurlArguments: [],
+        checkApiCredentials: vi.fn(),
+        getCredentialsNoCurl(arguments_: readonly string[]) {
+          if (arguments_.length !== 1) {
+            throw new Error('Expected exactly one argument');
+          }
+          return { objectType: 'test', injectIntoCurlCall: vi.fn(), isExpired: () => false };
+        },
+        // No getSession - service doesn't support browser login
+      };
+
+      const deps = createMockDependencies({
+        registry: new Registry([nocurlService]),
+      });
+
+      await runCommand(['auth', 'browser', 'nocurl-only'], deps);
+
+      expect(exitCode).toBe(1);
+      const expectedMessage = new BrowserFlowsNotSupportedError('nocurl-only', 'set-nocurl')
+        .message;
+      expect(errorLogs.some((log) => log.includes(expectedMessage))).toBe(true);
+    });
   });
 });
 

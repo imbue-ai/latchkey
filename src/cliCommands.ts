@@ -61,6 +61,15 @@ async function getCredentialStatus(
   return service.checkApiCredentials(refreshed);
 }
 
+function supportsNoCurlCredentials(service: Service): boolean {
+  try {
+    service.getCredentialsNoCurl([]);
+    return true;
+  } catch (error) {
+    return !(error instanceof NoCurlCredentialsNotSupportedError);
+  }
+}
+
 /**
  * Dependencies that can be injected for testing.
  */
@@ -412,7 +421,8 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
 
       const session = service.getSession?.();
       if (!session) {
-        deps.errorLog(new BrowserFlowsNotSupportedError(service.name).message);
+        const authSubcommand = supportsNoCurlCredentials(service) ? 'set-nocurl' : 'set';
+        deps.errorLog(new BrowserFlowsNotSupportedError(service.name, authSubcommand).message);
         deps.exit(1);
       }
 
