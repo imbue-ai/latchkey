@@ -3,7 +3,7 @@ import { Service } from './base.js';
 export class Gitlab extends Service {
   readonly name = 'gitlab';
   readonly displayName = 'GitLab';
-  readonly baseApiUrls = ['https://gitlab.com/api/', /^https:\/\/[^/]+\/api\/v4\//] as const;
+  readonly baseApiUrls = ['https://gitlab.com/api/'] as const;
   readonly loginUrl = 'https://gitlab.com/users/sign_in';
   readonly info = 'https://docs.gitlab.com/api/rest/.';
 
