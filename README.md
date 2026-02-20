@@ -213,3 +213,10 @@ defaults:
 - Using agents for automated access may be prohibited by some services' ToS.
 - We reserve the right to change the license of future releases of Latchkey.
 - Latchkey was not tested on Windows.
+
+## Currently supported services
+
+Latchkey currently offers varying levels of support for the
+following services: AWS, Calendly, Discord, Dropbox, Figma, GitHub, GitLab,
+Gmail, Google Analytics, Google Calendar, Google Docs, Google Drive, Google Sheets,
+Linear, Mailchimp, Notion, Sentry, Slack, Stripe, Telegram, Yelp, Zoom, and more.
