@@ -23,6 +23,18 @@ export class EncryptedStorageError extends Error {
   }
 }
 
+export class EncryptionKeyLostError extends EncryptedStorageError {
+  constructor() {
+    super(
+      'The encryption key was lost from the system keychain and encrypted data already exists. ' +
+        'Generating a new key would make existing data unreadable. ' +
+        'Restore the keychain or set LATCHKEY_ENCRYPTION_KEY, ' +
+        'or delete the encrypted files and start fresh with `latchkey clear`.'
+    );
+    this.name = 'EncryptionKeyLostError';
+  }
+}
+
 export class PathIsDirectoryError extends Error {
   constructor(filePath: string) {
     super(`Path is a directory, not a file: ${filePath}`);
@@ -34,6 +46,12 @@ export interface EncryptedStorageOptions {
   encryptionKeyOverride?: string | null;
   serviceName?: string;
   accountName?: string;
+  /**
+   * When false, refuse to generate a new encryption key if the keychain has no key.
+   * This prevents silently replacing a lost key, which would make existing encrypted data unreadable.
+   * Set to false when encrypted files already exist on disk.
+   */
+  allowKeyGeneration?: boolean;
 }
 
 /**
@@ -59,6 +77,10 @@ export class EncryptedStorage {
       const keychainKey = retrieveFromKeychain(serviceName, accountName);
       if (keychainKey) {
         return keychainKey;
+      }
+
+      if (options.allowKeyGeneration === false) {
+        throw new EncryptionKeyLostError();
       }
 
       // Generate new key and store in keychain

@@ -148,10 +148,13 @@ async function clearAll(deps: CliDependencies, yes: boolean): Promise<void> {
 }
 
 function createEncryptedStorageFromConfig(config: Config) {
+  const hasEncryptedData =
+    existsSync(config.credentialStorePath) || existsSync(config.browserStatePath);
   return new EncryptedStorage({
     encryptionKeyOverride: config.encryptionKeyOverride,
     serviceName: config.serviceName,
     accountName: config.accountName,
+    allowKeyGeneration: !hasEncryptedData,
   });
 }
 

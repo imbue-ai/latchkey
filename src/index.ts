@@ -18,7 +18,11 @@ export { Config, CONFIG, InsecureFilePermissionsError } from './config.js';
 
 export { encrypt, decrypt, generateKey, EncryptionError, DecryptionError } from './encryption.js';
 
-export { EncryptedStorage, EncryptedStorageError } from './encryptedStorage.js';
+export {
+  EncryptedStorage,
+  EncryptedStorageError,
+  EncryptionKeyLostError,
+} from './encryptedStorage.js';
 
 export {
   storeInKeychain,
