@@ -256,14 +256,15 @@ export class Aws extends Service {
   readonly displayName = 'AWS';
   readonly baseApiUrls = [/^https:\/\/[^/]*\.amazonaws\.com\//] as const;
   readonly loginUrl = 'https://console.aws.amazon.com/';
-  readonly info =
-    'https://docs.aws.amazon.com/. ' +
-    'Browser-based authentication is not supported. ' +
-    'Use `latchkey auth set-nocurl aws <access-key-id> <secret-access-key>` to store credentials.';
+  readonly info = 'https://docs.aws.amazon.com/.';
 
   readonly credentialCheckCurlArguments = [
     'https://sts.amazonaws.com/?Action=GetCallerIdentity&Version=2011-06-15',
   ] as const;
+
+  setCredentialsExample(serviceName: string): string {
+    return `latchkey auth set-nocurl ${serviceName} AKIAIOSFODNN7EXAMPLE wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY`;
+  }
 
   override getCredentialsNoCurl(arguments_: readonly string[]): ApiCredentials {
     if (arguments_.length !== 2 || arguments_[0] === undefined || arguments_[1] === undefined) {

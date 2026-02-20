@@ -5,16 +5,17 @@ export class Zoom extends Service {
   readonly displayName = 'Zoom';
   readonly baseApiUrls = ['https://api.zoom.us/v2/'] as const;
   readonly loginUrl = 'https://zoom.us/signin';
-  readonly info =
-    'https://developers.zoom.us/docs/api/. ' +
-    'Browser-based authentication is not yet supported. ' +
-    'Use `latchkey auth set zoom -H "Authorization: Bearer <token>"` to add credentials manually.';
+  readonly info = 'https://developers.zoom.us/docs/api/.';
 
   readonly credentialCheckCurlArguments = [
     '-H',
     'Content-Type: application/json',
     'https://api.zoom.us/v2/users?page_size=1',
   ] as const;
+
+  setCredentialsExample(serviceName: string): string {
+    return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
+  }
 }
 
 export const ZOOM = new Zoom();

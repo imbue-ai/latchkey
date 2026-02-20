@@ -461,6 +461,10 @@ export abstract class GoogleService extends Service {
 
   protected abstract readonly config: GoogleServiceConfig;
 
+  setCredentialsExample(serviceName: string): string {
+    return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
+  }
+
   override getSession(): GoogleServiceSession {
     return new GoogleServiceSession(this, this.config);
   }

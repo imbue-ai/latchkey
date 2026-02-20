@@ -16,7 +16,7 @@ import {
   type BrowserSource,
 } from './browserConfig.js';
 import { Config, CONFIG } from './config.js';
-import { BrowserDisabledError, BrowserFlowsNotSupportedError } from './playwrightUtils.js';
+import { BrowserDisabledError } from './playwrightUtils.js';
 import type { CurlResult } from './curl.js';
 import { EncryptedStorage } from './encryptedStorage.js';
 import { Registry, REGISTRY } from './registry.js';
@@ -59,10 +59,6 @@ async function getCredentialStatus(
   }
   const refreshed = await maybeRefreshCredentials(service, credentials, apiCredentialStore);
   return service.checkApiCredentials(refreshed);
-}
-
-function supportsNoCurlCredentials(service: Service): boolean {
-  return service.getCredentialsNoCurl !== Service.prototype.getCredentialsNoCurl;
 }
 
 /**
@@ -261,6 +257,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       const info = {
         authOptions,
         credentialStatus,
+        setCredentialsExample: service.setCredentialsExample(serviceName),
         developerNotes: service.info,
       };
       deps.log(JSON.stringify(info, null, 2));
@@ -416,8 +413,10 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
 
       const session = service.getSession?.();
       if (!session) {
-        const authSubcommand = supportsNoCurlCredentials(service) ? 'set-nocurl' : 'set';
-        deps.errorLog(new BrowserFlowsNotSupportedError(service.name, authSubcommand).message);
+        deps.errorLog(
+          `Service '${serviceName}' does not support browser flows. ` +
+            `Use '${service.setCredentialsExample(serviceName)}' to set credentials manually.`
+        );
         deps.exit(1);
       }
 

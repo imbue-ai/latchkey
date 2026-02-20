@@ -6,7 +6,6 @@ import { execSync, ExecSyncOptionsWithStringEncoding } from 'node:child_process'
 import { Command } from 'commander';
 import { registerCommands, type CliDependencies } from '../src/cliCommands.js';
 import { extractUrlFromCurlArguments } from '../src/curl.js';
-import { BrowserFlowsNotSupportedError } from '../src/playwrightUtils.js';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { Config } from '../src/config.js';
 import { Registry } from '../src/registry.js';
@@ -195,6 +194,9 @@ describe('CLI commands with dependency injection', () => {
       info: 'Test info for Slack service.',
       credentialCheckCurlArguments: ['https://slack.com/api/auth.test'],
       checkApiCredentials: vi.fn().mockReturnValue(ApiCredentialStatus.Valid),
+      setCredentialsExample(serviceName: string) {
+        return `latchkey auth set ${serviceName} -H "Authorization: Bearer xoxb-your-token"`;
+      },
       getCredentialsNoCurl() {
         throw new NoCurlCredentialsNotSupportedError('slack');
       },
@@ -276,6 +278,9 @@ describe('CLI commands with dependency injection', () => {
       const info = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
       expect(info.authOptions).toEqual(['browser', 'set']);
       expect(info.credentialStatus).toBe('missing');
+      expect(info.setCredentialsExample).toBe(
+        'latchkey auth set slack -H "Authorization: Bearer xoxb-your-token"'
+      );
       expect(info.developerNotes).toBe('Test info for Slack service.');
     });
 
@@ -291,6 +296,9 @@ describe('CLI commands with dependency injection', () => {
         info: 'A service without browser login support.',
         credentialCheckCurlArguments: [],
         checkApiCredentials: vi.fn().mockReturnValue(ApiCredentialStatus.Missing),
+        setCredentialsExample(serviceName: string) {
+          return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
+        },
         getCredentialsNoCurl() {
           throw new NoCurlCredentialsNotSupportedError('nologin');
         },
@@ -780,6 +788,9 @@ describe('CLI commands with dependency injection', () => {
         info: 'Test info for Slack service.',
         credentialCheckCurlArguments: [],
         checkApiCredentials: vi.fn(),
+        setCredentialsExample(serviceName: string) {
+          return `latchkey auth set ${serviceName} -H "Authorization: Bearer xoxb-your-token"`;
+        },
         getCredentialsNoCurl() {
           throw new NoCurlCredentialsNotSupportedError('slack');
         },
@@ -846,6 +857,9 @@ describe('CLI commands with dependency injection', () => {
         info: 'A service without browser login support.',
         credentialCheckCurlArguments: [],
         checkApiCredentials: vi.fn().mockReturnValue(ApiCredentialStatus.Valid),
+        setCredentialsExample(serviceName: string) {
+          return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
+        },
         getCredentialsNoCurl() {
           throw new NoCurlCredentialsNotSupportedError('nologin');
         },
@@ -874,6 +888,9 @@ describe('CLI commands with dependency injection', () => {
         info: 'A service without browser login support.',
         credentialCheckCurlArguments: [],
         checkApiCredentials: vi.fn(),
+        setCredentialsExample(serviceName: string) {
+          return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
+        },
         // eslint-disable-next-line @typescript-eslint/unbound-method
         getCredentialsNoCurl: Service.prototype.getCredentialsNoCurl,
         // No getSession - service doesn't support browser login
@@ -886,8 +903,8 @@ describe('CLI commands with dependency injection', () => {
       await runCommand(['auth', 'browser', 'nologin'], deps);
 
       expect(exitCode).toBe(1);
-      const expectedMessage = new BrowserFlowsNotSupportedError('nologin').message;
-      expect(errorLogs.some((log) => log.includes(expectedMessage))).toBe(true);
+      expect(errorLogs.some((log) => log.includes('does not support browser flows'))).toBe(true);
+      expect(errorLogs.some((log) => log.includes('latchkey auth set nologin'))).toBe(true);
     });
 
     it('should suggest set-nocurl when service supports nocurl credentials', async () => {
@@ -899,6 +916,9 @@ describe('CLI commands with dependency injection', () => {
         info: 'A service with nocurl credentials but no browser login.',
         credentialCheckCurlArguments: [],
         checkApiCredentials: vi.fn(),
+        setCredentialsExample(serviceName: string) {
+          return `latchkey auth set-nocurl ${serviceName} <some-arg>`;
+        },
         getCredentialsNoCurl(arguments_: readonly string[]) {
           if (arguments_.length !== 1) {
             throw new Error('Expected exactly one argument');
@@ -915,9 +935,10 @@ describe('CLI commands with dependency injection', () => {
       await runCommand(['auth', 'browser', 'nocurl-only'], deps);
 
       expect(exitCode).toBe(1);
-      const expectedMessage = new BrowserFlowsNotSupportedError('nocurl-only', 'set-nocurl')
-        .message;
-      expect(errorLogs.some((log) => log.includes(expectedMessage))).toBe(true);
+      expect(errorLogs.some((log) => log.includes('does not support browser flows'))).toBe(true);
+      expect(errorLogs.some((log) => log.includes('latchkey auth set-nocurl nocurl-only'))).toBe(
+        true
+      );
     });
   });
 });

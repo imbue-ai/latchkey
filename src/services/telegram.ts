@@ -56,12 +56,13 @@ export class Telegram extends Service {
   readonly displayName = 'Telegram';
   readonly baseApiUrls = [BASE_API_URL] as const;
   readonly loginUrl = 'https://web.telegram.org/';
-  readonly info =
-    'https://core.telegram.org/bots/api. ' +
-    'Browser-based authentication is not yet supported. ' +
-    'Use `latchkey auth set-nocurl telegram <bot-token>` to add credentials.';
+  readonly info = 'https://core.telegram.org/bots/api.';
 
   readonly credentialCheckCurlArguments = [`${BASE_API_URL}getMe`] as const;
+
+  setCredentialsExample(serviceName: string): string {
+    return `latchkey auth set-nocurl ${serviceName} 123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11`;
+  }
 
   override getCredentialsNoCurl(arguments_: readonly string[]): ApiCredentials {
     if (arguments_.length !== 1 || arguments_[0] === undefined) {

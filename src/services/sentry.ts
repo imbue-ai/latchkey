@@ -11,16 +11,17 @@ export class Sentry extends Service {
   readonly displayName = 'Sentry';
   readonly baseApiUrls = ['https://sentry.io/api/'] as const;
   readonly loginUrl = 'https://sentry.io/auth/login/';
-  readonly info =
-    'https://docs.sentry.io/api/. ' +
-    'Browser-based authentication is not yet supported. ' +
-    'Use `latchkey auth set sentry -H "Authorization: Bearer <token>"` to add credentials manually.';
+  readonly info = 'https://docs.sentry.io/api/.';
 
   readonly credentialCheckCurlArguments = [
     '-H',
     'Content-Type: application/json',
     'https://sentry.io/api/0/',
   ] as const;
+
+  setCredentialsExample(serviceName: string): string {
+    return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
+  }
 
   override checkApiCredentials(apiCredentials: ApiCredentials): ApiCredentialStatus {
     let allCurlArgs: readonly string[];

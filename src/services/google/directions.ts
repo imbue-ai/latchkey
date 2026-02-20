@@ -9,8 +9,6 @@ export class GoogleDirections extends Service {
   readonly loginUrl = 'https://console.cloud.google.com/google/maps-apis/';
   readonly info =
     'https://developers.google.com/maps/documentation/routes/reference/rest. ' +
-    'Browser-based authentication is not yet supported. ' +
-    'Use `latchkey auth set-nocurl google-directions <api-key>` to add credentials. ' +
     'Example invocation: `latchkey curl google-directions -X POST ' +
     '-H "Content-Type: application/json" ' +
     '-H "X-Goog-FieldMask: routes.duration,routes.distanceMeters" ' +
@@ -29,6 +27,10 @@ export class GoogleDirections extends Service {
     '{"origin":{"location":{"latLng":{"latitude":37.419734,"longitude":-122.0827784}}},"destination":{"location":{"latLng":{"latitude":37.417670,"longitude":-122.079595}}},"travelMode":"DRIVE"}',
     'https://routes.googleapis.com/directions/v2:computeRoutes',
   ] as const;
+
+  setCredentialsExample(serviceName: string): string {
+    return `latchkey auth set-nocurl ${serviceName} AIzaSyA1B2C3D4E5F6G7H8I9J0`;
+  }
 
   override getCredentialsNoCurl(arguments_: readonly string[]): ApiCredentials {
     if (arguments_.length !== 1 || arguments_[0] === undefined) {

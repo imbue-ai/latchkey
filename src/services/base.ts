@@ -102,6 +102,13 @@ export abstract class Service {
   }
 
   /**
+   * Return an example showing how to set credentials for this service via the CLI.
+   * The service name is passed as a parameter (not baked in) so the same example
+   * can be reused for aliased services in the future.
+   */
+  abstract setCredentialsExample(serviceName: string): string;
+
+  /**
    * Set credentials from arbitrary (non-curl) arguments.
    * Services that support this should override to validate and return typed credentials.
    */

@@ -148,6 +148,10 @@ export class Dropbox extends Service {
     'https://api.dropboxapi.com/2/users/get_current_account',
   ] as const;
 
+  setCredentialsExample(serviceName: string): string {
+    return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
+  }
+
   override getSession(): DropboxServiceSession {
     return new DropboxServiceSession(this);
   }

@@ -114,6 +114,10 @@ export class Notion extends Service {
     'https://api.notion.com/v1/users/me',
   ] as const;
 
+  setCredentialsExample(serviceName: string): string {
+    return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
+  }
+
   override getSession(): NotionServiceSession {
     return new NotionServiceSession(this);
   }
