@@ -87,6 +87,20 @@ function parseAwsHostname(hostname: string): { region: string; service: string }
   // Patterns: "service.region", "service", "region.service" (for S3)
   const parts = prefix.split('.');
 
+  // S3 virtual-hosted-style: "bucket.s3.amazonaws.com" or
+  // "bucket.s3.us-west-2.amazonaws.com". Strip the bucket prefix so the
+  // remaining parts describe only service (+ optional region).
+  const s3Index = parts.indexOf('s3');
+  if (s3Index > 0) {
+    const afterS3 = parts.slice(s3Index + 1);
+    if (afterS3.length === 0) {
+      // bucket.s3.amazonaws.com → default region
+      return { region: 'us-east-1', service: 's3' };
+    }
+    // bucket.s3.us-west-2.amazonaws.com
+    return { region: afterS3[0]!, service: 's3' };
+  }
+
   if (parts.length === 1) {
     // e.g., "sts" → global service, default region
     return { region: 'us-east-1', service: parts[0]! };
@@ -95,11 +109,11 @@ function parseAwsHostname(hostname: string): { region: string; service: string }
   if (parts.length === 2) {
     // e.g., "sts.us-east-1" or "s3.us-west-2"
     // Heuristic: if second part looks like a region (contains a dash and digit)
-    if (/^[a-z]{2}(-[a-z]+-\d+)?$/.test(parts[1]!)) {
+    if (/^[a-z]{2}-[a-z]+-\d+$/.test(parts[1]!)) {
       return { region: parts[1]!, service: parts[0]! };
     }
     // e.g., "us-east-1.s3" (S3 path-style)
-    if (/^[a-z]{2}(-[a-z]+-\d+)?$/.test(parts[0]!)) {
+    if (/^[a-z]{2}-[a-z]+-\d+$/.test(parts[0]!)) {
       return { region: parts[0]!, service: parts[1]! };
     }
     // Fallback: first is service, second is region

@@ -146,6 +146,27 @@ describe('AwsCredentials', () => {
     expect(authHeader).toContain('SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date');
   });
 
+  it('should sign S3 virtual-hosted-style URLs with default region', () => {
+    const credentials = new AwsCredentials('AKIAIOSFODNN7EXAMPLE', 'wJalrXUtnFEMI/K7MDENG');
+    const result = credentials.injectIntoCurlCall([
+      'https://test-int8-transient.s3.amazonaws.com/',
+    ]);
+    const resultStrings = result as string[];
+    const authHeader = resultStrings[1]!;
+    // Credential scope must contain us-east-1/s3, not s3/test-int8-transient
+    expect(authHeader).toMatch(/Credential=AKIAIOSFODNN7EXAMPLE\/\d{8}\/us-east-1\/s3\//);
+  });
+
+  it('should sign S3 virtual-hosted-style URLs with explicit region', () => {
+    const credentials = new AwsCredentials('AKIAIOSFODNN7EXAMPLE', 'wJalrXUtnFEMI/K7MDENG');
+    const result = credentials.injectIntoCurlCall([
+      'https://test-int8-transient.s3.us-west-2.amazonaws.com/',
+    ]);
+    const resultStrings = result as string[];
+    const authHeader = resultStrings[1]!;
+    expect(authHeader).toMatch(/Credential=AKIAIOSFODNN7EXAMPLE\/\d{8}\/us-west-2\/s3\//);
+  });
+
   it('should pass through arguments unchanged when no URL is present', () => {
     const credentials = new AwsCredentials('AKIAIOSFODNN7EXAMPLE', 'wJalrXUtnFEMI/K7MDENG');
     const result = credentials.injectIntoCurlCall(['-v']);
