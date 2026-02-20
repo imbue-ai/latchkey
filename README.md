@@ -5,6 +5,10 @@ Inject API credentials into local agent requests.
 ## Quick example
 
 ```
+# User stores the credentials.
+latchkey auth set slack -H "Authorization: Bearer xoxb-your-token"
+
+# Agent makes http calls.
 latchkey curl -X POST 'https://slack.com/api/conversations.create' \
   -H 'Content-Type: application/json' \
   -d '{"name":"something-urgent"}'
@@ -16,14 +20,15 @@ Latchkey is a command-line tool that injects credentials into curl
 requests to known public APIs.
 
 - `latchkey services list`
-	- Get a list of supported third-party services (Slack, Google Workspace, Linear, GitHub, etc.).
+	- List supported third-party services (Slack, Google Workspace, Linear, GitHub, etc.).
 - `latchkey curl <arguments>`
 	- Automatically inject credentials to your otherwise standard curl calls to public APIs.
 	- Credentials must already exist (see below).
 - `latchkey auth set <service_name> <curl_arguments>`
-	- Manually store credentials for a service in the form of arbitrary curl arguments.
+	- Manually store credentials for a service as arbitrary curl arguments.
 - `latchkey auth browser <service_name>`
 	- Open a browser login pop-up window and store the resulting API credentials.
+    - This also allows agents to prompt users for credentials.
     - Only some services support this option.
 
 Latchkey is primarily designed for AI agents. By invoking
@@ -155,10 +160,8 @@ signature) by calling `latchkey services info <service_name>`.
 
 ### Remembering API credentials
 
-Your API credentials and browser state are stored by default
-under `~/.latchkey`. When a functioning keyring is detected
-(which is the case on most systems), the data is properly
-encrypted.
+Your API credentials and browser state are encrypted and stored
+by default under `~/.latchkey`.
 
 
 ### Inspecting the status of stored credentials

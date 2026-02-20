@@ -435,7 +435,8 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
 
       return {
         accessToken: tokens.access_token,
-        refreshToken: tokens.refresh_token,
+        // exchangeCodeForTokens() guarantees refresh_token is present
+        refreshToken: tokens.refresh_token!,
         accessTokenExpiresAt,
       };
     } catch (error: unknown) {
