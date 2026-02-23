@@ -224,7 +224,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .command('list')
     .description('List all supported services.')
     .action(() => {
-      const serviceNames = deps.registry.services.map((service) => service.name);
+      const serviceNames = deps.registry.services.map((service) => service.name).sort();
       deps.log(JSON.stringify(serviceNames, null, 2));
     });
 
