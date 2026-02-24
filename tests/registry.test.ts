@@ -166,6 +166,24 @@ describe('Registry', () => {
       expect(registered.loginUrl).toBe('https://slack.mycompany.com/signin');
     });
 
+    it('should work without a family service', () => {
+      const registered = new RegisteredService('my-api', 'https://api.example.com/');
+      expect(registered.getSession).toBeUndefined(); // eslint-disable-line @typescript-eslint/unbound-method
+      expect(registered.loginUrl).toBe('');
+      expect(registered.info).toContain('Generic service');
+      expect(registered.setCredentialsExample('my-api')).toContain('latchkey auth set my-api');
+    });
+
+    it('should not expose getSession when loginUrl is provided but no family', () => {
+      const registered = new RegisteredService(
+        'my-api',
+        'https://api.example.com/',
+        undefined,
+        'https://api.example.com/login'
+      );
+      expect(registered.getSession).toBeUndefined(); // eslint-disable-line @typescript-eslint/unbound-method
+    });
+
     it('should not expose getSession when loginUrl is provided but family lacks it', () => {
       // TELEGRAM has no getSession
       const registered = new RegisteredService(

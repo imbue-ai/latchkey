@@ -12,7 +12,7 @@ import { z } from 'zod';
 
 const RegisteredServiceEntrySchema = z.object({
   baseApiUrl: z.string(),
-  serviceFamily: z.string(),
+  serviceFamily: z.string().optional(),
   loginUrl: z.string().optional(),
 });
 

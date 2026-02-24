@@ -87,9 +87,12 @@ export class Registry {
 export function loadRegisteredServicesIntoRegistry(configPath: string, registry: Registry): void {
   const entries = loadRegisteredServices(configPath);
   for (const [name, entry] of entries) {
-    const familyService = registry.getByName(entry.serviceFamily);
-    if (familyService === null) {
-      continue;
+    let familyService: Service | undefined;
+    if (entry.serviceFamily !== undefined) {
+      familyService = registry.getByName(entry.serviceFamily) ?? undefined;
+      if (familyService === undefined) {
+        continue;
+      }
     }
     if (registry.getByName(name) !== null) {
       continue;

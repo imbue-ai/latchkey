@@ -272,7 +272,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .description('Register a self-hosted service instance.')
     .argument('<service_name>', 'Name for the new service')
     .requiredOption('--base-api-url <url>', 'Base API URL for the self-hosted instance')
-    .requiredOption(
+    .option(
       '--service-family <name>',
       'Name of the built-in service to use as a template (e.g. gitlab)'
     )
@@ -280,13 +280,16 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .action(
       (
         serviceName: string,
-        options: { baseApiUrl: string; serviceFamily: string; loginUrl?: string }
+        options: { baseApiUrl: string; serviceFamily?: string; loginUrl?: string }
       ) => {
-        const familyService = deps.registry.getByName(options.serviceFamily);
-        if (familyService === null) {
-          deps.errorLog(`Error: Unknown service family: ${options.serviceFamily}`);
-          deps.errorLog("Use 'latchkey services list' to see available service families.");
-          deps.exit(1);
+        let familyService: Service | undefined;
+        if (options.serviceFamily !== undefined) {
+          familyService = deps.registry.getByName(options.serviceFamily) ?? undefined;
+          if (familyService === undefined) {
+            deps.errorLog(`Error: Unknown service family: ${options.serviceFamily}`);
+            deps.errorLog("Use 'latchkey services list' to see available service families.");
+            deps.exit(1);
+          }
         }
 
         const registeredService = new RegisteredService(

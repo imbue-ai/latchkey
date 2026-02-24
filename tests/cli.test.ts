@@ -1053,6 +1053,135 @@ describe('CLI commands with dependency injection', () => {
       expect(logs).toContain('Credentials stored.');
     });
 
+    it('should register a service without --service-family', async () => {
+      const deps = createMockDependencies({
+        registry: new Registry([GITLAB]),
+      });
+
+      await runCommand(
+        ['services', 'register', 'my-api', '--base-api-url', 'https://api.example.com/'],
+        deps
+      );
+
+      expect(exitCode).toBeNull();
+      expect(logs).toContain("Service 'my-api' registered.");
+
+      // Should be findable by name
+      expect(deps.registry.getByName('my-api')).not.toBeNull();
+
+      // Should be findable by URL
+      expect(deps.registry.getByUrl('https://api.example.com/v1/users')).not.toBeNull();
+    });
+
+    it('should persist registration without service family to config.json', async () => {
+      const deps = createMockDependencies({
+        registry: new Registry([GITLAB]),
+      });
+
+      await runCommand(
+        ['services', 'register', 'my-api', '--base-api-url', 'https://api.example.com/'],
+        deps
+      );
+
+      const configPath = deps.config.configPath;
+      const entries = loadRegisteredServices(configPath);
+      expect(entries.get('my-api')).toEqual({
+        baseApiUrl: 'https://api.example.com/',
+      });
+    });
+
+    it('should not expose browser auth for service without family', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(storePath, '{}');
+
+      const deps = createMockDependencies({
+        registry: new Registry([GITLAB]),
+      });
+
+      await runCommand(
+        ['services', 'register', 'my-api', '--base-api-url', 'https://api.example.com/'],
+        deps
+      );
+
+      logs = [];
+      exitCode = null;
+      await runCommand(['services', 'info', 'my-api'], deps);
+
+      const info = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
+      expect(info.authOptions).toEqual(['set']);
+    });
+
+    it('should make service without family usable with auth set and curl', async () => {
+      const deps = createMockDependencies({
+        registry: new Registry([GITLAB]),
+      });
+
+      // Register the service without family
+      await runCommand(
+        ['services', 'register', 'my-api', '--base-api-url', 'https://api.example.com/'],
+        deps
+      );
+
+      // Store credentials
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(
+        storePath,
+        JSON.stringify({
+          'my-api': {
+            objectType: 'rawCurl',
+            curlArguments: ['-H', 'Authorization: Bearer my-token'],
+          },
+        })
+      );
+
+      logs = [];
+      exitCode = null;
+      capturedArgs = [];
+      await runCommand(['curl', 'https://api.example.com/v1/users'], deps);
+
+      expect(exitCode).toBe(0);
+      expect(capturedArgs).toContain('-H');
+      expect(capturedArgs).toContain('Authorization: Bearer my-token');
+    });
+
+    it('should reject browser login for service without family', async () => {
+      const deps = createMockDependencies({
+        registry: new Registry([GITLAB]),
+      });
+
+      await runCommand(
+        ['services', 'register', 'my-api', '--base-api-url', 'https://api.example.com/'],
+        deps
+      );
+
+      logs = [];
+      errorLogs = [];
+      exitCode = null;
+      await runCommand(['auth', 'browser', 'my-api'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs[0]).toContain('does not support browser flows');
+    });
+
+    it('should reject set-nocurl for service without family', async () => {
+      const deps = createMockDependencies({
+        registry: new Registry([GITLAB]),
+      });
+
+      await runCommand(
+        ['services', 'register', 'my-api', '--base-api-url', 'https://api.example.com/'],
+        deps
+      );
+
+      logs = [];
+      errorLogs = [];
+      exitCode = null;
+      await runCommand(['auth', 'set-nocurl', 'my-api', 'some-token'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs[0]).toContain('does not support set-nocurl');
+    });
+
     it('should make registered service usable with curl', async () => {
       const deps = createMockDependencies({
         registry: new Registry([GITLAB]),
@@ -1172,6 +1301,22 @@ describe('registeredServiceStore', () => {
     const service = registry.getByName('my-gitlab');
     expect(service).not.toBeNull();
     expect(service!.loginUrl).toBe('https://gitlab.mycompany.com/users/sign_in');
+  });
+
+  it('should load registered service without family into registry', () => {
+    const configPath = join(tempDir, 'config.json');
+    saveRegisteredService(configPath, 'my-api', {
+      baseApiUrl: 'https://api.example.com/',
+    });
+
+    const registry = new Registry([GITLAB]);
+    loadRegisteredServicesIntoRegistry(configPath, registry);
+
+    const service = registry.getByName('my-api');
+    expect(service).not.toBeNull();
+    expect(service!.baseApiUrls).toEqual(['https://api.example.com/']);
+    expect(service!.getSession).toBeUndefined(); // eslint-disable-line @typescript-eslint/unbound-method
+    expect(service!.loginUrl).toBe('');
   });
 
   it('should skip registered services with unknown family', () => {
