@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execSync, ExecSyncOptionsWithStringEncoding } from 'node:child_process';
@@ -11,8 +11,17 @@ import { Config } from '../src/config.js';
 import { Registry } from '../src/registry.js';
 import { ApiCredentialStatus } from '../src/apiCredentials.js';
 import { SlackApiCredentials } from '../src/services/slack.js';
-import { NoCurlCredentialsNotSupportedError, Service } from '../src/services/base.js';
+import { NoCurlCredentialsNotSupportedError, Service } from '../src/services/core/base.js';
+import { RegisteredService } from '../src/services/core/registered.js';
+import { GITLAB } from '../src/services/gitlab.js';
+import { GITHUB } from '../src/services/github.js';
 import { TELEGRAM } from '../src/services/telegram.js';
+import {
+  deleteRegisteredService,
+  loadRegisteredServices,
+  saveRegisteredService,
+} from '../src/configDataStore.js';
+import { loadRegisteredServicesIntoRegistry } from '../src/registry.js';
 import type { CurlResult } from '../src/curl.js';
 
 // Use a fixed test key for deterministic test behavior (32 bytes = 256 bits, base64 encoded)
@@ -264,6 +273,30 @@ describe('CLI commands with dependency injection', () => {
       const services = JSON.parse(logs[0] ?? '') as string[];
       expect(services).toContain('slack');
     });
+
+    it('should include registered services by default', async () => {
+      const registeredService = new RegisteredService('my-gitlab', 'https://gitlab.example.com');
+      const deps = createMockDependencies();
+      deps.registry.addService(registeredService);
+      await runCommand(['services', 'list'], deps);
+
+      expect(logs).toHaveLength(1);
+      const services = JSON.parse(logs[0] ?? '') as string[];
+      expect(services).toContain('slack');
+      expect(services).toContain('my-gitlab');
+    });
+
+    it('should exclude registered services with --built-in-only', async () => {
+      const registeredService = new RegisteredService('my-gitlab', 'https://gitlab.example.com');
+      const deps = createMockDependencies();
+      deps.registry.addService(registeredService);
+      await runCommand(['services', 'list', '--built-in-only'], deps);
+
+      expect(logs).toHaveLength(1);
+      const services = JSON.parse(logs[0] ?? '') as string[];
+      expect(services).toContain('slack');
+      expect(services).not.toContain('my-gitlab');
+    });
   });
 
   describe('services info command', () => {
@@ -276,6 +309,7 @@ describe('CLI commands with dependency injection', () => {
 
       expect(logs).toHaveLength(1);
       const info = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
+      expect(info.type).toBe('built-in');
       expect(info.authOptions).toEqual(['browser', 'set']);
       expect(info.credentialStatus).toBe('missing');
       expect(info.setCredentialsExample).toBe(
@@ -350,6 +384,19 @@ describe('CLI commands with dependency injection', () => {
 
       expect(exitCode).toBe(1);
       expect(errorLogs.length).toBeGreaterThan(0);
+    });
+
+    it('should show type as registered for registered services', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(storePath, '{}');
+
+      const registeredService = new RegisteredService('my-gitlab', 'https://gitlab.example.com');
+      const deps = createMockDependencies();
+      deps.registry.addService(registeredService);
+      await runCommand(['services', 'info', 'my-gitlab'], deps);
+
+      const info = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
+      expect(info.type).toBe('user-registered');
     });
   });
 
@@ -865,6 +912,787 @@ describe('CLI commands with dependency injection', () => {
 
       expect(exitCode).toBe(1);
     });
+  });
+
+  describe('services register command', () => {
+    it('should register a new service', async () => {
+      const deps = createMockDependencies({
+        registry: new Registry([GITLAB]),
+      });
+
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-gitlab',
+          '--base-api-url',
+          'https://gitlab.mycompany.com/api/',
+          '--service-family',
+          'gitlab',
+        ],
+        deps
+      );
+
+      expect(exitCode).toBeNull();
+      expect(logs).toContain("Service 'my-gitlab' registered.");
+
+      // Should be findable by name
+      expect(deps.registry.getByName('my-gitlab')).not.toBeNull();
+
+      // Should be findable by URL
+      expect(deps.registry.getByUrl('https://gitlab.mycompany.com/api/v4/user')).not.toBeNull();
+    });
+
+    it('should persist registration to config.json', async () => {
+      const deps = createMockDependencies({
+        registry: new Registry([GITLAB]),
+      });
+
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-gitlab',
+          '--base-api-url',
+          'https://gitlab.mycompany.com/api/',
+          '--service-family',
+          'gitlab',
+        ],
+        deps
+      );
+
+      const configPath = deps.config.configPath;
+      const entries = loadRegisteredServices(configPath);
+      expect(entries.get('my-gitlab')).toEqual({
+        baseApiUrl: 'https://gitlab.mycompany.com/api/',
+        serviceFamily: 'gitlab',
+      });
+    });
+
+    it('should reject unknown service family', async () => {
+      const deps = createMockDependencies({
+        registry: new Registry([GITLAB]),
+      });
+
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-service',
+          '--base-api-url',
+          'https://example.com/api/',
+          '--service-family',
+          'nonexistent',
+        ],
+        deps
+      );
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs[0]).toContain('Unknown service family');
+    });
+
+    it('should reject duplicate service name', async () => {
+      const deps = createMockDependencies({
+        registry: new Registry([GITLAB]),
+      });
+
+      await runCommand(
+        [
+          'services',
+          'register',
+          'gitlab',
+          '--base-api-url',
+          'https://gitlab.mycompany.com/api/',
+          '--service-family',
+          'gitlab',
+        ],
+        deps
+      );
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs[0]).toContain('already exists');
+    });
+
+    it('should canonicalize service name to lowercase', async () => {
+      const deps = createMockDependencies({
+        registry: new Registry([GITLAB]),
+      });
+
+      await runCommand(
+        [
+          'services',
+          'register',
+          'My-GitLab',
+          '--base-api-url',
+          'https://gitlab.mycompany.com/api/',
+          '--service-family',
+          'gitlab',
+        ],
+        deps
+      );
+
+      expect(exitCode).toBeNull();
+      expect(logs).toContain("Service 'my-gitlab' registered.");
+      expect(deps.registry.getByName('my-gitlab')).not.toBeNull();
+    });
+
+    it('should convert spaces to hyphens in service name', async () => {
+      const deps = createMockDependencies({
+        registry: new Registry([GITLAB]),
+      });
+
+      await runCommand(
+        ['services', 'register', 'my api', '--base-api-url', 'https://api.example.com/'],
+        deps
+      );
+
+      expect(exitCode).toBeNull();
+      expect(logs).toContain("Service 'my-api' registered.");
+      expect(deps.registry.getByName('my-api')).not.toBeNull();
+    });
+
+    it('should reject service name with invalid characters', async () => {
+      const deps = createMockDependencies({
+        registry: new Registry([GITLAB]),
+      });
+
+      await runCommand(
+        ['services', 'register', 'my@service!', '--base-api-url', 'https://api.example.com/'],
+        deps
+      );
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs[0]).toContain('Invalid service name');
+    });
+
+    it('should not expose browser auth without --login-url', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(storePath, '{}');
+
+      const deps = createMockDependencies({
+        registry: new Registry([GITLAB]),
+      });
+
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-gitlab',
+          '--base-api-url',
+          'https://gitlab.mycompany.com/api/',
+          '--service-family',
+          'gitlab',
+        ],
+        deps
+      );
+
+      logs = [];
+      exitCode = null;
+      await runCommand(['services', 'info', 'my-gitlab'], deps);
+
+      const info = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
+      expect(info.authOptions).toEqual(['set']);
+    });
+
+    it('should persist and restore loginUrl', async () => {
+      const deps = createMockDependencies({
+        registry: new Registry([GITHUB]),
+      });
+
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-github',
+          '--base-api-url',
+          'https://github.mycompany.com/api/',
+          '--service-family',
+          'github',
+          '--login-url',
+          'https://github.mycompany.com/login',
+        ],
+        deps
+      );
+
+      const entries = loadRegisteredServices(deps.config.configPath);
+      expect(entries.get('my-github')?.loginUrl).toBe('https://github.mycompany.com/login');
+    });
+
+    it('should reject --login-url without --service-family', async () => {
+      const deps = createMockDependencies({
+        registry: new Registry([]),
+      });
+
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-service',
+          '--base-api-url',
+          'https://example.com/api/',
+          '--login-url',
+          'https://example.com/login',
+        ],
+        deps
+      );
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs[0]).toContain('--login-url requires a --service-family');
+    });
+
+    it('should reject --login-url when service family does not support browser login', async () => {
+      const deps = createMockDependencies({
+        registry: new Registry([GITLAB]),
+      });
+
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-gitlab',
+          '--base-api-url',
+          'https://gitlab.mycompany.com/api/',
+          '--service-family',
+          'gitlab',
+          '--login-url',
+          'https://gitlab.mycompany.com/users/sign_in',
+        ],
+        deps
+      );
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs[0]).toContain('does not support browser login');
+    });
+
+    it('should require --login-url when service family supports browser login', async () => {
+      const deps = createMockDependencies({
+        registry: new Registry([GITHUB]),
+      });
+
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-github',
+          '--base-api-url',
+          'https://github.mycompany.com/api/',
+          '--service-family',
+          'github',
+        ],
+        deps
+      );
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs[0]).toContain('--login-url is required');
+    });
+
+    it('should make registered service usable with auth set', async () => {
+      const deps = createMockDependencies({
+        registry: new Registry([GITLAB]),
+      });
+
+      // Register the service
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-gitlab',
+          '--base-api-url',
+          'https://gitlab.mycompany.com/api/',
+          '--service-family',
+          'gitlab',
+        ],
+        deps
+      );
+
+      // Now store credentials for it
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(storePath, '{}');
+
+      logs = [];
+      exitCode = null;
+      await runCommand(['auth', 'set', 'my-gitlab', '-H', 'PRIVATE-TOKEN: my-secret-token'], deps);
+
+      expect(exitCode).toBeNull();
+      expect(logs).toContain('Credentials stored.');
+    });
+
+    it('should register a service without --service-family', async () => {
+      const deps = createMockDependencies({
+        registry: new Registry([GITLAB]),
+      });
+
+      await runCommand(
+        ['services', 'register', 'my-api', '--base-api-url', 'https://api.example.com/'],
+        deps
+      );
+
+      expect(exitCode).toBeNull();
+      expect(logs).toContain("Service 'my-api' registered.");
+
+      // Should be findable by name
+      expect(deps.registry.getByName('my-api')).not.toBeNull();
+
+      // Should be findable by URL
+      expect(deps.registry.getByUrl('https://api.example.com/v1/users')).not.toBeNull();
+    });
+
+    it('should persist registration without service family to config.json', async () => {
+      const deps = createMockDependencies({
+        registry: new Registry([GITLAB]),
+      });
+
+      await runCommand(
+        ['services', 'register', 'my-api', '--base-api-url', 'https://api.example.com/'],
+        deps
+      );
+
+      const configPath = deps.config.configPath;
+      const entries = loadRegisteredServices(configPath);
+      expect(entries.get('my-api')).toEqual({
+        baseApiUrl: 'https://api.example.com/',
+      });
+    });
+
+    it('should not expose browser auth for service without family', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(storePath, '{}');
+
+      const deps = createMockDependencies({
+        registry: new Registry([GITLAB]),
+      });
+
+      await runCommand(
+        ['services', 'register', 'my-api', '--base-api-url', 'https://api.example.com/'],
+        deps
+      );
+
+      logs = [];
+      exitCode = null;
+      await runCommand(['services', 'info', 'my-api'], deps);
+
+      const info = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
+      expect(info.authOptions).toEqual(['set']);
+    });
+
+    it('should make service without family usable with auth set and curl', async () => {
+      const deps = createMockDependencies({
+        registry: new Registry([GITLAB]),
+      });
+
+      // Register the service without family
+      await runCommand(
+        ['services', 'register', 'my-api', '--base-api-url', 'https://api.example.com/'],
+        deps
+      );
+
+      // Store credentials
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(
+        storePath,
+        JSON.stringify({
+          'my-api': {
+            objectType: 'rawCurl',
+            curlArguments: ['-H', 'Authorization: Bearer my-token'],
+          },
+        })
+      );
+
+      logs = [];
+      exitCode = null;
+      capturedArgs = [];
+      await runCommand(['curl', 'https://api.example.com/v1/users'], deps);
+
+      expect(exitCode).toBe(0);
+      expect(capturedArgs).toContain('-H');
+      expect(capturedArgs).toContain('Authorization: Bearer my-token');
+    });
+
+    it('should reject browser login for service without family', async () => {
+      const deps = createMockDependencies({
+        registry: new Registry([GITLAB]),
+      });
+
+      await runCommand(
+        ['services', 'register', 'my-api', '--base-api-url', 'https://api.example.com/'],
+        deps
+      );
+
+      logs = [];
+      errorLogs = [];
+      exitCode = null;
+      await runCommand(['auth', 'browser', 'my-api'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs[0]).toContain('does not support browser flows');
+    });
+
+    it('should reject set-nocurl for service without family', async () => {
+      const deps = createMockDependencies({
+        registry: new Registry([GITLAB]),
+      });
+
+      await runCommand(
+        ['services', 'register', 'my-api', '--base-api-url', 'https://api.example.com/'],
+        deps
+      );
+
+      logs = [];
+      errorLogs = [];
+      exitCode = null;
+      await runCommand(['auth', 'set-nocurl', 'my-api', 'some-token'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs[0]).toContain('does not support set-nocurl');
+    });
+
+    it('should make registered service usable with curl', async () => {
+      const deps = createMockDependencies({
+        registry: new Registry([GITLAB]),
+      });
+
+      // Register the service
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-gitlab',
+          '--base-api-url',
+          'https://gitlab.mycompany.com/api/',
+          '--service-family',
+          'gitlab',
+        ],
+        deps
+      );
+
+      // Store credentials
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(
+        storePath,
+        JSON.stringify({
+          'my-gitlab': {
+            objectType: 'rawCurl',
+            curlArguments: ['-H', 'PRIVATE-TOKEN: my-secret-token'],
+          },
+        })
+      );
+
+      logs = [];
+      exitCode = null;
+      capturedArgs = [];
+      await runCommand(['curl', 'https://gitlab.mycompany.com/api/v4/user'], deps);
+
+      expect(exitCode).toBe(0);
+      expect(capturedArgs).toContain('-H');
+      expect(capturedArgs).toContain('PRIVATE-TOKEN: my-secret-token');
+    });
+  });
+
+  describe('services deregister command', () => {
+    it('should deregister a registered service', async () => {
+      const deps = createMockDependencies({
+        registry: new Registry([GITLAB]),
+      });
+
+      // Register a service first
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-gitlab',
+          '--base-api-url',
+          'https://gitlab.mycompany.com/api/',
+          '--service-family',
+          'gitlab',
+        ],
+        deps
+      );
+
+      logs = [];
+      exitCode = null;
+      await runCommand(['services', 'deregister', 'my-gitlab'], deps);
+
+      expect(exitCode).toBeNull();
+      expect(logs).toContain("Service 'my-gitlab' deregistered.");
+    });
+
+    it('should remove service from config.json', async () => {
+      const deps = createMockDependencies({
+        registry: new Registry([GITLAB]),
+      });
+
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-gitlab',
+          '--base-api-url',
+          'https://gitlab.mycompany.com/api/',
+          '--service-family',
+          'gitlab',
+        ],
+        deps
+      );
+
+      logs = [];
+      exitCode = null;
+      await runCommand(['services', 'deregister', 'my-gitlab'], deps);
+
+      const entries = loadRegisteredServices(deps.config.configPath);
+      expect(entries.get('my-gitlab')).toBeUndefined();
+    });
+
+    it('should reject deregistering an unknown service', async () => {
+      const deps = createMockDependencies();
+
+      await runCommand(['services', 'deregister', 'nonexistent'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs[0]).toContain('Unknown service');
+    });
+
+    it('should reject deregistering a built-in service', async () => {
+      const deps = createMockDependencies();
+
+      await runCommand(['services', 'deregister', 'slack'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs[0]).toContain('built-in service');
+    });
+
+    it('should reject deregistering when credentials still exist', async () => {
+      const deps = createMockDependencies({
+        registry: new Registry([GITLAB]),
+      });
+
+      // Register a service
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-gitlab',
+          '--base-api-url',
+          'https://gitlab.mycompany.com/api/',
+          '--service-family',
+          'gitlab',
+        ],
+        deps
+      );
+
+      // Store credentials for it
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(
+        storePath,
+        JSON.stringify({
+          'my-gitlab': {
+            objectType: 'rawCurl',
+            curlArguments: ['-H', 'PRIVATE-TOKEN: my-secret-token'],
+          },
+        })
+      );
+
+      logs = [];
+      errorLogs = [];
+      exitCode = null;
+      await runCommand(['services', 'deregister', 'my-gitlab'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs[0]).toContain('Credentials still exist');
+      expect(errorLogs[0]).toContain('latchkey auth clear my-gitlab');
+
+      // Service should still be in config
+      const entries = loadRegisteredServices(deps.config.configPath);
+      expect(entries.get('my-gitlab')).toBeDefined();
+    });
+
+    it('should allow deregistering after credentials are cleared', async () => {
+      const deps = createMockDependencies({
+        registry: new Registry([GITLAB]),
+      });
+
+      // Register
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-gitlab',
+          '--base-api-url',
+          'https://gitlab.mycompany.com/api/',
+          '--service-family',
+          'gitlab',
+        ],
+        deps
+      );
+
+      // Store and then clear credentials
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(
+        storePath,
+        JSON.stringify({
+          'my-gitlab': {
+            objectType: 'rawCurl',
+            curlArguments: ['-H', 'PRIVATE-TOKEN: my-secret-token'],
+          },
+        })
+      );
+
+      logs = [];
+      errorLogs = [];
+      exitCode = null;
+      await runCommand(['auth', 'clear', 'my-gitlab'], deps);
+
+      expect(exitCode).toBeNull();
+
+      logs = [];
+      errorLogs = [];
+      exitCode = null;
+      await runCommand(['services', 'deregister', 'my-gitlab'], deps);
+
+      expect(exitCode).toBeNull();
+      expect(logs).toContain("Service 'my-gitlab' deregistered.");
+    });
+  });
+});
+
+describe('registeredServiceStore', () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), 'latchkey-store-test-'));
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('should save and load registered services', () => {
+    const configPath = join(tempDir, 'config.json');
+
+    saveRegisteredService(configPath, 'my-gitlab', {
+      baseApiUrl: 'https://gitlab.mycompany.com/api/',
+      serviceFamily: 'gitlab',
+    });
+
+    const entries = loadRegisteredServices(configPath);
+    expect(entries.size).toBe(1);
+    expect(entries.get('my-gitlab')).toEqual({
+      baseApiUrl: 'https://gitlab.mycompany.com/api/',
+      serviceFamily: 'gitlab',
+    });
+  });
+
+  it('should return empty map for nonexistent config file', () => {
+    const configPath = join(tempDir, 'nonexistent.json');
+    const entries = loadRegisteredServices(configPath);
+    expect(entries.size).toBe(0);
+  });
+
+  it('should preserve existing config data when saving', () => {
+    const configPath = join(tempDir, 'config.json');
+    writeFileSync(configPath, JSON.stringify({ browser: { executablePath: '/usr/bin/chrome' } }));
+
+    saveRegisteredService(configPath, 'my-gitlab', {
+      baseApiUrl: 'https://gitlab.mycompany.com/api/',
+      serviceFamily: 'gitlab',
+    });
+
+    const content = JSON.parse(readFileSync(configPath, 'utf-8')) as Record<string, unknown>;
+    expect(content.browser).toEqual({ executablePath: '/usr/bin/chrome' });
+    expect(content.registeredServices).toBeDefined();
+  });
+
+  it('should load registered services into registry', () => {
+    const configPath = join(tempDir, 'config.json');
+    saveRegisteredService(configPath, 'my-gitlab', {
+      baseApiUrl: 'https://gitlab.mycompany.com/api/',
+      serviceFamily: 'gitlab',
+    });
+
+    const registry = new Registry([GITLAB]);
+    loadRegisteredServicesIntoRegistry(configPath, registry);
+
+    const service = registry.getByName('my-gitlab');
+    expect(service).not.toBeNull();
+    expect(service!.baseApiUrls).toEqual(['https://gitlab.mycompany.com/api/']);
+  });
+
+  it('should load registered service with loginUrl into registry', () => {
+    const configPath = join(tempDir, 'config.json');
+    saveRegisteredService(configPath, 'my-gitlab', {
+      baseApiUrl: 'https://gitlab.mycompany.com/api/',
+      serviceFamily: 'gitlab',
+      loginUrl: 'https://gitlab.mycompany.com/users/sign_in',
+    });
+
+    const registry = new Registry([GITLAB]);
+    loadRegisteredServicesIntoRegistry(configPath, registry);
+
+    const service = registry.getByName('my-gitlab');
+    expect(service).not.toBeNull();
+    expect(service!.loginUrl).toBe('https://gitlab.mycompany.com/users/sign_in');
+  });
+
+  it('should load registered service without family into registry', () => {
+    const configPath = join(tempDir, 'config.json');
+    saveRegisteredService(configPath, 'my-api', {
+      baseApiUrl: 'https://api.example.com/',
+    });
+
+    const registry = new Registry([GITLAB]);
+    loadRegisteredServicesIntoRegistry(configPath, registry);
+
+    const service = registry.getByName('my-api');
+    expect(service).not.toBeNull();
+    expect(service!.baseApiUrls).toEqual(['https://api.example.com/']);
+    expect(service!.getSession).toBeUndefined(); // eslint-disable-line @typescript-eslint/unbound-method
+    expect(service!.loginUrl).toBe('');
+  });
+
+  it('should skip registered services with unknown family', () => {
+    const configPath = join(tempDir, 'config.json');
+    saveRegisteredService(configPath, 'my-unknown', {
+      baseApiUrl: 'https://unknown.example.com/api/',
+      serviceFamily: 'nonexistent',
+    });
+
+    const registry = new Registry([GITLAB]);
+    loadRegisteredServicesIntoRegistry(configPath, registry);
+
+    expect(registry.getByName('my-unknown')).toBeNull();
+  });
+
+  it('should delete a registered service from config', () => {
+    const configPath = join(tempDir, 'config.json');
+
+    saveRegisteredService(configPath, 'my-gitlab', {
+      baseApiUrl: 'https://gitlab.mycompany.com/api/',
+      serviceFamily: 'gitlab',
+    });
+    saveRegisteredService(configPath, 'my-github', {
+      baseApiUrl: 'https://github.mycompany.com/api/',
+      serviceFamily: 'github',
+    });
+
+    deleteRegisteredService(configPath, 'my-gitlab');
+
+    const entries = loadRegisteredServices(configPath);
+    expect(entries.get('my-gitlab')).toBeUndefined();
+    expect(entries.get('my-github')).toBeDefined();
+  });
+
+  it('should preserve other config data when deleting', () => {
+    const configPath = join(tempDir, 'config.json');
+    writeFileSync(configPath, JSON.stringify({ browser: { executablePath: '/usr/bin/chrome' } }));
+
+    saveRegisteredService(configPath, 'my-gitlab', {
+      baseApiUrl: 'https://gitlab.mycompany.com/api/',
+      serviceFamily: 'gitlab',
+    });
+
+    deleteRegisteredService(configPath, 'my-gitlab');
+
+    const content = JSON.parse(readFileSync(configPath, 'utf-8')) as Record<string, unknown>;
+    expect(content.browser).toEqual({ executablePath: '/usr/bin/chrome' });
   });
 });
 

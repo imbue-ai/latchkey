@@ -10,6 +10,7 @@ import { registerCommands, createDefaultDependencies } from './cliCommands.js';
 import { CurlNotFoundError, InsecureFilePermissionsError } from './config.js';
 import { EncryptedStorage, EncryptionKeyLostError } from './encryptedStorage.js';
 import { MigrationError, runMigrations } from './migrations.js';
+import { loadRegisteredServicesIntoRegistry } from './registry.js';
 import packageJson from '../package.json' with { type: 'json' };
 
 const deps = createDefaultDependencies();
@@ -43,6 +44,8 @@ try {
   }
   throw error;
 }
+
+loadRegisteredServicesIntoRegistry(deps.config.configPath, deps.registry);
 
 program
   .name('latchkey')

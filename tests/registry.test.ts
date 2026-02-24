@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { Registry, REGISTRY } from '../src/registry.js';
+import {
+  DuplicateServiceNameError,
+  InvalidServiceNameError,
+  Registry,
+  REGISTRY,
+  canonicalizeServiceName,
+} from '../src/registry.js';
+import { RegisteredService } from '../src/services/core/registered.js';
 import {
   SLACK,
   DISCORD,
@@ -14,6 +21,7 @@ import {
   GOOGLE_DOCS,
   GOOGLE_PEOPLE,
   MAILCHIMP,
+  GITLAB,
   AWS,
   TELEGRAM,
 } from '../src/services/index.js';
@@ -104,6 +112,151 @@ describe('Registry', () => {
       expect(customRegistry.getByName('slack')).toBe(SLACK);
       expect(customRegistry.getByName('github')).toBe(GITHUB);
       expect(customRegistry.getByName('discord')).toBeNull();
+    });
+  });
+
+  describe('addService', () => {
+    it('should add a service to the registry', () => {
+      const registry = new Registry([SLACK]);
+      const registered = new RegisteredService(
+        'my-gitlab',
+        'https://gitlab.mycompany.com/api/',
+        GITLAB
+      );
+      registry.addService(registered);
+
+      expect(registry.getByName('my-gitlab')).toBe(registered);
+      expect(registry.getByUrl('https://gitlab.mycompany.com/api/v4/user')).toBe(registered);
+    });
+
+    it('should throw DuplicateServiceNameError for existing built-in name', () => {
+      const registry = new Registry([SLACK]);
+      const duplicate = new RegisteredService('slack', 'https://slack.mycompany.com/api/', SLACK);
+
+      expect(() => {
+        registry.addService(duplicate);
+      }).toThrow(DuplicateServiceNameError);
+    });
+
+    it('should throw DuplicateServiceNameError for existing registered name', () => {
+      const registry = new Registry([GITLAB]);
+      const first = new RegisteredService('my-gitlab', 'https://gitlab.mycompany.com/api/', GITLAB);
+      const second = new RegisteredService('my-gitlab', 'https://gitlab.other.com/api/', GITLAB);
+
+      registry.addService(first);
+      expect(() => {
+        registry.addService(second);
+      }).toThrow(DuplicateServiceNameError);
+    });
+  });
+
+  describe('canonicalizeServiceName', () => {
+    it('should accept lowercase alphanumeric names', () => {
+      expect(canonicalizeServiceName('myservice')).toBe('myservice');
+    });
+
+    it('should accept names with hyphens', () => {
+      expect(canonicalizeServiceName('my-service')).toBe('my-service');
+    });
+
+    it('should accept names with underscores', () => {
+      expect(canonicalizeServiceName('my_service')).toBe('my_service');
+    });
+
+    it('should accept names with digits', () => {
+      expect(canonicalizeServiceName('service2')).toBe('service2');
+    });
+
+    it('should convert uppercase to lowercase', () => {
+      expect(canonicalizeServiceName('MyService')).toBe('myservice');
+    });
+
+    it('should convert mixed case to lowercase', () => {
+      expect(canonicalizeServiceName('My-GitLab')).toBe('my-gitlab');
+    });
+
+    it('should convert spaces to hyphens', () => {
+      expect(canonicalizeServiceName('my service')).toBe('my-service');
+    });
+
+    it('should collapse multiple spaces into a single hyphen', () => {
+      expect(canonicalizeServiceName('my   service')).toBe('my-service');
+    });
+
+    it('should reject names with special characters', () => {
+      expect(() => canonicalizeServiceName('my@service')).toThrow(InvalidServiceNameError);
+    });
+
+    it('should reject names with dots', () => {
+      expect(() => canonicalizeServiceName('my.service')).toThrow(InvalidServiceNameError);
+    });
+
+    it('should reject empty names', () => {
+      expect(() => canonicalizeServiceName('')).toThrow(InvalidServiceNameError);
+    });
+
+    it('should reject names starting with a hyphen', () => {
+      expect(() => canonicalizeServiceName('-myservice')).toThrow(InvalidServiceNameError);
+    });
+
+    it('should reject names starting with an underscore', () => {
+      expect(() => canonicalizeServiceName('_myservice')).toThrow(InvalidServiceNameError);
+    });
+
+    it('should reject names that are only spaces', () => {
+      expect(() => canonicalizeServiceName('   ')).toThrow(InvalidServiceNameError);
+    });
+  });
+
+  describe('RegisteredService', () => {
+    it('should not expose getSession when no loginUrl is provided', () => {
+      const registered = new RegisteredService(
+        'my-gitlab',
+        'https://gitlab.mycompany.com/api/',
+        GITLAB
+      );
+      expect(registered.getSession).toBeUndefined(); // eslint-disable-line @typescript-eslint/unbound-method
+      expect(registered.loginUrl).toBe('');
+    });
+
+    it('should expose getSession when loginUrl is provided and family supports it', () => {
+      const registered = new RegisteredService(
+        'my-slack',
+        'https://slack.mycompany.com/api/',
+        SLACK,
+        'https://slack.mycompany.com/signin'
+      );
+      expect(registered.getSession).toBeDefined(); // eslint-disable-line @typescript-eslint/unbound-method
+      expect(registered.loginUrl).toBe('https://slack.mycompany.com/signin');
+    });
+
+    it('should work without a family service', () => {
+      const registered = new RegisteredService('my-api', 'https://api.example.com/');
+      expect(registered.getSession).toBeUndefined(); // eslint-disable-line @typescript-eslint/unbound-method
+      expect(registered.loginUrl).toBe('');
+      expect(registered.info).toContain('Generic service');
+      expect(registered.setCredentialsExample('my-api')).toContain('latchkey auth set my-api');
+    });
+
+    it('should not expose getSession when loginUrl is provided but no family', () => {
+      const registered = new RegisteredService(
+        'my-api',
+        'https://api.example.com/',
+        undefined,
+        'https://api.example.com/login'
+      );
+      expect(registered.getSession).toBeUndefined(); // eslint-disable-line @typescript-eslint/unbound-method
+    });
+
+    it('should not expose getSession when loginUrl is provided but family lacks it', () => {
+      // TELEGRAM has no getSession
+      const registered = new RegisteredService(
+        'my-telegram',
+        'https://telegram.mycompany.com/bot',
+        TELEGRAM,
+        'https://telegram.mycompany.com/login'
+      );
+      expect(registered.getSession).toBeUndefined(); // eslint-disable-line @typescript-eslint/unbound-method
     });
   });
 });

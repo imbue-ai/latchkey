@@ -2,6 +2,8 @@
  * Service registry for looking up services by name or URL.
  */
 
+import { loadRegisteredServices } from './configDataStore.js';
+import { RegisteredService } from './services/core/registered.js';
 import {
   Service,
   SLACK,
@@ -30,15 +32,52 @@ import {
   GOOGLE_DIRECTIONS,
 } from './services/index.js';
 
+export class DuplicateServiceNameError extends Error {
+  constructor(name: string) {
+    super(`A service with the name '${name}' already exists.`);
+    this.name = 'DuplicateServiceNameError';
+  }
+}
+
+export class InvalidServiceNameError extends Error {
+  constructor(name: string) {
+    super(
+      `Invalid service name '${name}'. Names must contain only lowercase letters, digits, hyphens, and underscores.`
+    );
+    this.name = 'InvalidServiceNameError';
+  }
+}
+
+const SERVICE_NAME_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
+
+export function canonicalizeServiceName(name: string): string {
+  const canonicalized = name.toLowerCase().replace(/\s+/g, '-');
+  if (!SERVICE_NAME_PATTERN.test(canonicalized)) {
+    throw new InvalidServiceNameError(name);
+  }
+  return canonicalized;
+}
+
 export class Registry {
-  readonly services: readonly Service[];
+  private readonly _services: Service[];
 
   constructor(services: readonly Service[]) {
-    this.services = services;
+    this._services = [...services];
+  }
+
+  get services(): readonly Service[] {
+    return this._services;
+  }
+
+  addService(service: Service): void {
+    if (this.getByName(service.name) !== null) {
+      throw new DuplicateServiceNameError(service.name);
+    }
+    this._services.push(service);
   }
 
   getByName(name: string): Service | null {
-    for (const service of this.services) {
+    for (const service of this._services) {
       if (service.name === name) {
         return service;
       }
@@ -47,7 +86,7 @@ export class Registry {
   }
 
   getByUrl(url: string): Service | null {
-    for (const service of this.services) {
+    for (const service of this._services) {
       for (const baseApiUrl of service.baseApiUrls) {
         if (typeof baseApiUrl === 'string') {
           if (url.startsWith(baseApiUrl)) {
@@ -61,6 +100,29 @@ export class Registry {
       }
     }
     return null;
+  }
+}
+
+export function loadRegisteredServicesIntoRegistry(configPath: string, registry: Registry): void {
+  const entries = loadRegisteredServices(configPath);
+  for (const [name, entry] of entries) {
+    let familyService: Service | undefined;
+    if (entry.serviceFamily !== undefined) {
+      familyService = registry.getByName(entry.serviceFamily) ?? undefined;
+      if (familyService === undefined) {
+        continue;
+      }
+    }
+    if (registry.getByName(name) !== null) {
+      continue;
+    }
+    const registeredService = new RegisteredService(
+      name,
+      entry.baseApiUrl,
+      familyService,
+      entry.loginUrl
+    );
+    registry.addService(registeredService);
   }
 }
 

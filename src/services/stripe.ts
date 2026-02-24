@@ -1,4 +1,4 @@
-import { Service } from './base.js';
+import { Service } from './core/base.js';
 
 export class Stripe extends Service {
   readonly name = 'stripe';

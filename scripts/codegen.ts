@@ -21,7 +21,7 @@
  *   npx tsx scripts/codegen.ts slack https://api.slack.com/apps
  */
 
-import { loadBrowserConfig } from '../src/browserConfig.js';
+import { loadBrowserConfig } from '../src/configDataStore.js';
 import { CONFIG } from '../src/config.js';
 import { runCodegen } from './codegen/index.js';
 
