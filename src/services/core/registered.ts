@@ -6,7 +6,7 @@
  * generic service that only supports `latchkey auth set` for credentials.
  */
 
-import type { ApiCredentials } from '../../apiCredentials.js';
+import { ApiCredentialStatus, type ApiCredentials } from '../../apiCredentials.js';
 import { Service, type ServiceSession } from './base.js';
 
 export class RegisteredService extends Service {
@@ -41,6 +41,10 @@ export class RegisteredService extends Service {
   }
 
   override getSession?(): ServiceSession;
+
+  override checkApiCredentials(): ApiCredentialStatus {
+    return ApiCredentialStatus.Unknown;
+  }
 
   setCredentialsExample(serviceName: string): string {
     if (this.familyService !== undefined) {
