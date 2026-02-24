@@ -305,6 +305,7 @@ describe('CLI commands with dependency injection', () => {
 
       expect(logs).toHaveLength(1);
       const info = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
+      expect(info.type).toBe('built-in');
       expect(info.authOptions).toEqual(['browser', 'set']);
       expect(info.credentialStatus).toBe('missing');
       expect(info.setCredentialsExample).toBe(
@@ -379,6 +380,19 @@ describe('CLI commands with dependency injection', () => {
 
       expect(exitCode).toBe(1);
       expect(errorLogs.length).toBeGreaterThan(0);
+    });
+
+    it('should show type as registered for registered services', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(storePath, '{}');
+
+      const registeredService = new RegisteredService('my-gitlab', 'https://gitlab.example.com');
+      const deps = createMockDependencies();
+      deps.registry.addService(registeredService);
+      await runCommand(['services', 'info', 'my-gitlab'], deps);
+
+      const info = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
+      expect(info.type).toBe('user-registered');
     });
   });
 

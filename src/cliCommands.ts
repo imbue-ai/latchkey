@@ -263,7 +263,10 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         apiCredentialStore
       );
 
+      const serviceType = service instanceof RegisteredService ? 'user-registered' : 'built-in';
+
       const info = {
+        type: serviceType,
         authOptions,
         credentialStatus,
         setCredentialsExample: service.setCredentialsExample(serviceName),
