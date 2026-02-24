@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { Registry, REGISTRY } from '../src/registry.js';
+import { DuplicateServiceNameError, Registry, REGISTRY } from '../src/registry.js';
+import { RegisteredService } from '../src/registeredService.js';
 import {
   SLACK,
   DISCORD,
@@ -14,6 +15,7 @@ import {
   GOOGLE_DOCS,
   GOOGLE_PEOPLE,
   MAILCHIMP,
+  GITLAB,
   AWS,
   TELEGRAM,
 } from '../src/services/index.js';
@@ -104,6 +106,75 @@ describe('Registry', () => {
       expect(customRegistry.getByName('slack')).toBe(SLACK);
       expect(customRegistry.getByName('github')).toBe(GITHUB);
       expect(customRegistry.getByName('discord')).toBeNull();
+    });
+  });
+
+  describe('addService', () => {
+    it('should add a service to the registry', () => {
+      const registry = new Registry([SLACK]);
+      const registered = new RegisteredService(
+        'my-gitlab',
+        'https://gitlab.mycompany.com/api/',
+        GITLAB
+      );
+      registry.addService(registered);
+
+      expect(registry.getByName('my-gitlab')).toBe(registered);
+      expect(registry.getByUrl('https://gitlab.mycompany.com/api/v4/user')).toBe(registered);
+    });
+
+    it('should throw DuplicateServiceNameError for existing built-in name', () => {
+      const registry = new Registry([SLACK]);
+      const duplicate = new RegisteredService('slack', 'https://slack.mycompany.com/api/', SLACK);
+
+      expect(() => {
+        registry.addService(duplicate);
+      }).toThrow(DuplicateServiceNameError);
+    });
+
+    it('should throw DuplicateServiceNameError for existing registered name', () => {
+      const registry = new Registry([GITLAB]);
+      const first = new RegisteredService('my-gitlab', 'https://gitlab.mycompany.com/api/', GITLAB);
+      const second = new RegisteredService('my-gitlab', 'https://gitlab.other.com/api/', GITLAB);
+
+      registry.addService(first);
+      expect(() => {
+        registry.addService(second);
+      }).toThrow(DuplicateServiceNameError);
+    });
+  });
+
+  describe('RegisteredService', () => {
+    it('should not expose getSession when no loginUrl is provided', () => {
+      const registered = new RegisteredService(
+        'my-gitlab',
+        'https://gitlab.mycompany.com/api/',
+        GITLAB
+      );
+      expect(registered.getSession).toBeUndefined(); // eslint-disable-line @typescript-eslint/unbound-method
+      expect(registered.loginUrl).toBe('');
+    });
+
+    it('should expose getSession when loginUrl is provided and family supports it', () => {
+      const registered = new RegisteredService(
+        'my-slack',
+        'https://slack.mycompany.com/api/',
+        SLACK,
+        'https://slack.mycompany.com/signin'
+      );
+      expect(registered.getSession).toBeDefined(); // eslint-disable-line @typescript-eslint/unbound-method
+      expect(registered.loginUrl).toBe('https://slack.mycompany.com/signin');
+    });
+
+    it('should not expose getSession when loginUrl is provided but family lacks it', () => {
+      // TELEGRAM has no getSession
+      const registered = new RegisteredService(
+        'my-telegram',
+        'https://telegram.mycompany.com/bot',
+        TELEGRAM,
+        'https://telegram.mycompany.com/login'
+      );
+      expect(registered.getSession).toBeUndefined(); // eslint-disable-line @typescript-eslint/unbound-method
     });
   });
 });

@@ -19,7 +19,9 @@ import { Config, CONFIG } from './config.js';
 import { BrowserDisabledError } from './playwrightUtils.js';
 import type { CurlResult } from './curl.js';
 import { EncryptedStorage } from './encryptedStorage.js';
-import { Registry, REGISTRY } from './registry.js';
+import { DuplicateServiceNameError, Registry, REGISTRY } from './registry.js';
+import { RegisteredService } from './registeredService.js';
+import { saveRegisteredService } from './registeredServiceStore.js';
 import {
   LoginCancelledError,
   LoginFailedError,
@@ -265,6 +267,55 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       };
       deps.log(JSON.stringify(info, null, 2));
     });
+
+  servicesCommand
+    .command('register')
+    .description('Register a self-hosted service instance.')
+    .argument('<service_name>', 'Name for the new service')
+    .requiredOption('--base-api-url <url>', 'Base API URL for the self-hosted instance')
+    .requiredOption(
+      '--service-family <name>',
+      'Name of the built-in service to use as a template (e.g. gitlab)'
+    )
+    .option('--login-url <url>', 'Login URL for browser-based authentication')
+    .action(
+      (
+        serviceName: string,
+        options: { baseApiUrl: string; serviceFamily: string; loginUrl?: string }
+      ) => {
+        const familyService = deps.registry.getByName(options.serviceFamily);
+        if (familyService === null) {
+          deps.errorLog(`Error: Unknown service family: ${options.serviceFamily}`);
+          deps.errorLog("Use 'latchkey services list' to see available service families.");
+          deps.exit(1);
+        }
+
+        const registeredService = new RegisteredService(
+          serviceName,
+          options.baseApiUrl,
+          familyService,
+          options.loginUrl
+        );
+
+        try {
+          deps.registry.addService(registeredService);
+        } catch (error) {
+          if (error instanceof DuplicateServiceNameError) {
+            deps.errorLog(`Error: ${error.message}`);
+            deps.exit(1);
+          }
+          throw error;
+        }
+
+        saveRegisteredService(deps.config.configPath, serviceName, {
+          baseApiUrl: options.baseApiUrl,
+          serviceFamily: options.serviceFamily,
+          loginUrl: options.loginUrl,
+        });
+
+        deps.log(`Service '${serviceName}' registered.`);
+      }
+    );
 
   const authCommand = program.command('auth').description('Manage authentication credentials.');
 

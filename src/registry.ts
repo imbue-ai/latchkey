@@ -30,15 +30,33 @@ import {
   GOOGLE_DIRECTIONS,
 } from './services/index.js';
 
+export class DuplicateServiceNameError extends Error {
+  constructor(name: string) {
+    super(`A service with the name '${name}' already exists.`);
+    this.name = 'DuplicateServiceNameError';
+  }
+}
+
 export class Registry {
-  readonly services: readonly Service[];
+  private readonly _services: Service[];
 
   constructor(services: readonly Service[]) {
-    this.services = services;
+    this._services = [...services];
+  }
+
+  get services(): readonly Service[] {
+    return this._services;
+  }
+
+  addService(service: Service): void {
+    if (this.getByName(service.name) !== null) {
+      throw new DuplicateServiceNameError(service.name);
+    }
+    this._services.push(service);
   }
 
   getByName(name: string): Service | null {
-    for (const service of this.services) {
+    for (const service of this._services) {
       if (service.name === name) {
         return service;
       }
@@ -47,7 +65,7 @@ export class Registry {
   }
 
   getByUrl(url: string): Service | null {
-    for (const service of this.services) {
+    for (const service of this._services) {
       for (const baseApiUrl of service.baseApiUrls) {
         if (typeof baseApiUrl === 'string') {
           if (url.startsWith(baseApiUrl)) {
