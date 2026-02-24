@@ -20,7 +20,7 @@ Usage:
 4. **Use `latchkey services info <service_name>`** to get information about a specific service (auth options, credentials status, API docs links, special requirements, etc.).
 5. **If necessary, get or renew credentials first.** Run `latchkey auth browser <service_name>` to open a browser login pop-up window if supported.
 6. **Look for the newest documentation of the desired public API online.** If using the `browser` auth command, avoid bot-only endpoints.
-7. **Do not initiate a new login if the credentials status is `valid`** - the user might just not have the necessary permissions for the action you're trying to do.
+7. **Do not initiate a new login if the credentials status is `valid` or `unknown`** - the user might just not have the necessary permissions for the action you're trying to do.
 
 
 ## Examples

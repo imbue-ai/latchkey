@@ -210,6 +210,7 @@ credentials status line will show one of:
 - `missing`
 - `invalid`
 - `valid`
+- `unknown` (for user-registered services)
 
 ### Clearing credentials
 
