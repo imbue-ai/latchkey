@@ -96,6 +96,21 @@ export function saveRegisteredService(
   writeConfigFile(configPath, existingConfig);
 }
 
+export function deleteRegisteredService(configPath: string, name: string): void {
+  const existingConfig = readConfigFile(configPath);
+
+  const registeredServices =
+    typeof existingConfig.registeredServices === 'object' &&
+    existingConfig.registeredServices !== null
+      ? (existingConfig.registeredServices as Record<string, unknown>)
+      : {};
+
+  const { [name]: _, ...rest } = registeredServices;
+  existingConfig.registeredServices = rest;
+
+  writeConfigFile(configPath, existingConfig);
+}
+
 export function loadBrowserConfig(configPath: string): BrowserConfig | null {
   const raw = readConfigFile(configPath);
   try {

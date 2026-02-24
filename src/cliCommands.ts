@@ -15,7 +15,11 @@ import {
   type BrowserSource,
 } from './browserConfig.js';
 import { Config, CONFIG } from './config.js';
-import { loadBrowserConfig, saveRegisteredService } from './configDataStore.js';
+import {
+  deleteRegisteredService,
+  loadBrowserConfig,
+  saveRegisteredService,
+} from './configDataStore.js';
 import { BrowserDisabledError } from './playwrightUtils.js';
 import type { CurlResult } from './curl.js';
 import { EncryptedStorage } from './encryptedStorage.js';
@@ -347,6 +351,44 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         deps.log(`Service '${serviceName}' registered.`);
       }
     );
+
+  servicesCommand
+    .command('deregister')
+    .description('Deregister a previously registered service instance.')
+    .argument('<service_name>', 'Name of the registered service to remove')
+    .action((serviceName: string) => {
+      const service = deps.registry.getByName(serviceName);
+      if (service === null) {
+        deps.errorLog(`Error: Unknown service: ${serviceName}`);
+        deps.errorLog("Use 'latchkey services list' to see available services.");
+        deps.exit(1);
+      }
+
+      if (!(service instanceof RegisteredService)) {
+        deps.errorLog(
+          `Error: Service '${serviceName}' is a built-in service and cannot be deregistered.`
+        );
+        deps.exit(1);
+      }
+
+      const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
+      const apiCredentialStore = new ApiCredentialStore(
+        deps.config.credentialStorePath,
+        encryptedStorage
+      );
+      const credentials = apiCredentialStore.get(serviceName);
+      if (credentials !== null) {
+        deps.errorLog(
+          `Error: Credentials still exist for '${serviceName}'. ` +
+            `Run 'latchkey auth clear ${serviceName}' before deregistering.`
+        );
+        deps.exit(1);
+      }
+
+      deleteRegisteredService(deps.config.configPath, serviceName);
+
+      deps.log(`Service '${serviceName}' deregistered.`);
+    });
 
   const authCommand = program.command('auth').description('Manage authentication credentials.');
 

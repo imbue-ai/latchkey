@@ -16,7 +16,11 @@ import { RegisteredService } from '../src/services/core/registered.js';
 import { GITLAB } from '../src/services/gitlab.js';
 import { GITHUB } from '../src/services/github.js';
 import { TELEGRAM } from '../src/services/telegram.js';
-import { loadRegisteredServices, saveRegisteredService } from '../src/configDataStore.js';
+import {
+  deleteRegisteredService,
+  loadRegisteredServices,
+  saveRegisteredService,
+} from '../src/configDataStore.js';
 import { loadRegisteredServicesIntoRegistry } from '../src/registry.js';
 import type { CurlResult } from '../src/curl.js';
 
@@ -1331,6 +1335,171 @@ describe('CLI commands with dependency injection', () => {
       expect(capturedArgs).toContain('PRIVATE-TOKEN: my-secret-token');
     });
   });
+
+  describe('services deregister command', () => {
+    it('should deregister a registered service', async () => {
+      const deps = createMockDependencies({
+        registry: new Registry([GITLAB]),
+      });
+
+      // Register a service first
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-gitlab',
+          '--base-api-url',
+          'https://gitlab.mycompany.com/api/',
+          '--service-family',
+          'gitlab',
+        ],
+        deps
+      );
+
+      logs = [];
+      exitCode = null;
+      await runCommand(['services', 'deregister', 'my-gitlab'], deps);
+
+      expect(exitCode).toBeNull();
+      expect(logs).toContain("Service 'my-gitlab' deregistered.");
+    });
+
+    it('should remove service from config.json', async () => {
+      const deps = createMockDependencies({
+        registry: new Registry([GITLAB]),
+      });
+
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-gitlab',
+          '--base-api-url',
+          'https://gitlab.mycompany.com/api/',
+          '--service-family',
+          'gitlab',
+        ],
+        deps
+      );
+
+      logs = [];
+      exitCode = null;
+      await runCommand(['services', 'deregister', 'my-gitlab'], deps);
+
+      const entries = loadRegisteredServices(deps.config.configPath);
+      expect(entries.get('my-gitlab')).toBeUndefined();
+    });
+
+    it('should reject deregistering an unknown service', async () => {
+      const deps = createMockDependencies();
+
+      await runCommand(['services', 'deregister', 'nonexistent'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs[0]).toContain('Unknown service');
+    });
+
+    it('should reject deregistering a built-in service', async () => {
+      const deps = createMockDependencies();
+
+      await runCommand(['services', 'deregister', 'slack'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs[0]).toContain('built-in service');
+    });
+
+    it('should reject deregistering when credentials still exist', async () => {
+      const deps = createMockDependencies({
+        registry: new Registry([GITLAB]),
+      });
+
+      // Register a service
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-gitlab',
+          '--base-api-url',
+          'https://gitlab.mycompany.com/api/',
+          '--service-family',
+          'gitlab',
+        ],
+        deps
+      );
+
+      // Store credentials for it
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(
+        storePath,
+        JSON.stringify({
+          'my-gitlab': {
+            objectType: 'rawCurl',
+            curlArguments: ['-H', 'PRIVATE-TOKEN: my-secret-token'],
+          },
+        })
+      );
+
+      logs = [];
+      errorLogs = [];
+      exitCode = null;
+      await runCommand(['services', 'deregister', 'my-gitlab'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs[0]).toContain('Credentials still exist');
+      expect(errorLogs[0]).toContain('latchkey auth clear my-gitlab');
+
+      // Service should still be in config
+      const entries = loadRegisteredServices(deps.config.configPath);
+      expect(entries.get('my-gitlab')).toBeDefined();
+    });
+
+    it('should allow deregistering after credentials are cleared', async () => {
+      const deps = createMockDependencies({
+        registry: new Registry([GITLAB]),
+      });
+
+      // Register
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-gitlab',
+          '--base-api-url',
+          'https://gitlab.mycompany.com/api/',
+          '--service-family',
+          'gitlab',
+        ],
+        deps
+      );
+
+      // Store and then clear credentials
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(
+        storePath,
+        JSON.stringify({
+          'my-gitlab': {
+            objectType: 'rawCurl',
+            curlArguments: ['-H', 'PRIVATE-TOKEN: my-secret-token'],
+          },
+        })
+      );
+
+      logs = [];
+      errorLogs = [];
+      exitCode = null;
+      await runCommand(['auth', 'clear', 'my-gitlab'], deps);
+
+      expect(exitCode).toBeNull();
+
+      logs = [];
+      errorLogs = [];
+      exitCode = null;
+      await runCommand(['services', 'deregister', 'my-gitlab'], deps);
+
+      expect(exitCode).toBeNull();
+      expect(logs).toContain("Service 'my-gitlab' deregistered.");
+    });
+  });
 });
 
 describe('registeredServiceStore', () => {
@@ -1438,6 +1607,40 @@ describe('registeredServiceStore', () => {
     loadRegisteredServicesIntoRegistry(configPath, registry);
 
     expect(registry.getByName('my-unknown')).toBeNull();
+  });
+
+  it('should delete a registered service from config', () => {
+    const configPath = join(tempDir, 'config.json');
+
+    saveRegisteredService(configPath, 'my-gitlab', {
+      baseApiUrl: 'https://gitlab.mycompany.com/api/',
+      serviceFamily: 'gitlab',
+    });
+    saveRegisteredService(configPath, 'my-github', {
+      baseApiUrl: 'https://github.mycompany.com/api/',
+      serviceFamily: 'github',
+    });
+
+    deleteRegisteredService(configPath, 'my-gitlab');
+
+    const entries = loadRegisteredServices(configPath);
+    expect(entries.get('my-gitlab')).toBeUndefined();
+    expect(entries.get('my-github')).toBeDefined();
+  });
+
+  it('should preserve other config data when deleting', () => {
+    const configPath = join(tempDir, 'config.json');
+    writeFileSync(configPath, JSON.stringify({ browser: { executablePath: '/usr/bin/chrome' } }));
+
+    saveRegisteredService(configPath, 'my-gitlab', {
+      baseApiUrl: 'https://gitlab.mycompany.com/api/',
+      serviceFamily: 'gitlab',
+    });
+
+    deleteRegisteredService(configPath, 'my-gitlab');
+
+    const content = JSON.parse(readFileSync(configPath, 'utf-8')) as Record<string, unknown>;
+    expect(content.browser).toEqual({ executablePath: '/usr/bin/chrome' });
   });
 });
 
