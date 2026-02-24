@@ -4,7 +4,7 @@
 
 import type { Response } from 'playwright';
 import { ApiCredentials, AuthorizationBare } from '../apiCredentials.js';
-import { Service, SimpleServiceSession } from './base.js';
+import { Service, SimpleServiceSession } from './core/base.js';
 
 class DiscordServiceSession extends SimpleServiceSession {
   protected async getApiCredentialsFromResponse(

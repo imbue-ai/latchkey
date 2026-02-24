@@ -7,12 +7,13 @@ export {
   ServiceSession,
   SimpleServiceSession,
   BrowserFollowupServiceSession,
-} from './base.js';
+} from './core/base.js';
 export {
   LoginCancelledError,
   LoginFailedError,
   NoCurlCredentialsNotSupportedError,
-} from './base.js';
+} from './core/base.js';
+export { RegisteredService } from './core/registered.js';
 
 export { Slack, SLACK } from './slack.js';
 export { Discord, DISCORD } from './discord.js';

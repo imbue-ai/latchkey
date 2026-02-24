@@ -6,8 +6,8 @@
  * generic service that only supports `latchkey auth set` for credentials.
  */
 
-import type { ApiCredentials } from './apiCredentials.js';
-import { Service, type ServiceSession } from './services/base.js';
+import type { ApiCredentials } from '../../apiCredentials.js';
+import { Service, type ServiceSession } from './base.js';
 
 export class RegisteredService extends Service {
   readonly name: string;

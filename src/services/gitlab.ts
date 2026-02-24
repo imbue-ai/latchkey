@@ -1,4 +1,4 @@
-import { Service } from './base.js';
+import { Service } from './core/base.js';
 
 export class Gitlab extends Service {
   readonly name = 'gitlab';

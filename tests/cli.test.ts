@@ -11,7 +11,7 @@ import { Config } from '../src/config.js';
 import { Registry } from '../src/registry.js';
 import { ApiCredentialStatus } from '../src/apiCredentials.js';
 import { SlackApiCredentials } from '../src/services/slack.js';
-import { NoCurlCredentialsNotSupportedError, Service } from '../src/services/base.js';
+import { NoCurlCredentialsNotSupportedError, Service } from '../src/services/core/base.js';
 import { GITLAB } from '../src/services/gitlab.js';
 import { TELEGRAM } from '../src/services/telegram.js';
 import { loadRegisteredServices, saveRegisteredService } from '../src/configDataStore.js';

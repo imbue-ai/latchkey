@@ -3,7 +3,7 @@
  */
 
 import { loadRegisteredServices } from './configDataStore.js';
-import { RegisteredService } from './registeredService.js';
+import { RegisteredService } from './services/core/registered.js';
 import {
   Service,
   SLACK,

@@ -28,7 +28,7 @@ import {
   LoginFailedError,
   LoginCancelledError,
   isBrowserClosedError,
-} from '../base.js';
+} from '../core/base.js';
 import type { EncryptedStorage } from '../../encryptedStorage.js';
 
 /**

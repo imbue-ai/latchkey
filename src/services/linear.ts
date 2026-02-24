@@ -5,7 +5,7 @@
 import type { Response, BrowserContext } from 'playwright';
 import { ApiCredentials, AuthorizationBare } from '../apiCredentials.js';
 import { generateLatchkeyAppName, typeLikeHuman } from '../playwrightUtils.js';
-import { Service, BrowserFollowupServiceSession, LoginFailedError } from './base.js';
+import { Service, BrowserFollowupServiceSession, LoginFailedError } from './core/base.js';
 
 const DEFAULT_TIMEOUT_MS = 8000;
 

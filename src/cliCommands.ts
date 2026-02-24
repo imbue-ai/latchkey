@@ -20,7 +20,7 @@ import { BrowserDisabledError } from './playwrightUtils.js';
 import type { CurlResult } from './curl.js';
 import { EncryptedStorage } from './encryptedStorage.js';
 import { DuplicateServiceNameError, Registry, REGISTRY } from './registry.js';
-import { RegisteredService } from './registeredService.js';
+import { RegisteredService } from './services/core/registered.js';
 import {
   LoginCancelledError,
   LoginFailedError,

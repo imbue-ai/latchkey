@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { DuplicateServiceNameError, Registry, REGISTRY } from '../src/registry.js';
-import { RegisteredService } from '../src/registeredService.js';
+import { RegisteredService } from '../src/services/core/registered.js';
 import {
   SLACK,
   DISCORD,
