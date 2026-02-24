@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { DuplicateServiceNameError, Registry, REGISTRY } from '../src/registry.js';
+import {
+  DuplicateServiceNameError,
+  InvalidServiceNameError,
+  Registry,
+  REGISTRY,
+  canonicalizeServiceName,
+} from '../src/registry.js';
 import { RegisteredService } from '../src/services/core/registered.js';
 import {
   SLACK,
@@ -141,6 +147,64 @@ describe('Registry', () => {
       expect(() => {
         registry.addService(second);
       }).toThrow(DuplicateServiceNameError);
+    });
+  });
+
+  describe('canonicalizeServiceName', () => {
+    it('should accept lowercase alphanumeric names', () => {
+      expect(canonicalizeServiceName('myservice')).toBe('myservice');
+    });
+
+    it('should accept names with hyphens', () => {
+      expect(canonicalizeServiceName('my-service')).toBe('my-service');
+    });
+
+    it('should accept names with underscores', () => {
+      expect(canonicalizeServiceName('my_service')).toBe('my_service');
+    });
+
+    it('should accept names with digits', () => {
+      expect(canonicalizeServiceName('service2')).toBe('service2');
+    });
+
+    it('should convert uppercase to lowercase', () => {
+      expect(canonicalizeServiceName('MyService')).toBe('myservice');
+    });
+
+    it('should convert mixed case to lowercase', () => {
+      expect(canonicalizeServiceName('My-GitLab')).toBe('my-gitlab');
+    });
+
+    it('should convert spaces to hyphens', () => {
+      expect(canonicalizeServiceName('my service')).toBe('my-service');
+    });
+
+    it('should collapse multiple spaces into a single hyphen', () => {
+      expect(canonicalizeServiceName('my   service')).toBe('my-service');
+    });
+
+    it('should reject names with special characters', () => {
+      expect(() => canonicalizeServiceName('my@service')).toThrow(InvalidServiceNameError);
+    });
+
+    it('should reject names with dots', () => {
+      expect(() => canonicalizeServiceName('my.service')).toThrow(InvalidServiceNameError);
+    });
+
+    it('should reject empty names', () => {
+      expect(() => canonicalizeServiceName('')).toThrow(InvalidServiceNameError);
+    });
+
+    it('should reject names starting with a hyphen', () => {
+      expect(() => canonicalizeServiceName('-myservice')).toThrow(InvalidServiceNameError);
+    });
+
+    it('should reject names starting with an underscore', () => {
+      expect(() => canonicalizeServiceName('_myservice')).toThrow(InvalidServiceNameError);
+    });
+
+    it('should reject names that are only spaces', () => {
+      expect(() => canonicalizeServiceName('   ')).toThrow(InvalidServiceNameError);
     });
   });
 

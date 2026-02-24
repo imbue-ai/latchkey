@@ -1013,6 +1013,58 @@ describe('CLI commands with dependency injection', () => {
       expect(errorLogs[0]).toContain('already exists');
     });
 
+    it('should canonicalize service name to lowercase', async () => {
+      const deps = createMockDependencies({
+        registry: new Registry([GITLAB]),
+      });
+
+      await runCommand(
+        [
+          'services',
+          'register',
+          'My-GitLab',
+          '--base-api-url',
+          'https://gitlab.mycompany.com/api/',
+          '--service-family',
+          'gitlab',
+        ],
+        deps
+      );
+
+      expect(exitCode).toBeNull();
+      expect(logs).toContain("Service 'my-gitlab' registered.");
+      expect(deps.registry.getByName('my-gitlab')).not.toBeNull();
+    });
+
+    it('should convert spaces to hyphens in service name', async () => {
+      const deps = createMockDependencies({
+        registry: new Registry([GITLAB]),
+      });
+
+      await runCommand(
+        ['services', 'register', 'my api', '--base-api-url', 'https://api.example.com/'],
+        deps
+      );
+
+      expect(exitCode).toBeNull();
+      expect(logs).toContain("Service 'my-api' registered.");
+      expect(deps.registry.getByName('my-api')).not.toBeNull();
+    });
+
+    it('should reject service name with invalid characters', async () => {
+      const deps = createMockDependencies({
+        registry: new Registry([GITLAB]),
+      });
+
+      await runCommand(
+        ['services', 'register', 'my@service!', '--base-api-url', 'https://api.example.com/'],
+        deps
+      );
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs[0]).toContain('Invalid service name');
+    });
+
     it('should not expose browser auth without --login-url', async () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(storePath, '{}');

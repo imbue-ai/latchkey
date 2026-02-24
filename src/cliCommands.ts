@@ -23,7 +23,13 @@ import {
 import { BrowserDisabledError } from './playwrightUtils.js';
 import type { CurlResult } from './curl.js';
 import { EncryptedStorage } from './encryptedStorage.js';
-import { DuplicateServiceNameError, Registry, REGISTRY } from './registry.js';
+import {
+  DuplicateServiceNameError,
+  InvalidServiceNameError,
+  Registry,
+  REGISTRY,
+  canonicalizeServiceName,
+} from './registry.js';
 import { RegisteredService } from './services/core/registered.js';
 import {
   LoginCancelledError,
@@ -291,9 +297,20 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .option('--login-url <url>', 'Login URL for browser-based authentication, if applicable')
     .action(
       (
-        serviceName: string,
+        rawServiceName: string,
         options: { baseApiUrl: string; serviceFamily?: string; loginUrl?: string }
       ) => {
+        let serviceName: string;
+        try {
+          serviceName = canonicalizeServiceName(rawServiceName);
+        } catch (error) {
+          if (error instanceof InvalidServiceNameError) {
+            deps.errorLog(`Error: ${error.message}`);
+            deps.exit(1);
+          }
+          throw error;
+        }
+
         let familyService: Service | undefined;
         if (options.serviceFamily !== undefined) {
           familyService = deps.registry.getByName(options.serviceFamily) ?? undefined;

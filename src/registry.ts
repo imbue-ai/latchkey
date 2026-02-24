@@ -39,6 +39,25 @@ export class DuplicateServiceNameError extends Error {
   }
 }
 
+export class InvalidServiceNameError extends Error {
+  constructor(name: string) {
+    super(
+      `Invalid service name '${name}'. Names must contain only lowercase letters, digits, hyphens, and underscores.`
+    );
+    this.name = 'InvalidServiceNameError';
+  }
+}
+
+const SERVICE_NAME_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
+
+export function canonicalizeServiceName(name: string): string {
+  const canonicalized = name.toLowerCase().replace(/\s+/g, '-');
+  if (!SERVICE_NAME_PATTERN.test(canonicalized)) {
+    throw new InvalidServiceNameError(name);
+  }
+  return canonicalized;
+}
+
 export class Registry {
   private readonly _services: Service[];
 
