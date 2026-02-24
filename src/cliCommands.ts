@@ -299,6 +299,25 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           }
         }
 
+        if (options.loginUrl !== undefined) {
+          if (familyService === undefined) {
+            deps.errorLog(
+              'Error: --login-url requires a --service-family that supports browser login.'
+            );
+            deps.exit(1);
+          } else if (familyService.getSession === undefined) {
+            deps.errorLog(
+              `Error: Service family '${options.serviceFamily!}' does not support browser login, so --login-url is not applicable.`
+            );
+            deps.exit(1);
+          }
+        } else if (familyService?.getSession !== undefined) {
+          deps.errorLog(
+            `Error: Service family '${options.serviceFamily!}' supports browser login, so --login-url is required.`
+          );
+          deps.exit(1);
+        }
+
         const registeredService = new RegisteredService(
           serviceName,
           options.baseApiUrl,

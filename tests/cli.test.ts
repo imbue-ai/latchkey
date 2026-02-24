@@ -14,6 +14,7 @@ import { SlackApiCredentials } from '../src/services/slack.js';
 import { NoCurlCredentialsNotSupportedError, Service } from '../src/services/core/base.js';
 import { RegisteredService } from '../src/services/core/registered.js';
 import { GITLAB } from '../src/services/gitlab.js';
+import { GITHUB } from '../src/services/github.js';
 import { TELEGRAM } from '../src/services/telegram.js';
 import { loadRegisteredServices, saveRegisteredService } from '../src/configDataStore.js';
 import { loadRegisteredServicesIntoRegistry } from '../src/registry.js';
@@ -1025,6 +1026,52 @@ describe('CLI commands with dependency injection', () => {
 
     it('should persist and restore loginUrl', async () => {
       const deps = createMockDependencies({
+        registry: new Registry([GITHUB]),
+      });
+
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-github',
+          '--base-api-url',
+          'https://github.mycompany.com/api/',
+          '--service-family',
+          'github',
+          '--login-url',
+          'https://github.mycompany.com/login',
+        ],
+        deps
+      );
+
+      const entries = loadRegisteredServices(deps.config.configPath);
+      expect(entries.get('my-github')?.loginUrl).toBe('https://github.mycompany.com/login');
+    });
+
+    it('should reject --login-url without --service-family', async () => {
+      const deps = createMockDependencies({
+        registry: new Registry([]),
+      });
+
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-service',
+          '--base-api-url',
+          'https://example.com/api/',
+          '--login-url',
+          'https://example.com/login',
+        ],
+        deps
+      );
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs[0]).toContain('--login-url requires a --service-family');
+    });
+
+    it('should reject --login-url when service family does not support browser login', async () => {
+      const deps = createMockDependencies({
         registry: new Registry([GITLAB]),
       });
 
@@ -1043,8 +1090,30 @@ describe('CLI commands with dependency injection', () => {
         deps
       );
 
-      const entries = loadRegisteredServices(deps.config.configPath);
-      expect(entries.get('my-gitlab')?.loginUrl).toBe('https://gitlab.mycompany.com/users/sign_in');
+      expect(exitCode).toBe(1);
+      expect(errorLogs[0]).toContain('does not support browser login');
+    });
+
+    it('should require --login-url when service family supports browser login', async () => {
+      const deps = createMockDependencies({
+        registry: new Registry([GITHUB]),
+      });
+
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-github',
+          '--base-api-url',
+          'https://github.mycompany.com/api/',
+          '--service-family',
+          'github',
+        ],
+        deps
+      );
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs[0]).toContain('--login-url is required');
     });
 
     it('should make registered service usable with auth set', async () => {
