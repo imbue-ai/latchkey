@@ -2,6 +2,8 @@
  * Service registry for looking up services by name or URL.
  */
 
+import { loadRegisteredServices } from './configDataStore.js';
+import { RegisteredService } from './registeredService.js';
 import {
   Service,
   SLACK,
@@ -79,6 +81,26 @@ export class Registry {
       }
     }
     return null;
+  }
+}
+
+export function loadRegisteredServicesIntoRegistry(configPath: string, registry: Registry): void {
+  const entries = loadRegisteredServices(configPath);
+  for (const [name, entry] of entries) {
+    const familyService = registry.getByName(entry.serviceFamily);
+    if (familyService === null) {
+      continue;
+    }
+    if (registry.getByName(name) !== null) {
+      continue;
+    }
+    const registeredService = new RegisteredService(
+      name,
+      entry.baseApiUrl,
+      familyService,
+      entry.loginUrl
+    );
+    registry.addService(registeredService);
   }
 }
 

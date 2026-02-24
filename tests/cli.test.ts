@@ -14,11 +14,8 @@ import { SlackApiCredentials } from '../src/services/slack.js';
 import { NoCurlCredentialsNotSupportedError, Service } from '../src/services/base.js';
 import { GITLAB } from '../src/services/gitlab.js';
 import { TELEGRAM } from '../src/services/telegram.js';
-import {
-  loadRegisteredServices,
-  loadRegisteredServicesIntoRegistry,
-  saveRegisteredService,
-} from '../src/registeredServiceStore.js';
+import { loadRegisteredServices, saveRegisteredService } from '../src/configDataStore.js';
+import { loadRegisteredServicesIntoRegistry } from '../src/registry.js';
 import type { CurlResult } from '../src/curl.js';
 
 // Use a fixed test key for deterministic test behavior (32 bytes = 256 bits, base64 encoded)

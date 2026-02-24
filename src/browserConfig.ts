@@ -8,11 +8,11 @@
  * - Persisting the discovered browser path
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { platform } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { chromium } from 'playwright';
-import { z } from 'zod';
+import { loadBrowserConfig, saveBrowserConfig, type BrowserConfig } from './configDataStore.js';
 import { downloadChromium } from './playwrightDownload.js';
 
 /**
@@ -36,24 +36,6 @@ export const DEFAULT_BROWSER_SOURCES: readonly BrowserSource[] = [
   'existing-playwright-browser',
   'download-playwright-browser',
 ];
-
-/**
- * Schema for the browser configuration.
- */
-const BrowserConfigSchema = z.object({
-  executablePath: z.string(),
-  source: z.enum(['system', 'playwright', 'downloaded']),
-  discoveredAt: z.string().datetime(),
-});
-
-export type BrowserConfig = z.infer<typeof BrowserConfigSchema>;
-
-/**
- * Schema for the top-level configuration file.
- */
-const ConfigFileSchema = z.object({
-  browser: BrowserConfigSchema.optional(),
-});
 
 export class BrowserNotFoundError extends Error {
   constructor(message: string) {
@@ -191,7 +173,7 @@ async function tryBrowserSource(
 ): Promise<BrowserConfig | null> {
   switch (source) {
     case 'existing-config': {
-      return loadBrowserConfigInternal(configPath);
+      return loadBrowserConfig(configPath);
     }
     case 'system-browser': {
       const systemPath = findSystemBrowser();
@@ -242,68 +224,6 @@ export async function discoverBrowserFromSources(
   }
 
   throw new BrowserNotFoundError(`No browser found after trying sources: ${sources.join(', ')}`);
-}
-
-/**
- * Save browser configuration to disk.
- */
-export function saveBrowserConfig(configPath: string, config: BrowserConfig): void {
-  const directory = dirname(configPath);
-  if (!existsSync(directory)) {
-    mkdirSync(directory, { recursive: true, mode: 0o700 });
-  }
-
-  // Load existing config file if it exists, to preserve other settings
-  let existingConfig: Record<string, unknown> = {};
-  if (existsSync(configPath)) {
-    try {
-      const existingContent = readFileSync(configPath, 'utf-8');
-      existingConfig = JSON.parse(existingContent) as Record<string, unknown>;
-    } catch {
-      // Ignore parse errors, start fresh
-    }
-  }
-
-  const newConfig = { ...existingConfig, browser: config };
-  const content = JSON.stringify(newConfig, null, 2);
-  writeFileSync(configPath, content, { encoding: 'utf-8', mode: 0o600 });
-}
-
-/**
- * Internal function to load browser configuration from disk.
- * Returns null if the file doesn't exist, is invalid, or the browser no longer exists.
- */
-function loadBrowserConfigInternal(configPath: string): BrowserConfig | null {
-  if (!existsSync(configPath)) {
-    return null;
-  }
-
-  try {
-    const content = readFileSync(configPath, 'utf-8');
-    const data = JSON.parse(content) as unknown;
-    const configFile = ConfigFileSchema.parse(data);
-
-    if (!configFile.browser) {
-      return null;
-    }
-
-    // Verify the browser still exists
-    if (!existsSync(configFile.browser.executablePath)) {
-      return null;
-    }
-
-    return configFile.browser;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Load browser configuration from disk.
- * Returns null if the file doesn't exist or is invalid.
- */
-export function loadBrowserConfig(configPath: string): BrowserConfig | null {
-  return loadBrowserConfigInternal(configPath);
 }
 
 /**

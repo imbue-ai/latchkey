@@ -12,16 +12,15 @@ import {
   BrowserNotFoundError,
   DEFAULT_BROWSER_SOURCES,
   ensureBrowser,
-  loadBrowserConfig,
   type BrowserSource,
 } from './browserConfig.js';
 import { Config, CONFIG } from './config.js';
+import { loadBrowserConfig, saveRegisteredService } from './configDataStore.js';
 import { BrowserDisabledError } from './playwrightUtils.js';
 import type { CurlResult } from './curl.js';
 import { EncryptedStorage } from './encryptedStorage.js';
 import { DuplicateServiceNameError, Registry, REGISTRY } from './registry.js';
 import { RegisteredService } from './registeredService.js';
-import { saveRegisteredService } from './registeredServiceStore.js';
 import {
   LoginCancelledError,
   LoginFailedError,
