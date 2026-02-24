@@ -286,9 +286,9 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .requiredOption('--base-api-url <url>', 'Base API URL for the self-hosted instance')
     .option(
       '--service-family <name>',
-      'Name of the built-in service to use as a template (e.g. gitlab)'
+      'Name of the built-in service to use as a template, if any (e.g. gitlab)'
     )
-    .option('--login-url <url>', 'Login URL for browser-based authentication')
+    .option('--login-url <url>', 'Login URL for browser-based authentication, if applicable')
     .action(
       (
         serviceName: string,

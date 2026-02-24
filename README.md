@@ -20,7 +20,8 @@ Latchkey is a command-line tool that injects credentials into curl
 requests to known public APIs.
 
 - `latchkey services list`
-	- List supported third-party services (Slack, Google Workspace, Linear, GitHub, etc.).
+	- List third-party services (Slack, Google Workspace, Linear, GitHub, etc.) that are supported out-of-the-box.
+    - (In simple cases, `latchkey services register` can be used to add basic support for a new service at runtime.)
 - `latchkey curl <arguments>`
 	- Automatically inject credentials to your otherwise standard curl calls to public APIs.
 	- Credentials must already exist (see below).
@@ -138,6 +139,42 @@ latchkey auth set slack -H "Authorization: Bearer xoxb-your-token"
 so you can use the same interface you are used to. The return
 code, stdout and stderr are passed back from curl to the caller
 of `latchkey`.
+
+
+### Self-hosted services
+
+For services that can be self-hosted, like GitLab, first make Latchkey aware of your service instance:
+
+```
+latchkey services register my-gitlab-instance --service-family=gitlab --base-api-url="https://gitlab.example.com/api/v4/"
+```
+
+Then continue as usual.
+
+```
+latchkey auth set my-gitlab-instance -H "PRIVATE-TOKEN: <token>"
+
+# Agents can then call the API.
+latchkey curl https://gitlab.example.com/api/v4/user
+```
+
+
+### Entirely new services
+
+If you want to use Latchkey with a service that is not in the
+list of supported built-in services, you can still use the
+mechanism described above to register a new service at runtime:
+
+```
+latchkey services register mastodon --base-api-url="https://mastodon.social/api/v1/"
+latchkey auth set mastodon -H "Authorization: Bearer <your_access_token>"
+
+# Agents can then call the service:
+latchkey curl https://mastodon.social/api/v1/timelines/public?limit=2
+```
+
+User-registered services only support authentication via static curl arguments provided through `latchkey auth set`.
+
 
 ### Indirect credentials
 
