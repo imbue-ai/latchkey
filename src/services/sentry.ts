@@ -4,7 +4,7 @@ import {
   ApiCredentialsUsageError,
 } from '../apiCredentials.js';
 import { runCaptured } from '../curl.js';
-import { Service } from './base.js';
+import { Service } from './core/base.js';
 
 export class Sentry extends Service {
   readonly name = 'sentry';

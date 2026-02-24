@@ -12,14 +12,25 @@ import {
   BrowserNotFoundError,
   DEFAULT_BROWSER_SOURCES,
   ensureBrowser,
-  loadBrowserConfig,
   type BrowserSource,
 } from './browserConfig.js';
 import { Config, CONFIG } from './config.js';
+import {
+  deleteRegisteredService,
+  loadBrowserConfig,
+  saveRegisteredService,
+} from './configDataStore.js';
 import { BrowserDisabledError } from './playwrightUtils.js';
 import type { CurlResult } from './curl.js';
 import { EncryptedStorage } from './encryptedStorage.js';
-import { Registry, REGISTRY } from './registry.js';
+import {
+  DuplicateServiceNameError,
+  InvalidServiceNameError,
+  Registry,
+  REGISTRY,
+  canonicalizeServiceName,
+} from './registry.js';
+import { RegisteredService } from './services/core/registered.js';
 import {
   LoginCancelledError,
   LoginFailedError,
@@ -223,8 +234,13 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
   servicesCommand
     .command('list')
     .description('List all supported services.')
-    .action(() => {
-      const serviceNames = deps.registry.services.map((service) => service.name).sort();
+    .option('--built-in-only', 'Only list built-in services (exclude registered services)')
+    .action((options: { builtInOnly?: boolean }) => {
+      let services = deps.registry.services;
+      if (options.builtInOnly === true) {
+        services = services.filter((service) => !(service instanceof RegisteredService));
+      }
+      const serviceNames = services.map((service) => service.name).sort();
       deps.log(JSON.stringify(serviceNames, null, 2));
     });
 
@@ -257,13 +273,137 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         apiCredentialStore
       );
 
+      const serviceType = service instanceof RegisteredService ? 'user-registered' : 'built-in';
+
       const info = {
+        type: serviceType,
         authOptions,
         credentialStatus,
         setCredentialsExample: service.setCredentialsExample(serviceName),
         developerNotes: service.info,
       };
       deps.log(JSON.stringify(info, null, 2));
+    });
+
+  servicesCommand
+    .command('register')
+    .description('Register a self-hosted service instance.')
+    .argument('<service_name>', 'Name for the new service')
+    .requiredOption('--base-api-url <url>', 'Base API URL for the self-hosted instance')
+    .option(
+      '--service-family <name>',
+      'Name of the built-in service to use as a template, if any (e.g. gitlab)'
+    )
+    .option('--login-url <url>', 'Login URL for browser-based authentication, if applicable')
+    .action(
+      (
+        rawServiceName: string,
+        options: { baseApiUrl: string; serviceFamily?: string; loginUrl?: string }
+      ) => {
+        let serviceName: string;
+        try {
+          serviceName = canonicalizeServiceName(rawServiceName);
+        } catch (error) {
+          if (error instanceof InvalidServiceNameError) {
+            deps.errorLog(`Error: ${error.message}`);
+            deps.exit(1);
+          }
+          throw error;
+        }
+
+        let familyService: Service | undefined;
+        if (options.serviceFamily !== undefined) {
+          familyService = deps.registry.getByName(options.serviceFamily) ?? undefined;
+          if (familyService === undefined) {
+            deps.errorLog(`Error: Unknown service family: ${options.serviceFamily}`);
+            deps.errorLog(
+              "Use 'latchkey services list --built-in-only' to see available service families."
+            );
+            deps.exit(1);
+          }
+        }
+
+        if (options.loginUrl !== undefined) {
+          if (familyService === undefined) {
+            deps.errorLog(
+              'Error: --login-url requires a --service-family that supports browser login.'
+            );
+            deps.exit(1);
+          } else if (familyService.getSession === undefined) {
+            deps.errorLog(
+              `Error: Service family '${options.serviceFamily!}' does not support browser login, so --login-url is not applicable.`
+            );
+            deps.exit(1);
+          }
+        } else if (familyService?.getSession !== undefined) {
+          deps.errorLog(
+            `Error: Service family '${options.serviceFamily!}' supports browser login, so --login-url is required.`
+          );
+          deps.exit(1);
+        }
+
+        const registeredService = new RegisteredService(
+          serviceName,
+          options.baseApiUrl,
+          familyService,
+          options.loginUrl
+        );
+
+        try {
+          deps.registry.addService(registeredService);
+        } catch (error) {
+          if (error instanceof DuplicateServiceNameError) {
+            deps.errorLog(`Error: ${error.message}`);
+            deps.exit(1);
+          }
+          throw error;
+        }
+
+        saveRegisteredService(deps.config.configPath, serviceName, {
+          baseApiUrl: options.baseApiUrl,
+          serviceFamily: options.serviceFamily,
+          loginUrl: options.loginUrl,
+        });
+
+        deps.log(`Service '${serviceName}' registered.`);
+      }
+    );
+
+  servicesCommand
+    .command('deregister')
+    .description('Deregister a previously registered service instance.')
+    .argument('<service_name>', 'Name of the registered service to remove')
+    .action((serviceName: string) => {
+      const service = deps.registry.getByName(serviceName);
+      if (service === null) {
+        deps.errorLog(`Error: Unknown service: ${serviceName}`);
+        deps.exit(1);
+      }
+
+      if (!(service instanceof RegisteredService)) {
+        deps.errorLog(
+          `Error: Service '${serviceName}' is a built-in service and cannot be deregistered.`
+        );
+        deps.exit(1);
+      }
+
+      const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
+      const apiCredentialStore = new ApiCredentialStore(
+        deps.config.credentialStorePath,
+        encryptedStorage
+      );
+      const credentials = apiCredentialStore.get(serviceName);
+      if (credentials !== null) {
+        deps.errorLog(
+          `Error: Credentials still exist for '${serviceName}'. ` +
+            `Run 'latchkey auth clear ${serviceName}' before deregistering.`
+        );
+        deps.exit(1);
+      }
+
+      deleteRegisteredService(deps.config.configPath, serviceName);
+
+      deps.log(`Service '${serviceName}' deregistered.`);
     });
 
   const authCommand = program.command('auth').description('Manage authentication credentials.');

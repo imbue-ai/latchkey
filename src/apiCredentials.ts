@@ -8,6 +8,7 @@ export enum ApiCredentialStatus {
   Missing = 'missing',
   Valid = 'valid',
   Invalid = 'invalid',
+  Unknown = 'unknown',
 }
 
 /**

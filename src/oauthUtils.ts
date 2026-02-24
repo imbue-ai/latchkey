@@ -4,7 +4,7 @@
 
 import * as http from 'node:http';
 import { runCaptured } from './curl.js';
-import { LoginCancelledError, LoginFailedError } from './services/base.js';
+import { LoginCancelledError, LoginFailedError } from './services/core/base.js';
 
 export interface OAuthTokenResponse {
   access_token: string;

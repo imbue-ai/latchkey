@@ -24,7 +24,7 @@ import { describe, it, expect } from 'vitest';
 import type { Response, Request } from 'playwright';
 import { ApiCredentials } from '../src/apiCredentials.js';
 import { REGISTRY } from '../src/registry.js';
-import { Service, SimpleServiceSession } from '../src/services/base.js';
+import { Service, SimpleServiceSession } from '../src/services/core/base.js';
 
 // Get the directory of this file
 const __filename = fileURLToPath(import.meta.url);

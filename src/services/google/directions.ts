@@ -1,5 +1,5 @@
 import type { ApiCredentials } from '../../apiCredentials.js';
-import { Service, NoCurlCredentialsNotSupportedError } from '../base.js';
+import { Service, NoCurlCredentialsNotSupportedError } from '../core/base.js';
 import { GoogleApiKeyCredentials } from './base.js';
 
 export class GoogleDirections extends Service {

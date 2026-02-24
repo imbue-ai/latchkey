@@ -7,14 +7,14 @@ import {
   ApiCredentialStatus,
   ApiCredentials,
   ApiCredentialsUsageError,
-} from '../apiCredentials.js';
-import { runCaptured } from '../curl.js';
-import { EncryptedStorage } from '../encryptedStorage.js';
+} from '../../apiCredentials.js';
+import { runCaptured } from '../../curl.js';
+import { EncryptedStorage } from '../../encryptedStorage.js';
 import {
   showSpinnerPage,
   withTempBrowserContext,
   type BrowserLaunchOptions,
-} from '../playwrightUtils.js';
+} from '../../playwrightUtils.js';
 
 export class NoCurlCredentialsNotSupportedError extends Error {
   constructor(serviceName: string) {

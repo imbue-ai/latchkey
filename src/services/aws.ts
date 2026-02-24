@@ -7,7 +7,7 @@ import {
   extractMethodFromCurlArguments,
   extractUrlFromCurlArguments,
 } from '../curl.js';
-import { NoCurlCredentialsNotSupportedError, Service } from './base.js';
+import { NoCurlCredentialsNotSupportedError, Service } from './core/base.js';
 
 /**
  * AWS credentials using Signature Version 4 request signing.
