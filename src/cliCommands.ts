@@ -360,7 +360,6 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       const service = deps.registry.getByName(serviceName);
       if (service === null) {
         deps.errorLog(`Error: Unknown service: ${serviceName}`);
-        deps.errorLog("Use 'latchkey services list' to see available services.");
         deps.exit(1);
       }
 
