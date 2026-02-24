@@ -224,8 +224,13 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
   servicesCommand
     .command('list')
     .description('List all supported services.')
-    .action(() => {
-      const serviceNames = deps.registry.services.map((service) => service.name).sort();
+    .option('--built-in-only', 'Only list built-in services (exclude registered services)')
+    .action((options: { builtInOnly?: boolean }) => {
+      let services = deps.registry.services;
+      if (options.builtInOnly === true) {
+        services = services.filter((service) => !(service instanceof RegisteredService));
+      }
+      const serviceNames = services.map((service) => service.name).sort();
       deps.log(JSON.stringify(serviceNames, null, 2));
     });
 
@@ -287,7 +292,9 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           familyService = deps.registry.getByName(options.serviceFamily) ?? undefined;
           if (familyService === undefined) {
             deps.errorLog(`Error: Unknown service family: ${options.serviceFamily}`);
-            deps.errorLog("Use 'latchkey services list' to see available service families.");
+            deps.errorLog(
+              "Use 'latchkey services list --built-in-only' to see available service families."
+            );
             deps.exit(1);
           }
         }

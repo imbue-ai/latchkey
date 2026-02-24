@@ -12,6 +12,7 @@ import { Registry } from '../src/registry.js';
 import { ApiCredentialStatus } from '../src/apiCredentials.js';
 import { SlackApiCredentials } from '../src/services/slack.js';
 import { NoCurlCredentialsNotSupportedError, Service } from '../src/services/core/base.js';
+import { RegisteredService } from '../src/services/core/registered.js';
 import { GITLAB } from '../src/services/gitlab.js';
 import { TELEGRAM } from '../src/services/telegram.js';
 import { loadRegisteredServices, saveRegisteredService } from '../src/configDataStore.js';
@@ -266,6 +267,30 @@ describe('CLI commands with dependency injection', () => {
       expect(logs).toHaveLength(1);
       const services = JSON.parse(logs[0] ?? '') as string[];
       expect(services).toContain('slack');
+    });
+
+    it('should include registered services by default', async () => {
+      const registeredService = new RegisteredService('my-gitlab', 'https://gitlab.example.com');
+      const deps = createMockDependencies();
+      deps.registry.addService(registeredService);
+      await runCommand(['services', 'list'], deps);
+
+      expect(logs).toHaveLength(1);
+      const services = JSON.parse(logs[0] ?? '') as string[];
+      expect(services).toContain('slack');
+      expect(services).toContain('my-gitlab');
+    });
+
+    it('should exclude registered services with --built-in-only', async () => {
+      const registeredService = new RegisteredService('my-gitlab', 'https://gitlab.example.com');
+      const deps = createMockDependencies();
+      deps.registry.addService(registeredService);
+      await runCommand(['services', 'list', '--built-in-only'], deps);
+
+      expect(logs).toHaveLength(1);
+      const services = JSON.parse(logs[0] ?? '') as string[];
+      expect(services).toContain('slack');
+      expect(services).not.toContain('my-gitlab');
     });
   });
 
