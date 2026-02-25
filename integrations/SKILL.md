@@ -75,6 +75,7 @@ set-nocurl` before making requests.
 
 - All curl arguments are passed through unchanged
 - Return code, stdout and stderr are passed back from curl
+- Credentials are always stored encrypted and are never transmitted anywhere beyond the endpoints specified by the actual curl calls.
 
 ## Currently supported services
 

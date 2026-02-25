@@ -198,7 +198,9 @@ signature) by calling `latchkey services info <service_name>`.
 ### Remembering API credentials
 
 Your API credentials and browser state are encrypted and stored
-by default under `~/.latchkey`.
+by default under `~/.latchkey`. They are never transmitted
+anywhere beyond the endpoints specified by the actual curl
+calls.
 
 
 ### Inspecting the status of stored credentials
