@@ -5,7 +5,7 @@ export class Coolify extends Service {
   readonly displayName = 'Coolify';
   readonly baseApiUrls = ['https://app.coolify.io/api/'] as const;
   readonly loginUrl = 'https://app.coolify.io/login';
-  readonly info = 'https://coolify.io/docs/api-reference/authorization.';
+  readonly info = 'https://coolify.io/docs/llms.txt';
 
   readonly credentialCheckCurlArguments = ['https://app.coolify.io/api/v1/version'] as const;
 
