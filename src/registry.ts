@@ -30,6 +30,8 @@ import {
   TELEGRAM,
   AWS,
   GOOGLE_DIRECTIONS,
+  COOLIFY,
+  UMAMI,
 } from './services/index.js';
 
 export class DuplicateServiceNameError extends Error {
@@ -151,4 +153,6 @@ export const REGISTRY = new Registry([
   TELEGRAM,
   AWS,
   GOOGLE_DIRECTIONS,
+  COOLIFY,
+  UMAMI,
 ]);
