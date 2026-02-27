@@ -40,3 +40,5 @@ export { GoogleAnalytics, GOOGLE_ANALYTICS } from './google/analytics.js';
 export { Calendly, CALENDLY } from './calendly.js';
 export { GoogleDirections, GOOGLE_DIRECTIONS } from './google/directions.js';
 export { Yelp, YELP } from './yelp.js';
+export { Coolify, COOLIFY } from './coolify.js';
+export { Umami, UMAMI } from './umami.js';
