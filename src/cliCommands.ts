@@ -235,7 +235,10 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .command('list')
     .description('List all supported services.')
     .option('--builtin', 'Only list built-in services (exclude registered services)')
-    .option('--viable', 'Only list services that either have stored credentials or can be authenticated via a browser.')
+    .option(
+      '--viable',
+      'Only list services that either have stored credentials or can be authenticated via a browser.'
+    )
     .action((options: { builtin?: boolean; viable?: boolean }) => {
       let services = deps.registry.services;
       if (options.builtin === true) {
