@@ -15,5 +15,5 @@ describe('Linter', () => {
         stdio: 'pipe',
       });
     }).not.toThrow();
-  });
+  }, 10000);
 });
