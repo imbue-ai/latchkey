@@ -1,6 +1,6 @@
 {
   "name": "latchkey",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "description": "A CLI tool that injects API credentials into curl requests to third-party services",
   "author": "Imbue <hynek@imbue.com>",
   "repository": {

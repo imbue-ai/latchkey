@@ -9,6 +9,33 @@ export class BrowserDisabledError extends Error {
   }
 }
 
+export class GraphicalEnvironmentNotFoundError extends Error {
+  constructor() {
+    super(
+      'No graphical environment detected (neither DISPLAY nor WAYLAND_DISPLAY is set). ' +
+        'Browser-based authentication requires a graphical environment.'
+    );
+    this.name = 'GraphicalEnvironmentNotFoundError';
+  }
+}
+
+/**
+ * Check whether a graphical environment is available.
+ * On Linux, this requires DISPLAY or WAYLAND_DISPLAY to be set.
+ * On other platforms (macOS, Windows), a display is assumed to be available.
+ */
+export function hasGraphicalEnvironment(): boolean {
+  if (process.platform !== 'linux') {
+    return true;
+  }
+  const display = process.env.DISPLAY;
+  const waylandDisplay = process.env.WAYLAND_DISPLAY;
+  return (
+    (display !== undefined && display !== '') ||
+    (waylandDisplay !== undefined && waylandDisplay !== '')
+  );
+}
+
 export class BrowserFlowsNotSupportedError extends Error {
   constructor(serviceName: string, authSubcommand: 'set' | 'set-nocurl' = 'set') {
     super(
