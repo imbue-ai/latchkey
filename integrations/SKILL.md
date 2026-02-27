@@ -1,6 +1,6 @@
 ---
 name: latchkey
-description: Interact with third-party services (Slack, Google Workspace, Dropbox, GitHub, Linear...) on the user's behalf using their public APIs.
+description: Interact with third-party or self-hosted services (Slack, Google Workspace, Dropbox, GitHub, Linear, Coolify...) using their HTTP APIs on the user's behalf.
 compatibility: Requires node.js, curl and latchkey (npm install -g latchkey). A desktop/GUI environment is required for the browser functionality.
 ---
 
@@ -8,15 +8,15 @@ compatibility: Requires node.js, curl and latchkey (npm install -g latchkey). A 
 
 ## Instructions
 
-Latchkey is a CLI tool that automatically injects credentials into curl commands for supported public APIs. Credentials (mostly API tokens) can be either manually managed or, for some services, Latchkey can open a browser login pop-up window and extract API credentials from the session.
+Latchkey is a CLI tool that automatically injects credentials into curl commands. Credentials (mostly API tokens) can be either manually managed or, for some services, Latchkey can open a browser login pop-up window and extract API credentials from the session.
 
-Use this skill when the user asks you to work with third-party services like Slack, Discord, Dropbox, GitHub, Linear and others on their behalf.
+Use this skill when the user asks you to work on their behalf with services that have HTTP APIs, like AWS, GitLab, Google Drive, Discord or others.
 
 Usage:
 
 1. **Use `latchkey curl`** instead of regular `curl` for supported services.
 2. **Pass through all regular curl arguments** - latchkey is a transparent wrapper.
-3. **Use `latchkey services list`** to get a list of supported services.
+3. **Always check for `latchkey services list --viable`** to get a list of currently usable services.
 4. **Use `latchkey services info <service_name>`** to get information about a specific service (auth options, credentials status, API docs links, special requirements, etc.).
 5. **If necessary, get or renew credentials first.** Run `latchkey auth browser <service_name>` to open a browser login pop-up window if supported.
 6. **Look for the newest documentation of the desired public API online.** If using the `browser` auth command, avoid bot-only endpoints.
@@ -53,12 +53,13 @@ latchkey curl 'https://discord.com/api/v10/users/@me'
 
 Only do this when you notice that your previous call ended up not being authenticated (HTTP 401 or 403).
 
-### List available services
+### List usable services
+
 ```bash
-latchkey services list
+latchkey services list --viable
 ```
 
-Lists all services that latchkey knows about.
+Lists services that either have stored credentials or can be authenticated via a browser.
 
 ### Get service-specific info
 ```bash
