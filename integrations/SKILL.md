@@ -16,7 +16,7 @@ Usage:
 
 1. **Use `latchkey curl`** instead of regular `curl` for supported services.
 2. **Pass through all regular curl arguments** - latchkey is a transparent wrapper.
-3. **Use `latchkey services list`** to get a list of supported services.
+3. **Use `latchkey services list --viable`** to get a list of usable services.
 4. **Use `latchkey services info <service_name>`** to get information about a specific service (auth options, credentials status, API docs links, special requirements, etc.).
 5. **If necessary, get or renew credentials first.** Run `latchkey auth browser <service_name>` to open a browser login pop-up window if supported.
 6. **Look for the newest documentation of the desired public API online.** If using the `browser` auth command, avoid bot-only endpoints.
@@ -53,12 +53,13 @@ latchkey curl 'https://discord.com/api/v10/users/@me'
 
 Only do this when you notice that your previous call ended up not being authenticated (HTTP 401 or 403).
 
-### List available services
+### List usable services
+
 ```bash
-latchkey services list
+latchkey services list --viable
 ```
 
-Lists all services that latchkey knows about.
+Lists services that either have stored credentials or can be authenticated via a browser.
 
 ### Get service-specific info
 ```bash
