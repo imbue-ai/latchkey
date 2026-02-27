@@ -8,8 +8,9 @@
  * Throws if neither a system keychain nor LATCHKEY_ENCRYPTION_KEY is available.
  */
 
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { writeFileAtomic } from './atomicWrite.js';
 import { DEFAULT_KEYRING_SERVICE_NAME, DEFAULT_KEYRING_ACCOUNT_NAME } from './config.js';
 import { encrypt, decrypt, generateKey, DecryptionError } from './encryption.js';
 import { retrieveFromKeychain, storeInKeychain, KeychainNotAvailableError } from './keychain.js';
@@ -153,6 +154,6 @@ export class EncryptedStorage {
     const encryptedData = encrypt(content, this.key);
     const dataToWrite = ENCRYPTED_FILE_PREFIX + encryptedData;
 
-    writeFileSync(filePath, dataToWrite, { encoding: 'utf-8', mode: 0o600 });
+    writeFileAtomic(filePath, dataToWrite, { encoding: 'utf-8', mode: 0o600 });
   }
 }

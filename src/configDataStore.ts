@@ -6,9 +6,10 @@
  * and data merging.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { z } from 'zod';
+import { writeFileAtomic } from './atomicWrite.js';
 
 const RegisteredServiceEntrySchema = z.object({
   baseApiUrl: z.string(),
@@ -62,7 +63,7 @@ function writeConfigFile(configPath: string, config: Record<string, unknown>): v
     mkdirSync(directory, { recursive: true, mode: 0o700 });
   }
   const content = JSON.stringify(config, null, 2);
-  writeFileSync(configPath, content, { encoding: 'utf-8', mode: 0o600 });
+  writeFileAtomic(configPath, content, { encoding: 'utf-8', mode: 0o600 });
 }
 
 export function loadRegisteredServices(
