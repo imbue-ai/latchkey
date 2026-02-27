@@ -234,11 +234,27 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
   servicesCommand
     .command('list')
     .description('List all supported services.')
-    .option('--built-in-only', 'Only list built-in services (exclude registered services)')
-    .action((options: { builtInOnly?: boolean }) => {
+    .option('--builtin', 'Only list built-in services (exclude registered services)')
+    .option('--viable', 'Only list services that have credentials or can be authenticated')
+    .action((options: { builtin?: boolean; viable?: boolean }) => {
       let services = deps.registry.services;
-      if (options.builtInOnly === true) {
+      if (options.builtin === true) {
         services = services.filter((service) => !(service instanceof RegisteredService));
+      }
+      if (options.viable === true) {
+        const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
+        const apiCredentialStore = new ApiCredentialStore(
+          deps.config.credentialStorePath,
+          encryptedStorage
+        );
+        const allCredentials = apiCredentialStore.getAll();
+        services = services.filter((service) => {
+          if (allCredentials.has(service.name)) {
+            return true;
+          }
+          const supportsBrowser = service.getSession !== undefined && !deps.config.browserDisabled;
+          return supportsBrowser;
+        });
       }
       const serviceNames = services.map((service) => service.name).sort();
       deps.log(JSON.stringify(serviceNames, null, 2));
@@ -318,7 +334,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           if (familyService === undefined) {
             deps.errorLog(`Error: Unknown service family: ${options.serviceFamily}`);
             deps.errorLog(
-              "Use 'latchkey services list --built-in-only' to see available service families."
+              "Use 'latchkey services list --builtin' to see available service families."
             );
             deps.exit(1);
           }
