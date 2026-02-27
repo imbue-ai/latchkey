@@ -104,7 +104,7 @@ users on top of Latchkey.
 
 ## Demo
 
-![Image](https://github.com/user-attachments/assets/784bd7eb-6d34-4cab-97d3-4a0f8c4ca9aa)
+![Image](https://github.com/user-attachments/assets/3b487d35-0618-46e2-9fd6-e8c3eba2c311)
 
 
 ## Direct usage
