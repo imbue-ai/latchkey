@@ -16,14 +16,13 @@ latchkey curl -X POST 'https://slack.com/api/conversations.create' \
 
 ## Overview
 
-Latchkey is a command-line tool that injects credentials into curl
-requests to known public APIs.
+Latchkey is a command-line tool that injects credentials into curl commands.
 
 - `latchkey services list`
 	- List third-party services (Slack, Google Workspace, Linear, GitHub, etc.) that are supported out-of-the-box.
     - (In simple cases, `latchkey services register` can be used to add basic support for a new service at runtime.)
 - `latchkey curl <arguments>`
-	- Automatically inject credentials to your otherwise standard curl calls to public APIs.
+	- Automatically inject credentials into your otherwise standard curl calls to HTTP APIs.
 	- Credentials must already exist (see below).
 - `latchkey auth set <service_name> <curl_arguments>`
 	- Manually store credentials for a service as arbitrary curl arguments.
@@ -33,14 +32,14 @@ requests to known public APIs.
     - Only some services support this option.
 
 Latchkey is primarily designed for AI agents. By invoking
-Latchkey, agents can prompt the user to authenticate when needed,
-then continue interacting with third-party APIs using standard
-curl syntax - no custom integrations or embedded credentials
-required.
+Latchkey, agents can utilize user-provided credentials or prompt
+the user to authenticate, then continue interacting with HTTP
+APIs using standard curl syntax. No custom integrations or
+embedded credentials are required.
 
 Unlike OAuth-based flows or typical MCP-style integrations,
 Latchkey does not introduce an intermediary between the agent
-and the service. When `browser` is used, requests are made
+and the service. When the `browser` command is used, requests are made
 directly on the user’s behalf, which enables greater flexibility
 at the cost of formal delegation: agents authenticate as the
 user.
@@ -104,7 +103,7 @@ users on top of Latchkey.
 
 ## Demo
 
-![Image](https://github.com/user-attachments/assets/784bd7eb-6d34-4cab-97d3-4a0f8c4ca9aa)
+![Image](https://github.com/user-attachments/assets/3b487d35-0618-46e2-9fd6-e8c3eba2c311)
 
 
 ## Direct usage
@@ -188,7 +187,7 @@ In similar cases, when supported, you can use the `latchkey auth set-nocurl` com
 like this:
 
 ```
-latchkey auth set-nocurl telegram <bot-token>
+latchkey auth set-nocurl aws <access-key-id> <secret-access-key>
 ```
 
 Latchkey will then modify subsequent `latchkey curl` requests as

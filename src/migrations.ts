@@ -1,5 +1,6 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { writeFileAtomic } from './atomicWrite.js';
 import type { Config } from './config.js';
 import type { EncryptedStorage } from './encryptedStorage.js';
 
@@ -67,7 +68,7 @@ export function readDataFormatVersion(config: Config): number {
 
 function writeDataFormatVersion(config: Config, version: number): void {
   const versionFilePath = join(config.directory, DATA_FORMAT_VERSION_FILENAME);
-  writeFileSync(versionFilePath, String(version), 'utf-8');
+  writeFileAtomic(versionFilePath, String(version));
 }
 
 function isFirstInstallation(config: Config): boolean {

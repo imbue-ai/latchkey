@@ -286,15 +286,133 @@ describe('CLI commands with dependency injection', () => {
       expect(services).toContain('my-gitlab');
     });
 
-    it('should exclude registered services with --built-in-only', async () => {
+    it('should exclude registered services with --builtin', async () => {
       const registeredService = new RegisteredService('my-gitlab', 'https://gitlab.example.com');
       const deps = createMockDependencies();
       deps.registry.addService(registeredService);
-      await runCommand(['services', 'list', '--built-in-only'], deps);
+      await runCommand(['services', 'list', '--builtin'], deps);
 
       expect(logs).toHaveLength(1);
       const services = JSON.parse(logs[0] ?? '') as string[];
       expect(services).toContain('slack');
+      expect(services).not.toContain('my-gitlab');
+    });
+
+    it('should include services with stored credentials when using --viable', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(
+        storePath,
+        JSON.stringify({
+          slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
+        })
+      );
+
+      const deps = createMockDependencies();
+      await runCommand(['services', 'list', '--viable'], deps);
+
+      expect(logs).toHaveLength(1);
+      const services = JSON.parse(logs[0] ?? '') as string[];
+      expect(services).toContain('slack');
+    });
+
+    it('should include services with browser auth when using --viable', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(storePath, '{}');
+
+      // The default mock slack service has getSession defined, so it supports browser auth
+      const deps = createMockDependencies();
+      await runCommand(['services', 'list', '--viable'], deps);
+
+      expect(logs).toHaveLength(1);
+      const services = JSON.parse(logs[0] ?? '') as string[];
+      expect(services).toContain('slack');
+    });
+
+    it('should exclude services without credentials or browser auth when using --viable', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(storePath, '{}');
+
+      const noLoginService: Service = {
+        name: 'nologin',
+        displayName: 'No Login Service',
+        baseApiUrls: ['https://nologin.example.com/api/'],
+        loginUrl: 'https://nologin.example.com',
+        info: 'A service without browser login support.',
+        credentialCheckCurlArguments: [],
+        checkApiCredentials: vi.fn().mockReturnValue(ApiCredentialStatus.Missing),
+        setCredentialsExample(serviceName: string) {
+          return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
+        },
+        getCredentialsNoCurl() {
+          throw new NoCurlCredentialsNotSupportedError('nologin');
+        },
+      };
+
+      const deps = createMockDependencies({
+        registry: new Registry([noLoginService]),
+      });
+      await runCommand(['services', 'list', '--viable'], deps);
+
+      expect(logs).toHaveLength(1);
+      const services = JSON.parse(logs[0] ?? '') as string[];
+      expect(services).not.toContain('nologin');
+    });
+
+    it('should exclude browser-capable services when browser is disabled and no credentials with --viable', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(storePath, '{}');
+
+      const deps = createMockDependencies({
+        config: createMockConfig({ browserDisabled: true }),
+      });
+      await runCommand(['services', 'list', '--viable'], deps);
+
+      expect(logs).toHaveLength(1);
+      const services = JSON.parse(logs[0] ?? '') as string[];
+      expect(services).not.toContain('slack');
+    });
+
+    it('should include services with credentials even when browser is disabled with --viable', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(
+        storePath,
+        JSON.stringify({
+          slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
+        })
+      );
+
+      const deps = createMockDependencies({
+        config: createMockConfig({ browserDisabled: true }),
+      });
+      await runCommand(['services', 'list', '--viable'], deps);
+
+      expect(logs).toHaveLength(1);
+      const services = JSON.parse(logs[0] ?? '') as string[];
+      expect(services).toContain('slack');
+    });
+
+    it('should combine --builtin and --viable filters', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(
+        storePath,
+        JSON.stringify({
+          'my-gitlab': {
+            objectType: 'rawCurl',
+            curlArguments: ['-H', 'PRIVATE-TOKEN: token'],
+          },
+        })
+      );
+
+      const registeredService = new RegisteredService('my-gitlab', 'https://gitlab.example.com');
+      const deps = createMockDependencies();
+      deps.registry.addService(registeredService);
+      await runCommand(['services', 'list', '--builtin', '--viable'], deps);
+
+      expect(logs).toHaveLength(1);
+      const services = JSON.parse(logs[0] ?? '') as string[];
+      // slack is built-in and has browser auth, so it's viable
+      expect(services).toContain('slack');
+      // my-gitlab has credentials but is not built-in, so it's excluded by --builtin
       expect(services).not.toContain('my-gitlab');
     });
   });
@@ -310,6 +428,7 @@ describe('CLI commands with dependency injection', () => {
       expect(logs).toHaveLength(1);
       const info = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
       expect(info.type).toBe('built-in');
+      expect(info.baseApiUrls).toEqual(['https://slack.com/api/']);
       expect(info.authOptions).toEqual(['browser', 'set']);
       expect(info.credentialStatus).toBe('missing');
       expect(info.setCredentialsExample).toBe(
