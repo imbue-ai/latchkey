@@ -8,7 +8,11 @@ import { existsSync } from 'node:fs';
 import { program } from 'commander';
 import { registerCommands, createDefaultDependencies } from './cliCommands.js';
 import { CurlNotFoundError, InsecureFilePermissionsError } from './config.js';
-import { EncryptedStorage, EncryptionKeyLostError } from './encryptedStorage.js';
+import {
+  EncryptedStorage,
+  EncryptedStorageError,
+  EncryptionKeyLostError,
+} from './encryptedStorage.js';
 import { MigrationError, runMigrations } from './migrations.js';
 import { loadRegisteredServicesIntoRegistry } from './registry.js';
 import packageJson from '../package.json' with { type: 'json' };
@@ -40,6 +44,17 @@ try {
 } catch (error) {
   if (error instanceof EncryptionKeyLostError || error instanceof MigrationError) {
     console.error(`Error: ${error.message}`);
+    process.exit(1);
+  }
+  if (error instanceof EncryptedStorageError) {
+    console.error(
+      'No encryption key available.\n\n' +
+        'Latchkey needs an encryption key to store credentials securely.\n' +
+        'Either ensure your system keychain is accessible, or set the\n' +
+        'LATCHKEY_ENCRYPTION_KEY environment variable. For example:\n\n' +
+        '  export LATCHKEY_ENCRYPTION_KEY="$(openssl rand -base64 32)"\n\n' +
+        'Add this to your shell profile to persist it across sessions.'
+    );
     process.exit(1);
   }
   throw error;
