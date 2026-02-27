@@ -20,7 +20,11 @@ import {
   loadBrowserConfig,
   saveRegisteredService,
 } from './configDataStore.js';
-import { BrowserDisabledError } from './playwrightUtils.js';
+import {
+  BrowserDisabledError,
+  GraphicalEnvironmentNotFoundError,
+  hasGraphicalEnvironment,
+} from './playwrightUtils.js';
 import type { CurlResult } from './curl.js';
 import { EncryptedStorage } from './encryptedStorage.js';
 import {
@@ -203,14 +207,27 @@ function checkBrowserNotDisabledOrExit(deps: CliDependencies): void {
 }
 
 /**
+ * Check if a graphical environment is available.
+ * Exits with error if no display server (X11 or Wayland) is detected on Linux.
+ */
+function checkGraphicalEnvironmentOrExit(deps: CliDependencies): void {
+  if (!hasGraphicalEnvironment()) {
+    deps.errorLog(new GraphicalEnvironmentNotFoundError().message);
+    deps.exit(1);
+  }
+}
+
+/**
  * Get the browser launch options from configuration, handling errors with CLI output.
- * Exits with error if no valid browser config exists or if browser is disabled.
+ * Exits with error if no valid browser config exists, if browser is disabled,
+ * or if no graphical environment is available.
  */
 function getBrowserLaunchOptionsOrExit(deps: CliDependencies): {
   browserStatePath: string;
   executablePath: string;
 } {
   checkBrowserNotDisabledOrExit(deps);
+  checkGraphicalEnvironmentOrExit(deps);
 
   const browserConfig = loadBrowserConfig(deps.config.configPath);
   if (!browserConfig) {

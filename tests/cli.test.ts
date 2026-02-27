@@ -6,6 +6,7 @@ import { execSync, ExecSyncOptionsWithStringEncoding } from 'node:child_process'
 import { Command } from 'commander';
 import { registerCommands, type CliDependencies } from '../src/cliCommands.js';
 import { extractUrlFromCurlArguments } from '../src/curl.js';
+import { hasGraphicalEnvironment } from '../src/playwrightUtils.js';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { Config } from '../src/config.js';
 import { Registry } from '../src/registry.js';
@@ -77,12 +78,20 @@ interface TestEnv {
   LATCHKEY_DISABLE_BROWSER?: string;
 }
 
-function runCli(args: string[], env: TestEnv): CliResult {
-  const options: ExecSyncOptionsWithStringEncoding = {
+interface RunCliOptions {
+  removeEnvVars?: string[];
+}
+
+function runCli(args: string[], env: TestEnv, options?: RunCliOptions): CliResult {
+  const keysToRemove = new Set(options?.removeEnvVars ?? []);
+  const baseEnv = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !keysToRemove.has(key))
+  );
+  const execOptions: ExecSyncOptionsWithStringEncoding = {
     cwd: join(__dirname, '..'),
     encoding: 'utf-8',
     env: {
-      ...process.env,
+      ...baseEnv,
       LATCHKEY_ENCRYPTION_KEY: TEST_ENCRYPTION_KEY,
       ...env,
     },
@@ -93,7 +102,7 @@ function runCli(args: string[], env: TestEnv): CliResult {
     if (!cliPath) {
       throw new Error('CLI not built');
     }
-    const stdout = execSync(`node ${cliPath} ${args.join(' ')}`, options);
+    const stdout = execSync(`node ${cliPath} ${args.join(' ')}`, execOptions);
     return { exitCode: 0, stdout, stderr: '' };
   } catch (error) {
     const execError = error as ExecError;
@@ -160,6 +169,110 @@ describe('extractUrlFromCurlArguments', () => {
   it('should skip flags without values', () => {
     const arguments_ = ['-k', '--compressed', '-s', '-i', 'https://api.example.com'];
     expect(extractUrlFromCurlArguments(arguments_)).toBe('https://api.example.com');
+  });
+});
+
+describe('hasGraphicalEnvironment', () => {
+  const originalPlatform = process.platform;
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
+  });
+
+  it('should return true on non-linux platforms', () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    expect(hasGraphicalEnvironment()).toBe(true);
+
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    expect(hasGraphicalEnvironment()).toBe(true);
+  });
+
+  it('should return true on linux when DISPLAY is set', () => {
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    const originalDisplay = process.env.DISPLAY;
+    const originalWayland = process.env.WAYLAND_DISPLAY;
+    try {
+      process.env.DISPLAY = ':0';
+      delete process.env.WAYLAND_DISPLAY;
+      expect(hasGraphicalEnvironment()).toBe(true);
+    } finally {
+      if (originalDisplay !== undefined) {
+        process.env.DISPLAY = originalDisplay;
+      } else {
+        delete process.env.DISPLAY;
+      }
+      if (originalWayland !== undefined) {
+        process.env.WAYLAND_DISPLAY = originalWayland;
+      } else {
+        delete process.env.WAYLAND_DISPLAY;
+      }
+    }
+  });
+
+  it('should return true on linux when WAYLAND_DISPLAY is set', () => {
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    const originalDisplay = process.env.DISPLAY;
+    const originalWayland = process.env.WAYLAND_DISPLAY;
+    try {
+      delete process.env.DISPLAY;
+      process.env.WAYLAND_DISPLAY = 'wayland-0';
+      expect(hasGraphicalEnvironment()).toBe(true);
+    } finally {
+      if (originalDisplay !== undefined) {
+        process.env.DISPLAY = originalDisplay;
+      } else {
+        delete process.env.DISPLAY;
+      }
+      if (originalWayland !== undefined) {
+        process.env.WAYLAND_DISPLAY = originalWayland;
+      } else {
+        delete process.env.WAYLAND_DISPLAY;
+      }
+    }
+  });
+
+  it('should return false on linux when neither DISPLAY nor WAYLAND_DISPLAY is set', () => {
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    const originalDisplay = process.env.DISPLAY;
+    const originalWayland = process.env.WAYLAND_DISPLAY;
+    try {
+      delete process.env.DISPLAY;
+      delete process.env.WAYLAND_DISPLAY;
+      expect(hasGraphicalEnvironment()).toBe(false);
+    } finally {
+      if (originalDisplay !== undefined) {
+        process.env.DISPLAY = originalDisplay;
+      } else {
+        delete process.env.DISPLAY;
+      }
+      if (originalWayland !== undefined) {
+        process.env.WAYLAND_DISPLAY = originalWayland;
+      } else {
+        delete process.env.WAYLAND_DISPLAY;
+      }
+    }
+  });
+
+  it('should return false on linux when DISPLAY is empty string', () => {
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    const originalDisplay = process.env.DISPLAY;
+    const originalWayland = process.env.WAYLAND_DISPLAY;
+    try {
+      process.env.DISPLAY = '';
+      delete process.env.WAYLAND_DISPLAY;
+      expect(hasGraphicalEnvironment()).toBe(false);
+    } finally {
+      if (originalDisplay !== undefined) {
+        process.env.DISPLAY = originalDisplay;
+      } else {
+        delete process.env.DISPLAY;
+      }
+      if (originalWayland !== undefined) {
+        process.env.WAYLAND_DISPLAY = originalWayland;
+      } else {
+        delete process.env.WAYLAND_DISPLAY;
+      }
+    }
   });
 });
 
@@ -1000,6 +1113,38 @@ describe('CLI commands with dependency injection', () => {
       await runCommand(['auth', 'browser', 'nologin'], deps);
 
       expect(exitCode).toBe(1);
+    });
+
+    it('should return error when no graphical environment is available', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(storePath, '{}');
+
+      const originalPlatform = process.platform;
+      const originalDisplay = process.env.DISPLAY;
+      const originalWayland = process.env.WAYLAND_DISPLAY;
+      try {
+        Object.defineProperty(process, 'platform', { value: 'linux' });
+        delete process.env.DISPLAY;
+        delete process.env.WAYLAND_DISPLAY;
+
+        const deps = createMockDependencies();
+        await runCommand(['auth', 'browser', 'slack'], deps);
+
+        expect(exitCode).toBe(1);
+        expect(errorLogs[0]).toContain('No graphical environment detected');
+      } finally {
+        Object.defineProperty(process, 'platform', { value: originalPlatform });
+        if (originalDisplay !== undefined) {
+          process.env.DISPLAY = originalDisplay;
+        } else {
+          delete process.env.DISPLAY;
+        }
+        if (originalWayland !== undefined) {
+          process.env.WAYLAND_DISPLAY = originalWayland;
+        } else {
+          delete process.env.WAYLAND_DISPLAY;
+        }
+      }
     });
 
     it('should suggest set-nocurl when service supports nocurl credentials', async () => {
@@ -1843,6 +1988,18 @@ describe.skipIf(!cliPath)('CLI integration tests (subprocess)', () => {
       LATCHKEY_DISABLE_BROWSER: '1',
     });
     expect(result.exitCode).toBe(1);
+  });
+
+  it('should return error for auth browser when no graphical environment is available on linux', () => {
+    // This test only makes sense on Linux where the check is active
+    if (process.platform !== 'linux') {
+      return;
+    }
+    const result = runCli(['auth', 'browser', 'slack'], testEnv, {
+      removeEnvVars: ['DISPLAY', 'WAYLAND_DISPLAY'],
+    });
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain('No graphical environment detected');
   });
 
   it('should list services as JSON', () => {
