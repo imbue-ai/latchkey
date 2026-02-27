@@ -277,6 +277,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
 
       const info = {
         type: serviceType,
+        baseApiUrls: service.baseApiUrls,
         authOptions,
         credentialStatus,
         setCredentialsExample: service.setCredentialsExample(serviceName),

@@ -310,6 +310,7 @@ describe('CLI commands with dependency injection', () => {
       expect(logs).toHaveLength(1);
       const info = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
       expect(info.type).toBe('built-in');
+      expect(info.baseApiUrls).toEqual(['https://slack.com/api/']);
       expect(info.authOptions).toEqual(['browser', 'set']);
       expect(info.credentialStatus).toBe('missing');
       expect(info.setCredentialsExample).toBe(
