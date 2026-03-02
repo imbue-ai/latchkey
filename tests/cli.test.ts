@@ -433,12 +433,23 @@ describe('CLI commands with dependency injection', () => {
       writeSecureFile(storePath, '{}');
 
       // The default mock slack service has getSession defined, so it supports browser auth
-      const deps = createMockDependencies();
-      await runCommand(['services', 'list', '--viable'], deps);
+      // Ensure a graphical environment is available so browser auth is considered viable
+      const originalDisplay = process.env.DISPLAY;
+      try {
+        process.env.DISPLAY = ':0';
+        const deps = createMockDependencies();
+        await runCommand(['services', 'list', '--viable'], deps);
 
-      expect(logs).toHaveLength(1);
-      const services = JSON.parse(logs[0] ?? '') as string[];
-      expect(services).toContain('slack');
+        expect(logs).toHaveLength(1);
+        const services = JSON.parse(logs[0] ?? '') as string[];
+        expect(services).toContain('slack');
+      } finally {
+        if (originalDisplay !== undefined) {
+          process.env.DISPLAY = originalDisplay;
+        } else {
+          delete process.env.DISPLAY;
+        }
+      }
     });
 
     it('should exclude services without credentials or browser auth when using --viable', async () => {
@@ -485,6 +496,77 @@ describe('CLI commands with dependency injection', () => {
       expect(services).not.toContain('slack');
     });
 
+    it('should exclude browser-capable services when no graphical environment and no credentials with --viable', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(storePath, '{}');
+
+      const originalPlatform = process.platform;
+      const originalDisplay = process.env.DISPLAY;
+      const originalWayland = process.env.WAYLAND_DISPLAY;
+      try {
+        Object.defineProperty(process, 'platform', { value: 'linux' });
+        delete process.env.DISPLAY;
+        delete process.env.WAYLAND_DISPLAY;
+
+        const deps = createMockDependencies();
+        await runCommand(['services', 'list', '--viable'], deps);
+
+        expect(logs).toHaveLength(1);
+        const services = JSON.parse(logs[0] ?? '') as string[];
+        expect(services).not.toContain('slack');
+      } finally {
+        Object.defineProperty(process, 'platform', { value: originalPlatform });
+        if (originalDisplay !== undefined) {
+          process.env.DISPLAY = originalDisplay;
+        } else {
+          delete process.env.DISPLAY;
+        }
+        if (originalWayland !== undefined) {
+          process.env.WAYLAND_DISPLAY = originalWayland;
+        } else {
+          delete process.env.WAYLAND_DISPLAY;
+        }
+      }
+    });
+
+    it('should include services with credentials even when no graphical environment with --viable', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(
+        storePath,
+        JSON.stringify({
+          slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
+        })
+      );
+
+      const originalPlatform = process.platform;
+      const originalDisplay = process.env.DISPLAY;
+      const originalWayland = process.env.WAYLAND_DISPLAY;
+      try {
+        Object.defineProperty(process, 'platform', { value: 'linux' });
+        delete process.env.DISPLAY;
+        delete process.env.WAYLAND_DISPLAY;
+
+        const deps = createMockDependencies();
+        await runCommand(['services', 'list', '--viable'], deps);
+
+        expect(logs).toHaveLength(1);
+        const services = JSON.parse(logs[0] ?? '') as string[];
+        expect(services).toContain('slack');
+      } finally {
+        Object.defineProperty(process, 'platform', { value: originalPlatform });
+        if (originalDisplay !== undefined) {
+          process.env.DISPLAY = originalDisplay;
+        } else {
+          delete process.env.DISPLAY;
+        }
+        if (originalWayland !== undefined) {
+          process.env.WAYLAND_DISPLAY = originalWayland;
+        } else {
+          delete process.env.WAYLAND_DISPLAY;
+        }
+      }
+    });
+
     it('should include services with credentials even when browser is disabled with --viable', async () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
@@ -516,17 +598,28 @@ describe('CLI commands with dependency injection', () => {
         })
       );
 
-      const registeredService = new RegisteredService('my-gitlab', 'https://gitlab.example.com');
-      const deps = createMockDependencies();
-      deps.registry.addService(registeredService);
-      await runCommand(['services', 'list', '--builtin', '--viable'], deps);
+      // Ensure a graphical environment is available so browser auth is considered viable
+      const originalDisplay = process.env.DISPLAY;
+      try {
+        process.env.DISPLAY = ':0';
+        const registeredService = new RegisteredService('my-gitlab', 'https://gitlab.example.com');
+        const deps = createMockDependencies();
+        deps.registry.addService(registeredService);
+        await runCommand(['services', 'list', '--builtin', '--viable'], deps);
 
-      expect(logs).toHaveLength(1);
-      const services = JSON.parse(logs[0] ?? '') as string[];
-      // slack is built-in and has browser auth, so it's viable
-      expect(services).toContain('slack');
-      // my-gitlab has credentials but is not built-in, so it's excluded by --builtin
-      expect(services).not.toContain('my-gitlab');
+        expect(logs).toHaveLength(1);
+        const services = JSON.parse(logs[0] ?? '') as string[];
+        // slack is built-in and has browser auth, so it's viable
+        expect(services).toContain('slack');
+        // my-gitlab has credentials but is not built-in, so it's excluded by --builtin
+        expect(services).not.toContain('my-gitlab');
+      } finally {
+        if (originalDisplay !== undefined) {
+          process.env.DISPLAY = originalDisplay;
+        } else {
+          delete process.env.DISPLAY;
+        }
+      }
     });
   });
 
