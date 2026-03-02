@@ -4,3 +4,7 @@ node_modules/
 dist/
 # bun-compiled binary
 /latchkey
+
+# Offload
+test-results/
+.offload-image-cache

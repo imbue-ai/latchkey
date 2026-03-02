@@ -1,0 +1,25 @@
+[offload]
+max_parallel = 6
+test_timeout_secs = 180
+stream_output = true
+sandbox_project_root = "/app"
+
+[provider]
+type = "modal"
+dockerfile = ".devcontainer/Dockerfile"
+include_cwd = true
+
+[framework]
+type = "default"
+discover_command = "ls tests/*.test.ts | grep -v lint.test.ts | grep -v typecheck.test.ts {filters}"
+run_command = "cd /app && npm ci 2>&1 && npx vitest run --test-timeout 30000 --reporter=junit {tests} > {result_file} 2>&1"
+test_id_format = "{name}"
+
+[groups.all]
+retry_count = 0
+filters = ""
+
+[report]
+output_dir = "test-results"
+junit = true
+junit_file = "junit.xml"
