@@ -68,7 +68,7 @@ for Latchkey to use. It searches for Chrome, Chromium, or Edge
 on your system. If none is found, it downloads Chromium via
 Playwright.
 
-## Integrations
+## Agent integrations
 
 Warning: giving AI agents access to your API credentials is
 potentially dangerous, especially when using the `auth browser`
