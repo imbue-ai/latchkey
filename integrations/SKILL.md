@@ -85,6 +85,28 @@ about the service. If `browser` is not present in the
 set API credentials via `latchkey auth set` or `latchkey auth
 set-nocurl` before making requests.
 
+
+## Storing credentials
+
+Aside from the `latchkey auth browser` case, it is the user's responsibility to supply credentials.
+The user would typically do something like this:
+
+```bash
+latchkey auth set my-gitlab-instance -H "PRIVATE-TOKEN: <token>"
+```
+
+When credentials cannot be expressed as static curl arguments, the user would use the `set-nocurl` subcommand. For example:
+
+```bash
+latchkey auth set-nocurl aws <access-key-id> <secret-access-key>
+```
+
+If a service doesn't appear with the `--viable` flag, it may
+still be supported; the user just hasn't provided the
+credentials yet. `latchkey service info <service_name>` can be
+used to see how to provide credentials for a specific service.
+
+
 ## Notes
 
 - All curl arguments are passed through unchanged
@@ -96,7 +118,7 @@ set-nocurl` before making requests.
 Latchkey currently offers varying levels of support for the
 following services: AWS, Calendly, Coolify, Discord, Dropbox, Figma, GitHub, GitLab,
 Gmail, Google Analytics, Google Calendar, Google Docs, Google Drive, Google Sheets,
-Linear, Mailchimp, Notion, Sentry, Slack, Stripe, Telegram, Yelp, Zoom, and more.
+Linear, Mailchimp, Notion, Sentry, Slack, Stripe, Telegram, Umami, Yelp, Zoom, and more.
 
 ### User-registered services
 

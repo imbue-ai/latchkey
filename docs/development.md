@@ -11,7 +11,7 @@ After that, the easiest way to set up your system so that you can run
 Latchkey while working on it is to clone this repository and
 then run:
 
-```
+```bash
 npm install && npm run build && npm link
 ```
 
@@ -83,7 +83,7 @@ Every service must include an `info` property that provides developer notes. Thi
 
 Use this tool to record a full session where you log into a service and generate an API key:
 
-```
+```bash
 npx tsx scripts/codegen.ts <service_name> <initial_url>
 ```
 
@@ -91,7 +91,7 @@ This tool combines both the request/response recorder (see below) and Playwright
 
 You can still use Playwright's own codegen if this tool is not sufficient:
 
-```
+```bash
 npx playwright codegen --target=javascript https://login-page.example.com/
 ```
 
@@ -102,14 +102,14 @@ login sequence as plaintext JSON files. The resulting recording
 can be inspected, either manually or with the help of AI, to see
 if you can extract an API token or something similar from there.
 
-```
+```bash
 npx tsx scripts/recordBrowserSession.ts <service_name>
 ```
 
 If you have `jq` installed on your system, you can then
 start exploring, for instance like this:
 
-```
+```bash
 cat path/to/recording/login_session.json | jq -C | less -R
 ```
 
@@ -120,7 +120,7 @@ credentials stored in `~/.latchkey/credentials.json.enc`.
 
 To do that, you can use `scripts/cryptFile.ts`. For example:
 
-```
+```bash
 npx tsx scripts/cryptFile.ts decrypt ~/.latchkey/credentials.json.enc
 ```
 
