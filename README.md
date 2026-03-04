@@ -4,7 +4,7 @@ Inject API credentials into local agent requests.
 
 ## Quick example
 
-```
+```bash
 # User stores the credentials.
 latchkey auth set slack -H "Authorization: Bearer xoxb-your-token"
 
@@ -56,7 +56,7 @@ See the [development docs](docs/development.md) for details.
 
 ### Steps
 
-```
+```bash
 npm install -g latchkey
 
 # Optionally, if you intend to use `latchkey auth browser`:
@@ -76,29 +76,25 @@ feature. They will be able to perform most of the actions you
 can. Only do this if you're willing to accept the risks.
 
 
-### OpenCode
+### Using skills.sh
+
+```bash
+npx skills add imbue-ai/latchkey
 ```
+
+### Manually
+
+The exact steps will differ depending on the agent. Taking OpenCode as an example:
+
+```bash
 mkdir -p ~/.opencode/skills/latchkey
 latchkey skill-md > ~/.opencode/skills/latchkey/SKILL.md
-```
-
-### Claude Code
-```
-mkdir -p ~/.claude/skills/latchkey
-latchkey skill-md > ~/.claude/skills/latchkey/SKILL.md
-```
-
-### Codex
-```
-mkdir -p ~/.codex/skills/latchkey
-latchkey skill-md > ~/.codex/skills/latchkey/SKILL.md
 ```
 
 ### Passepartout
 
 Check out our [Passepartout demo app](https://github.com/imbue-ai/passepartout)
-for an idea of how to build AI assistants for non-technical
-users on top of Latchkey.
+for an idea of how to build AI assistants for non-technical users on top of Latchkey.
 
 
 ## Demo
@@ -110,7 +106,7 @@ users on top of Latchkey.
 
 Let's revisit the initial example:
 
-```
+```bash
 latchkey curl -X POST 'https://slack.com/api/conversations.create' \
   -H 'Content-Type: application/json' \
   -d '{"name":"something-urgent"}'
@@ -120,7 +116,7 @@ Notice that `-H 'Authorization: Bearer ...'` is absent. This is
 because Latchkey injects stored credentials automatically. To
 set up credentials for a service (Slack in this example), run:
 
-```
+```bash
 latchkey auth browser slack
 ```
 
@@ -130,7 +126,7 @@ stores the credentials so that they can be reused.
 
 Alternatively, you can provide credentials manually:
 
-```
+```bash
 latchkey auth set slack -H "Authorization: Bearer xoxb-your-token"
 ```
 
@@ -144,13 +140,13 @@ of `latchkey`.
 
 For services that can be self-hosted, like GitLab, first make Latchkey aware of your service instance:
 
-```
+```bash
 latchkey services register my-gitlab-instance --service-family=gitlab --base-api-url="https://gitlab.example.com/api/v4/"
 ```
 
 Then continue as usual.
 
-```
+```bash
 latchkey auth set my-gitlab-instance -H "PRIVATE-TOKEN: <token>"
 
 # Agents can then call the API.
@@ -164,7 +160,7 @@ If you want to use Latchkey with a service that is not in the
 list of supported built-in services, you can still use the
 mechanism described above to register a new service at runtime:
 
-```
+```bash
 latchkey services register mastodon --base-api-url="https://mastodon.social/api/v1/"
 latchkey auth set mastodon -H "Authorization: Bearer <your_access_token>"
 
@@ -186,7 +182,7 @@ arguments. For example:
 In similar cases, when supported, you can use the `latchkey auth set-nocurl` command, e.g.
 like this:
 
-```
+```bash
 latchkey auth set-nocurl aws <access-key-id> <secret-access-key>
 ```
 
@@ -219,7 +215,7 @@ Remembered API credentials can expire. The caller of `latchkey
 curl` will typically notice this because the calls will start returning
 HTTP 401 or 403. To verify that, first call `latchkey services info`, e.g.:
 
-```
+```bash
 latchkey services info discord
 ```
 
@@ -227,13 +223,13 @@ If the credentials status is `invalid`, it means the Unauthorized/Forbidden
 responses are caused by invalid or expired credentials rather than insufficient
 permissions. In that case, log in again:
 
-```
+```bash
 latchkey auth browser discord
 ```
 
 Or alternatively:
 
-```
+```bash
 latchkey auth set discord -H "Authorization: ..."
 ```
 
@@ -242,13 +238,13 @@ latchkey auth set discord -H "Authorization: ..."
 
 In case you want to remove stored API credentials, use the `auth clear` subcommand.
 
-```
+```bash
 latchkey auth clear discord
 ```
 
 To clear all stored data (both the credential store and browser state file), run:
 
-```
+```bash
 latchkey auth clear
 ```
 
