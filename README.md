@@ -82,6 +82,12 @@ can. Only do this if you're willing to accept the risks.
 npx skills add imbue-ai/latchkey
 ```
 
+### From ClawHub
+
+```bash
+npx clawhub install latchkey
+```
+
 ### Manually
 
 The exact steps will differ depending on the agent. Taking OpenCode as an example:
