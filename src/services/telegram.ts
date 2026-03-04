@@ -59,7 +59,7 @@ export class Telegram extends Service {
   readonly info =
     'https://core.telegram.org/bots/api. ' +
     'The bot token is injected automatically into the URL path at runtime. ' +
-    'Example: curl https://api.telegram.org/sendMessage -d chat_id=123 -d text=hello';
+    'Example: latchkey curl https://api.telegram.org/sendMessage -d chat_id=123 -d text=hello';
 
   readonly credentialCheckCurlArguments = [`${BASE_API_URL}getMe`] as const;
 
