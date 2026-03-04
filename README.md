@@ -68,7 +68,7 @@ for Latchkey to use. It searches for Chrome, Chromium, or Edge
 on your system. If none is found, it downloads Chromium via
 Playwright.
 
-## Integrations
+## Agent integrations
 
 Warning: giving AI agents access to your API credentials is
 potentially dangerous, especially when using the `auth browser`
@@ -76,29 +76,31 @@ feature. They will be able to perform most of the actions you
 can. Only do this if you're willing to accept the risks.
 
 
-### OpenCode
+### Using skills.sh
+
+```bash
+npx skills add imbue-ai/latchkey
+```
+
+### From ClawHub
+
+```bash
+npx clawhub install latchkey
+```
+
+### Manually
+
+The exact steps will differ depending on the agent. Taking OpenCode as an example:
+
 ```bash
 mkdir -p ~/.opencode/skills/latchkey
 latchkey skill-md > ~/.opencode/skills/latchkey/SKILL.md
 ```
 
-### Claude Code
-```bash
-mkdir -p ~/.claude/skills/latchkey
-latchkey skill-md > ~/.claude/skills/latchkey/SKILL.md
-```
-
-### Codex
-```bash
-mkdir -p ~/.codex/skills/latchkey
-latchkey skill-md > ~/.codex/skills/latchkey/SKILL.md
-```
-
 ### Passepartout
 
 Check out our [Passepartout demo app](https://github.com/imbue-ai/passepartout)
-for an idea of how to build AI assistants for non-technical
-users on top of Latchkey.
+for an idea of how to build AI assistants for non-technical users on top of Latchkey.
 
 
 ## Demo

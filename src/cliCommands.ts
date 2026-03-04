@@ -272,7 +272,10 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           if (allCredentials.has(service.name)) {
             return true;
           }
-          const supportsBrowser = service.getSession !== undefined && !deps.config.browserDisabled;
+          const supportsBrowser =
+            service.getSession !== undefined &&
+            !deps.config.browserDisabled &&
+            hasGraphicalEnvironment();
           return supportsBrowser;
         });
       }
