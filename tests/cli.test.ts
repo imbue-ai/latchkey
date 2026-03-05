@@ -302,6 +302,7 @@ describe('CLI commands with dependency injection', () => {
       serviceName: overrides.serviceName ?? defaultConfig.serviceName,
       accountName: overrides.accountName ?? defaultConfig.accountName,
       browserDisabled: overrides.browserDisabled ?? false,
+      telemetryDisabled: overrides.telemetryDisabled ?? false,
       checkSensitiveFilePermissions: () => undefined,
       checkSystemPrerequisites: () => undefined,
     };
