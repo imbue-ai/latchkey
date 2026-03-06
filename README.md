@@ -264,8 +264,8 @@ defaults:
 - `LATCHKEY_CURL`: path to the curl binary
 - `LATCHKEY_KEYRING_SERVICE_NAME`, `LATCHKEY_KEYRING_ACCOUNT_NAME`: identifiers that are used to store the encryption password in your keyring
 - `LATCHKEY_ENCRYPTION_KEY`: override the encryption key, e.g. when a keyring is not available. Example: `export LATCHKEY_ENCRYPTION_KEY="$(openssl rand -base64 32)"`
-- `LATCHKEY_DISABLE_BROWSER`: when set (to any non-empty value), disables the browser login flow; commands that would trigger a browser login (`auth browser`, `auth browser-prepare`) will fail with an error instead
-- `LATCHKEY_DISABLE_COUNTING`: when set (to any non-empty value), disables daily usage counting
+- `LATCHKEY_DISABLE_BROWSER`: when set to any non-empty value, disables the browser login flow; commands that would trigger a browser login (`auth browser`, `auth browser-prepare`) will fail with an error instead
+- `LATCHKEY_DISABLE_COUNTING`: when set to any non-empty value, disables daily usage counting.
 
 
 ## Disclaimers
@@ -275,6 +275,7 @@ defaults:
 - Invoking `latchkey auth browser ...` can sometimes have side effects in the form of
   new API keys being created in your accounts (through browser automation).
 - Using agents for automated access may be prohibited by some services' ToS.
+- Unless `LATCHKEY_DISABLE_COUNTING` is set, once a day, when invoking `latchkey`, a GET request is sent to [goatcounter.com](goatcounter.com). We don't store any sort of private information and don't track anything beyond a simple daily count of active users.
 - We reserve the right to change the license of future releases of Latchkey.
 - Latchkey was not tested on Windows.
 
