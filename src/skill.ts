@@ -99,9 +99,7 @@ export function installSkill(
 ): InstallResult[] {
   return AGENTS.map((agent) => {
     const skillPath = resolveSkillPath(agent, scope, home, gitRoot)!;
-    const existingContent = existsSync(skillPath)
-      ? readFileSync(skillPath, 'utf-8')
-      : null;
+    const existingContent = existsSync(skillPath) ? readFileSync(skillPath, 'utf-8') : null;
 
     if (existingContent === content) {
       return { agent: agent.name, path: skillPath, alreadyUpToDate: true };

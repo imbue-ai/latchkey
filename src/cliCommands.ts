@@ -45,7 +45,11 @@ import { extractUrlFromCurlArguments, run as curlRun } from './curl.js';
 import { getSkillMdContent } from './skillMd.js';
 import { findGitRoot, getSkillStatus, installSkill, type SkillScope } from './skill.js';
 
-function parseScope(value: string, errorLog: (msg: string) => void, exit: (code: number) => never): SkillScope {
+function parseScope(
+  value: string,
+  errorLog: (msg: string) => void,
+  exit: (code: number) => never
+): SkillScope {
   if (value !== 'global' && value !== 'project') {
     errorLog(`Error: --scope must be "global" or "project", got: ${value}`);
     exit(1);
@@ -822,9 +826,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       const agentWidth = Math.max(...results.map((r) => r.agent.length), 'Agent'.length);
       const scopeWidth = Math.max(...results.map((r) => r.scope.length), 'Scope'.length);
 
-      deps.log(
-        `${'Agent'.padEnd(agentWidth)}  ${'Scope'.padEnd(scopeWidth)}  Status`
-      );
+      deps.log(`${'Agent'.padEnd(agentWidth)}  ${'Scope'.padEnd(scopeWidth)}  Status`);
       deps.log(`${'-'.repeat(agentWidth)}  ${'-'.repeat(scopeWidth)}  ------`);
 
       for (const result of results) {
