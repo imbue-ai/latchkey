@@ -15,6 +15,7 @@ import {
 } from './encryptedStorage.js';
 import { MigrationError, runMigrations } from './migrations.js';
 import { loadRegisteredServicesIntoRegistry } from './registry.js';
+import { countDailyIfNeeded } from './dailyCounting.js';
 import packageJson from '../package.json' with { type: 'json' };
 
 const deps = createDefaultDependencies();
@@ -28,6 +29,12 @@ try {
     process.exit(1);
   }
   throw error;
+}
+
+try {
+  countDailyIfNeeded(deps.config);
+} catch {
+  // Non-essential daily usage counting — never prevent the main application from running.
 }
 
 const hasEncryptedData =
