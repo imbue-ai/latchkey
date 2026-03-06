@@ -1,16 +1,17 @@
 ---
 name: latchkey
-description: Interact with third-party or self-hosted services (Slack, Google Workspace, Dropbox, GitHub, Linear, Coolify...) using their HTTP APIs on the user's behalf.
-compatibility: Requires node.js, curl and latchkey (npm install -g latchkey). A desktop/GUI environment is required for the browser functionality.
+description: Interact with arbitrary third-party or self-hosted services (AWS, Slack, Google Drive, Dropbox, GitHub, GitLab, Linear, Coolify...) using their HTTP APIs.
+compatibility: Requires node.js, curl and latchkey (npm install -g latchkey).
+metadata: {"openclaw":{"emoji":"🔑","requires":{"bins":["latchkey"]},"install":[{"id":"node","kind":"node","package":"latchkey","bins":["latchkey"],"label":"Install Latchkey (npm)"}]}}
 ---
 
 # Latchkey
 
 ## Instructions
 
-Latchkey is a CLI tool that automatically injects credentials into curl commands. Credentials (mostly API tokens) can be either manually managed or, for some services, Latchkey can open a browser login pop-up window and extract API credentials from the session.
+Latchkey is a CLI tool that automatically injects credentials into curl commands. Credentials (mostly API tokens) need to be manually managed by the user.
 
-Use this skill when the user asks you to work on their behalf with services that have HTTP APIs, like AWS, GitLab, Google Drive, Discord or others.
+Use this skill when the user asks you to work with services that have HTTP APIs, like AWS, Coolify, GitLab, Google Drive, Discord or others.
 
 Usage:
 
@@ -19,9 +20,8 @@ Usage:
 3. **Check for `latchkey services list`** to get a list of supported services. Use `--viable` to only show the currently configured ones.
 4. **Use `latchkey services info <service_name>`** to get information about a specific service (auth options, credentials status, API docs links, special requirements, etc.).
 5. **If necessary, ask the user to configure credentials first.** Tell the user to run `latchkey auth set` on the machine where latchkey is installed (using the setCredentialsExample from the `services info` command).
-6. **Alternatively, let the user log in with the browser.** If supported for the given service, run `latchkey auth browser <service_name>` to open a browser login pop-up window.
-7. **Look for the newest documentation of the desired public API online.** If using the `browser` auth command, avoid bot-only endpoints.
-8. **Do not initiate a new login if the credentials status is `valid` or `unknown`** - the user might just not have the necessary permissions for the action you're trying to do.
+6. **Look for the newest documentation of the desired public API online.**
+7. **Do not initiate a new login if the credentials status is `valid` or `unknown`** - the user might just not have the necessary permissions for the action you're trying to do.
 
 
 ## Examples
@@ -45,14 +45,10 @@ latchkey curl -X POST 'https://slack.com/api/conversations.create' \
 latchkey curl 'https://discord.com/api/v10/users/@me'
 ```
 
-### Detect expired credentials and force a new login to Discord
+### Detect expired credentials
 ```bash
 latchkey services info discord  # Check the "credentialStatus" field - shows "invalid"
-latchkey auth browser discord
-latchkey curl 'https://discord.com/api/v10/users/@me'
 ```
-
-Only do this when you notice that your previous call ended up not being authenticated (HTTP 401 or 403).
 
 ### List usable services
 
@@ -60,7 +56,7 @@ Only do this when you notice that your previous call ended up not being authenti
 latchkey services list --viable
 ```
 
-Lists services that either have stored credentials or can be authenticated via a browser.
+Lists services that have stored credentials.
 
 ### Get service-specific info
 ```bash
@@ -68,16 +64,12 @@ latchkey services info slack
 ```
 
 Returns auth options, credentials status, and developer notes
-about the service. If `browser` is not present in the
-`authOptions` field, the service requires the user to directly
-set API credentials via `latchkey auth set` or `latchkey auth
-set-nocurl` before making requests.
+about the service.
 
 
 ## Storing credentials
 
-Aside from the `latchkey auth browser` case, it is the user's responsibility to supply credentials.
-The user would typically do something like this:
+It is the user's responsibility to supply credentials. The user would typically do something like this:
 
 ```bash
 latchkey auth set my-gitlab-instance -H "PRIVATE-TOKEN: <token>"
