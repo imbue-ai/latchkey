@@ -4,4 +4,5 @@ node_modules/
 dist/
 # bun-compiled binary
 /latchkey
-.mng
+
+.mng/settings.local.toml

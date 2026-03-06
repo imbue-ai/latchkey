@@ -212,7 +212,7 @@ export abstract class ServiceSession {
     return withTempBrowserContext(encryptedStorage, launchOptions, async ({ browser, context }) => {
       const page = await context.newPage();
 
-      page.on('response', (response) => {
+      context.on('response', (response) => {
         this.onResponse(response);
       });
 
