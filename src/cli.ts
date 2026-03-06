@@ -31,7 +31,11 @@ try {
   throw error;
 }
 
-countDailyIfNeeded(deps.config);
+try {
+  countDailyIfNeeded(deps.config);
+} catch {
+  // Non-essential daily usage counting — never prevent the main application from running.
+}
 
 const hasEncryptedData =
   existsSync(deps.config.credentialStorePath) || existsSync(deps.config.browserStatePath);
