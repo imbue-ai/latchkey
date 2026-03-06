@@ -7,6 +7,7 @@
  */
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { platform } from 'node:os';
 import { join } from 'node:path';
 import type { Config } from './config.js';
 import { runDetached } from './curl.js';
@@ -46,7 +47,7 @@ export function countDailyIfNeeded(config: Config): void {
     '--max-time',
     String(TIMEOUT_SECONDS),
     '--output',
-    '/dev/null',
+    platform() === 'win32' ? 'NUL' : '/dev/null',
     '-H',
     'User-Agent: Mozilla/5.0 (compatible)',
     COUNTING_URL,
