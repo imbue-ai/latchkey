@@ -2,7 +2,7 @@
  * Curl subprocess utilities.
  */
 
-import { spawnSync, SpawnSyncReturns } from 'node:child_process';
+import { spawn, spawnSync, SpawnSyncReturns } from 'node:child_process';
 import { CONFIG } from './config.js';
 
 export interface CurlResult {
@@ -20,6 +20,11 @@ export type SubprocessRunner = (args: readonly string[]) => CurlResult;
  * Type for the capturing subprocess runner function (captures output).
  */
 export type CapturingSubprocessRunner = (args: readonly string[], timeout: number) => CurlResult;
+
+/**
+ * Type for the detached subprocess runner function (fire-and-forget, no waiting).
+ */
+export type DetachedSubprocessRunner = (args: readonly string[]) => void;
 
 function defaultSubprocessRunner(args: readonly string[]): CurlResult {
   const result: SpawnSyncReturns<Buffer> = spawnSync(CONFIG.curlCommand, args as string[], {
@@ -44,8 +49,17 @@ function defaultCapturingSubprocessRunner(args: readonly string[], timeout: numb
   };
 }
 
+function defaultDetachedSubprocessRunner(args: readonly string[]): void {
+  const child = spawn(CONFIG.curlCommand, args as string[], {
+    stdio: 'ignore',
+    detached: true,
+  });
+  child.unref();
+}
+
 let subprocessRunner: SubprocessRunner = defaultSubprocessRunner;
 let capturingSubprocessRunner: CapturingSubprocessRunner = defaultCapturingSubprocessRunner;
+let detachedSubprocessRunner: DetachedSubprocessRunner = defaultDetachedSubprocessRunner;
 
 export function setSubprocessRunner(runner: SubprocessRunner): void {
   subprocessRunner = runner;
@@ -63,6 +77,14 @@ export function resetCapturingSubprocessRunner(): void {
   capturingSubprocessRunner = defaultCapturingSubprocessRunner;
 }
 
+export function setDetachedSubprocessRunner(runner: DetachedSubprocessRunner): void {
+  detachedSubprocessRunner = runner;
+}
+
+export function resetDetachedSubprocessRunner(): void {
+  detachedSubprocessRunner = defaultDetachedSubprocessRunner;
+}
+
 /**
  * Run curl without capturing output (for interactive CLI use).
  */
@@ -75,6 +97,14 @@ export function run(args: readonly string[]): CurlResult {
  */
 export function runCaptured(args: readonly string[], timeout = 10): CurlResult {
   return capturingSubprocessRunner(args, timeout);
+}
+
+/**
+ * Spawn a detached curl process without waiting for it to complete.
+ * The parent process can exit before the curl process finishes.
+ */
+export function runDetached(args: readonly string[]): void {
+  detachedSubprocessRunner(args);
 }
 
 // Curl flags that don't affect the HTTP request semantics but may not be supported by URL extraction.

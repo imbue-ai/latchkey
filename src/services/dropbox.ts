@@ -145,7 +145,9 @@ export class Dropbox extends Service {
     'POST',
     '-H',
     'Content-Type: application/json',
-    'https://api.dropboxapi.com/2/users/get_current_account',
+    'https://api.dropboxapi.com/2/check/user',
+    '--data',
+    '{"query":"foo"}',
   ] as const;
 
   setCredentialsExample(serviceName: string): string {
