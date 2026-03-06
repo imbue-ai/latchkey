@@ -3,18 +3,16 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'no
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Config } from '../src/config.js';
-import { checkLatestVersionIfNeeded } from '../src/latestVersionCheck.js';
+import { countDailyIfNeeded } from '../src/dailyCounting.js';
 import { setDetachedSubprocessRunner, resetDetachedSubprocessRunner } from '../src/curl.js';
 
-describe('checkLatestVersionIfNeeded', () => {
+describe('countDailyIfNeeded', () => {
   let directory: string;
   let config: Config;
   let detachedCalls: readonly string[][];
 
   beforeEach(() => {
-    directory = mkdtempSync(join(tmpdir(), 'latchkey-version-check-'));
-    config = new Config(() => undefined);
-    // Override directory via a new Config with custom env
+    directory = mkdtempSync(join(tmpdir(), 'latchkey-daily-count-'));
     config = new Config((name) => (name === 'LATCHKEY_DIRECTORY' ? directory : undefined));
 
     detachedCalls = [];
@@ -29,20 +27,20 @@ describe('checkLatestVersionIfNeeded', () => {
   });
 
   it('should fire a request when the file does not exist', () => {
-    checkLatestVersionIfNeeded(config);
+    countDailyIfNeeded(config);
 
     expect(detachedCalls).toHaveLength(1);
-    expect(detachedCalls[0]).toContain(
-      'https://dau-tracker.latchkey.host.imbue.com/api/version/latchkey'
-    );
+    expect(detachedCalls[0]).toContain('https://latchkey.goatcounter.com/count?p=/daily');
     expect(detachedCalls[0]).toContain('--max-time');
     expect(detachedCalls[0]).toContain('5');
+    expect(detachedCalls[0]).toContain('-H');
+    expect(detachedCalls[0]).toContain('User-Agent: Mozilla/5.0 (compatible)');
   });
 
   it('should write the current timestamp to the file after firing', () => {
-    checkLatestVersionIfNeeded(config);
+    countDailyIfNeeded(config);
 
-    const filePath = join(directory, 'latest-version-check');
+    const filePath = join(directory, 'last-daily-count');
     expect(existsSync(filePath)).toBe(true);
     const content = readFileSync(filePath, 'utf-8').trim();
     const timestamp = new Date(content);
@@ -51,51 +49,51 @@ describe('checkLatestVersionIfNeeded', () => {
   });
 
   it('should not fire a request when the file has a recent timestamp', () => {
-    const filePath = join(directory, 'latest-version-check');
+    const filePath = join(directory, 'last-daily-count');
     writeFileSync(filePath, new Date().toISOString(), 'utf-8');
 
-    checkLatestVersionIfNeeded(config);
+    countDailyIfNeeded(config);
 
     expect(detachedCalls).toHaveLength(0);
   });
 
   it('should fire a request when the timestamp is older than 24 hours', () => {
-    const filePath = join(directory, 'latest-version-check');
+    const filePath = join(directory, 'last-daily-count');
     const oldDate = new Date(Date.now() - 25 * 60 * 60 * 1000);
     writeFileSync(filePath, oldDate.toISOString(), 'utf-8');
 
-    checkLatestVersionIfNeeded(config);
+    countDailyIfNeeded(config);
 
     expect(detachedCalls).toHaveLength(1);
   });
 
   it('should fire a request when the file contains invalid content', () => {
-    const filePath = join(directory, 'latest-version-check');
+    const filePath = join(directory, 'last-daily-count');
     writeFileSync(filePath, 'not-a-date', 'utf-8');
 
-    checkLatestVersionIfNeeded(config);
+    countDailyIfNeeded(config);
 
     expect(detachedCalls).toHaveLength(1);
   });
 
-  it('should not fire a request when telemetry is disabled', () => {
-    const telemetryDisabledConfig = new Config((name) => {
+  it('should not fire a request when counting is disabled', () => {
+    const countingDisabledConfig = new Config((name) => {
       if (name === 'LATCHKEY_DIRECTORY') return directory;
-      if (name === 'LATCHKEY_DISABLE_TELEMETRY') return '1';
+      if (name === 'LATCHKEY_DISABLE_COUNTING') return '1';
       return undefined;
     });
 
-    checkLatestVersionIfNeeded(telemetryDisabledConfig);
+    countDailyIfNeeded(countingDisabledConfig);
 
     expect(detachedCalls).toHaveLength(0);
   });
 
   it('should not fire a request when the timestamp is exactly 23 hours old', () => {
-    const filePath = join(directory, 'latest-version-check');
+    const filePath = join(directory, 'last-daily-count');
     const recentDate = new Date(Date.now() - 23 * 60 * 60 * 1000);
     writeFileSync(filePath, recentDate.toISOString(), 'utf-8');
 
-    checkLatestVersionIfNeeded(config);
+    countDailyIfNeeded(config);
 
     expect(detachedCalls).toHaveLength(0);
   });

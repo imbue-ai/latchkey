@@ -265,18 +265,8 @@ defaults:
 - `LATCHKEY_KEYRING_SERVICE_NAME`, `LATCHKEY_KEYRING_ACCOUNT_NAME`: identifiers that are used to store the encryption password in your keyring
 - `LATCHKEY_ENCRYPTION_KEY`: override the encryption key, e.g. when a keyring is not available. Example: `export LATCHKEY_ENCRYPTION_KEY="$(openssl rand -base64 32)"`
 - `LATCHKEY_DISABLE_BROWSER`: when set (to any non-empty value), disables the browser login flow; commands that would trigger a browser login (`auth browser`, `auth browser-prepare`) will fail with an error instead
-- `LATCHKEY_DISABLE_TELEMETRY`: when set (to any non-empty value), disables all telemetry (see [Telemetry](#telemetry) below)
+- `LATCHKEY_DISABLE_COUNTING`: when set (to any non-empty value), disables daily usage counting
 
-
-## Telemetry
-
-On startup, Latchkey sends a lightweight version-check request to `dau-tracker.latchkey.host.imbue.com` at most once every 24 hours. This request includes your IP address and the default curl User-Agent header. No other data is collected.
-
-To opt out, set the `LATCHKEY_DISABLE_TELEMETRY` environment variable:
-
-```sh
-export LATCHKEY_DISABLE_TELEMETRY=1
-```
 
 ## Disclaimers
 

@@ -15,7 +15,7 @@ import {
 } from './encryptedStorage.js';
 import { MigrationError, runMigrations } from './migrations.js';
 import { loadRegisteredServicesIntoRegistry } from './registry.js';
-import { checkLatestVersionIfNeeded } from './latestVersionCheck.js';
+import { countDailyIfNeeded } from './dailyCounting.js';
 import packageJson from '../package.json' with { type: 'json' };
 
 const deps = createDefaultDependencies();
@@ -31,7 +31,7 @@ try {
   throw error;
 }
 
-checkLatestVersionIfNeeded(deps.config);
+countDailyIfNeeded(deps.config);
 
 const hasEncryptedData =
   existsSync(deps.config.credentialStorePath) || existsSync(deps.config.browserStatePath);

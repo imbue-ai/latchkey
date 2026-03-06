@@ -29,7 +29,7 @@ const LATCHKEY_ENCRYPTION_KEY_ENV_VAR = 'LATCHKEY_ENCRYPTION_KEY';
 const LATCHKEY_KEYRING_SERVICE_NAME_ENV_VAR = 'LATCHKEY_KEYRING_SERVICE_NAME';
 const LATCHKEY_KEYRING_ACCOUNT_NAME_ENV_VAR = 'LATCHKEY_KEYRING_ACCOUNT_NAME';
 const LATCHKEY_DISABLE_BROWSER_ENV_VAR = 'LATCHKEY_DISABLE_BROWSER';
-const LATCHKEY_DISABLE_TELEMETRY_ENV_VAR = 'LATCHKEY_DISABLE_TELEMETRY';
+const LATCHKEY_DISABLE_COUNTING_ENV_VAR = 'LATCHKEY_DISABLE_COUNTING';
 
 export const DEFAULT_KEYRING_SERVICE_NAME = 'latchkey';
 export const DEFAULT_KEYRING_ACCOUNT_NAME = 'encryption-key';
@@ -94,9 +94,9 @@ export class Config {
    */
   readonly browserDisabled: boolean;
   /**
-   * When true, telemetry (version check pings) is disabled.
+   * When true, daily counting is disabled.
    */
-  readonly telemetryDisabled: boolean;
+  readonly countingDisabled: boolean;
 
   constructor(getEnv: (name: string) => string | undefined = (name) => process.env[name]) {
     this.curlCommand = getEnv(LATCHKEY_CURL_ENV_VAR) ?? 'curl';
@@ -109,8 +109,8 @@ export class Config {
     const browserDisabledEnv = getEnv(LATCHKEY_DISABLE_BROWSER_ENV_VAR);
     this.browserDisabled = browserDisabledEnv !== undefined && browserDisabledEnv !== '';
 
-    const telemetryDisabledEnv = getEnv(LATCHKEY_DISABLE_TELEMETRY_ENV_VAR);
-    this.telemetryDisabled = telemetryDisabledEnv !== undefined && telemetryDisabledEnv !== '';
+    const countingDisabledEnv = getEnv(LATCHKEY_DISABLE_COUNTING_ENV_VAR);
+    this.countingDisabled = countingDisabledEnv !== undefined && countingDisabledEnv !== '';
 
     const directoryEnv = getEnv(LATCHKEY_DIRECTORY_ENV_VAR);
     this.directory = directoryEnv ? resolvePathWithTildeExpansion(directoryEnv) : DEFAULT_DIRECTORY;
