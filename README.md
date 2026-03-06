@@ -88,13 +88,24 @@ npx skills add imbue-ai/latchkey
 npx clawhub install latchkey
 ```
 
-### Manually
+### Using Latchkey itself
 
-The exact steps will differ depending on the agent. Taking OpenCode as an example:
+You can use Latchkey itself to install the skill file to common coding agents:
 
 ```bash
+latchkey skill install # installs skill files in user home directory
+latchkey skill install --scope=project # current project only
+latchkey skill status # see which coding agents have the skill installed
+```
+
+If your coding agent is not in the list output by `latchkey skill status`,
+you can ask Latchkey to print the `SKILL.md`:
+
+```bash
+# OpenCode is already supported by "latchkey skill install",
+# this is just for demo:
 mkdir -p ~/.opencode/skills/latchkey
-latchkey skill-md > ~/.opencode/skills/latchkey/SKILL.md
+latchkey skill print > ~/.opencode/skills/latchkey/SKILL.md
 ```
 
 ### Passepartout

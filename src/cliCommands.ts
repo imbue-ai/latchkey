@@ -43,6 +43,15 @@ import {
 } from './services/index.js';
 import { extractUrlFromCurlArguments, run as curlRun } from './curl.js';
 import { getSkillMdContent } from './skillMd.js';
+import { findGitRoot, getSkillStatus, installSkill, type SkillScope } from './skill.js';
+
+function parseScope(value: string, errorLog: (msg: string) => void, exit: (code: number) => never): SkillScope {
+  if (value !== 'global' && value !== 'project') {
+    errorLog(`Error: --scope must be "global" or "project", got: ${value}`);
+    exit(1);
+  }
+  return value;
+}
 
 /**
  * Try to refresh expired credentials if the service supports it.
@@ -748,9 +757,96 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       deps.exit(result.returncode);
     });
 
+  const skillCommand = program
+    .command('skill')
+    .description('Manage the Latchkey skill for AI coding agents.');
+
+  skillCommand
+    .command('print')
+    .description('Print the SKILL.md file for AI agent integration.')
+    .action(async () => {
+      deps.log(await getSkillMdContent());
+    });
+
+  skillCommand
+    .command('install')
+    .description(
+      'Install the Latchkey skill into known AI coding agent skill directories (Claude, OpenCode, Codex, Gemini).'
+    )
+    .option(
+      '--scope <scope>',
+      'Where to install: "global" (user home directory) or "project" (git repository root)',
+      'global'
+    )
+    .action(async (options: { scope: string }) => {
+      const scope = parseScope(options.scope, deps.errorLog, deps.exit);
+
+      if (scope === 'project') {
+        const gitRoot = findGitRoot();
+        if (gitRoot === null) {
+          deps.errorLog(
+            'Error: --scope project requires the current directory to be inside a git repository.'
+          );
+          deps.exit(1);
+        }
+      }
+
+      const content = await getSkillMdContent();
+      const results = installSkill(scope, content);
+
+      for (const result of results) {
+        if (result.alreadyUpToDate) {
+          deps.log(`${result.agent}: already up to date (${result.path})`);
+        } else {
+          deps.log(`${result.agent}: installed to ${result.path}`);
+        }
+      }
+    });
+
+  skillCommand
+    .command('status')
+    .description(
+      'Check whether the Latchkey skill is installed and up to date for each AI coding agent.'
+    )
+    .option(
+      '--scope <scope>',
+      'Which scope to check: "global" (user home directory) or "project" (git repository root)',
+      'global'
+    )
+    .action(async (options: { scope: string }) => {
+      const scope = parseScope(options.scope, deps.errorLog, deps.exit);
+
+      const content = await getSkillMdContent();
+      const results = getSkillStatus(content, undefined, undefined, scope);
+
+      const agentWidth = Math.max(...results.map((r) => r.agent.length), 'Agent'.length);
+      const scopeWidth = Math.max(...results.map((r) => r.scope.length), 'Scope'.length);
+
+      deps.log(
+        `${'Agent'.padEnd(agentWidth)}  ${'Scope'.padEnd(scopeWidth)}  Status`
+      );
+      deps.log(`${'-'.repeat(agentWidth)}  ${'-'.repeat(scopeWidth)}  ------`);
+
+      for (const result of results) {
+        let statusText: string;
+        if (result.status === 'up-to-date') {
+          statusText = 'up to date';
+        } else if (result.status === 'outdated') {
+          statusText = `outdated (${result.path})`;
+        } else if (result.status === 'missing') {
+          statusText = `not installed`;
+        } else {
+          statusText = 'n/a (not in a git repository)';
+        }
+        deps.log(
+          `${result.agent.padEnd(agentWidth)}  ${result.scope.padEnd(scopeWidth)}  ${statusText}`
+        );
+      }
+    });
+
   program
     .command('skill-md')
-    .description('Print the SKILL.md file for AI agent integration.')
+    .description('Deprecated: use "skill print" instead.')
     .action(async () => {
       deps.log(await getSkillMdContent());
     });
