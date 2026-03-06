@@ -2,18 +2,7 @@
 name: latchkey
 description: Interact with arbitrary third-party or self-hosted services (Slack, Google Workspace, Dropbox, GitHub, Linear, Coolify...) using their HTTP APIs.
 compatibility: Requires node.js, curl and latchkey (npm install -g latchkey).
-metadata:
-  openclaw:
-    emoji: "🔑"
-    requires:
-      bins: ["latchkey"]
-    install:
-      - id: npm
-        kind: npm
-        package: latchkey
-        global: true
-        bins: ["latchkey"]
-        label: "Install Latchkey (npm)"
+metadata: {"openclaw":{"emoji":"🔑","requires":{"bins":["latchkey"]},"install":[{"id":"npm","kind":"npm","package":"latchkey","global":true,"bins":["latchkey"],"label":"Install Latchkey (npm)"}]}}
 ---
 
 # Latchkey
