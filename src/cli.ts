@@ -17,7 +17,7 @@ import { MigrationError, runMigrations } from './migrations.js';
 import { loadRegisteredServicesIntoRegistry } from './registry.js';
 import { countDailyIfNeeded } from './dailyCounting.js';
 
-process.removeAllListeners("warning"); // Suppress the warning coming from importing json in older node versions.
+process.removeAllListeners('warning'); // Suppress the warning coming from importing json in older node versions.
 import packageJson from '../package.json' with { type: 'json' };
 
 const deps = createDefaultDependencies();
