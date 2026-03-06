@@ -19,7 +19,7 @@ import { countDailyIfNeeded } from './dailyCounting.js';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const packageJson = require('../package.json') as { version: string };
+const packageJson = require('../../package.json') as { version: string };
 
 const deps = createDefaultDependencies();
 
