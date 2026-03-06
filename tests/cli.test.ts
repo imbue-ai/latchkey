@@ -93,6 +93,7 @@ function runCli(args: string[], env: TestEnv, options?: RunCliOptions): CliResul
     env: {
       ...baseEnv,
       LATCHKEY_ENCRYPTION_KEY: TEST_ENCRYPTION_KEY,
+      LATCHKEY_DISABLE_COUNTING: '1',
       ...env,
     },
     stdio: ['pipe', 'pipe', 'pipe'],
