@@ -275,7 +275,7 @@ defaults:
 - Invoking `latchkey auth browser ...` can sometimes have side effects in the form of
   new API keys being created in your accounts (through browser automation).
 - Using agents for automated access may be prohibited by some services' ToS.
-- Unless `LATCHKEY_DISABLE_COUNTING` is set, once a day, when invoking `latchkey`, a GET request is sent to [goatcounter.com](goatcounter.com). We don't store any sort of private information and don't track anything beyond a simple daily count of active users.
+- Unless `LATCHKEY_DISABLE_COUNTING` is set, once a day, when invoking `latchkey`, a GET request is sent to [goatcounter.com](https://goatcounter.com). We don't store any sort of private information and don't track anything beyond a simple daily count of active users.
 - We reserve the right to change the license of future releases of Latchkey.
 - Latchkey was not tested on Windows.
 
