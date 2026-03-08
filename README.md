@@ -1,7 +1,7 @@
 # Latchkey
 
 [![npm](https://img.shields.io/npm/v/latchkey?style=flat-square)](https://npmjs.com/package/your-pkg)
-[![CI](https://img.shields.io/github/actions/workflow/status/imbue-ai/latchkey/ci.yml?style=flat-square)](https://github.com/imbue-ai/latchkey/actions)
+[![CI](https://img.shields.io/github/actions/workflow/status/imbue-ai/latchkey/test.yml?style=flat-square)](https://github.com/imbue-ai/latchkey/actions)
 [![license](https://img.shields.io/npm/l/latchkey?style=flat-square)](LICENSE)
 [![downloads](https://img.shields.io/npm/dm/latchkey?style=flat-square)](https://npmjs.com/package/latchkey)
 
