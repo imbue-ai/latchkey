@@ -7,6 +7,8 @@
 
 Inject API credentials into local agent requests.
 
+**[Full documentation](https://docs.imbue.com/latchkey)**
+
 ## Quick example
 
 ```bash
@@ -110,7 +112,7 @@ for an idea of how to build AI assistants for non-technical users on top of Latc
 
 ## Demo
 
-![Image](https://github.com/user-attachments/assets/3b487d35-0618-46e2-9fd6-e8c3eba2c311)
+![Image](https://github.com/user-attachments/assets/953eae6e-35ab-4d64-91f3-98b6843c502d)
 
 
 ## Direct usage
