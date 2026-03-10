@@ -95,6 +95,12 @@ npx skills add imbue-ai/latchkey
 npx clawhub install latchkey
 ```
 
+### As a Pi package
+
+```bash
+pi install npm:latchkey
+```
+
 ### Manually
 
 The exact steps will differ depending on the agent. Taking OpenCode as an example:
