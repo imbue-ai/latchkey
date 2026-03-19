@@ -162,10 +162,10 @@ async function clearAll(deps: CliDependencies, yes: boolean): Promise<void> {
   }
 }
 
-function createEncryptedStorageFromConfig(config: Config) {
+async function createEncryptedStorageFromConfig(config: Config) {
   const hasEncryptedData =
     existsSync(config.credentialStorePath) || existsSync(config.browserStatePath);
-  return new EncryptedStorage({
+  return EncryptedStorage.create({
     encryptionKeyOverride: config.encryptionKeyOverride,
     serviceName: config.serviceName,
     accountName: config.accountName,
@@ -173,7 +173,7 @@ function createEncryptedStorageFromConfig(config: Config) {
   });
 }
 
-function clearService(deps: CliDependencies, serviceName: string): void {
+async function clearService(deps: CliDependencies, serviceName: string): Promise<void> {
   const service = deps.registry.getByName(serviceName);
   if (service === null) {
     deps.errorLog(`Error: Unknown service: ${serviceName}`);
@@ -181,7 +181,7 @@ function clearService(deps: CliDependencies, serviceName: string): void {
     deps.exit(1);
   }
 
-  const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
+  const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
   const apiCredentialStore = new ApiCredentialStore(
     deps.config.credentialStorePath,
     encryptedStorage
@@ -256,13 +256,13 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       '--viable',
       'Only list services that either have stored credentials or can be authenticated via a browser.'
     )
-    .action((options: { builtin?: boolean; viable?: boolean }) => {
+    .action(async (options: { builtin?: boolean; viable?: boolean }) => {
       let services = deps.registry.services;
       if (options.builtin === true) {
         services = services.filter((service) => !(service instanceof RegisteredService));
       }
       if (options.viable === true) {
-        const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
+        const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
         const apiCredentialStore = new ApiCredentialStore(
           deps.config.credentialStorePath,
           encryptedStorage
@@ -300,7 +300,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       const authOptions = supportsBrowser ? ['browser', 'set'] : ['set'];
 
       // Credentials status
-      const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
+      const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
       const apiCredentialStore = new ApiCredentialStore(
         deps.config.credentialStorePath,
         encryptedStorage
@@ -413,7 +413,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .command('deregister')
     .description('Deregister a previously registered service instance.')
     .argument('<service_name>', 'Name of the registered service to remove')
-    .action((serviceName: string) => {
+    .action(async (serviceName: string) => {
       const service = deps.registry.getByName(serviceName);
       if (service === null) {
         deps.errorLog(`Error: Unknown service: ${serviceName}`);
@@ -427,7 +427,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         deps.exit(1);
       }
 
-      const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
+      const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
       const apiCredentialStore = new ApiCredentialStore(
         deps.config.credentialStorePath,
         encryptedStorage
@@ -457,7 +457,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       if (serviceName === undefined) {
         await clearAll(deps, options.yes ?? false);
       } else {
-        clearService(deps, serviceName);
+        await clearService(deps, serviceName);
       }
     });
 
@@ -465,7 +465,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .command('list')
     .description('List all stored credentials and their status.')
     .action(async () => {
-      const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
+      const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
       const apiCredentialStore = new ApiCredentialStore(
         deps.config.credentialStorePath,
         encryptedStorage
@@ -503,7 +503,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     )
     .allowUnknownOption()
     .allowExcessArguments()
-    .action((_serviceName: string, _options: unknown, command: { args: string[] }) => {
+    .action(async (_serviceName: string, _options: unknown, command: { args: string[] }) => {
       const [serviceName, ...curlArguments] = command.args;
       if (serviceName === undefined) {
         deps.errorLog('Error: Service name is required.');
@@ -527,7 +527,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         deps.exit(1);
       }
 
-      const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
+      const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
       const apiCredentialStore = new ApiCredentialStore(
         deps.config.credentialStorePath,
         encryptedStorage
@@ -552,7 +552,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       `\nExample:\n  $ latchkey auth set-nocurl aws <access-key-id> <secret-access-key>`
     )
     .allowExcessArguments()
-    .action((_serviceName: string, _options: unknown, command: { args: string[] }) => {
+    .action(async (_serviceName: string, _options: unknown, command: { args: string[] }) => {
       const [serviceName, ...noCurlArguments] = command.args;
       if (serviceName === undefined) {
         deps.errorLog('Error: Service name is required.');
@@ -566,7 +566,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         deps.exit(1);
       }
 
-      const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
+      const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
       const apiCredentialStore = new ApiCredentialStore(
         deps.config.credentialStorePath,
         encryptedStorage
@@ -608,7 +608,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         deps.exit(1);
       }
 
-      const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
+      const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
       const apiCredentialStore = new ApiCredentialStore(
         deps.config.credentialStorePath,
         encryptedStorage
@@ -661,7 +661,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         return;
       }
 
-      const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
+      const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
       const apiCredentialStore = new ApiCredentialStore(
         deps.config.credentialStorePath,
         encryptedStorage
@@ -713,7 +713,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         deps.exit(1);
       }
 
-      const encryptedStorage = createEncryptedStorageFromConfig(deps.config);
+      const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
       const apiCredentialStore = new ApiCredentialStore(
         deps.config.credentialStorePath,
         encryptedStorage

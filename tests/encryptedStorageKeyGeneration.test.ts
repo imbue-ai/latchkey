@@ -5,23 +5,23 @@ vi.mock('../src/keychain.js', async (importOriginal) => {
   const original = await importOriginal<typeof import('../src/keychain.js')>();
   return {
     ...original,
-    retrieveFromKeychain: () => null,
-    storeInKeychain: () => undefined,
+    retrieveFromKeychain: () => Promise.resolve(null),
+    storeInKeychain: () => Promise.resolve(undefined),
   };
 });
 
 describe('EncryptedStorage key generation guard', () => {
-  it('should throw EncryptionKeyLostError when allowKeyGeneration is false and keychain has no key', () => {
-    expect(() => new EncryptedStorage({ allowKeyGeneration: false })).toThrow(
+  it('should throw EncryptionKeyLostError when allowKeyGeneration is false and keychain has no key', async () => {
+    await expect(EncryptedStorage.create({ allowKeyGeneration: false })).rejects.toThrow(
       EncryptionKeyLostError
     );
   });
 
-  it('should generate a new key when allowKeyGeneration is true and keychain has no key', () => {
-    expect(() => new EncryptedStorage({ allowKeyGeneration: true })).not.toThrow();
+  it('should generate a new key when allowKeyGeneration is true and keychain has no key', async () => {
+    await expect(EncryptedStorage.create({ allowKeyGeneration: true })).resolves.toBeDefined();
   });
 
-  it('should generate a new key when allowKeyGeneration is not set and keychain has no key', () => {
-    expect(() => new EncryptedStorage({})).not.toThrow();
+  it('should generate a new key when allowKeyGeneration is not set and keychain has no key', async () => {
+    await expect(EncryptedStorage.create({})).resolves.toBeDefined();
   });
 });

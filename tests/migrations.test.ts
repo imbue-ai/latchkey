@@ -25,10 +25,10 @@ describe('migrations', () => {
   let encryptedStorage: EncryptedStorage;
   let config: Config;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'latchkey-migration-test-'));
     encryptionKey = generateKey();
-    encryptedStorage = new EncryptedStorage({ encryptionKeyOverride: encryptionKey });
+    encryptedStorage = await EncryptedStorage.create({ encryptionKeyOverride: encryptionKey });
     config = createTestConfig(tempDir);
   });
 

@@ -27,7 +27,7 @@ import { retrieveFromKeychain, KeychainNotAvailableError } from '../src/keychain
 
 const ENCRYPTED_FILE_PREFIX = 'LATCHKEY_ENCRYPTED:';
 
-function getEncryptionKey(): string {
+async function getEncryptionKey(): Promise<string> {
   // 1. Check environment variable via Config
   if (CONFIG.encryptionKeyOverride) {
     return CONFIG.encryptionKeyOverride;
@@ -35,7 +35,7 @@ function getEncryptionKey(): string {
 
   // 2. Check keychain
   try {
-    const keychainKey = retrieveFromKeychain(CONFIG.serviceName, CONFIG.accountName);
+    const keychainKey = await retrieveFromKeychain(CONFIG.serviceName, CONFIG.accountName);
     if (keychainKey) {
       return keychainKey;
     }
@@ -54,7 +54,7 @@ To generate a new key:
   process.exit(1);
 }
 
-function decryptCommand(filePath: string): void {
+async function decryptCommand(filePath: string): Promise<void> {
   if (!existsSync(filePath)) {
     console.error(`Error: File not found: ${filePath}`);
     process.exit(1);
@@ -66,7 +66,7 @@ function decryptCommand(filePath: string): void {
     process.exit(1);
   }
 
-  const storage = new EncryptedStorage({
+  const storage = await EncryptedStorage.create({
     serviceName: CONFIG.serviceName,
     accountName: CONFIG.accountName,
   });
@@ -81,7 +81,7 @@ function decryptCommand(filePath: string): void {
   console.error(`Decrypted: ${filePath}`);
 }
 
-function encryptCommand(filePath: string): void {
+async function encryptCommand(filePath: string): Promise<void> {
   if (!existsSync(filePath)) {
     console.error(`Error: File not found: ${filePath}`);
     process.exit(1);
@@ -93,7 +93,7 @@ function encryptCommand(filePath: string): void {
     process.exit(1);
   }
 
-  const key = getEncryptionKey();
+  const key = await getEncryptionKey();
   const encryptedData = encrypt(content, key);
   const dataToWrite = ENCRYPTED_FILE_PREFIX + encryptedData;
 
@@ -112,16 +112,16 @@ program
   .command('decrypt')
   .description('Decrypt file in place')
   .argument('<file>', 'Path to the encrypted file')
-  .action((filePath: string) => {
-    decryptCommand(filePath);
+  .action(async (filePath: string) => {
+    await decryptCommand(filePath);
   });
 
 program
   .command('encrypt')
   .description('Encrypt an unencrypted file in place')
   .argument('<file>', 'Path to the file to encrypt')
-  .action((filePath: string) => {
-    encryptCommand(filePath);
+  .action(async (filePath: string) => {
+    await encryptCommand(filePath);
   });
 
 program.parse();

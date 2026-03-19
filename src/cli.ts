@@ -13,6 +13,7 @@ import {
   EncryptedStorageError,
   EncryptionKeyLostError,
 } from './encryptedStorage.js';
+import { KeychainTimeoutError } from './keychain.js';
 import { MigrationError, runMigrations } from './migrations.js';
 import { loadRegisteredServicesIntoRegistry } from './registry.js';
 import { countDailyIfNeeded } from './dailyCounting.js';
@@ -44,7 +45,7 @@ const hasEncryptedData =
   existsSync(deps.config.credentialStorePath) || existsSync(deps.config.browserStatePath);
 
 try {
-  const encryptedStorage = new EncryptedStorage({
+  const encryptedStorage = await EncryptedStorage.create({
     encryptionKeyOverride: deps.config.encryptionKeyOverride,
     serviceName: deps.config.serviceName,
     accountName: deps.config.accountName,
@@ -52,6 +53,10 @@ try {
   });
   runMigrations(deps.config, encryptedStorage);
 } catch (error) {
+  if (error instanceof KeychainTimeoutError) {
+    console.error(`Error: ${error.message}`);
+    process.exit(1);
+  }
   if (error instanceof EncryptionKeyLostError || error instanceof MigrationError) {
     console.error(`Error: ${error.message}`);
     process.exit(1);
