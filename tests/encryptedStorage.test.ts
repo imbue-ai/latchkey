@@ -31,11 +31,11 @@ describe('EncryptedStorage', () => {
   });
 
   describe('with encryption key from Config', () => {
-    it('should encrypt data when encryptionKey is set', () => {
+    it('should encrypt data when encryptionKey is set', async () => {
       const filePath = join(tempDir, 'test.json.enc');
       const content = '{"token": "secret-value"}';
 
-      const storage = new EncryptedStorage({
+      const storage = await EncryptedStorage.create({
         encryptionKeyOverride: testKey,
       });
 
@@ -50,11 +50,11 @@ describe('EncryptedStorage', () => {
       expect(rawContent).not.toContain('secret-value');
     });
 
-    it('should decrypt data with the same key', () => {
+    it('should decrypt data with the same key', async () => {
       const filePath = join(tempDir, 'test.json.enc');
       const content = '{"token": "secret-value"}';
 
-      const storage = new EncryptedStorage({
+      const storage = await EncryptedStorage.create({
         encryptionKeyOverride: testKey,
       });
 
@@ -64,20 +64,20 @@ describe('EncryptedStorage', () => {
       expect(retrieved).toBe(content);
     });
 
-    it('should fail to decrypt with wrong key', () => {
+    it('should fail to decrypt with wrong key', async () => {
       const filePath = join(tempDir, 'test.json.enc');
       const content = '{"token": "secret-value"}';
       const key1 = generateKey();
       const key2 = generateKey();
 
       // Write with one key
-      const storageWrite = new EncryptedStorage({
+      const storageWrite = await EncryptedStorage.create({
         encryptionKeyOverride: key1,
       });
       storageWrite.writeFile(filePath, content);
 
       // Read with different key
-      const storageRead = new EncryptedStorage({
+      const storageRead = await EncryptedStorage.create({
         encryptionKeyOverride: key2,
       });
 
@@ -86,11 +86,11 @@ describe('EncryptedStorage', () => {
   });
 
   describe('file permissions', () => {
-    it('should set chmod 600 on written files', () => {
+    it('should set chmod 600 on written files', async () => {
       const filePath = join(tempDir, 'test.json.enc');
       const content = '{"token": "secret-value"}';
 
-      const storage = new EncryptedStorage({
+      const storage = await EncryptedStorage.create({
         encryptionKeyOverride: testKey,
       });
 
@@ -102,11 +102,11 @@ describe('EncryptedStorage', () => {
       expect(permissions).toBe(0o600);
     });
 
-    it('should create parent directories with chmod 700', () => {
+    it('should create parent directories with chmod 700', async () => {
       const filePath = join(tempDir, 'nested', 'deep', 'test.json.enc');
       const content = '{"token": "secret-value"}';
 
-      const storage = new EncryptedStorage({
+      const storage = await EncryptedStorage.create({
         encryptionKeyOverride: testKey,
       });
 
@@ -115,7 +115,7 @@ describe('EncryptedStorage', () => {
       expect(existsSync(filePath)).toBe(true);
     });
 
-    it('should allow overwriting file with secure permissions', () => {
+    it('should allow overwriting file with secure permissions', async () => {
       const filePath = join(tempDir, 'secure.json.enc');
       const content = '{"token": "secret-value"}';
 
@@ -123,7 +123,7 @@ describe('EncryptedStorage', () => {
       writeFileSync(filePath, 'existing content', { encoding: 'utf-8' });
       chmodSync(filePath, 0o600);
 
-      const storage = new EncryptedStorage({
+      const storage = await EncryptedStorage.create({
         encryptionKeyOverride: testKey,
       });
 
@@ -136,18 +136,18 @@ describe('EncryptedStorage', () => {
   });
 
   describe('readFile', () => {
-    it('should return null for non-existent file', () => {
+    it('should return null for non-existent file', async () => {
       const filePath = join(tempDir, 'nonexistent.json.enc');
 
-      const storage = new EncryptedStorage({
+      const storage = await EncryptedStorage.create({
         encryptionKeyOverride: testKey,
       });
 
       expect(storage.readFile(filePath)).toBeNull();
     });
 
-    it('should throw PathIsDirectoryError when path is a directory', () => {
-      const storage = new EncryptedStorage({
+    it('should throw PathIsDirectoryError when path is a directory', async () => {
+      const storage = await EncryptedStorage.create({
         encryptionKeyOverride: testKey,
       });
 
@@ -156,8 +156,8 @@ describe('EncryptedStorage', () => {
   });
 
   describe('writeFile', () => {
-    it('should throw PathIsDirectoryError when path is a directory', () => {
-      const storage = new EncryptedStorage({
+    it('should throw PathIsDirectoryError when path is a directory', async () => {
+      const storage = await EncryptedStorage.create({
         encryptionKeyOverride: testKey,
       });
 

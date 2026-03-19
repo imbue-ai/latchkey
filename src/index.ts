@@ -30,6 +30,7 @@ export {
   deleteFromKeychain,
   KeychainError,
   KeychainNotAvailableError,
+  KeychainTimeoutError,
 } from './keychain.js';
 
 export {

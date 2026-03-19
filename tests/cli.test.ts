@@ -28,13 +28,13 @@ import type { CurlResult } from '../src/curl.js';
 // Use a fixed test key for deterministic test behavior (32 bytes = 256 bits, base64 encoded)
 const TEST_ENCRYPTION_KEY = 'dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q=';
 
-function writeSecureFile(path: string, content: string): void {
-  const storage = new EncryptedStorage({ encryptionKeyOverride: TEST_ENCRYPTION_KEY });
+async function writeSecureFile(path: string, content: string): Promise<void> {
+  const storage = await EncryptedStorage.create({ encryptionKeyOverride: TEST_ENCRYPTION_KEY });
   storage.writeFile(path, content);
 }
 
-function readSecureFile(path: string): string | null {
-  const storage = new EncryptedStorage({ encryptionKeyOverride: TEST_ENCRYPTION_KEY });
+async function readSecureFile(path: string): Promise<string | null> {
+  const storage = await EncryptedStorage.create({ encryptionKeyOverride: TEST_ENCRYPTION_KEY });
   return storage.readFile(path);
 }
 
@@ -415,7 +415,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should include services with stored credentials when using --viable', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(
+      await writeSecureFile(
         storePath,
         JSON.stringify({
           slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
@@ -432,7 +432,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should include services with browser auth when using --viable', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(storePath, '{}');
+      await writeSecureFile(storePath, '{}');
 
       // The default mock slack service has getSession defined, so it supports browser auth
       // Ensure a graphical environment is available so browser auth is considered viable
@@ -456,7 +456,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should exclude services without credentials or browser auth when using --viable', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(storePath, '{}');
+      await writeSecureFile(storePath, '{}');
 
       const noLoginService: Service = {
         name: 'nologin',
@@ -486,7 +486,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should exclude browser-capable services when browser is disabled and no credentials with --viable', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(storePath, '{}');
+      await writeSecureFile(storePath, '{}');
 
       const deps = createMockDependencies({
         config: createMockConfig({ browserDisabled: true }),
@@ -500,7 +500,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should exclude browser-capable services when no graphical environment and no credentials with --viable', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(storePath, '{}');
+      await writeSecureFile(storePath, '{}');
 
       const originalPlatform = process.platform;
       const originalDisplay = process.env.DISPLAY;
@@ -533,7 +533,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should include services with credentials even when no graphical environment with --viable', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(
+      await writeSecureFile(
         storePath,
         JSON.stringify({
           slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
@@ -571,7 +571,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should include services with credentials even when browser is disabled with --viable', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(
+      await writeSecureFile(
         storePath,
         JSON.stringify({
           slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
@@ -590,7 +590,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should combine --builtin and --viable filters', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(
+      await writeSecureFile(
         storePath,
         JSON.stringify({
           'my-gitlab': {
@@ -628,7 +628,7 @@ describe('CLI commands with dependency injection', () => {
   describe('services info command', () => {
     it('should show login options, credentials status, and developer notes', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(storePath, '{}');
+      await writeSecureFile(storePath, '{}');
 
       const deps = createMockDependencies();
       await runCommand(['services', 'info', 'slack'], deps);
@@ -647,7 +647,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should show auth set only for services without browser login', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(storePath, '{}');
+      await writeSecureFile(storePath, '{}');
 
       const noLoginService: Service = {
         name: 'nologin',
@@ -676,7 +676,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should not list browser in authOptions when LATCHKEY_DISABLE_BROWSER is in effect', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(storePath, '{}');
+      await writeSecureFile(storePath, '{}');
 
       const deps = createMockDependencies({
         config: createMockConfig({ browserDisabled: true }),
@@ -689,7 +689,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should show valid credentials status when credentials are valid', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(
+      await writeSecureFile(
         storePath,
         JSON.stringify({
           slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
@@ -715,7 +715,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should show type as registered for registered services', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(storePath, '{}');
+      await writeSecureFile(storePath, '{}');
 
       const registeredService = new RegisteredService('my-gitlab', 'https://gitlab.example.com');
       const deps = createMockDependencies();
@@ -730,7 +730,7 @@ describe('CLI commands with dependency injection', () => {
   describe('clear command', () => {
     it('should delete credentials for a service', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(
+      await writeSecureFile(
         storePath,
         JSON.stringify({
           slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
@@ -741,7 +741,7 @@ describe('CLI commands with dependency injection', () => {
 
       await runCommand(['auth', 'clear', 'slack'], deps);
 
-      const storedData = JSON.parse(readSecureFile(storePath) ?? '{}') as StoredCredentials;
+      const storedData = JSON.parse(await readSecureFile(storePath) ?? '{}') as StoredCredentials;
       expect(storedData.slack).toBeUndefined();
     });
 
@@ -756,7 +756,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should preserve other services when clearing one', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(
+      await writeSecureFile(
         storePath,
         JSON.stringify({
           slack: { objectType: 'slack', token: 'slack-token', dCookie: 'slack-cookie' },
@@ -768,7 +768,7 @@ describe('CLI commands with dependency injection', () => {
 
       await runCommand(['auth', 'clear', 'slack'], deps);
 
-      const storedData = JSON.parse(readSecureFile(storePath) ?? '{}') as StoredCredentials;
+      const storedData = JSON.parse(await readSecureFile(storePath) ?? '{}') as StoredCredentials;
       expect(storedData.slack).toBeUndefined();
       expect(storedData.discord).toBeDefined();
       expect(storedData.discord?.token).toBe('discord-token');
@@ -777,11 +777,11 @@ describe('CLI commands with dependency injection', () => {
     it('should delete both store and browser state with -y flag', async () => {
       const storePath = join(tempDir, 'credentials.json');
       const browserStatePath = join(tempDir, 'browser_state.json');
-      writeSecureFile(
+      await writeSecureFile(
         storePath,
         JSON.stringify({ slack: { objectType: 'slack', token: 'test', dCookie: 'test' } })
       );
-      writeSecureFile(browserStatePath, '{}');
+      await writeSecureFile(browserStatePath, '{}');
 
       const deps = createMockDependencies();
 
@@ -795,7 +795,7 @@ describe('CLI commands with dependency injection', () => {
   describe('auth list command', () => {
     it('should list stored credentials with their status', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(
+      await writeSecureFile(
         storePath,
         JSON.stringify({
           slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
@@ -815,7 +815,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should output empty object when no credentials are stored', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(storePath, '{}');
+      await writeSecureFile(storePath, '{}');
 
       const deps = createMockDependencies();
       await runCommand(['auth', 'list'], deps);
@@ -827,7 +827,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should treat unknown services as valid', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(
+      await writeSecureFile(
         storePath,
         JSON.stringify({
           unknown: { objectType: 'rawCurl', curlArguments: ['-H', 'X-Token: secret'] },
@@ -849,7 +849,7 @@ describe('CLI commands with dependency injection', () => {
   describe('auth set command', () => {
     it('should store raw curl credentials', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(storePath, '{}');
+      await writeSecureFile(storePath, '{}');
 
       const deps = createMockDependencies();
 
@@ -860,7 +860,7 @@ describe('CLI commands with dependency injection', () => {
 
       expect(logs).toContain('Credentials stored.');
 
-      const storedData = JSON.parse(readSecureFile(storePath) ?? '{}') as Record<string, unknown>;
+      const storedData = JSON.parse(await readSecureFile(storePath) ?? '{}') as Record<string, unknown>;
       expect(storedData.slack).toEqual({
         objectType: 'rawCurl',
         curlArguments: ['-H', 'X-Token: secret', '-H', 'X-Other: value'],
@@ -893,7 +893,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should overwrite existing credentials', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(
+      await writeSecureFile(
         storePath,
         JSON.stringify({
           slack: { objectType: 'slack', token: 'old-token', dCookie: 'old-cookie' },
@@ -906,7 +906,7 @@ describe('CLI commands with dependency injection', () => {
 
       expect(logs).toContain('Credentials stored.');
 
-      const storedData = JSON.parse(readSecureFile(storePath) ?? '{}') as Record<string, unknown>;
+      const storedData = JSON.parse(await readSecureFile(storePath) ?? '{}') as Record<string, unknown>;
       expect(storedData.slack).toEqual({
         objectType: 'rawCurl',
         curlArguments: ['-H', 'X-Token: new-secret'],
@@ -917,7 +917,7 @@ describe('CLI commands with dependency injection', () => {
   describe('auth set-nocurl command', () => {
     it('should store telegram bot credentials', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(storePath, '{}');
+      await writeSecureFile(storePath, '{}');
 
       const deps = createMockDependencies({
         registry: new Registry([TELEGRAM]),
@@ -927,7 +927,7 @@ describe('CLI commands with dependency injection', () => {
 
       expect(logs).toContain('Credentials stored.');
 
-      const storedData = JSON.parse(readSecureFile(storePath) ?? '{}') as Record<string, unknown>;
+      const storedData = JSON.parse(await readSecureFile(storePath) ?? '{}') as Record<string, unknown>;
       expect(storedData.telegram).toEqual({
         objectType: 'telegramBot',
         token: '123456:ABC-DEF',
@@ -974,7 +974,7 @@ describe('CLI commands with dependency injection', () => {
   describe('curl command', () => {
     it('should pass arguments to subprocess', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(
+      await writeSecureFile(
         storePath,
         JSON.stringify({
           slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
@@ -997,7 +997,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should pass raw curl credentials to subprocess', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(
+      await writeSecureFile(
         storePath,
         JSON.stringify({
           slack: { objectType: 'rawCurl', curlArguments: ['-H', 'X-Custom: header'] },
@@ -1014,7 +1014,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should pass multiple arguments correctly', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(
+      await writeSecureFile(
         storePath,
         JSON.stringify({
           slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
@@ -1046,7 +1046,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should return subprocess exit code', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(
+      await writeSecureFile(
         storePath,
         JSON.stringify({
           slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
@@ -1080,7 +1080,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should read credentials from store and not call login', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(
+      await writeSecureFile(
         storePath,
         JSON.stringify({
           slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
@@ -1117,7 +1117,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should return error when no credentials in store', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(storePath, '{}');
+      await writeSecureFile(storePath, '{}');
 
       const deps = createMockDependencies();
 
@@ -1128,7 +1128,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should inject telegram bot token into URL path', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(
+      await writeSecureFile(
         storePath,
         JSON.stringify({
           telegram: { objectType: 'telegramBot', token: '123456:ABC-DEF' },
@@ -1147,7 +1147,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should work when service does not have getSession but credentials exist', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(
+      await writeSecureFile(
         storePath,
         JSON.stringify({
           nologin: { objectType: 'rawCurl', curlArguments: ['-H', 'X-API-Key: secret'] },
@@ -1212,7 +1212,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should return error when no graphical environment is available', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(storePath, '{}');
+      await writeSecureFile(storePath, '{}');
 
       const originalPlatform = process.platform;
       const originalDisplay = process.env.DISPLAY;
@@ -1426,7 +1426,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should not expose browser auth without --login-url', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(storePath, '{}');
+      await writeSecureFile(storePath, '{}');
 
       const deps = createMockDependencies({
         registry: new Registry([GITLAB]),
@@ -1566,7 +1566,7 @@ describe('CLI commands with dependency injection', () => {
 
       // Now store credentials for it
       const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(storePath, '{}');
+      await writeSecureFile(storePath, '{}');
 
       logs = [];
       exitCode = null;
@@ -1615,7 +1615,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should not expose browser auth for service without family', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(storePath, '{}');
+      await writeSecureFile(storePath, '{}');
 
       const deps = createMockDependencies({
         registry: new Registry([GITLAB]),
@@ -1647,7 +1647,7 @@ describe('CLI commands with dependency injection', () => {
 
       // Store credentials
       const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(
+      await writeSecureFile(
         storePath,
         JSON.stringify({
           'my-api': {
@@ -1726,7 +1726,7 @@ describe('CLI commands with dependency injection', () => {
 
       // Store credentials
       const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(
+      await writeSecureFile(
         storePath,
         JSON.stringify({
           'my-gitlab': {
@@ -1840,7 +1840,7 @@ describe('CLI commands with dependency injection', () => {
 
       // Store credentials for it
       const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(
+      await writeSecureFile(
         storePath,
         JSON.stringify({
           'my-gitlab': {
@@ -1885,7 +1885,7 @@ describe('CLI commands with dependency injection', () => {
 
       // Store and then clear credentials
       const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(
+      await writeSecureFile(
         storePath,
         JSON.stringify({
           'my-gitlab': {

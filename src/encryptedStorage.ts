@@ -61,11 +61,16 @@ export interface EncryptedStorageOptions {
 export class EncryptedStorage {
   private readonly key: string;
 
-  constructor(options: EncryptedStorageOptions = {}) {
-    this.key = EncryptedStorage.initializeKey(options);
+  private constructor(key: string) {
+    this.key = key;
   }
 
-  private static initializeKey(options: EncryptedStorageOptions): string {
+  static async create(options: EncryptedStorageOptions = {}): Promise<EncryptedStorage> {
+    const key = await EncryptedStorage.initializeKey(options);
+    return new EncryptedStorage(key);
+  }
+
+  private static async initializeKey(options: EncryptedStorageOptions): Promise<string> {
     // If key was provided via override, use it
     if (options.encryptionKeyOverride !== undefined && options.encryptionKeyOverride !== null) {
       return options.encryptionKeyOverride;
@@ -75,7 +80,7 @@ export class EncryptedStorage {
     const accountName = options.accountName ?? DEFAULT_KEYRING_ACCOUNT_NAME;
 
     try {
-      const keychainKey = retrieveFromKeychain(serviceName, accountName);
+      const keychainKey = await retrieveFromKeychain(serviceName, accountName);
       if (keychainKey) {
         return keychainKey;
       }
@@ -86,7 +91,7 @@ export class EncryptedStorage {
 
       // Generate new key and store in keychain
       const newKey = generateKey();
-      storeInKeychain(serviceName, accountName, newKey);
+      await storeInKeychain(serviceName, accountName, newKey);
       return newKey;
     } catch (error) {
       if (error instanceof KeychainNotAvailableError) {

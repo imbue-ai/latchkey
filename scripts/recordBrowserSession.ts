@@ -210,7 +210,7 @@ async function record(
   const recordedEntries: RecordedEntry[] = [];
   const startTime = { value: 0 };
 
-  const encryptedStorage = new EncryptedStorage({
+  const encryptedStorage = await EncryptedStorage.create({
     encryptionKeyOverride: CONFIG.encryptionKeyOverride,
     serviceName: CONFIG.serviceName,
     accountName: CONFIG.accountName,
