@@ -66,10 +66,7 @@ async function decryptCommand(filePath: string): Promise<void> {
     process.exit(1);
   }
 
-  const storage = await EncryptedStorage.create({
-    serviceName: CONFIG.serviceName,
-    accountName: CONFIG.accountName,
-  });
+  const storage = await EncryptedStorage.create(CONFIG);
   const content = storage.readFile(filePath);
 
   if (content === null) {
