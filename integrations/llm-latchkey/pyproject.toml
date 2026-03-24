@@ -1,0 +1,25 @@
+[project]
+name = "llm-latchkey"
+version = "1.0.0"
+description = "An LLM tool plugin for using Latchkey to make authenticated HTTP API requests."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [
+    { name = "Hynek Urban", email = "hynek@imbue.com" },
+]
+dependencies = [
+    "llm",
+]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project.urls]
+Homepage = "https://github.com/imbue-ai/latchkey/integrations/llm-latchkey"
+Issues = "https://github.com/imbue-ai/latchkey/issues"
+Repository = "https://github.com/imbue-ai/latchkey"
+
+[project.entry-points.llm]
+latchkey = "llm_latchkey"
