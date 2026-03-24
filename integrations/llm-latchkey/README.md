@@ -1,6 +1,6 @@
 # llm-latchkey
 
-An plugin for Simon Willison's [LLM](https://llm.datasette.io/) tool that lets models make authenticated HTTP API requests via [Latchkey](https://github.com/imbue-ai/latchkey).
+A plugin for Simon Willison's [LLM](https://llm.datasette.io/) tool that lets models make authenticated HTTP API requests via [Latchkey](https://github.com/imbue-ai/latchkey).
 
 ## Installation
 

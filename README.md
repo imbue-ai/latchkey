@@ -104,10 +104,10 @@ mkdir -p ~/.opencode/skills/latchkey
 latchkey skill-md > ~/.opencode/skills/latchkey/SKILL.md
 ```
 
-### Passepartout
+### Using the Python `llm` tool
 
-Check out our [Passepartout demo app](https://github.com/imbue-ai/passepartout)
-for an idea of how to build AI assistants for non-technical users on top of Latchkey.
+See [integrations/llm-latchkey/README.md](integrations/llm-latchkey/README.md).
+Also check out our [llm-webchat](https://github.com/imbue-ai/llm-webchat) web UI that can be used together with Latchkey!
 
 
 ## Demo
