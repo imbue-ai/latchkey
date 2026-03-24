@@ -6,3 +6,6 @@ dist/
 /latchkey
 
 .mng/settings.local.toml
+
+__pycache__/
+*.egg-info/
