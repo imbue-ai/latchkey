@@ -1,7 +1,7 @@
 import { GoogleService, type GoogleServiceConfig } from './base.js';
 
 const CONFIG: GoogleServiceConfig = {
-  api: 'sheets.googleapis.com',
+  apis: ['sheets.googleapis.com', 'drive.googleapis.com'],
   scopes: [
     'https://www.googleapis.com/auth/spreadsheets',
     'https://www.googleapis.com/auth/drive.readonly',

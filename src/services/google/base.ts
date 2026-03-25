@@ -297,8 +297,8 @@ async function waitForGoogleLogin(page: Page): Promise<void> {
  * Configuration for a specific Google API service.
  */
 export interface GoogleServiceConfig {
-  /** The Google API identifier (e.g., 'gmail.googleapis.com'). */
-  readonly api: string;
+  /** The Google API identifiers to enable (e.g., ['gmail.googleapis.com']). */
+  readonly apis: readonly string[];
   /** OAuth scopes required by this service. */
   readonly scopes: readonly string[];
 }
@@ -378,7 +378,9 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
         `Finalizing ${this.service.displayName} login...\nThis can take a few minutes.`
       );
       const projectSlug = await createProject(page, appName);
-      await enableApi(page, projectSlug, this.config.api);
+      for (const api of this.config.apis) {
+        await enableApi(page, projectSlug, api);
+      }
       await configureBranding(page, projectSlug, appName);
       const { clientId, clientSecret } = await createOAuthClient(page, appName);
       await page.close();
