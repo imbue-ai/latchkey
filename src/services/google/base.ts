@@ -15,6 +15,7 @@ import {
   generateLatchkeyAppName,
   showSpinnerPage,
   withTempBrowserContext,
+  typeLikeHuman,
   type BrowserLaunchOptions,
 } from '../../playwrightUtils.js';
 import {
@@ -74,7 +75,7 @@ export class GoogleApiKeyCredentials implements ApiCredentials {
   }
 }
 
-const DEFAULT_TIMEOUT_MS = 8000;
+const DEFAULT_TIMEOUT_MS = 12000;
 const LOGIN_TIMEOUT_MS = 120000;
 const GOOGLE_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 
@@ -133,7 +134,8 @@ async function createProject(page: Page, appName: string): Promise<string> {
 
   const projectNameInput = page.locator('proj-name-id-input input');
   await projectNameInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS * 100 });
-  await projectNameInput.fill(appName);
+  await projectNameInput.clear();
+  await typeLikeHuman(page, projectNameInput, appName);
 
   const createButton = page.locator('button[type="submit"]');
   await createButton.click();
@@ -297,8 +299,8 @@ async function waitForGoogleLogin(page: Page): Promise<void> {
  * Configuration for a specific Google API service.
  */
 export interface GoogleServiceConfig {
-  /** The Google API identifier (e.g., 'gmail.googleapis.com'). */
-  readonly api: string;
+  /** The Google API identifiers to enable (e.g., ['gmail.googleapis.com']). */
+  readonly apis: readonly string[];
   /** OAuth scopes required by this service. */
   readonly scopes: readonly string[];
 }
@@ -372,13 +374,21 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
 
       const serviceSuffix = this.service.name.replace(/^google/, '');
       const appName = generateLatchkeyAppName(serviceSuffix);
+      // Now assert that appName is max 30 characters as requested by Google:
+      if (appName.length > 30) {
+        throw new LoginFailedError(
+          `Generated app name "${appName}" exceeds Google OAuth project name limit of 30 characters.`
+        );
+      }
 
       await showSpinnerPage(
         context,
         `Finalizing ${this.service.displayName} login...\nThis can take a few minutes.`
       );
       const projectSlug = await createProject(page, appName);
-      await enableApi(page, projectSlug, this.config.api);
+      for (const api of this.config.apis) {
+        await enableApi(page, projectSlug, api);
+      }
       await configureBranding(page, projectSlug, appName);
       const { clientId, clientSecret } = await createOAuthClient(page, appName);
       await page.close();

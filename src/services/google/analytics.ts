@@ -1,7 +1,7 @@
 import { GoogleService, type GoogleServiceConfig } from './base.js';
 
 const CONFIG: GoogleServiceConfig = {
-  api: 'analyticsdata.googleapis.com',
+  apis: ['analyticsdata.googleapis.com'],
   scopes: ['https://www.googleapis.com/auth/analytics.readonly'],
 };
 

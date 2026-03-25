@@ -1,7 +1,7 @@
 import { GoogleService, type GoogleServiceConfig } from './base.js';
 
 const CONFIG: GoogleServiceConfig = {
-  api: 'gmail.googleapis.com',
+  apis: ['gmail.googleapis.com'],
   scopes: [
     'https://www.googleapis.com/auth/gmail.readonly',
     'https://www.googleapis.com/auth/gmail.modify',
