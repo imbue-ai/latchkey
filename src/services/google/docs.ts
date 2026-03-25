@@ -2,7 +2,10 @@ import { GoogleService, type GoogleServiceConfig } from './base.js';
 
 const CONFIG: GoogleServiceConfig = {
   api: 'docs.googleapis.com',
-  scopes: ['https://www.googleapis.com/auth/documents'],
+  scopes: [
+    'https://www.googleapis.com/auth/documents',
+    'https://www.googleapis.com/auth/drive.readonly',
+  ],
 };
 
 export class GoogleDocs extends GoogleService {

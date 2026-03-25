@@ -2,7 +2,10 @@ import { GoogleService, type GoogleServiceConfig } from './base.js';
 
 const CONFIG: GoogleServiceConfig = {
   api: 'sheets.googleapis.com',
-  scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+  scopes: [
+    'https://www.googleapis.com/auth/spreadsheets',
+    'https://www.googleapis.com/auth/drive.readonly',
+  ],
 };
 
 export class GoogleSheets extends GoogleService {
@@ -15,7 +18,7 @@ export class GoogleSheets extends GoogleService {
     'It may take a few minutes before the OAuth client is ready to use.';
 
   readonly credentialCheckCurlArguments = [
-    'https://sheets.googleapis.com/v4/spreadsheets?fields=spreadsheetId&pageSize=1',
+    "https://www.googleapis.com/drive/v3/files?pageSize=1&fields=files(id)&q=mimeType%3D'application/vnd.google-apps.spreadsheet'",
   ] as const;
 
   protected readonly config = CONFIG;
