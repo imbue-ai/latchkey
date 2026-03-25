@@ -374,6 +374,12 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
 
       const serviceSuffix = this.service.name.replace(/^google/, '');
       const appName = generateLatchkeyAppName(serviceSuffix);
+      // Now assert that appName is max 30 characters as requested by Google:
+      if (appName.length > 30) {
+        throw new LoginFailedError(
+          `Generated app name "${appName}" exceeds Google OAuth project name limit of 30 characters.`
+        );
+      }
 
       await showSpinnerPage(
         context,

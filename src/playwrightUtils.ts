@@ -70,8 +70,8 @@ export interface BrowserLaunchOptions {
  * Used for creating unique names when registering API keys, apps, or tokens.
  */
 export function generateLatchkeyAppName(suffix?: string): string {
-  const date = new Date().toISOString().slice(0, 10);
-  const randomSuffix = randomUUID().slice(0, 4);
+  const date = new Date().toISOString().slice(5, 10);
+  const randomSuffix = randomUUID().slice(0, 2);
   return `Latchkey-${date}-${randomSuffix}${suffix ?? ''}`;
 }
 
