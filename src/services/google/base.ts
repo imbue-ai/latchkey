@@ -75,7 +75,7 @@ export class GoogleApiKeyCredentials implements ApiCredentials {
   }
 }
 
-const DEFAULT_TIMEOUT_MS = 8000;
+const DEFAULT_TIMEOUT_MS = 12000;
 const LOGIN_TIMEOUT_MS = 120000;
 const GOOGLE_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 
