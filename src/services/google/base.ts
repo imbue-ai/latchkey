@@ -15,6 +15,7 @@ import {
   generateLatchkeyAppName,
   showSpinnerPage,
   withTempBrowserContext,
+  typeLikeHuman,
   type BrowserLaunchOptions,
 } from '../../playwrightUtils.js';
 import {
@@ -133,7 +134,8 @@ async function createProject(page: Page, appName: string): Promise<string> {
 
   const projectNameInput = page.locator('proj-name-id-input input');
   await projectNameInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS * 100 });
-  await projectNameInput.fill(appName);
+  await projectNameInput.clear();
+  await typeLikeHuman(page, projectNameInput, appName);
 
   const createButton = page.locator('button[type="submit"]');
   await createButton.click();
