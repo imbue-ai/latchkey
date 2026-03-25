@@ -21,9 +21,8 @@ class LinearServiceSession extends BrowserFollowupServiceSession {
     }
 
     const request = response.request();
-    // Empirically, Linear always sends this request. When not logged in,
-    // the response only contains "data.organizationMeta". Otherwise it can
-    // contain different things based on how exactly the user authenticated.
+    // Empirically, when not logged in, the response only contains "data.organizationMeta" or "data.trackAnonymousEvent".
+    // Otherwise it can contain many different things.
     if (request.url() === 'https://client-api.linear.app/graphql' && request.method() === 'POST') {
       if (response.status() === 200) {
         try {
@@ -32,7 +31,7 @@ class LinearServiceSession extends BrowserFollowupServiceSession {
             .json()
             .then((jsonData: unknown) => {
               const data = (jsonData as { data?: Record<string, unknown> }).data ?? {};
-              if (Object.keys(data).some((key) => key !== 'organizationMeta')) {
+              if (Object.keys(data).some((key) => key !== 'organizationMeta' && key !== 'trackAnonymousEvent')) {
                 this.isLoggedIn = true;
               }
             })
