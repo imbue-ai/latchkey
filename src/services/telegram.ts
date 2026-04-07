@@ -4,10 +4,7 @@ import { z } from 'zod';
 import { ApiCredentialStatus, type ApiCredentials } from '../apiCredentials.js';
 import { extractUrlFromCurlArguments } from '../curl.js';
 import { EncryptedStorage } from '../encryptedStorage.js';
-import {
-  type BrowserLaunchOptions,
-  withTempBrowserContext,
-} from '../playwrightUtils.js';
+import { type BrowserLaunchOptions, withTempBrowserContext } from '../playwrightUtils.js';
 import {
   LoginFailedError,
   NoCurlCredentialsNotSupportedError,
@@ -209,9 +206,7 @@ class TelegramBrowserSession extends ServiceSession {
 
       // Get the auth_key for the active DC (no truncation -- we need the full key)
       const dcKeyName = `dc${String(dcId)}_auth_key`;
-      const authKeyRaw: string | null = await page.evaluate(
-        `localStorage.getItem('${dcKeyName}')`
-      );
+      const authKeyRaw: string | null = await page.evaluate(`localStorage.getItem('${dcKeyName}')`);
 
       if (!authKeyRaw) {
         throw new LoginFailedError(
@@ -221,7 +216,7 @@ class TelegramBrowserSession extends ServiceSession {
 
       // The auth_key value is JSON-encoded (wrapped in extra quotes)
       const authKeyHex = authKeyRaw.startsWith('"')
-        ? JSON.parse(authKeyRaw) as string
+        ? (JSON.parse(authKeyRaw) as string)
         : authKeyRaw;
 
       if (authKeyHex.length !== 512) {
@@ -231,9 +226,7 @@ class TelegramBrowserSession extends ServiceSession {
       }
 
       // Get user info from the account data
-      const accountData: string | null = await page.evaluate(
-        `localStorage.getItem('account1')`
-      );
+      const accountData: string | null = await page.evaluate(`localStorage.getItem('account1')`);
       let firstName = '';
       if (accountData) {
         try {
@@ -244,14 +237,11 @@ class TelegramBrowserSession extends ServiceSession {
         }
       }
 
-      const credentials = new TelegramUserCredentials(
-        dcId,
-        authKeyHex,
-        userAuth.id,
-        firstName
-      );
+      const credentials = new TelegramUserCredentials(dcId, authKeyHex, userAuth.id, firstName);
 
-      console.log(`\nExtracted credentials for user ${firstName} (id=${userAuth.id}, DC=${String(dcId)}).`);
+      console.log(
+        `\nExtracted credentials for user ${firstName} (id=${userAuth.id}, DC=${String(dcId)}).`
+      );
 
       return credentials;
     });

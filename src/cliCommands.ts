@@ -7,6 +7,7 @@ import { existsSync, unlinkSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { ApiCredentialStore } from './apiCredentialStore.js';
 import { ApiCredentialStatus, ApiCredentials, RawCurlCredentials } from './apiCredentials.js';
+import { serializeCredentials } from './apiCredentialsSerialization.js';
 import {
   BROWSER_SOURCES,
   BrowserNotFoundError,
@@ -491,6 +492,26 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       const entries = Object.fromEntries(await Promise.all(statusChecks));
 
       deps.log(JSON.stringify(entries, null, 2));
+    });
+
+  authCommand
+    .command('get')
+    .description('Get stored credentials for a service as JSON.')
+    .argument('<service_name>', 'Name of the service to get credentials for')
+    .action(async (serviceName: string) => {
+      const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
+      const apiCredentialStore = new ApiCredentialStore(
+        deps.config.credentialStorePath,
+        encryptedStorage
+      );
+
+      const credentials = apiCredentialStore.get(serviceName);
+      if (credentials === null) {
+        deps.errorLog(`No credentials stored for service '${serviceName}'.`);
+        deps.exit(1);
+      }
+
+      deps.log(JSON.stringify(serializeCredentials(credentials), null, 2));
     });
 
   authCommand
