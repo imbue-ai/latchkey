@@ -1,14 +1,21 @@
+import { createInterface } from 'readline';
 import { writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import type { BrowserContext, Response } from 'playwright';
+import type { Response } from 'playwright';
 import { z } from 'zod';
 import { type ApiCredentials } from '../apiCredentials.js';
 import { extractUrlFromCurlArguments } from '../curl.js';
+import { EncryptedStorage } from '../encryptedStorage.js';
 import {
-  BrowserFollowupServiceSession,
+  type BrowserLaunchOptions,
+  withTempBrowserContext,
+} from '../playwrightUtils.js';
+import {
+  LoginFailedError,
   NoCurlCredentialsNotSupportedError,
   Service,
+  ServiceSession,
 } from './core/base.js';
 
 const BASE_API_URL = 'https://api.telegram.org/';
@@ -77,6 +84,7 @@ interface CapturedRequest {
 interface TelegramBrowserDump {
   localStorage: Record<string, string>;
   sessionStorage: Record<string, string>;
+  indexedDBKeyNames: string[];
   cookies: Array<{
     name: string;
     value: string;
@@ -89,22 +97,29 @@ interface TelegramBrowserDump {
 }
 
 /**
- * Service session that captures auth data from web.telegram.org during login.
- *
- * This is a prototyping/exploration session: it monitors all network traffic,
- * then after the user logs in and reaches the main chat view, it dumps
- * localStorage, sessionStorage, cookies, and captured network requests
- * to a temp file for inspection.
+ * Wait for the user to press Enter in the terminal.
  */
-class TelegramExplorationSession extends BrowserFollowupServiceSession {
-  private isLoggedIn = false;
+function waitForEnter(prompt: string): Promise<void> {
+  return new Promise((resolve) => {
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    rl.question(prompt, () => {
+      rl.close();
+      resolve();
+    });
+  });
+}
+
+/**
+ * Exploration session that captures all auth-related data from web.telegram.org.
+ *
+ * Overrides login() to use a manual "press Enter" flow instead of auto-detection,
+ * since the Telegram Web A SPA loads its full bundle before login (making
+ * response-based login detection unreliable).
+ */
+class TelegramExplorationSession extends ServiceSession {
   private capturedRequests: CapturedRequest[] = [];
 
   onResponse(response: Response): void {
-    if (this.isLoggedIn) {
-      return;
-    }
-
     const request = response.request();
     const url = request.url();
 
@@ -121,7 +136,6 @@ class TelegramExplorationSession extends BrowserFollowupServiceSession {
           let responseBodySnippet = '';
           try {
             const body = await response.text();
-            // Keep first 2000 chars to avoid huge dumps
             responseBodySnippet = body.slice(0, 2000);
           } catch {
             responseBodySnippet = '<could not read body>';
@@ -140,117 +154,179 @@ class TelegramExplorationSession extends BrowserFollowupServiceSession {
         }
       })();
     }
-
-    // Detect login completion: look for requests to the main web app API
-    // that indicate the user has successfully authenticated.
-    // Telegram Web A uses its own MTProto-over-websocket, but also makes
-    // HTTPS requests. We look for successful API calls that only happen
-    // when logged in.
-    if (
-      url.includes('web.telegram.org') &&
-      (url.includes('/k/') || url.includes('/a/')) &&
-      response.status() === 200
-    ) {
-      // Check if this looks like the main app page (not the login page)
-      void response
-        .text()
-        .then((text) => {
-          // The main app page will have certain markers
-          if (
-            text.includes('tgme_page') ||
-            text.includes('im_page_wrap') ||
-            text.includes('chat-list') ||
-            text.includes('messages-container') ||
-            text.length > 50000 // Main app bundle is large
-          ) {
-            this.isLoggedIn = true;
-          }
-        })
-        .catch(() => {
-          // Ignore errors
-        });
-    }
   }
 
   protected isLoginComplete(): boolean {
-    return this.isLoggedIn;
+    // Not used -- we override login() entirely.
+    return false;
   }
 
-  protected async performBrowserFollowup(
-    context: BrowserContext
-  ): Promise<ApiCredentials | null> {
-    const page = context.pages()[0];
-    if (!page) {
-      console.log('No page found in context');
-      return null;
-    }
+  protected finalizeCredentials(): Promise<ApiCredentials | null> {
+    // Not used -- we override login() entirely.
+    return Promise.resolve(null);
+  }
 
-    // Wait a moment for any remaining requests to settle
-    await page.waitForTimeout(3000);
+  override async login(
+    encryptedStorage: EncryptedStorage,
+    launchOptions: BrowserLaunchOptions = {}
+  ): Promise<ApiCredentials> {
+    return withTempBrowserContext(encryptedStorage, launchOptions, async ({ context }) => {
+      const page = await context.newPage();
 
-    // Extract localStorage (runs in browser context)
-    const localStorageData: Record<string, string> = await page.evaluate(
-      `(() => {
-        const data = {};
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key) {
-            const value = localStorage.getItem(key);
-            if (value) {
-              data[key] = value.length > 500 ? value.slice(0, 500) + '...[truncated]' : value;
+      // Capture all network responses
+      context.on('response', (response) => {
+        this.onResponse(response);
+      });
+
+      // Navigate to Telegram Web
+      await page.goto(this.service.loginUrl);
+
+      console.log('\n=== Telegram Login ===');
+      console.log('A browser window has opened to web.telegram.org.');
+      console.log('Please log in with your phone number and verification code.');
+      console.log('Once you see your chat list, come back here.\n');
+
+      await waitForEnter('Press Enter after you have logged in... ');
+
+      console.log('\nCapturing browser data...');
+
+      // Wait for any in-flight requests to settle
+      await page.waitForTimeout(2000);
+
+      // Extract localStorage (string expression evaluated in browser context)
+      const localStorageData: Record<string, string> = await page.evaluate(
+        `(() => {
+          const data = {};
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key) {
+              const value = localStorage.getItem(key);
+              if (value) {
+                data[key] = value.length > 2000 ? value.slice(0, 2000) + '...[truncated]' : value;
+              }
             }
           }
-        }
-        return data;
-      })()`
-    );
+          return data;
+        })()`
+      );
 
-    // Extract sessionStorage (runs in browser context)
-    const sessionStorageData: Record<string, string> = await page.evaluate(
-      `(() => {
-        const data = {};
-        for (let i = 0; i < sessionStorage.length; i++) {
-          const key = sessionStorage.key(i);
-          if (key) {
-            const value = sessionStorage.getItem(key);
-            if (value) {
-              data[key] = value.length > 500 ? value.slice(0, 500) + '...[truncated]' : value;
+      // Extract sessionStorage
+      const sessionStorageData: Record<string, string> = await page.evaluate(
+        `(() => {
+          const data = {};
+          for (let i = 0; i < sessionStorage.length; i++) {
+            const key = sessionStorage.key(i);
+            if (key) {
+              const value = sessionStorage.getItem(key);
+              if (value) {
+                data[key] = value.length > 2000 ? value.slice(0, 2000) + '...[truncated]' : value;
+              }
             }
           }
-        }
-        return data;
-      })()`
-    );
+          return data;
+        })()`
+      );
 
-    // Extract cookies
-    const cookies = await context.cookies();
+      // Try to list IndexedDB database names and object store names
+      const indexedDBKeyNames: string[] = await page.evaluate(
+        `(async () => {
+          try {
+            const databases = await indexedDB.databases();
+            const results = [];
+            for (const db of databases) {
+              results.push('DB: ' + db.name + ' (v' + db.version + ')');
+              try {
+                const openReq = indexedDB.open(db.name, db.version);
+                const opened = await new Promise((resolve, reject) => {
+                  openReq.onsuccess = () => resolve(openReq.result);
+                  openReq.onerror = () => reject(openReq.error);
+                });
+                const storeNames = Array.from(opened.objectStoreNames);
+                for (const storeName of storeNames) {
+                  results.push('  Store: ' + storeName);
+                  try {
+                    const tx = opened.transaction(storeName, 'readonly');
+                    const store = tx.objectStore(storeName);
+                    const countReq = store.count();
+                    const count = await new Promise((resolve, reject) => {
+                      countReq.onsuccess = () => resolve(countReq.result);
+                      countReq.onerror = () => reject(countReq.error);
+                    });
+                    results.push('    count: ' + count);
+                    // Sample first 3 keys
+                    const keysReq = store.getAllKeys();
+                    const keys = await new Promise((resolve, reject) => {
+                      keysReq.onsuccess = () => resolve(keysReq.result);
+                      keysReq.onerror = () => reject(keysReq.error);
+                    });
+                    const sampleKeys = keys.slice(0, 5).map(k => String(k));
+                    results.push('    sample keys: ' + sampleKeys.join(', '));
+                  } catch (e) {
+                    results.push('    error reading store: ' + e);
+                  }
+                }
+                opened.close();
+              } catch (e) {
+                results.push('  error opening: ' + e);
+              }
+            }
+            return results;
+          } catch (e) {
+            return ['indexedDB.databases() not supported or error: ' + e];
+          }
+        })()`
+      );
 
-    const dump: TelegramBrowserDump = {
-      localStorage: localStorageData,
-      sessionStorage: sessionStorageData,
-      cookies: cookies.map((c) => ({
-        name: c.name,
-        value: c.value.length > 200 ? c.value.slice(0, 200) + '...' : c.value,
-        domain: c.domain,
-        path: c.path,
-        httpOnly: c.httpOnly,
-        secure: c.secure,
-      })),
-      capturedRequests: this.capturedRequests,
-    };
+      // Extract cookies
+      const cookies = await context.cookies();
 
-    const dumpPath = join(tmpdir(), 'latchkey-telegram-dump.json');
-    writeFileSync(dumpPath, JSON.stringify(dump, null, 2));
-    console.log(`\n=== Telegram browser data dumped to: ${dumpPath} ===`);
-    console.log(`\nLocalStorage keys: ${Object.keys(localStorageData).join(', ')}`);
-    console.log(`SessionStorage keys: ${Object.keys(sessionStorageData).join(', ')}`);
-    console.log(`Cookies: ${cookies.map((c) => c.name).join(', ')}`);
-    console.log(`Captured requests: ${this.capturedRequests.length}`);
-    console.log(`\nInspect the dump file for full details.`);
+      const dump: TelegramBrowserDump = {
+        localStorage: localStorageData,
+        sessionStorage: sessionStorageData,
+        indexedDBKeyNames,
+        cookies: cookies.map((c) => ({
+          name: c.name,
+          value: c.value.length > 200 ? c.value.slice(0, 200) + '...' : c.value,
+          domain: c.domain,
+          path: c.path,
+          httpOnly: c.httpOnly,
+          secure: c.secure,
+        })),
+        capturedRequests: this.capturedRequests,
+      };
 
-    // For now, return null -- this is an exploration session.
-    // Once we know what tokens to extract, we'll return real credentials.
-    return null;
+      const dumpPath = join(tmpdir(), 'latchkey-telegram-dump.json');
+      writeFileSync(dumpPath, JSON.stringify(dump, null, 2));
+
+      console.log(`\n=== Telegram browser data dumped to: ${dumpPath} ===`);
+      console.log(`\nLocalStorage keys (${Object.keys(localStorageData).length}):`);
+      for (const key of Object.keys(localStorageData)) {
+        const val = localStorageData[key] ?? '';
+        console.log(`  ${key}: ${val.slice(0, 80)}${val.length > 80 ? '...' : ''}`);
+      }
+      console.log(`\nSessionStorage keys (${Object.keys(sessionStorageData).length}):`);
+      for (const key of Object.keys(sessionStorageData)) {
+        const val = sessionStorageData[key] ?? '';
+        console.log(`  ${key}: ${val.slice(0, 80)}${val.length > 80 ? '...' : ''}`);
+      }
+      console.log(`\nIndexedDB:`);
+      for (const line of indexedDBKeyNames) {
+        console.log(`  ${line}`);
+      }
+      console.log(
+        `\nTelegram cookies: ${cookies
+          .filter((c) => c.domain.includes('telegram'))
+          .map((c) => c.name)
+          .join(', ') || '(none)'}`
+      );
+      console.log(`Captured requests: ${this.capturedRequests.length}`);
+      console.log(`\nInspect the dump file for full details.`);
+
+      // Return a LoginFailedError for now -- this is exploration only.
+      throw new LoginFailedError(
+        'Exploration complete. Data dumped to ' + dumpPath + '. No credentials extracted yet.'
+      );
+    });
   }
 }
 
