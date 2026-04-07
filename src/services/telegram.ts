@@ -1,10 +1,7 @@
 import { createInterface } from 'readline';
-import { writeFileSync } from 'fs';
-import { tmpdir } from 'os';
-import { join } from 'path';
 import type { Response } from 'playwright';
 import { z } from 'zod';
-import { type ApiCredentials } from '../apiCredentials.js';
+import { ApiCredentialStatus, type ApiCredentials } from '../apiCredentials.js';
 import { extractUrlFromCurlArguments } from '../curl.js';
 import { EncryptedStorage } from '../encryptedStorage.js';
 import {
@@ -20,11 +17,10 @@ import {
 
 const BASE_API_URL = 'https://api.telegram.org/';
 
-/**
- * Telegram Bot API credentials.
- * The bot token is embedded in the URL path as specified by the Telegram Bot API:
- * https://api.telegram.org/bot<token>/METHOD_NAME
- */
+// -------------------------------------------------------------------
+// Credential type: Telegram Bot (for Bot API via curl)
+// -------------------------------------------------------------------
+
 export const TelegramBotCredentialsSchema = z.object({
   objectType: z.literal('telegramBot'),
   token: z.string(),
@@ -32,6 +28,11 @@ export const TelegramBotCredentialsSchema = z.object({
 
 export type TelegramBotCredentialsData = z.infer<typeof TelegramBotCredentialsSchema>;
 
+/**
+ * Telegram Bot API credentials.
+ * The bot token is embedded in the URL path as specified by the Telegram Bot API:
+ * https://api.telegram.org/bot<token>/METHOD_NAME
+ */
 export class TelegramBotCredentials implements ApiCredentials {
   readonly objectType = 'telegramBot' as const;
   readonly token: string;
@@ -66,35 +67,72 @@ export class TelegramBotCredentials implements ApiCredentials {
   }
 }
 
-/**
- * Captured data from a single network request/response during Telegram login.
- */
-interface CapturedRequest {
-  url: string;
-  method: string;
-  status: number;
-  requestHeaders: Record<string, string>;
-  responseHeaders: Record<string, string>;
-  responseBodySnippet: string;
-}
+// -------------------------------------------------------------------
+// Credential type: Telegram User (MTProto auth_key from browser login)
+// -------------------------------------------------------------------
+
+export const TelegramUserCredentialsSchema = z.object({
+  objectType: z.literal('telegramUser'),
+  dcId: z.number(),
+  authKeyHex: z.string(),
+  userId: z.string(),
+  firstName: z.string(),
+});
+
+export type TelegramUserCredentialsData = z.infer<typeof TelegramUserCredentialsSchema>;
 
 /**
- * All data dumped from the browser after Telegram login.
+ * Telegram user session credentials extracted from web.telegram.org.
+ *
+ * These store the MTProto auth_key, which is the core authentication secret
+ * for the Telegram user API. This is NOT usable via curl (MTProto is a binary
+ * protocol over TCP/WebSocket), but can be used with libraries like Telethon
+ * to programmatically interact with Telegram as the user.
  */
-interface TelegramBrowserDump {
-  localStorage: Record<string, string>;
-  sessionStorage: Record<string, string>;
-  indexedDBKeyNames: string[];
-  cookies: Array<{
-    name: string;
-    value: string;
-    domain: string;
-    path: string;
-    httpOnly: boolean;
-    secure: boolean;
-  }>;
-  capturedRequests: CapturedRequest[];
+export class TelegramUserCredentials implements ApiCredentials {
+  readonly objectType = 'telegramUser' as const;
+  readonly dcId: number;
+  readonly authKeyHex: string;
+  readonly userId: string;
+  readonly firstName: string;
+
+  constructor(dcId: number, authKeyHex: string, userId: string, firstName: string) {
+    this.dcId = dcId;
+    this.authKeyHex = authKeyHex;
+    this.userId = userId;
+    this.firstName = firstName;
+  }
+
+  injectIntoCurlCall(curlArguments: readonly string[]): readonly string[] {
+    // User credentials cannot be injected into curl calls.
+    // The MTProto protocol uses a binary format over TCP, not HTTP.
+    // Use a library like Telethon with the stored auth_key instead.
+    return curlArguments;
+  }
+
+  isExpired(): boolean | undefined {
+    // MTProto auth keys do not expire, but they can be revoked by the user.
+    return undefined;
+  }
+
+  toJSON(): TelegramUserCredentialsData {
+    return {
+      objectType: this.objectType,
+      dcId: this.dcId,
+      authKeyHex: this.authKeyHex,
+      userId: this.userId,
+      firstName: this.firstName,
+    };
+  }
+
+  static fromJSON(data: TelegramUserCredentialsData): TelegramUserCredentials {
+    return new TelegramUserCredentials(data.dcId, data.authKeyHex, data.userId, data.firstName);
+  }
 }
+
+// -------------------------------------------------------------------
+// Browser login session
+// -------------------------------------------------------------------
 
 /**
  * Wait for the user to press Enter in the terminal.
@@ -110,50 +148,17 @@ function waitForEnter(prompt: string): Promise<void> {
 }
 
 /**
- * Exploration session that captures all auth-related data from web.telegram.org.
+ * Browser login session that extracts MTProto auth credentials from
+ * web.telegram.org's localStorage after the user logs in.
  *
- * Overrides login() to use a manual "press Enter" flow instead of auto-detection,
- * since the Telegram Web A SPA loads its full bundle before login (making
- * response-based login detection unreliable).
+ * The Telegram Web A client stores the MTProto auth_key in localStorage
+ * under keys like `dc3_auth_key`. This key, combined with the data center ID,
+ * is sufficient to establish an authenticated MTProto session with libraries
+ * like Telethon.
  */
-class TelegramExplorationSession extends ServiceSession {
-  private capturedRequests: CapturedRequest[] = [];
-
-  onResponse(response: Response): void {
-    const request = response.request();
-    const url = request.url();
-
-    // Capture all telegram-related requests
-    if (
-      url.includes('telegram.org') ||
-      url.includes('t.me') ||
-      url.includes('core.telegram.org')
-    ) {
-      void (async () => {
-        try {
-          const requestHeaders = await request.allHeaders();
-          const responseHeaders = response.headers();
-          let responseBodySnippet = '';
-          try {
-            const body = await response.text();
-            responseBodySnippet = body.slice(0, 2000);
-          } catch {
-            responseBodySnippet = '<could not read body>';
-          }
-
-          this.capturedRequests.push({
-            url,
-            method: request.method(),
-            status: response.status(),
-            requestHeaders,
-            responseHeaders,
-            responseBodySnippet,
-          });
-        } catch {
-          // Ignore errors capturing request data
-        }
-      })();
-    }
+class TelegramBrowserSession extends ServiceSession {
+  onResponse(_response: Response): void {
+    // We don't need to intercept responses -- credentials are in localStorage.
   }
 
   protected isLoginComplete(): boolean {
@@ -173,12 +178,6 @@ class TelegramExplorationSession extends ServiceSession {
     return withTempBrowserContext(encryptedStorage, launchOptions, async ({ context }) => {
       const page = await context.newPage();
 
-      // Capture all network responses
-      context.on('response', (response) => {
-        this.onResponse(response);
-      });
-
-      // Navigate to Telegram Web
       await page.goto(this.service.loginUrl);
 
       console.log('\n=== Telegram Login ===');
@@ -188,147 +187,80 @@ class TelegramExplorationSession extends ServiceSession {
 
       await waitForEnter('Press Enter after you have logged in... ');
 
-      console.log('\nCapturing browser data...');
-
-      // Wait for any in-flight requests to settle
-      await page.waitForTimeout(2000);
-
-      // Extract localStorage (string expression evaluated in browser context)
-      const localStorageData: Record<string, string> = await page.evaluate(
+      // Extract auth data from localStorage
+      const authData: { dc: string; userAuth: string } | null = await page.evaluate(
         `(() => {
-          const data = {};
-          for (let i = 0; i < localStorage.length; i++) {
-            const key = localStorage.key(i);
-            if (key) {
-              const value = localStorage.getItem(key);
-              if (value) {
-                data[key] = value.length > 2000 ? value.slice(0, 2000) + '...[truncated]' : value;
-              }
-            }
-          }
-          return data;
+          const dc = localStorage.getItem('dc');
+          const userAuth = localStorage.getItem('user_auth');
+          if (!dc || !userAuth) return null;
+          return { dc, userAuth };
         })()`
       );
 
-      // Extract sessionStorage
-      const sessionStorageData: Record<string, string> = await page.evaluate(
-        `(() => {
-          const data = {};
-          for (let i = 0; i < sessionStorage.length; i++) {
-            const key = sessionStorage.key(i);
-            if (key) {
-              const value = sessionStorage.getItem(key);
-              if (value) {
-                data[key] = value.length > 2000 ? value.slice(0, 2000) + '...[truncated]' : value;
-              }
-            }
-          }
-          return data;
-        })()`
-      );
-
-      // Try to list IndexedDB database names and object store names
-      const indexedDBKeyNames: string[] = await page.evaluate(
-        `(async () => {
-          try {
-            const databases = await indexedDB.databases();
-            const results = [];
-            for (const db of databases) {
-              results.push('DB: ' + db.name + ' (v' + db.version + ')');
-              try {
-                const openReq = indexedDB.open(db.name, db.version);
-                const opened = await new Promise((resolve, reject) => {
-                  openReq.onsuccess = () => resolve(openReq.result);
-                  openReq.onerror = () => reject(openReq.error);
-                });
-                const storeNames = Array.from(opened.objectStoreNames);
-                for (const storeName of storeNames) {
-                  results.push('  Store: ' + storeName);
-                  try {
-                    const tx = opened.transaction(storeName, 'readonly');
-                    const store = tx.objectStore(storeName);
-                    const countReq = store.count();
-                    const count = await new Promise((resolve, reject) => {
-                      countReq.onsuccess = () => resolve(countReq.result);
-                      countReq.onerror = () => reject(countReq.error);
-                    });
-                    results.push('    count: ' + count);
-                    // Sample first 3 keys
-                    const keysReq = store.getAllKeys();
-                    const keys = await new Promise((resolve, reject) => {
-                      keysReq.onsuccess = () => resolve(keysReq.result);
-                      keysReq.onerror = () => reject(keysReq.error);
-                    });
-                    const sampleKeys = keys.slice(0, 5).map(k => String(k));
-                    results.push('    sample keys: ' + sampleKeys.join(', '));
-                  } catch (e) {
-                    results.push('    error reading store: ' + e);
-                  }
-                }
-                opened.close();
-              } catch (e) {
-                results.push('  error opening: ' + e);
-              }
-            }
-            return results;
-          } catch (e) {
-            return ['indexedDB.databases() not supported or error: ' + e];
-          }
-        })()`
-      );
-
-      // Extract cookies
-      const cookies = await context.cookies();
-
-      const dump: TelegramBrowserDump = {
-        localStorage: localStorageData,
-        sessionStorage: sessionStorageData,
-        indexedDBKeyNames,
-        cookies: cookies.map((c) => ({
-          name: c.name,
-          value: c.value.length > 200 ? c.value.slice(0, 200) + '...' : c.value,
-          domain: c.domain,
-          path: c.path,
-          httpOnly: c.httpOnly,
-          secure: c.secure,
-        })),
-        capturedRequests: this.capturedRequests,
-      };
-
-      const dumpPath = join(tmpdir(), 'latchkey-telegram-dump.json');
-      writeFileSync(dumpPath, JSON.stringify(dump, null, 2));
-
-      console.log(`\n=== Telegram browser data dumped to: ${dumpPath} ===`);
-      console.log(`\nLocalStorage keys (${Object.keys(localStorageData).length}):`);
-      for (const key of Object.keys(localStorageData)) {
-        const val = localStorageData[key] ?? '';
-        console.log(`  ${key}: ${val.slice(0, 80)}${val.length > 80 ? '...' : ''}`);
+      if (!authData) {
+        throw new LoginFailedError(
+          'Could not find Telegram auth data in localStorage. ' +
+            'Make sure you are fully logged in (you should see your chat list).'
+        );
       }
-      console.log(`\nSessionStorage keys (${Object.keys(sessionStorageData).length}):`);
-      for (const key of Object.keys(sessionStorageData)) {
-        const val = sessionStorageData[key] ?? '';
-        console.log(`  ${key}: ${val.slice(0, 80)}${val.length > 80 ? '...' : ''}`);
-      }
-      console.log(`\nIndexedDB:`);
-      for (const line of indexedDBKeyNames) {
-        console.log(`  ${line}`);
-      }
-      console.log(
-        `\nTelegram cookies: ${cookies
-          .filter((c) => c.domain.includes('telegram'))
-          .map((c) => c.name)
-          .join(', ') || '(none)'}`
-      );
-      console.log(`Captured requests: ${this.capturedRequests.length}`);
-      console.log(`\nInspect the dump file for full details.`);
 
-      // Return a LoginFailedError for now -- this is exploration only.
-      throw new LoginFailedError(
-        'Exploration complete. Data dumped to ' + dumpPath + '. No credentials extracted yet.'
+      const dcId = parseInt(authData.dc, 10);
+      const userAuth = JSON.parse(authData.userAuth) as { dcID: number; id: string };
+
+      // Get the auth_key for the active DC (no truncation -- we need the full key)
+      const dcKeyName = `dc${String(dcId)}_auth_key`;
+      const authKeyRaw: string | null = await page.evaluate(
+        `localStorage.getItem('${dcKeyName}')`
       );
+
+      if (!authKeyRaw) {
+        throw new LoginFailedError(
+          `Could not find auth key for DC ${String(dcId)} in localStorage.`
+        );
+      }
+
+      // The auth_key value is JSON-encoded (wrapped in extra quotes)
+      const authKeyHex = authKeyRaw.startsWith('"')
+        ? JSON.parse(authKeyRaw) as string
+        : authKeyRaw;
+
+      if (authKeyHex.length !== 512) {
+        throw new LoginFailedError(
+          `Auth key has unexpected length: ${String(authKeyHex.length)} hex chars (expected 512).`
+        );
+      }
+
+      // Get user info from the account data
+      const accountData: string | null = await page.evaluate(
+        `localStorage.getItem('account1')`
+      );
+      let firstName = '';
+      if (accountData) {
+        try {
+          const parsed = JSON.parse(accountData) as { firstName?: string };
+          firstName = parsed.firstName ?? '';
+        } catch {
+          // Ignore parse errors
+        }
+      }
+
+      const credentials = new TelegramUserCredentials(
+        dcId,
+        authKeyHex,
+        userAuth.id,
+        firstName
+      );
+
+      console.log(`\nExtracted credentials for user ${firstName} (id=${userAuth.id}, DC=${String(dcId)}).`);
+
+      return credentials;
     });
   }
 }
+
+// -------------------------------------------------------------------
+// Service definition
+// -------------------------------------------------------------------
 
 export class Telegram extends Service {
   readonly name = 'telegram';
@@ -337,13 +269,22 @@ export class Telegram extends Service {
   readonly loginUrl = 'https://web.telegram.org/a/';
   readonly info =
     'https://core.telegram.org/bots/api. ' +
-    'The bot token is injected automatically into the URL path at runtime. ' +
-    'Example: latchkey curl https://api.telegram.org/sendMessage -d chat_id=123 -d text=hello';
+    'Browser login extracts user credentials (MTProto auth_key) for use with Telethon. ' +
+    'set-nocurl stores a bot token for use with the Bot API via curl.';
 
   readonly credentialCheckCurlArguments = [`${BASE_API_URL}getMe`] as const;
 
   setCredentialsExample(serviceName: string): string {
     return `latchkey auth set-nocurl ${serviceName} <bot-token>`;
+  }
+
+  override checkApiCredentials(apiCredentials: ApiCredentials): ApiCredentialStatus {
+    if (apiCredentials instanceof TelegramUserCredentials) {
+      // User credentials can't be checked via curl. The auth_key is valid
+      // unless it has been explicitly revoked by the user.
+      return ApiCredentialStatus.Unknown;
+    }
+    return super.checkApiCredentials(apiCredentials);
   }
 
   override getCredentialsNoCurl(arguments_: readonly string[]): ApiCredentials {
@@ -363,8 +304,8 @@ export class Telegram extends Service {
     return new TelegramBotCredentials(token);
   }
 
-  override getSession(): TelegramExplorationSession {
-    return new TelegramExplorationSession(this);
+  override getSession(): TelegramBrowserSession {
+    return new TelegramBrowserSession(this);
   }
 }
 

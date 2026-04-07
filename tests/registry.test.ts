@@ -249,12 +249,12 @@ describe('Registry', () => {
     });
 
     it('should not expose getSession when loginUrl is provided but family lacks it', () => {
-      // TELEGRAM has no getSession
+      // AWS has no getSession
       const registered = new RegisteredService(
-        'my-telegram',
-        'https://telegram.mycompany.com/bot',
-        TELEGRAM,
-        'https://telegram.mycompany.com/login'
+        'my-aws',
+        'https://aws.mycompany.com/api',
+        AWS,
+        'https://aws.mycompany.com/login'
       );
       expect(registered.getSession).toBeUndefined(); // eslint-disable-line @typescript-eslint/unbound-method
     });

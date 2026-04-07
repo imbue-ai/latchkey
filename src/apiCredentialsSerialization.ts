@@ -21,7 +21,12 @@ import {
 import { AwsCredentials, AwsCredentialsSchema } from './services/aws.js';
 import { GoogleApiKeyCredentials, GoogleApiKeyCredentialsSchema } from './services/google/base.js';
 import { SlackApiCredentials, SlackApiCredentialsSchema } from './services/slack.js';
-import { TelegramBotCredentials, TelegramBotCredentialsSchema } from './services/telegram.js';
+import {
+  TelegramBotCredentials,
+  TelegramBotCredentialsSchema,
+  TelegramUserCredentials,
+  TelegramUserCredentialsSchema,
+} from './services/telegram.js';
 
 /**
  * Union schema for all credential types.
@@ -33,6 +38,7 @@ export const ApiCredentialsSchema = z.discriminatedUnion('objectType', [
   OAuthCredentialsSchema,
   RawCurlCredentialsSchema,
   TelegramBotCredentialsSchema,
+  TelegramUserCredentialsSchema,
   AwsCredentialsSchema,
   GoogleApiKeyCredentialsSchema,
 ]);
@@ -56,6 +62,8 @@ export function deserializeCredentials(data: ApiCredentialsData): ApiCredentials
       return RawCurlCredentials.fromJSON(data);
     case 'telegramBot':
       return TelegramBotCredentials.fromJSON(data);
+    case 'telegramUser':
+      return TelegramUserCredentials.fromJSON(data);
     case 'aws':
       return AwsCredentials.fromJSON(data);
     case 'googleApiKey':
@@ -89,6 +97,9 @@ export function serializeCredentials(credentials: ApiCredentials): ApiCredential
     return credentials.toJSON();
   }
   if (credentials instanceof TelegramBotCredentials) {
+    return credentials.toJSON();
+  }
+  if (credentials instanceof TelegramUserCredentials) {
     return credentials.toJSON();
   }
   if (credentials instanceof AwsCredentials) {
