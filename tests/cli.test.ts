@@ -298,6 +298,10 @@ describe('CLI commands with dependency injection', () => {
       get configPath() {
         return join(directory, 'config.json');
       },
+      permissionsConfigOverride: overrides.permissionsConfigOverride ?? null,
+      get permissionsConfigPath() {
+        return overrides.permissionsConfigOverride ?? join(directory, 'permissions.json');
+      },
       curlCommand: overrides.curlCommand ?? defaultConfig.curlCommand,
       encryptionKeyOverride: overrides.encryptionKeyOverride ?? TEST_ENCRYPTION_KEY,
       serviceName: overrides.serviceName ?? defaultConfig.serviceName,
@@ -338,6 +342,7 @@ describe('CLI commands with dependency injection', () => {
         capturedArgs.push(...args);
         return { returncode: 0, stdout: '', stderr: '' };
       },
+      checkPermission: () => Promise.resolve(true),
       confirm: () => Promise.resolve(true),
       exit: (code: number): never => {
         exitCode = code;
@@ -1189,6 +1194,68 @@ describe('CLI commands with dependency injection', () => {
       expect(exitCode).toBe(0);
       expect(capturedArgs).toContain('-H');
       expect(capturedArgs).toContain('X-API-Key: secret');
+    });
+
+    it('should reject request when permission check denies it', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      await writeSecureFile(
+        storePath,
+        JSON.stringify({
+          slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
+        })
+      );
+
+      const deps = createMockDependencies({
+        checkPermission: () => Promise.resolve(false),
+      });
+
+      await runCommand(['curl', 'https://slack.com/api/test'], deps);
+
+      expect(exitCode).toBe(126);
+      expect(errorLogs[0]).toBe('Error: Request not permitted by the user.');
+      expect(capturedArgs).toHaveLength(0);
+    });
+
+    it('should allow request when permission check approves it', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      await writeSecureFile(
+        storePath,
+        JSON.stringify({
+          slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
+        })
+      );
+
+      const deps = createMockDependencies({
+        checkPermission: () => Promise.resolve(true),
+      });
+
+      await runCommand(['curl', 'https://slack.com/api/test'], deps);
+
+      expect(exitCode).toBe(0);
+      expect(capturedArgs).toContain('https://slack.com/api/test');
+    });
+
+    it('should exit with error when permission check fails', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      await writeSecureFile(
+        storePath,
+        JSON.stringify({
+          slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
+        })
+      );
+
+      const { PermissionCheckError } = await import('../src/permissions.js');
+      const deps = createMockDependencies({
+        checkPermission: () => {
+          throw new PermissionCheckError('Permission check failed: bad config');
+        },
+      });
+
+      await runCommand(['curl', 'https://slack.com/api/test'], deps);
+
+      expect(exitCode).toBe(126);
+      expect(errorLogs[0]).toContain('Permission check failed');
+      expect(capturedArgs).toHaveLength(0);
     });
   });
 

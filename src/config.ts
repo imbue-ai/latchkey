@@ -30,6 +30,7 @@ const LATCHKEY_KEYRING_SERVICE_NAME_ENV_VAR = 'LATCHKEY_KEYRING_SERVICE_NAME';
 const LATCHKEY_KEYRING_ACCOUNT_NAME_ENV_VAR = 'LATCHKEY_KEYRING_ACCOUNT_NAME';
 const LATCHKEY_DISABLE_BROWSER_ENV_VAR = 'LATCHKEY_DISABLE_BROWSER';
 const LATCHKEY_DISABLE_COUNTING_ENV_VAR = 'LATCHKEY_DISABLE_COUNTING';
+const LATCHKEY_PERMISSIONS_CONFIG_ENV_VAR = 'LATCHKEY_PERMISSIONS_CONFIG';
 
 export const DEFAULT_KEYRING_SERVICE_NAME = 'latchkey';
 export const DEFAULT_KEYRING_ACCOUNT_NAME = 'encryption-key';
@@ -39,6 +40,7 @@ const DEFAULT_DIRECTORY = join(homedir(), '.latchkey');
 const CREDENTIAL_STORE_FILENAME = 'credentials.json.enc';
 const BROWSER_STATE_FILENAME = 'browser_state.json.enc';
 const CONFIG_FILENAME = 'config.json';
+const PERMISSIONS_CONFIG_FILENAME = 'permissions.json';
 
 function resolvePathWithTildeExpansion(path: string): string {
   if (path.startsWith('~')) {
@@ -97,6 +99,11 @@ export class Config {
    * When true, daily counting is disabled.
    */
   readonly countingDisabled: boolean;
+  /**
+   * Override for the permissions config file path.
+   * When set, this path is used instead of the default LATCHKEY_DIRECTORY/permissions.json.
+   */
+  readonly permissionsConfigOverride: string | null;
 
   constructor(getEnv: (name: string) => string | undefined = (name) => process.env[name]) {
     this.curlCommand = getEnv(LATCHKEY_CURL_ENV_VAR) ?? 'curl';
@@ -114,6 +121,12 @@ export class Config {
 
     const directoryEnv = getEnv(LATCHKEY_DIRECTORY_ENV_VAR);
     this.directory = directoryEnv ? resolvePathWithTildeExpansion(directoryEnv) : DEFAULT_DIRECTORY;
+
+    const permissionsConfigEnv = getEnv(LATCHKEY_PERMISSIONS_CONFIG_ENV_VAR);
+    this.permissionsConfigOverride =
+      permissionsConfigEnv !== undefined && permissionsConfigEnv !== ''
+        ? permissionsConfigEnv
+        : null;
   }
 
   get credentialStorePath(): string {
@@ -126,6 +139,10 @@ export class Config {
 
   get configPath(): string {
     return join(this.directory, CONFIG_FILENAME);
+  }
+
+  get permissionsConfigPath(): string {
+    return this.permissionsConfigOverride ?? join(this.directory, PERMISSIONS_CONFIG_FILENAME);
   }
 
   /**
