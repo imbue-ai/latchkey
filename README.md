@@ -278,8 +278,7 @@ directory (`~/.latchkey/permissions.json`). For example:
 {
   "rules": [
     {"google-gmail-api": ["google-gmail-read-all"]},
-    {"slack-api": ["slack-read-all"]},
-    {"any": ["any"]}
+    {"slack-api": ["slack-read-all"]}
   ]
 }
 ```
@@ -287,7 +286,7 @@ directory (`~/.latchkey/permissions.json`). For example:
 This would mean that:
 
 - When accessing the Gmail or the Slack API, only read actions are allowed.
-- Any requests are allowed to other domains.
+- No requests are allowed to any other domains.
 
 Ideally make the file read-only: `chmod -w ~/.latchkey/permissions.json`.
 For more details, check out the [Detent docs](https://github.com/imbue-ai/detent).
