@@ -268,7 +268,32 @@ latchkey auth clear
 ```
 
 
-### Advanced configuration
+### Permissions
+
+Optionally, you can specify rules for approving / rejecting
+requests by creating the `permissions.json` file in the Latchkey
+directory (`~/.latchkey/permissions.json`). For example:
+
+```
+{
+  "rules": [
+    {"google-gmail-api": ["google-gmail-read-all"]},
+    {"slack-api": ["slack-read-all"]},
+    {"any": ["any"]}
+  ]
+}
+```
+
+This would mean that:
+
+- When accessing the Gmail or the Slack API, only read actions are allowed.
+- Any requests are allowed to other domains.
+
+Ideally make the file read-only: `chmod -w ~/.latchkey/permissions.json`.
+For more details, check out the [Detent docs](https://github.com/imbue-ai/detent).
+
+
+### Other configuration
 
 You can set these environment variables to override certain
 defaults:
@@ -279,6 +304,7 @@ defaults:
 - `LATCHKEY_ENCRYPTION_KEY`: override the encryption key, e.g. when a keyring is not available. Example: `export LATCHKEY_ENCRYPTION_KEY="$(openssl rand -base64 32)"`
 - `LATCHKEY_DISABLE_BROWSER`: when set to a non-empty value, disables the browser login flow; commands that would trigger a browser login (`auth browser`, `auth browser-prepare`) will fail with an error instead
 - `LATCHKEY_DISABLE_COUNTING`: when set to a non-empty value, disables daily usage counting.
+- `LATCHKEY_PERMISSIONS_CONFIG`: override the `permissions.json` location.
 
 
 ## Disclaimers
