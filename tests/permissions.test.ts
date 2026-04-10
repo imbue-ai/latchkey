@@ -20,7 +20,7 @@ describe('checkPermission', () => {
 
     const result = await checkPermission(
       ['-X', 'GET', 'https://api.example.com/anything'],
-      configPath,
+      configPath
     );
 
     expect(result).toBe(true);
@@ -46,13 +46,10 @@ describe('checkPermission', () => {
           },
         },
         rules: [{ 'example-api': ['example-read'] }],
-      }),
+      })
     );
 
-    const result = await checkPermission(
-      ['https://api.example.com/users'],
-      configPath,
-    );
+    const result = await checkPermission(['https://api.example.com/users'], configPath);
 
     expect(result).toBe(true);
   });
@@ -77,12 +74,12 @@ describe('checkPermission', () => {
           },
         },
         rules: [{ 'example-api': ['example-read'] }],
-      }),
+      })
     );
 
     const result = await checkPermission(
       ['-X', 'POST', 'https://api.example.com/users'],
-      configPath,
+      configPath
     );
 
     expect(result).toBe(false);
@@ -108,13 +105,10 @@ describe('checkPermission', () => {
           },
         },
         rules: [{ 'example-api': ['example-read'] }],
-      }),
+      })
     );
 
-    const result = await checkPermission(
-      ['https://api.other.com/something'],
-      configPath,
-    );
+    const result = await checkPermission(['https://api.other.com/something'], configPath);
 
     expect(result).toBe(false);
   });
@@ -123,9 +117,9 @@ describe('checkPermission', () => {
     const configPath = join(tempDir, 'permissions.json');
     writeFileSync(configPath, 'not valid json');
 
-    await expect(
-      checkPermission(['https://api.example.com/anything'], configPath),
-    ).rejects.toThrow(PermissionCheckError);
+    await expect(checkPermission(['https://api.example.com/anything'], configPath)).rejects.toThrow(
+      PermissionCheckError
+    );
   });
 
   it('should allow all requests with the any/any rule', async () => {
@@ -134,16 +128,13 @@ describe('checkPermission', () => {
       configPath,
       JSON.stringify({
         rules: [{ any: ['any'] }],
-      }),
+      })
     );
 
-    const resultGet = await checkPermission(
-      ['https://api.example.com/anything'],
-      configPath,
-    );
+    const resultGet = await checkPermission(['https://api.example.com/anything'], configPath);
     const resultPost = await checkPermission(
       ['-X', 'POST', '-d', '{"key":"value"}', 'https://api.other.com/resource'],
-      configPath,
+      configPath
     );
 
     expect(resultGet).toBe(true);
@@ -156,13 +147,10 @@ describe('checkPermission', () => {
       configPath,
       JSON.stringify({
         rules: [],
-      }),
+      })
     );
 
-    const result = await checkPermission(
-      ['https://api.example.com/anything'],
-      configPath,
-    );
+    const result = await checkPermission(['https://api.example.com/anything'], configPath);
 
     expect(result).toBe(false);
   });

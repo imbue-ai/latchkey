@@ -91,7 +91,10 @@ export interface CliDependencies {
   readonly registry: Registry;
   readonly config: Config;
   readonly runCurl: (args: readonly string[]) => CurlResult;
-  readonly checkPermission: (curlArguments: readonly string[], configPath: string) => Promise<boolean>;
+  readonly checkPermission: (
+    curlArguments: readonly string[],
+    configPath: string
+  ) => Promise<boolean>;
   readonly confirm: (message: string) => Promise<boolean>;
   readonly exit: (code: number) => never;
   readonly log: (message: string) => void;
@@ -712,7 +715,10 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       const curlArguments = command.args;
 
       try {
-        const allowed = await deps.checkPermission(curlArguments, deps.config.permissionsConfigPath);
+        const allowed = await deps.checkPermission(
+          curlArguments,
+          deps.config.permissionsConfigPath
+        );
         if (!allowed) {
           deps.errorLog('Error: Request not permitted by the user.');
           deps.exit(PERMISSION_DENIED_EXIT_CODE);

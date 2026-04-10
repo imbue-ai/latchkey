@@ -30,7 +30,7 @@ export class PermissionCheckError extends Error {
  */
 export async function checkPermission(
   curlArguments: readonly string[],
-  configPath: string,
+  configPath: string
 ): Promise<boolean> {
   if (!existsSync(configPath)) {
     return true;
