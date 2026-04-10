@@ -42,7 +42,15 @@ import {
   Service,
 } from './services/index.js';
 import { extractUrlFromCurlArguments, run as curlRun } from './curl.js';
+import { checkPermission, PermissionCheckError } from './permissions.js';
 import { getSkillMdContent } from './skillMd.js';
+
+/**
+ * Exit code used when a request is rejected by permission rules.
+ * Uses the Unix convention for "command not permitted" (126).
+ * Curl itself does not use this exit code.
+ */
+export const PERMISSION_DENIED_EXIT_CODE = 126;
 
 /**
  * Try to refresh expired credentials if the service supports it.
@@ -83,6 +91,7 @@ export interface CliDependencies {
   readonly registry: Registry;
   readonly config: Config;
   readonly runCurl: (args: readonly string[]) => CurlResult;
+  readonly checkPermission: (curlArguments: readonly string[], configPath: string) => Promise<boolean>;
   readonly confirm: (message: string) => Promise<boolean>;
   readonly exit: (code: number) => never;
   readonly log: (message: string) => void;
@@ -97,6 +106,7 @@ export function createDefaultDependencies(): CliDependencies {
     registry: REGISTRY,
     config: CONFIG,
     runCurl: curlRun,
+    checkPermission: checkPermission,
     confirm: defaultConfirm,
     exit: (code: number) => process.exit(code),
     log: (message: string) => {
@@ -700,6 +710,20 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .allowExcessArguments()
     .action(async (_options: unknown, command: { args: string[] }) => {
       const curlArguments = command.args;
+
+      try {
+        const allowed = await deps.checkPermission(curlArguments, deps.config.permissionsConfigPath);
+        if (!allowed) {
+          deps.errorLog('Error: Request not permitted by the user.');
+          deps.exit(PERMISSION_DENIED_EXIT_CODE);
+        }
+      } catch (error) {
+        if (error instanceof PermissionCheckError) {
+          deps.errorLog(`Error: ${error.message}`);
+          deps.exit(PERMISSION_DENIED_EXIT_CODE);
+        }
+        throw error;
+      }
 
       const url = extractUrlFromCurlArguments(curlArguments);
       if (url === null) {
