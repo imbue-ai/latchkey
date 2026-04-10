@@ -1,5 +1,6 @@
 /**
- * Permission checking for outgoing HTTP requests.
+ * Permission checking for outgoing HTTP requests based on the
+ * Detent library.
  *
  * When a permissions config file exists, outgoing curl requests are checked
  * against the user's permission rules before being sent.
