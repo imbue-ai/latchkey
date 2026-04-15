@@ -31,6 +31,8 @@ const LATCHKEY_KEYRING_ACCOUNT_NAME_ENV_VAR = 'LATCHKEY_KEYRING_ACCOUNT_NAME';
 const LATCHKEY_DISABLE_BROWSER_ENV_VAR = 'LATCHKEY_DISABLE_BROWSER';
 const LATCHKEY_DISABLE_COUNTING_ENV_VAR = 'LATCHKEY_DISABLE_COUNTING';
 const LATCHKEY_PERMISSIONS_CONFIG_ENV_VAR = 'LATCHKEY_PERMISSIONS_CONFIG';
+const LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS_ENV_VAR =
+  'LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS';
 
 export const DEFAULT_KEYRING_SERVICE_NAME = 'latchkey';
 export const DEFAULT_KEYRING_ACCOUNT_NAME = 'encryption-key';
@@ -104,6 +106,10 @@ export class Config {
    * When set, this path is used instead of the default LATCHKEY_DIRECTORY/permissions.json.
    */
   readonly permissionsConfigOverride: string | null;
+  /**
+   * When true, detent's built-in schemas are not used during permission checks.
+   */
+  readonly permissionsDoNotUseBuiltinSchemas: boolean;
 
   constructor(getEnv: (name: string) => string | undefined = (name) => process.env[name]) {
     this.curlCommand = getEnv(LATCHKEY_CURL_ENV_VAR) ?? 'curl';
@@ -127,6 +133,12 @@ export class Config {
       permissionsConfigEnv !== undefined && permissionsConfigEnv !== ''
         ? permissionsConfigEnv
         : null;
+
+    const doNotUseBuiltinSchemasEnv = getEnv(
+      LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS_ENV_VAR
+    );
+    this.permissionsDoNotUseBuiltinSchemas =
+      doNotUseBuiltinSchemasEnv !== undefined && doNotUseBuiltinSchemasEnv !== '';
   }
 
   get credentialStorePath(): string {

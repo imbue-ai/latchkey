@@ -51,8 +51,15 @@ directly on the user’s behalf, which enables greater flexibility
 at the cost of formal delegation: agents authenticate as the
 user.
 
-If a service you need isn’t supported yet, contributions are welcome!
-See the [development docs](docs/development.md) for details.
+Latchkey integrates with [Detent](https://github.com/imbue-ai/detent)
+to let you define fine-grained HTTP permissions for agents.
+
+If a service you need isn’t supported out of the box, the
+[new service registering mechanism](#entirely-new-services)
+may help. Otherwise, contributions are welcome! See the [development docs](docs/development.md)
+for details.
+
+You can also [leave us a note](https://github.com/imbue-ai/latchkey/issues/56).
 
 ## Installation
 
@@ -274,7 +281,7 @@ Optionally, you can specify rules for approving / rejecting
 requests by creating the `permissions.json` file in the Latchkey
 directory (`~/.latchkey/permissions.json`). For example:
 
-```
+```json
 {
   "rules": [
     {"google-gmail-api": ["google-gmail-read-all"]},
@@ -304,6 +311,7 @@ defaults:
 - `LATCHKEY_DISABLE_BROWSER`: when set to a non-empty value, disables the browser login flow; commands that would trigger a browser login (`auth browser`, `auth browser-prepare`) will fail with an error instead
 - `LATCHKEY_DISABLE_COUNTING`: when set to a non-empty value, disables daily usage counting.
 - `LATCHKEY_PERMISSIONS_CONFIG`: override the `permissions.json` location.
+- `LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS`: do not use the built-in permission definitions.
 
 
 ## Disclaimers

@@ -31,7 +31,7 @@ describe('checkPermission', () => {
     writeFileSync(
       configPath,
       JSON.stringify({
-        patterns: {
+        schemas: {
           'example-api': {
             properties: {
               domain: { const: 'api.example.com' },
@@ -59,7 +59,7 @@ describe('checkPermission', () => {
     writeFileSync(
       configPath,
       JSON.stringify({
-        patterns: {
+        schemas: {
           'example-api': {
             properties: {
               domain: { const: 'api.example.com' },
@@ -90,7 +90,7 @@ describe('checkPermission', () => {
     writeFileSync(
       configPath,
       JSON.stringify({
-        patterns: {
+        schemas: {
           'example-api': {
             properties: {
               domain: { const: 'api.example.com' },
