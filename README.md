@@ -281,7 +281,7 @@ Optionally, you can specify rules for approving / rejecting
 requests by creating the `permissions.json` file in the Latchkey
 directory (`~/.latchkey/permissions.json`). For example:
 
-```
+```json
 {
   "rules": [
     {"google-gmail-api": ["google-gmail-read-all"]},
@@ -311,6 +311,7 @@ defaults:
 - `LATCHKEY_DISABLE_BROWSER`: when set to a non-empty value, disables the browser login flow; commands that would trigger a browser login (`auth browser`, `auth browser-prepare`) will fail with an error instead
 - `LATCHKEY_DISABLE_COUNTING`: when set to a non-empty value, disables daily usage counting.
 - `LATCHKEY_PERMISSIONS_CONFIG`: override the `permissions.json` location.
+- `LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS_ENV_VAR`: do not use the built-in permission definitions.
 
 
 ## Disclaimers

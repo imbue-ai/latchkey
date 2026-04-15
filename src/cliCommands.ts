@@ -93,7 +93,8 @@ export interface CliDependencies {
   readonly runCurl: (args: readonly string[]) => CurlResult;
   readonly checkPermission: (
     curlArguments: readonly string[],
-    configPath: string
+    configPath: string,
+    doNotUseBuiltinSchemas: boolean
   ) => Promise<boolean>;
   readonly confirm: (message: string) => Promise<boolean>;
   readonly exit: (code: number) => never;
@@ -717,7 +718,8 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       try {
         const allowed = await deps.checkPermission(
           curlArguments,
-          deps.config.permissionsConfigPath
+          deps.config.permissionsConfigPath,
+          deps.config.permissionsDoNotUseBuiltinSchemas
         );
         if (!allowed) {
           deps.errorLog('Error: Request not permitted by the user.');

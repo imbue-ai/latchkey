@@ -25,12 +25,14 @@ export class PermissionCheckError extends Error {
  *
  * @param curlArguments - The raw curl arguments (before credential injection).
  * @param configPath - Path to the permissions config file.
+ * @param doNotUseBuiltinSchemas - When true, detent's built-in schemas are not used.
  * @returns true if the request is allowed (or no config exists), false if denied.
  * @throws PermissionCheckError if parsing or checking fails unexpectedly.
  */
 export async function checkPermission(
   curlArguments: readonly string[],
-  configPath: string
+  configPath: string,
+  doNotUseBuiltinSchemas = false
 ): Promise<boolean> {
   if (!existsSync(configPath)) {
     return true;
@@ -38,7 +40,8 @@ export async function checkPermission(
 
   try {
     const request = parseCurlArgs(curlArguments);
-    return await check(request, configPath);
+    const useBuiltinSchemas = !doNotUseBuiltinSchemas;
+    return await check(request, configPath, useBuiltinSchemas);
   } catch (error) {
     if (error instanceof CurlParseError || error instanceof ConfigError) {
       throw new PermissionCheckError(`Permission check failed: ${error.message}`);
