@@ -51,8 +51,15 @@ directly on the user’s behalf, which enables greater flexibility
 at the cost of formal delegation: agents authenticate as the
 user.
 
-If a service you need isn’t supported yet, contributions are welcome!
-See the [development docs](docs/development.md) for details.
+Latchkey integrates with [Detent](https://github.com/imbue-ai/detent)
+to let you define fine-grained HTTP permissions for agents.
+
+If a service you need isn’t supported out of the box, the
+[new service registering mechanism](#entirely-new-services)
+may help. Otherwise, contributions are welcome! See the [development docs](docs/development.md)
+for details.
+
+You can also [leave us a note](https://github.com/imbue-ai/latchkey/issues/56).
 
 ## Installation
 
