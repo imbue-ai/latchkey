@@ -59,7 +59,64 @@ function defaultDetachedSubprocessRunner(args: readonly string[]): void {
 
 let subprocessRunner: SubprocessRunner = defaultSubprocessRunner;
 let capturingSubprocessRunner: CapturingSubprocessRunner = defaultCapturingSubprocessRunner;
+/**
+ * Result from an async curl execution that captures output as buffers.
+ */
+export interface AsyncCurlResult {
+  readonly returncode: number;
+  readonly stdout: Buffer;
+  readonly stderr: string;
+}
+
+/**
+ * Type for the async subprocess runner function (captures output, non-blocking).
+ */
+export type AsyncSubprocessRunner = (
+  args: readonly string[],
+  options?: { stdin?: Buffer }
+) => Promise<AsyncCurlResult>;
+
+function defaultAsyncSubprocessRunner(
+  args: readonly string[],
+  options?: { stdin?: Buffer }
+): Promise<AsyncCurlResult> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(CONFIG.curlCommand, args as string[], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: string[] = [];
+
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdoutChunks.push(chunk);
+    });
+
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderrChunks.push(chunk.toString());
+    });
+
+    child.on('error', reject);
+
+    child.on('close', (code) => {
+      resolve({
+        returncode: code ?? 1,
+        stdout: Buffer.concat(stdoutChunks),
+        stderr: stderrChunks.join(''),
+      });
+    });
+
+    if (options?.stdin !== undefined) {
+      child.stdin.write(options.stdin);
+      child.stdin.end();
+    } else {
+      child.stdin.end();
+    }
+  });
+}
+
 let detachedSubprocessRunner: DetachedSubprocessRunner = defaultDetachedSubprocessRunner;
+let asyncSubprocessRunner: AsyncSubprocessRunner = defaultAsyncSubprocessRunner;
 
 export function setSubprocessRunner(runner: SubprocessRunner): void {
   subprocessRunner = runner;
@@ -85,6 +142,14 @@ export function resetDetachedSubprocessRunner(): void {
   detachedSubprocessRunner = defaultDetachedSubprocessRunner;
 }
 
+export function setAsyncSubprocessRunner(runner: AsyncSubprocessRunner): void {
+  asyncSubprocessRunner = runner;
+}
+
+export function resetAsyncSubprocessRunner(): void {
+  asyncSubprocessRunner = defaultAsyncSubprocessRunner;
+}
+
 /**
  * Run curl without capturing output (for interactive CLI use).
  */
@@ -105,6 +170,16 @@ export function runCaptured(args: readonly string[], timeout = 10): CurlResult {
  */
 export function runDetached(args: readonly string[]): void {
   detachedSubprocessRunner(args);
+}
+
+/**
+ * Run curl asynchronously with output capture (for gateway proxy use).
+ */
+export function runAsync(
+  args: readonly string[],
+  options?: { stdin?: Buffer }
+): Promise<AsyncCurlResult> {
+  return asyncSubprocessRunner(args, options);
 }
 
 // Curl flags that don't affect the HTTP request semantics but may not be supported by URL extraction.

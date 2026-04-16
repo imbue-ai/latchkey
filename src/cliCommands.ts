@@ -41,9 +41,13 @@ import {
   NoCurlCredentialsNotSupportedError,
   Service,
 } from './services/index.js';
-import { extractUrlFromCurlArguments, run as curlRun } from './curl.js';
+import { extractUrlFromCurlArguments, run as curlRun, runAsync as curlRunAsync } from './curl.js';
 import { checkPermission, PermissionCheckError } from './permissions.js';
+import { ErrorMessages } from './errorMessages.js';
+import { maybeRefreshCredentials, getCredentialStatus } from './apiCredentialsUtils.js';
 import { getSkillMdContent } from './skillMd.js';
+import { startGateway } from './gateway.js';
+import { VERSION } from './version.js';
 
 /**
  * Exit code used when a request is rejected by permission rules.
@@ -53,44 +57,13 @@ import { getSkillMdContent } from './skillMd.js';
 export const PERMISSION_DENIED_EXIT_CODE = 126;
 
 /**
- * Try to refresh expired credentials if the service supports it.
- * Returns refreshed credentials if successful, otherwise returns the original credentials.
- */
-async function maybeRefreshCredentials(
-  service: Service,
-  apiCredentials: ApiCredentials,
-  apiCredentialStore: ApiCredentialStore
-): Promise<ApiCredentials> {
-  if (apiCredentials.isExpired() !== true || !service.refreshCredentials) {
-    return apiCredentials;
-  }
-  const refreshedCredentials = await service.refreshCredentials(apiCredentials);
-  if (refreshedCredentials !== null) {
-    apiCredentialStore.save(service.name, refreshedCredentials);
-    return refreshedCredentials;
-  }
-  return apiCredentials;
-}
-
-async function getCredentialStatus(
-  service: Service,
-  credentials: ApiCredentials | null,
-  apiCredentialStore: ApiCredentialStore
-): Promise<ApiCredentialStatus> {
-  if (credentials === null) {
-    return ApiCredentialStatus.Missing;
-  }
-  const refreshed = await maybeRefreshCredentials(service, credentials, apiCredentialStore);
-  return service.checkApiCredentials(refreshed);
-}
-
-/**
  * Dependencies that can be injected for testing.
  */
 export interface CliDependencies {
   readonly registry: Registry;
   readonly config: Config;
   readonly runCurl: (args: readonly string[]) => CurlResult;
+  readonly runCurlAsync: typeof curlRunAsync;
   readonly checkPermission: (
     curlArguments: readonly string[],
     configPath: string,
@@ -100,6 +73,7 @@ export interface CliDependencies {
   readonly exit: (code: number) => never;
   readonly log: (message: string) => void;
   readonly errorLog: (message: string) => void;
+  readonly version: string;
 }
 
 /**
@@ -110,6 +84,7 @@ export function createDefaultDependencies(): CliDependencies {
     registry: REGISTRY,
     config: CONFIG,
     runCurl: curlRun,
+    runCurlAsync: curlRunAsync,
     checkPermission: checkPermission,
     confirm: defaultConfirm,
     exit: (code: number) => process.exit(code),
@@ -119,6 +94,7 @@ export function createDefaultDependencies(): CliDependencies {
     errorLog: (message: string) => {
       console.error(message);
     },
+    version: VERSION,
   };
 }
 
@@ -722,7 +698,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           deps.config.permissionsDoNotUseBuiltinSchemas
         );
         if (!allowed) {
-          deps.errorLog('Error: Request not permitted by the user.');
+          deps.errorLog(ErrorMessages.requestNotPermitted);
           deps.exit(PERMISSION_DENIED_EXIT_CODE);
         }
       } catch (error) {
@@ -735,13 +711,13 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
 
       const url = extractUrlFromCurlArguments(curlArguments);
       if (url === null) {
-        deps.errorLog('Error: Could not extract URL from curl arguments.');
+        deps.errorLog(ErrorMessages.couldNotExtractUrl);
         deps.exit(1);
       }
 
       const service = deps.registry.getByUrl(url);
       if (service === null) {
-        deps.errorLog(`Error: No service matches URL: ${url}`);
+        deps.errorLog(ErrorMessages.noServiceMatchesUrl(url));
         deps.exit(1);
       }
 
@@ -756,10 +732,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       const isExpired = apiCredentials?.isExpired() === true;
 
       if (apiCredentials === null) {
-        deps.errorLog(`Error: No credentials found for ${service.name}.`);
-        deps.errorLog(
-          `Run 'latchkey auth browser ${service.name}' or 'latchkey auth set ${service.name}' first.`
-        );
+        deps.errorLog(ErrorMessages.noCredentialsFound(service.name));
         deps.exit(1);
       }
 
@@ -767,10 +740,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         apiCredentials = await maybeRefreshCredentials(service, apiCredentials, apiCredentialStore);
 
         if (apiCredentials.isExpired() === true) {
-          deps.errorLog(`Error: Credentials for ${service.name} are expired.`);
-          deps.errorLog(
-            `Run 'latchkey auth browser ${service.name}' or 'latchkey auth set ${service.name}' to refresh them.`
-          );
+          deps.errorLog(ErrorMessages.credentialsExpired(service.name));
           deps.exit(1);
         }
       }
@@ -779,6 +749,52 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       const result = deps.runCurl(allArguments);
       deps.exit(result.returncode);
     });
+
+  program
+    .command('gateway')
+    .description('Start a local HTTP gateway that proxies requests with credential injection.')
+    .option('--port <number>', 'Port to listen on', '8000')
+    .option('--host <address>', 'Address to bind to', 'localhost')
+    .option(
+      '--max-body-size <bytes>',
+      'Maximum request body size in bytes',
+      String(10 * 1024 * 1024)
+    )
+    .action(
+      async (options: { port: string; host: string; maxBodySize: string }) => {
+        const port = parseInt(options.port, 10);
+        if (isNaN(port) || port < 0 || port > 65535) {
+          deps.errorLog(`Error: Invalid port number: ${options.port}`);
+          deps.exit(1);
+        }
+
+        const maxBodySize = parseInt(options.maxBodySize, 10);
+        if (isNaN(maxBodySize) || maxBodySize <= 0) {
+          deps.errorLog(`Error: Invalid max body size: ${options.maxBodySize}`);
+          deps.exit(1);
+        }
+
+        const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
+        const apiCredentialStore = new ApiCredentialStore(
+          deps.config.credentialStorePath,
+          encryptedStorage
+        );
+
+        const gateway = await startGateway(deps, apiCredentialStore, {
+          port,
+          host: options.host,
+          maxBodySize,
+        });
+
+        const shutdown = async () => {
+          await gateway.close();
+          deps.exit(0);
+        };
+
+        process.on('SIGINT', () => void shutdown());
+        process.on('SIGTERM', () => void shutdown());
+      }
+    );
 
   program
     .command('skill-md')

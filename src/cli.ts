@@ -17,10 +17,7 @@ import { KeychainTimeoutError } from './keychain.js';
 import { MigrationError, runMigrations } from './migrations.js';
 import { loadRegisteredServicesIntoRegistry } from './registry.js';
 import { countDailyIfNeeded } from './dailyCounting.js';
-import { createRequire } from 'node:module';
-
-const require = createRequire(import.meta.url);
-const packageJson = require('../../package.json') as { version: string };
+import { VERSION } from './version.js';
 
 const deps = createDefaultDependencies();
 
@@ -82,7 +79,7 @@ program
   .description(
     'A command-line tool that injects API credentials to curl requests to known public APIs.'
   )
-  .version(packageJson.version);
+  .version(VERSION);
 
 registerCommands(program, deps);
 
