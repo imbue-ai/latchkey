@@ -135,15 +135,13 @@ describe('parseResponseHeaders', () => {
   });
 
   it('should handle multiple values for the same header', () => {
-    const dump =
-      'HTTP/1.1 200 OK\r\nSet-Cookie: a=1\r\nSet-Cookie: b=2\r\n\r\n';
+    const dump = 'HTTP/1.1 200 OK\r\nSet-Cookie: a=1\r\nSet-Cookie: b=2\r\n\r\n';
     const result = parseResponseHeaders(dump);
     expect(result.headers.get('set-cookie')).toEqual(['a=1', 'b=2']);
   });
 
   it('should use last status line in case of redirects or 100 Continue', () => {
-    const dump =
-      'HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n';
+    const dump = 'HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n';
     const result = parseResponseHeaders(dump);
     expect(result.statusCode).toBe(200);
     expect(result.headers.get('content-type')).toEqual(['text/html']);
@@ -290,8 +288,7 @@ describe('gateway server', () => {
       stdout: Buffer.from('{"ok":true}'),
       stderr: '',
     };
-    mockCurlHeaderDump =
-      'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n';
+    mockCurlHeaderDump = 'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n';
   });
 
   afterEach(async () => {
@@ -457,12 +454,16 @@ describe('gateway server', () => {
     });
 
     it('should return 413 for oversized body', async () => {
-      gateway = await createTestGateway({
-        slack: {
-          objectType: 'rawCurl',
-          curlArguments: ['-H', 'Authorization: Bearer test-token'],
+      gateway = await createTestGateway(
+        {
+          slack: {
+            objectType: 'rawCurl',
+            curlArguments: ['-H', 'Authorization: Bearer test-token'],
+          },
         },
-      }, {}, { maxBodySize: 10 });
+        {},
+        { maxBodySize: 10 }
+      );
 
       const response = await fetch('/gateway/https://slack.com/api/chat.postMessage', {
         method: 'POST',
@@ -481,17 +482,20 @@ describe('gateway server', () => {
         stderr: 'Failed to connect',
       };
       // Don't write any header file
-      gateway = await createTestGateway({
-        slack: {
-          objectType: 'rawCurl',
-          curlArguments: ['-H', 'Authorization: Bearer test-token'],
+      gateway = await createTestGateway(
+        {
+          slack: {
+            objectType: 'rawCurl',
+            curlArguments: ['-H', 'Authorization: Bearer test-token'],
+          },
         },
-      }, {
-        runCurlAsync: (args: readonly string[]): Promise<AsyncCurlResult> => {
-          capturedCurlArgs = args;
-          return Promise.resolve(mockCurlResponse);
-        },
-      });
+        {
+          runCurlAsync: (args: readonly string[]): Promise<AsyncCurlResult> => {
+            capturedCurlArgs = args;
+            return Promise.resolve(mockCurlResponse);
+          },
+        }
+      );
 
       const response = await fetch('/gateway/https://slack.com/api/auth.test');
 
@@ -571,9 +575,7 @@ describe('gateway server', () => {
       expect(logs.some((l) => l.includes('Shutting down'))).toBe(true);
 
       // Verify server is no longer accepting connections
-      await expect(
-        globalThis.fetch(`${baseUrl}/`)
-      ).rejects.toThrow();
+      await expect(globalThis.fetch(`${baseUrl}/`)).rejects.toThrow();
 
       // Prevent double-close in afterEach
       gateway = undefined;
@@ -595,8 +597,7 @@ describe('gateway CLI command registration', () => {
       registry: new Registry([]),
       config: new Config(() => undefined),
       runCurl: (): CurlResult => ({ returncode: 0, stdout: '', stderr: '' }),
-      runCurlAsync: () =>
-        Promise.resolve({ returncode: 0, stdout: Buffer.from(''), stderr: '' }),
+      runCurlAsync: () => Promise.resolve({ returncode: 0, stdout: Buffer.from(''), stderr: '' }),
       checkPermission: () => Promise.resolve(true),
       confirm: () => Promise.resolve(true),
       exit: (code: number): never => {

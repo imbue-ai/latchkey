@@ -399,17 +399,22 @@ export function startGateway(
       return;
     }
 
-    const requestPromise = handleGatewayRequest(request, response, targetUrl, deps, apiCredentialStore, options).catch(
-      (error: unknown) => {
-        const method = request.method ?? 'UNKNOWN';
-        deps.errorLog(
-          `Unexpected error handling ${method} ${targetUrl}: ${error instanceof Error ? error.message : String(error)}`
-        );
-        if (!response.headersSent) {
-          sendErrorResponse(response, 502, ErrorMessages.upstreamRequestFailed);
-        }
+    const requestPromise = handleGatewayRequest(
+      request,
+      response,
+      targetUrl,
+      deps,
+      apiCredentialStore,
+      options
+    ).catch((error: unknown) => {
+      const method = request.method ?? 'UNKNOWN';
+      deps.errorLog(
+        `Unexpected error handling ${method} ${targetUrl}: ${error instanceof Error ? error.message : String(error)}`
+      );
+      if (!response.headersSent) {
+        sendErrorResponse(response, 502, ErrorMessages.upstreamRequestFailed);
       }
-    );
+    });
 
     inFlightRequests.add(requestPromise);
     void requestPromise.finally(() => {

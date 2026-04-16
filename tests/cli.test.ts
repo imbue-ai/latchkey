@@ -343,8 +343,7 @@ describe('CLI commands with dependency injection', () => {
         capturedArgs.push(...args);
         return { returncode: 0, stdout: '', stderr: '' };
       },
-      runCurlAsync: () =>
-        Promise.resolve({ returncode: 0, stdout: Buffer.from(''), stderr: '' }),
+      runCurlAsync: () => Promise.resolve({ returncode: 0, stdout: Buffer.from(''), stderr: '' }),
       checkPermission: () => Promise.resolve(true),
       confirm: () => Promise.resolve(true),
       exit: (code: number): never => {

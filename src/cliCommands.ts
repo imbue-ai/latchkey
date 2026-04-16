@@ -760,41 +760,39 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       'Maximum request body size in bytes',
       String(10 * 1024 * 1024)
     )
-    .action(
-      async (options: { port: string; host: string; maxBodySize: string }) => {
-        const port = parseInt(options.port, 10);
-        if (isNaN(port) || port < 0 || port > 65535) {
-          deps.errorLog(`Error: Invalid port number: ${options.port}`);
-          deps.exit(1);
-        }
-
-        const maxBodySize = parseInt(options.maxBodySize, 10);
-        if (isNaN(maxBodySize) || maxBodySize <= 0) {
-          deps.errorLog(`Error: Invalid max body size: ${options.maxBodySize}`);
-          deps.exit(1);
-        }
-
-        const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
-        const apiCredentialStore = new ApiCredentialStore(
-          deps.config.credentialStorePath,
-          encryptedStorage
-        );
-
-        const gateway = await startGateway(deps, apiCredentialStore, {
-          port,
-          host: options.host,
-          maxBodySize,
-        });
-
-        const shutdown = async () => {
-          await gateway.close();
-          deps.exit(0);
-        };
-
-        process.on('SIGINT', () => void shutdown());
-        process.on('SIGTERM', () => void shutdown());
+    .action(async (options: { port: string; host: string; maxBodySize: string }) => {
+      const port = parseInt(options.port, 10);
+      if (isNaN(port) || port < 0 || port > 65535) {
+        deps.errorLog(`Error: Invalid port number: ${options.port}`);
+        deps.exit(1);
       }
-    );
+
+      const maxBodySize = parseInt(options.maxBodySize, 10);
+      if (isNaN(maxBodySize) || maxBodySize <= 0) {
+        deps.errorLog(`Error: Invalid max body size: ${options.maxBodySize}`);
+        deps.exit(1);
+      }
+
+      const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
+      const apiCredentialStore = new ApiCredentialStore(
+        deps.config.credentialStorePath,
+        encryptedStorage
+      );
+
+      const gateway = await startGateway(deps, apiCredentialStore, {
+        port,
+        host: options.host,
+        maxBodySize,
+      });
+
+      const shutdown = async () => {
+        await gateway.close();
+        deps.exit(0);
+      };
+
+      process.on('SIGINT', () => void shutdown());
+      process.on('SIGTERM', () => void shutdown());
+    });
 
   program
     .command('skill-md')
