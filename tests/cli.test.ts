@@ -309,6 +309,7 @@ describe('CLI commands with dependency injection', () => {
       browserDisabled: overrides.browserDisabled ?? false,
       countingDisabled: overrides.countingDisabled ?? false,
       permissionsDoNotUseBuiltinSchemas: overrides.permissionsDoNotUseBuiltinSchemas ?? false,
+      passthroughUnknown: overrides.passthroughUnknown ?? false,
       checkSensitiveFilePermissions: () => undefined,
       checkSystemPrerequisites: () => undefined,
     };
@@ -1093,6 +1094,52 @@ describe('CLI commands with dependency injection', () => {
       await runCommand(['curl', 'https://unknown-api.example.com'], deps);
 
       expect(exitCode).toBe(1);
+    });
+
+    it('should pass through unknown service when passthroughUnknown is enabled', async () => {
+      const deps = createMockDependencies({
+        config: createMockConfig({ passthroughUnknown: true }),
+      });
+
+      await runCommand(['curl', 'https://unknown-api.example.com/test'], deps);
+
+      expect(exitCode).toBe(0);
+      expect(capturedArgs).toEqual(['https://unknown-api.example.com/test']);
+      expect(errorLogs).toHaveLength(0);
+    });
+
+    it('should pass through missing credentials when passthroughUnknown is enabled', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      await writeSecureFile(storePath, '{}');
+
+      const deps = createMockDependencies({
+        config: createMockConfig({ passthroughUnknown: true }),
+      });
+
+      await runCommand(['curl', 'https://slack.com/api/test'], deps);
+
+      expect(exitCode).toBe(0);
+      expect(capturedArgs).toEqual(['https://slack.com/api/test']);
+      expect(errorLogs).toHaveLength(0);
+    });
+
+    it('should still inject credentials for known services when passthroughUnknown is enabled', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      await writeSecureFile(
+        storePath,
+        JSON.stringify({
+          slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
+        })
+      );
+
+      const deps = createMockDependencies({
+        config: createMockConfig({ passthroughUnknown: true }),
+      });
+
+      await runCommand(['curl', 'https://slack.com/api/test'], deps);
+
+      expect(exitCode).toBe(0);
+      expect(capturedArgs).toContain('Authorization: Bearer stored-token');
     });
 
     it('should read credentials from store and not call login', async () => {

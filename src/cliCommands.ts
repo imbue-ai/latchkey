@@ -717,6 +717,10 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
 
       const service = deps.registry.getByUrl(url);
       if (service === null) {
+        if (deps.config.passthroughUnknown) {
+          const result = deps.runCurl(curlArguments);
+          deps.exit(result.returncode);
+        }
         deps.errorLog(ErrorMessages.noServiceMatchesUrl(url));
         deps.exit(1);
       }
@@ -732,6 +736,10 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       const isExpired = apiCredentials?.isExpired() === true;
 
       if (apiCredentials === null) {
+        if (deps.config.passthroughUnknown) {
+          const result = deps.runCurl(curlArguments);
+          deps.exit(result.returncode);
+        }
         deps.errorLog(ErrorMessages.noCredentialsFound(service.name));
         deps.exit(1);
       }

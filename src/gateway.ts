@@ -248,34 +248,42 @@ async function handleGatewayRequest(
 
   // Service lookup
   const service = deps.registry.getByUrl(targetUrl);
-  if (service === null) {
+
+  // Credential loading
+  let apiCredentials: ApiCredentials | null = null;
+  if (service !== null) {
+    apiCredentials = apiCredentialStore.get(service.name);
+  }
+
+  // When passthrough is disabled, reject unrecognized services or missing credentials
+  if (service === null && !deps.config.passthroughUnknown) {
     deps.log(`${method} ${targetUrl} -> 400`);
     sendErrorResponse(response, 400, ErrorMessages.noServiceMatchesUrl(targetUrl));
     return;
   }
 
-  // Credential loading
-  let apiCredentials: ApiCredentials | null = apiCredentialStore.get(service.name);
-
-  if (apiCredentials === null) {
+  if (service !== null && apiCredentials === null && !deps.config.passthroughUnknown) {
     deps.log(`${method} ${targetUrl} -> 400`);
     sendErrorResponse(response, 400, ErrorMessages.noCredentialsFound(service.name));
     return;
   }
 
   // Expiration check
-  if (apiCredentials.isExpired() === true) {
-    apiCredentials = await maybeRefreshCredentials(service, apiCredentials, apiCredentialStore);
+  if (apiCredentials !== null && apiCredentials.isExpired() === true) {
+    apiCredentials = await maybeRefreshCredentials(service!, apiCredentials, apiCredentialStore);
 
     if (apiCredentials.isExpired() === true) {
       deps.log(`${method} ${targetUrl} -> 400`);
-      sendErrorResponse(response, 400, ErrorMessages.credentialsExpired(service.name));
+      sendErrorResponse(response, 400, ErrorMessages.credentialsExpired(service!.name));
       return;
     }
   }
 
-  // Inject credentials
-  const allArguments = apiCredentials.injectIntoCurlCall(curlArguments);
+  // Inject credentials (or pass through as-is)
+  const allArguments =
+    apiCredentials !== null
+      ? apiCredentials.injectIntoCurlCall(curlArguments)
+      : [...curlArguments];
 
   // Create temp directory for header dump
   const tempDir = mkdtempSync(join(tmpdir(), 'latchkey-gw-'));

@@ -190,12 +190,18 @@ describe('gateway server', () => {
     },
   };
 
-  function createMockConfig(): Config {
-    return new Config((name) => {
+  function createMockConfig(
+    configOverrides: Partial<Config> = {}
+  ): Config {
+    const base = new Config((name) => {
       if (name === 'LATCHKEY_DIRECTORY') return tempDir;
       if (name === 'LATCHKEY_ENCRYPTION_KEY') return TEST_ENCRYPTION_KEY;
       return undefined;
     });
+    if (Object.keys(configOverrides).length === 0) {
+      return base;
+    }
+    return Object.assign(Object.create(Object.getPrototypeOf(base) as object) as Config, base, configOverrides);
   }
 
   async function createTestGateway(
@@ -203,7 +209,8 @@ describe('gateway server', () => {
       slack: { objectType: 'rawCurl', curlArguments: ['-H', 'Authorization: Bearer test-token'] },
     },
     overrides: Partial<CliDependencies> = {},
-    optionOverrides: Partial<GatewayOptions> = {}
+    optionOverrides: Partial<GatewayOptions> = {},
+    configOverrides: Partial<Config> = {}
   ): Promise<GatewayServer> {
     const storePath = join(tempDir, 'credentials.json');
     await writeSecureFile(storePath, JSON.stringify(credentialsData));
@@ -215,7 +222,7 @@ describe('gateway server', () => {
 
     const deps: CliDependencies = {
       registry: new Registry([mockSlackService]),
-      config: createMockConfig(),
+      config: createMockConfig(configOverrides),
       runCurl: (): CurlResult => ({ returncode: 0, stdout: '', stderr: '' }),
       runCurlAsync: async (
         args: readonly string[],
@@ -430,6 +437,78 @@ describe('gateway server', () => {
       expect(response.status).toBe(400);
       const body = (await response.json()) as { error: string };
       expect(body.error).toContain('No credentials found for slack');
+    });
+
+    it('should pass through unknown service when passthroughUnknown is enabled', async () => {
+      mockCurlHeaderDump = 'HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\n';
+      mockCurlResponse = {
+        returncode: 0,
+        stdout: Buffer.from('passthrough response'),
+        stderr: '',
+      };
+
+      gateway = await createTestGateway(
+        {
+          slack: {
+            objectType: 'rawCurl',
+            curlArguments: ['-H', 'Authorization: Bearer test-token'],
+          },
+        },
+        {},
+        {},
+        { passthroughUnknown: true }
+      );
+
+      const response = await fetch('/gateway/https://unknown-api.example.com/test');
+
+      expect(response.status).toBe(200);
+      const body = await response.text();
+      expect(body).toBe('passthrough response');
+
+      // Should not contain any credential injection
+      const headerArgs: string[] = [];
+      for (let i = 0; i < capturedCurlArgs.length; i++) {
+        if (capturedCurlArgs[i] === '-H' && i + 1 < capturedCurlArgs.length) {
+          headerArgs.push(capturedCurlArgs[i + 1]!);
+        }
+      }
+      expect(headerArgs.some((h) => h.includes('Authorization: Bearer test-token'))).toBe(false);
+    });
+
+    it('should pass through missing credentials when passthroughUnknown is enabled', async () => {
+      mockCurlHeaderDump = 'HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\n';
+      mockCurlResponse = {
+        returncode: 0,
+        stdout: Buffer.from('no-creds response'),
+        stderr: '',
+      };
+
+      gateway = await createTestGateway({}, {}, {}, { passthroughUnknown: true });
+
+      const response = await fetch('/gateway/https://slack.com/api/auth.test');
+
+      expect(response.status).toBe(200);
+      const body = await response.text();
+      expect(body).toBe('no-creds response');
+    });
+
+    it('should still inject credentials for known services when passthroughUnknown is enabled', async () => {
+      gateway = await createTestGateway(
+        {
+          slack: {
+            objectType: 'rawCurl',
+            curlArguments: ['-H', 'Authorization: Bearer test-token'],
+          },
+        },
+        {},
+        {},
+        { passthroughUnknown: true }
+      );
+
+      const response = await fetch('/gateway/https://slack.com/api/auth.test');
+
+      expect(response.status).toBe(200);
+      expect(capturedCurlArgs).toContain('Authorization: Bearer test-token');
     });
 
     it('should return 400 for invalid target URL scheme', async () => {

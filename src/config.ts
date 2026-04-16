@@ -33,6 +33,7 @@ const LATCHKEY_DISABLE_COUNTING_ENV_VAR = 'LATCHKEY_DISABLE_COUNTING';
 const LATCHKEY_PERMISSIONS_CONFIG_ENV_VAR = 'LATCHKEY_PERMISSIONS_CONFIG';
 const LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS_ENV_VAR =
   'LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS';
+const LATCHKEY_PASSTHROUGH_UNKNOWN_ENV_VAR = 'LATCHKEY_PASSTHROUGH_UNKNOWN';
 
 export const DEFAULT_KEYRING_SERVICE_NAME = 'latchkey';
 export const DEFAULT_KEYRING_ACCOUNT_NAME = 'encryption-key';
@@ -110,6 +111,11 @@ export class Config {
    * When true, detent's built-in schemas are not used during permission checks.
    */
   readonly permissionsDoNotUseBuiltinSchemas: boolean;
+  /**
+   * When true, requests to unrecognized services or services without credentials
+   * are passed through as-is instead of being rejected.
+   */
+  readonly passthroughUnknown: boolean;
 
   constructor(getEnv: (name: string) => string | undefined = (name) => process.env[name]) {
     this.curlCommand = getEnv(LATCHKEY_CURL_ENV_VAR) ?? 'curl';
@@ -139,6 +145,10 @@ export class Config {
     );
     this.permissionsDoNotUseBuiltinSchemas =
       doNotUseBuiltinSchemasEnv !== undefined && doNotUseBuiltinSchemasEnv !== '';
+
+    const passthroughUnknownEnv = getEnv(LATCHKEY_PASSTHROUGH_UNKNOWN_ENV_VAR);
+    this.passthroughUnknown =
+      passthroughUnknownEnv !== undefined && passthroughUnknownEnv !== '';
   }
 
   get credentialStorePath(): string {
