@@ -7,14 +7,20 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { ApiCredentialStore } from './apiCredentialStore.js';
-import type { ApiCredentials } from './apiCredentials.js';
 import type { AsyncCurlResult } from './curl.js';
 import type { CliDependencies } from './cliCommands.js';
+import {
+  CredentialsExpiredError,
+  NoCredentialsForServiceError,
+  NoServiceForUrlError,
+  prepareCurlInvocation,
+  RequestNotPermittedError,
+  UrlExtractionFailedError,
+} from './curlInjection.js';
 import type { EncryptedStorage } from './encryptedStorage.js';
 import { handleLatchkeyRequest } from './latchkeyEndpoint.js';
 import { PermissionCheckError } from './permissions.js';
 import { ErrorMessages } from './errorMessages.js';
-import { maybeRefreshCredentials } from './apiCredentialsUtils.js';
 
 /**
  * Headers that should not be forwarded between client and upstream (hop-by-hop).
@@ -227,63 +233,38 @@ async function handleGatewayRequest(
 
   const curlArguments = buildCurlArguments(method, headerMap, targetUrl, body !== null);
 
-  // Permission check
+  let allArguments: readonly string[];
   try {
-    const allowed = await deps.checkPermission(
-      curlArguments,
-      deps.config.permissionsConfigPath,
-      deps.config.permissionsDoNotUseBuiltinSchemas
-    );
-    if (!allowed) {
+    allArguments = await prepareCurlInvocation(curlArguments, apiCredentialStore, {
+      registry: deps.registry,
+      checkPermission: deps.checkPermission,
+      permissionsConfigPath: deps.config.permissionsConfigPath,
+      permissionsDoNotUseBuiltinSchemas: deps.config.permissionsDoNotUseBuiltinSchemas,
+      passthroughUnknown: deps.config.passthroughUnknown,
+    });
+  } catch (error) {
+    if (error instanceof RequestNotPermittedError) {
       deps.log(`${method} ${targetUrl} -> 403`);
-      sendErrorResponse(response, 403, ErrorMessages.requestNotPermitted);
+      sendErrorResponse(response, 403, error.message);
       return;
     }
-  } catch (error) {
     if (error instanceof PermissionCheckError) {
       deps.log(`${method} ${targetUrl} -> 403`);
       sendErrorResponse(response, 403, `Error: ${error.message}`);
       return;
     }
-    throw error;
-  }
-
-  // Service lookup
-  const service = deps.registry.getByUrl(targetUrl);
-
-  // Credential loading
-  let apiCredentials: ApiCredentials | null = null;
-  if (service !== null) {
-    apiCredentials = apiCredentialStore.get(service.name);
-  }
-
-  // When passthrough is disabled, reject unrecognized services or missing credentials
-  if (service === null && !deps.config.passthroughUnknown) {
-    deps.log(`${method} ${targetUrl} -> 400`);
-    sendErrorResponse(response, 400, ErrorMessages.noServiceMatchesUrl(targetUrl));
-    return;
-  }
-
-  if (service !== null && apiCredentials === null && !deps.config.passthroughUnknown) {
-    deps.log(`${method} ${targetUrl} -> 400`);
-    sendErrorResponse(response, 400, ErrorMessages.noCredentialsFound(service.name));
-    return;
-  }
-
-  // Expiration check
-  if (apiCredentials !== null && apiCredentials.isExpired() === true) {
-    apiCredentials = await maybeRefreshCredentials(service!, apiCredentials, apiCredentialStore);
-
-    if (apiCredentials.isExpired() === true) {
+    if (
+      error instanceof UrlExtractionFailedError ||
+      error instanceof NoServiceForUrlError ||
+      error instanceof NoCredentialsForServiceError ||
+      error instanceof CredentialsExpiredError
+    ) {
       deps.log(`${method} ${targetUrl} -> 400`);
-      sendErrorResponse(response, 400, ErrorMessages.credentialsExpired(service!.name));
+      sendErrorResponse(response, 400, error.message);
       return;
     }
+    throw error;
   }
-
-  // Inject credentials (or pass through as-is)
-  const allArguments =
-    apiCredentials !== null ? apiCredentials.injectIntoCurlCall(curlArguments) : [...curlArguments];
 
   // Create temp directory for header dump
   const tempDir = mkdtempSync(join(tmpdir(), 'latchkey-gw-'));

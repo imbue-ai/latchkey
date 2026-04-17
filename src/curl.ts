@@ -257,8 +257,8 @@ export function extractHeadersFromCurlArguments(
   return headers;
 }
 
-export function extractUrlFromCurlArguments(args: string[]): string | null {
-  const filteredArgs = filterPassthroughFlags(args);
+export function extractUrlFromCurlArguments(args: readonly string[]): string | null {
+  const filteredArgs = filterPassthroughFlags([...args]);
 
   // Simple URL extraction: look for arguments that look like URLs
   // or parse known curl argument patterns

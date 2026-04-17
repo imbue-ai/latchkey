@@ -8,6 +8,14 @@ import { createInterface } from 'node:readline';
 import { ApiCredentialStore } from './apiCredentialStore.js';
 import { ApiCredentials, RawCurlCredentials } from './apiCredentials.js';
 import {
+  CredentialsExpiredError,
+  NoCredentialsForServiceError,
+  NoServiceForUrlError,
+  prepareCurlInvocation,
+  RequestNotPermittedError,
+  UrlExtractionFailedError,
+} from './curlInjection.js';
+import {
   BROWSER_SOURCES,
   BrowserNotFoundError,
   DEFAULT_BROWSER_SOURCES,
@@ -40,7 +48,6 @@ import {
 import { extractUrlFromCurlArguments, run as curlRun, runAsync as curlRunAsync } from './curl.js';
 import { checkPermission, PermissionCheckError } from './permissions.js';
 import { ErrorMessages } from './errorMessages.js';
-import { maybeRefreshCredentials } from './apiCredentialsUtils.js';
 import { getSkillMdContent } from './skillMd.js';
 import { startGateway } from './gateway.js';
 import {
@@ -713,70 +720,43 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         deps.exit(result.returncode);
       }
 
-      try {
-        const allowed = await deps.checkPermission(
-          curlArguments,
-          deps.config.permissionsConfigPath,
-          deps.config.permissionsDoNotUseBuiltinSchemas
-        );
-        if (!allowed) {
-          deps.errorLog(ErrorMessages.requestNotPermitted);
-          deps.exit(PERMISSION_DENIED_EXIT_CODE);
-        }
-      } catch (error) {
-        if (error instanceof PermissionCheckError) {
-          deps.errorLog(`Error: ${error.message}`);
-          deps.exit(PERMISSION_DENIED_EXIT_CODE);
-        }
-        throw error;
-      }
-
-      const url = extractUrlFromCurlArguments(curlArguments);
-      if (url === null) {
-        deps.errorLog(ErrorMessages.couldNotExtractUrl);
-        deps.exit(1);
-      }
-
-      const service = deps.registry.getByUrl(url);
-      if (service === null) {
-        if (deps.config.passthroughUnknown) {
-          const result = deps.runCurl(curlArguments);
-          deps.exit(result.returncode);
-        }
-        deps.errorLog(ErrorMessages.noServiceMatchesUrl(url));
-        deps.exit(1);
-      }
-
       const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
       const apiCredentialStore = new ApiCredentialStore(
         deps.config.credentialStorePath,
         encryptedStorage
       );
-      let apiCredentials: ApiCredentials | null = apiCredentialStore.get(service.name);
 
-      // Check if credentials exist but are expired
-      const isExpired = apiCredentials?.isExpired() === true;
-
-      if (apiCredentials === null) {
-        if (deps.config.passthroughUnknown) {
-          const result = deps.runCurl(curlArguments);
-          deps.exit(result.returncode);
+      let finalArguments: readonly string[];
+      try {
+        finalArguments = await prepareCurlInvocation(curlArguments, apiCredentialStore, {
+          registry: deps.registry,
+          checkPermission: deps.checkPermission,
+          permissionsConfigPath: deps.config.permissionsConfigPath,
+          permissionsDoNotUseBuiltinSchemas: deps.config.permissionsDoNotUseBuiltinSchemas,
+          passthroughUnknown: deps.config.passthroughUnknown,
+        });
+      } catch (error) {
+        if (error instanceof RequestNotPermittedError) {
+          deps.errorLog(error.message);
+          deps.exit(PERMISSION_DENIED_EXIT_CODE);
         }
-        deps.errorLog(ErrorMessages.noCredentialsFound(service.name));
-        deps.exit(1);
-      }
-
-      if (isExpired) {
-        apiCredentials = await maybeRefreshCredentials(service, apiCredentials, apiCredentialStore);
-
-        if (apiCredentials.isExpired() === true) {
-          deps.errorLog(ErrorMessages.credentialsExpired(service.name));
+        if (error instanceof PermissionCheckError) {
+          deps.errorLog(`Error: ${error.message}`);
+          deps.exit(PERMISSION_DENIED_EXIT_CODE);
+        }
+        if (
+          error instanceof UrlExtractionFailedError ||
+          error instanceof NoServiceForUrlError ||
+          error instanceof NoCredentialsForServiceError ||
+          error instanceof CredentialsExpiredError
+        ) {
+          deps.errorLog(error.message);
           deps.exit(1);
         }
+        throw error;
       }
 
-      const allArguments = apiCredentials.injectIntoCurlCall(curlArguments);
-      const result = deps.runCurl(allArguments);
+      const result = deps.runCurl(finalArguments);
       deps.exit(result.returncode);
     });
 
