@@ -23,17 +23,23 @@
     "LICENSE"
   ],
   "scripts": {
+    "prepare": "node scripts/generateVersion.js",
     "prepublishOnly": "npm run build",
+    "prebuild": "node scripts/generateVersion.js",
     "build": "tsc && node -e \"require('fs').cpSync('skills', 'dist/skills', {recursive:true})\" ",
+    "predev": "node scripts/generateVersion.js",
     "dev": "tsc --watch",
     "lint": "eslint src tests scripts",
     "lint:fix": "eslint src tests scripts --fix",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\" \"scripts/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\" \"scripts/**/*.ts\"",
+    "pretypecheck": "node scripts/generateVersion.js",
     "typecheck": "tsc --noEmit",
+    "pretest": "node scripts/generateVersion.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "start": "node dist/cli.js",
+    "prebun-compile": "node scripts/generateVersion.js",
     "bun-compile": "bun build ./src/cli.ts --compile --external chromium-bidi --external electron --outfile latchkey"
   },
   "keywords": [

@@ -1,17 +1,3 @@
-/**
- * Package version extraction.
- */
-
-import { createRequire } from 'node:module';
-
-const require = createRequire(import.meta.url);
-
-// ../package.json works from src/, ../../package.json works from dist/src/
-let version: string;
-try {
-  version = (require('../package.json') as { version: string }).version;
-} catch {
-  version = (require('../../package.json') as { version: string }).version;
-}
-
-export const VERSION = version;
+// Auto-generated from package.json by scripts/generateVersion.js.
+// Do not edit by hand; run `node scripts/generateVersion.js` to refresh.
+export const VERSION = "2.6.1";
