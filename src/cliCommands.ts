@@ -44,6 +44,13 @@ import { maybeRefreshCredentials } from './apiCredentialsUtils.js';
 import { getSkillMdContent } from './skillMd.js';
 import { startGateway } from './gateway.js';
 import {
+  callLatchkeyEndpoint,
+  GatewayCommandNotSupportedError,
+  GatewayRequestError,
+  rewriteCurlArgumentsForGateway,
+} from './gatewayClient.js';
+import type { LatchkeyRequest } from './latchkeyEndpoint.js';
+import {
   servicesList,
   servicesInfo,
   authList,
@@ -102,6 +109,41 @@ export function createDefaultDependencies(): CliDependencies {
     },
     version: VERSION,
   };
+}
+
+/**
+ * Forward a request to the gateway's `/latchkey/` endpoint. On transport or
+ * protocol errors the CLI exits with status 1 after logging the error message.
+ */
+async function forwardToGateway(
+  deps: CliDependencies,
+  request: LatchkeyRequest
+): Promise<unknown> {
+  const gatewayUrl = deps.config.gatewayUrl;
+  if (gatewayUrl === null) {
+    throw new GatewayCommandNotSupportedError(request.command);
+  }
+  try {
+    return await callLatchkeyEndpoint(gatewayUrl, request);
+  } catch (error) {
+    if (error instanceof GatewayRequestError) {
+      deps.errorLog(`Error: ${error.message}`);
+      deps.exit(1);
+    }
+    throw error;
+  }
+}
+
+/**
+ * If the CLI is running in gateway mode, log an error and exit. Used for
+ * commands that manage local state and cannot be meaningfully delegated.
+ */
+function refuseInGatewayMode(deps: CliDependencies, commandName: string): void {
+  if (deps.config.gatewayUrl !== null) {
+    const error = new GatewayCommandNotSupportedError(commandName);
+    deps.errorLog(`Error: ${error.message}`);
+    deps.exit(1);
+  }
 }
 
 async function defaultConfirm(message: string): Promise<boolean> {
@@ -208,6 +250,14 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       'Only list services that either have stored credentials or can be authenticated via a browser.'
     )
     .action(async (options: { builtin?: boolean; viable?: boolean }) => {
+      if (deps.config.gatewayUrl !== null) {
+        const result = await forwardToGateway(deps, {
+          command: 'services list',
+          params: options,
+        });
+        deps.log(JSON.stringify(result, null, 2));
+        return;
+      }
       const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
       const apiCredentialStore = new ApiCredentialStore(
         deps.config.credentialStorePath,
@@ -222,6 +272,14 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .description('Show information about a service.')
     .argument('<service_name>', 'Name of the service to get info for')
     .action(async (serviceName: string) => {
+      if (deps.config.gatewayUrl !== null) {
+        const info = await forwardToGateway(deps, {
+          command: 'services info',
+          params: { serviceName },
+        });
+        deps.log(JSON.stringify(info, null, 2));
+        return;
+      }
       try {
         const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
         const apiCredentialStore = new ApiCredentialStore(
@@ -259,6 +317,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         rawServiceName: string,
         options: { baseApiUrl: string; serviceFamily?: string; loginUrl?: string }
       ) => {
+        refuseInGatewayMode(deps, 'services register');
         let serviceName: string;
         try {
           serviceName = canonicalizeServiceName(rawServiceName);
@@ -333,6 +392,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .description('Deregister a previously registered service instance.')
     .argument('<service_name>', 'Name of the registered service to remove')
     .action(async (serviceName: string) => {
+      refuseInGatewayMode(deps, 'services deregister');
       const service = deps.registry.getByName(serviceName);
       if (service === null) {
         deps.errorLog(`Error: Unknown service: ${serviceName}`);
@@ -373,6 +433,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .argument('[service_name]', 'Name of the service to clear API credentials for')
     .option('-y, --yes', 'Skip confirmation prompt when clearing all data')
     .action(async (serviceName: string | undefined, options: { yes?: boolean }) => {
+      refuseInGatewayMode(deps, 'auth clear');
       if (serviceName === undefined) {
         await clearAll(deps, options.yes ?? false);
       } else {
@@ -384,6 +445,11 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .command('list')
     .description('List all stored credentials and their status.')
     .action(async () => {
+      if (deps.config.gatewayUrl !== null) {
+        const entries = await forwardToGateway(deps, { command: 'auth list' });
+        deps.log(JSON.stringify(entries, null, 2));
+        return;
+      }
       const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
       const apiCredentialStore = new ApiCredentialStore(
         deps.config.credentialStorePath,
@@ -404,6 +470,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .allowUnknownOption()
     .allowExcessArguments()
     .action(async (_serviceName: string, _options: unknown, command: { args: string[] }) => {
+      refuseInGatewayMode(deps, 'auth set');
       const [serviceName, ...curlArguments] = command.args;
       if (serviceName === undefined) {
         deps.errorLog('Error: Service name is required.');
@@ -453,6 +520,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     )
     .allowExcessArguments()
     .action(async (_serviceName: string, _options: unknown, command: { args: string[] }) => {
+      refuseInGatewayMode(deps, 'auth set-nocurl');
       const [serviceName, ...noCurlArguments] = command.args;
       if (serviceName === undefined) {
         deps.errorLog('Error: Service name is required.');
@@ -492,6 +560,14 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .description('Login to a service via the browser and store the API credentials.')
     .argument('<service_name>', 'Name of the service to login to')
     .action(async (serviceName: string) => {
+      if (deps.config.gatewayUrl !== null) {
+        await forwardToGateway(deps, {
+          command: 'auth browser',
+          params: { serviceName },
+        });
+        deps.log('Done');
+        return;
+      }
       try {
         const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
         const apiCredentialStore = new ApiCredentialStore(
@@ -548,6 +624,18 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .description('Prepare a service to be used with the browser command.')
     .argument('<service_name>', 'Name of the service to prepare')
     .action(async (serviceName: string) => {
+      if (deps.config.gatewayUrl !== null) {
+        const result = (await forwardToGateway(deps, {
+          command: 'auth browser-prepare',
+          params: { serviceName },
+        })) as { alreadyPrepared?: boolean } | null;
+        if (result !== null && result.alreadyPrepared === true) {
+          deps.log('Already prepared.');
+        } else {
+          deps.log('Done');
+        }
+        return;
+      }
       try {
         const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
         const apiCredentialStore = new ApiCredentialStore(
@@ -602,6 +690,21 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .allowExcessArguments()
     .action(async (_options: unknown, command: { args: string[] }) => {
       const curlArguments = command.args;
+
+      if (deps.config.gatewayUrl !== null) {
+        const targetUrl = extractUrlFromCurlArguments(curlArguments);
+        if (targetUrl === null) {
+          deps.errorLog(ErrorMessages.couldNotExtractUrl);
+          deps.exit(1);
+        }
+        const rewritten = rewriteCurlArgumentsForGateway(
+          curlArguments,
+          targetUrl,
+          deps.config.gatewayUrl
+        );
+        const result = deps.runCurl(rewritten);
+        deps.exit(result.returncode);
+      }
 
       try {
         const allowed = await deps.checkPermission(
@@ -681,6 +784,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       String(10 * 1024 * 1024)
     )
     .action(async (options: { port: string; host: string; maxBodySize: string }) => {
+      refuseInGatewayMode(deps, 'gateway');
       const port = parseInt(options.port, 10);
       if (isNaN(port) || port < 0 || port > 65535) {
         deps.errorLog(`Error: Invalid port number: ${options.port}`);
@@ -730,6 +834,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       DEFAULT_BROWSER_SOURCES.join(',')
     )
     .action(async (options: { source: string }) => {
+      refuseInGatewayMode(deps, 'ensure-browser');
       const configPath = deps.config.configPath;
 
       // Parse and validate sources

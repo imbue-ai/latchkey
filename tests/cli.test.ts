@@ -310,6 +310,7 @@ describe('CLI commands with dependency injection', () => {
       countingDisabled: overrides.countingDisabled ?? false,
       permissionsDoNotUseBuiltinSchemas: overrides.permissionsDoNotUseBuiltinSchemas ?? false,
       passthroughUnknown: overrides.passthroughUnknown ?? false,
+      gatewayUrl: overrides.gatewayUrl ?? null,
       checkSensitiveFilePermissions: () => undefined,
       checkSystemPrerequisites: () => undefined,
     };
@@ -2035,6 +2036,189 @@ describe('CLI commands with dependency injection', () => {
 
       expect(exitCode).toBeNull();
       expect(logs).toContain("Service 'my-gitlab' deregistered.");
+    });
+  });
+
+  describe('gateway mode (LATCHKEY_GATEWAY)', () => {
+    const GATEWAY_URL = 'http://localhost:9000';
+    const originalFetch = globalThis.fetch;
+
+    afterEach(() => {
+      globalThis.fetch = originalFetch;
+    });
+
+    function makeFetchMock(response: Response) {
+      const fetchMock = vi.fn().mockResolvedValue(response);
+      globalThis.fetch = fetchMock as unknown as typeof fetch;
+      return fetchMock;
+    }
+
+    it('forwards `services list` to the gateway /latchkey endpoint', async () => {
+      const fetchMock = makeFetchMock(
+        new Response(JSON.stringify({ result: ['slack', 'github'] }), { status: 200 })
+      );
+      const deps = createMockDependencies({
+        config: createMockConfig({ gatewayUrl: GATEWAY_URL }),
+      });
+
+      await runCommand(['services', 'list', '--builtin'], deps);
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe(`${GATEWAY_URL}/latchkey`);
+      expect(init.method).toBe('POST');
+      expect(JSON.parse(init.body as string) as unknown).toEqual({
+        command: 'services list',
+        params: { builtin: true },
+      });
+      expect(logs).toHaveLength(1);
+      expect(JSON.parse(logs[0] ?? '') as unknown).toEqual(['slack', 'github']);
+    });
+
+    it('forwards `services info` to the gateway /latchkey endpoint', async () => {
+      const fetchMock = makeFetchMock(
+        new Response(JSON.stringify({ result: { type: 'built-in' } }), { status: 200 })
+      );
+      const deps = createMockDependencies({
+        config: createMockConfig({ gatewayUrl: GATEWAY_URL }),
+      });
+
+      await runCommand(['services', 'info', 'slack'], deps);
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(JSON.parse(init.body as string) as unknown).toEqual({
+        command: 'services info',
+        params: { serviceName: 'slack' },
+      });
+    });
+
+    it('forwards `auth list` to the gateway /latchkey endpoint', async () => {
+      const fetchMock = makeFetchMock(
+        new Response(JSON.stringify({ result: { slack: { credentialType: 'slack' } } }), {
+          status: 200,
+        })
+      );
+      const deps = createMockDependencies({
+        config: createMockConfig({ gatewayUrl: GATEWAY_URL }),
+      });
+
+      await runCommand(['auth', 'list'], deps);
+
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(JSON.parse(init.body as string) as unknown).toEqual({ command: 'auth list' });
+      expect(JSON.parse(logs[0] ?? '') as unknown).toEqual({
+        slack: { credentialType: 'slack' },
+      });
+    });
+
+    it('forwards `auth browser` to the gateway /latchkey endpoint', async () => {
+      const fetchMock = makeFetchMock(
+        new Response(JSON.stringify({ result: null }), { status: 200 })
+      );
+      const deps = createMockDependencies({
+        config: createMockConfig({ gatewayUrl: GATEWAY_URL }),
+      });
+
+      await runCommand(['auth', 'browser', 'slack'], deps);
+
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(JSON.parse(init.body as string) as unknown).toEqual({
+        command: 'auth browser',
+        params: { serviceName: 'slack' },
+      });
+      expect(logs).toContain('Done');
+    });
+
+    it('forwards `auth browser-prepare` and reports `Already prepared.` when the gateway says so', async () => {
+      makeFetchMock(
+        new Response(JSON.stringify({ result: { alreadyPrepared: true } }), { status: 200 })
+      );
+      const deps = createMockDependencies({
+        config: createMockConfig({ gatewayUrl: GATEWAY_URL }),
+      });
+
+      await runCommand(['auth', 'browser-prepare', 'slack'], deps);
+
+      expect(logs).toContain('Already prepared.');
+    });
+
+    it.each([
+      ['services list', ['services', 'list']],
+      ['services info', ['services', 'info', 'foo']],
+      ['auth list', ['auth', 'list']],
+      ['auth browser', ['auth', 'browser', 'slack']],
+      ['auth browser-prepare', ['auth', 'browser-prepare', 'slack']],
+    ])(
+      'reports gateway errors on stderr (not stdout) for `%s`',
+      async (_name, argv) => {
+        makeFetchMock(
+          new Response(JSON.stringify({ error: 'Unknown service: foo.' }), { status: 400 })
+        );
+        const deps = createMockDependencies({
+          config: createMockConfig({ gatewayUrl: GATEWAY_URL }),
+        });
+
+        await runCommand(argv, deps);
+
+        expect(exitCode).toBe(1);
+        expect(errorLogs.some((message) => message.includes('Unknown service: foo.'))).toBe(
+          true
+        );
+        // The error message must never be printed to stdout — that would
+        // interleave into JSON output consumed by callers.
+        expect(logs.join('\n')).not.toContain('Unknown service: foo.');
+        expect(logs).toEqual([]);
+      }
+    );
+
+    it('rewrites the curl target URL to the gateway /gateway endpoint', async () => {
+      const fetchMock = vi.fn();
+      globalThis.fetch = fetchMock as unknown as typeof fetch;
+      const deps = createMockDependencies({
+        config: createMockConfig({ gatewayUrl: GATEWAY_URL }),
+      });
+
+      await runCommand(['curl', '-X', 'GET', 'https://slack.com/api/auth.test'], deps);
+
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(capturedArgs).toEqual([
+        '-X',
+        'GET',
+        `${GATEWAY_URL}/gateway/https://slack.com/api/auth.test`,
+      ]);
+    });
+
+    it('errors when `latchkey curl` has no URL to rewrite', async () => {
+      const deps = createMockDependencies({
+        config: createMockConfig({ gatewayUrl: GATEWAY_URL }),
+      });
+
+      await runCommand(['curl', '-X', 'GET'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(capturedArgs).toEqual([]);
+    });
+
+    it.each([
+      ['services register', ['services', 'register', 'my-gitlab', '--base-api-url', 'https://gitlab.example.com']],
+      ['services deregister', ['services', 'deregister', 'my-gitlab']],
+      ['auth clear', ['auth', 'clear', 'slack']],
+      ['auth set', ['auth', 'set', 'slack', '-H', 'Authorization: Bearer xoxb-test']],
+      ['auth set-nocurl', ['auth', 'set-nocurl', 'slack', 'x']],
+      ['gateway', ['gateway']],
+      ['ensure-browser', ['ensure-browser']],
+    ])('refuses to run `%s` in gateway mode', async (_name, argv) => {
+      const deps = createMockDependencies({
+        config: createMockConfig({ gatewayUrl: GATEWAY_URL }),
+      });
+
+      await runCommand(argv, deps);
+
+      expect(exitCode).toBe(1);
+      expect(
+        errorLogs.some((message) => message.includes('LATCHKEY_GATEWAY'))
+      ).toBe(true);
     });
   });
 });

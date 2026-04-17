@@ -34,6 +34,7 @@ const LATCHKEY_PERMISSIONS_CONFIG_ENV_VAR = 'LATCHKEY_PERMISSIONS_CONFIG';
 const LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS_ENV_VAR =
   'LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS';
 const LATCHKEY_PASSTHROUGH_UNKNOWN_ENV_VAR = 'LATCHKEY_PASSTHROUGH_UNKNOWN';
+const LATCHKEY_GATEWAY_ENV_VAR = 'LATCHKEY_GATEWAY';
 
 export const DEFAULT_KEYRING_SERVICE_NAME = 'latchkey';
 export const DEFAULT_KEYRING_ACCOUNT_NAME = 'encryption-key';
@@ -116,6 +117,12 @@ export class Config {
    * are passed through as-is instead of being rejected.
    */
   readonly passthroughUnknown: boolean;
+  /**
+   * When set, the CLI delegates commands to a remote latchkey gateway instead
+   * of running them locally. `latchkey curl` is proxied through the gateway's
+   * `/gateway/` endpoint; most other commands are forwarded to `/latchkey/`.
+   */
+  readonly gatewayUrl: string | null;
 
   constructor(getEnv: (name: string) => string | undefined = (name) => process.env[name]) {
     this.curlCommand = getEnv(LATCHKEY_CURL_ENV_VAR) ?? 'curl';
@@ -149,6 +156,12 @@ export class Config {
     const passthroughUnknownEnv = getEnv(LATCHKEY_PASSTHROUGH_UNKNOWN_ENV_VAR);
     this.passthroughUnknown =
       passthroughUnknownEnv !== undefined && passthroughUnknownEnv !== '';
+
+    const gatewayUrlEnv = getEnv(LATCHKEY_GATEWAY_ENV_VAR);
+    this.gatewayUrl =
+      gatewayUrlEnv !== undefined && gatewayUrlEnv !== ''
+        ? gatewayUrlEnv.replace(/\/+$/, '')
+        : null;
   }
 
   get credentialStorePath(): string {

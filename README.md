@@ -312,6 +312,8 @@ defaults:
 - `LATCHKEY_DISABLE_COUNTING`: when set to a non-empty value, disables daily usage counting.
 - `LATCHKEY_PERMISSIONS_CONFIG`: override the `permissions.json` location.
 - `LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS`: do not use the built-in permission definitions.
+- `LATCHKEY_PASSTHROUGH_UNKNOWN`: if set, Latchkey will forward requests (via `latchkey curl` or gateway) even if no credentials are injected.
+- `LATCHKEY_GATEWAY`: when set to a base URL (e.g. `http://localhost:8000`), the CLI delegates commands to a remote Latchkey gateway instead of running them locally. Commands that change local state (`auth set`, `auth clear`, `services register`, `ensure-browser`, `gateway`) cannot run in this mode.
 
 
 ## Disclaimers
