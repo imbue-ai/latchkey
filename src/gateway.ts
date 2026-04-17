@@ -10,6 +10,8 @@ import type { ApiCredentialStore } from './apiCredentialStore.js';
 import type { ApiCredentials } from './apiCredentials.js';
 import type { AsyncCurlResult } from './curl.js';
 import type { CliDependencies } from './cliCommands.js';
+import type { EncryptedStorage } from './encryptedStorage.js';
+import { handleLatchkeyRequest } from './latchkeyEndpoint.js';
 import { PermissionCheckError } from './permissions.js';
 import { ErrorMessages } from './errorMessages.js';
 import { maybeRefreshCredentials } from './apiCredentialsUtils.js';
@@ -379,6 +381,7 @@ export interface GatewayServer {
 export function startGateway(
   deps: CliDependencies,
   apiCredentialStore: ApiCredentialStore,
+  encryptedStorage: EncryptedStorage,
   options: GatewayOptions
 ): Promise<GatewayServer> {
   const inFlightRequests = new Set<Promise<void>>();
@@ -390,6 +393,30 @@ export function startGateway(
     if (rawUrl === '/' && request.method === 'GET') {
       response.writeHead(200, { 'Content-Type': 'application/json' });
       response.end(JSON.stringify({ status: 'ok', version: deps.version }));
+      return;
+    }
+
+    // Latchkey RPC endpoint
+    if (rawUrl === '/latchkey/' || rawUrl === '/latchkey') {
+      const requestPromise = handleLatchkeyRequest(
+        request,
+        response,
+        deps,
+        apiCredentialStore,
+        encryptedStorage,
+      ).catch((error: unknown) => {
+        deps.errorLog(
+          `Unexpected error handling /latchkey/: ${error instanceof Error ? error.message : String(error)}`
+        );
+        if (!response.headersSent) {
+          sendErrorResponse(response, 500, 'Internal error');
+        }
+      });
+
+      inFlightRequests.add(requestPromise);
+      void requestPromise.finally(() => {
+        inFlightRequests.delete(requestPromise);
+      });
       return;
     }
 

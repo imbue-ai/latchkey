@@ -263,7 +263,7 @@ describe('gateway server', () => {
       ...optionOverrides,
     };
 
-    return startGateway(deps, apiCredentialStore, options);
+    return startGateway(deps, apiCredentialStore, encryptedStorage, options);
   }
 
   function getHost(): string {
