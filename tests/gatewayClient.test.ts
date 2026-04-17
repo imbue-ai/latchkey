@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildGatewayProxyUrl,
   callLatchkeyEndpoint,
+  GatewayCurlRewriteError,
   GatewayRequestError,
   rewriteCurlArgumentsForGateway,
 } from '../src/gatewayClient.js';
@@ -56,17 +57,18 @@ describe('rewriteCurlArgumentsForGateway', () => {
     expect(arguments_).toEqual(['https://api.example.com']);
   });
 
-  it('only rewrites the first occurrence of the target URL', () => {
+  it('throws when the target URL appears more than once', () => {
     const arguments_ = ['https://api.example.com', 'https://api.example.com'];
-    const rewritten = rewriteCurlArgumentsForGateway(
-      arguments_,
-      'https://api.example.com',
-      GATEWAY_URL
-    );
-    expect(rewritten).toEqual([
-      'http://localhost:8000/gateway/https://api.example.com',
-      'https://api.example.com',
-    ]);
+    expect(() =>
+      rewriteCurlArgumentsForGateway(arguments_, 'https://api.example.com', GATEWAY_URL)
+    ).toThrow(GatewayCurlRewriteError);
+  });
+
+  it('throws when the target URL is not present in the arguments', () => {
+    const arguments_ = ['-X', 'POST', 'https://other.example.com'];
+    expect(() =>
+      rewriteCurlArgumentsForGateway(arguments_, 'https://api.example.com', GATEWAY_URL)
+    ).toThrow(GatewayCurlRewriteError);
   });
 });
 

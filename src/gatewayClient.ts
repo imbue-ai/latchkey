@@ -27,6 +27,13 @@ export class GatewayCommandNotSupportedError extends Error {
   }
 }
 
+export class GatewayCurlRewriteError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'GatewayCurlRewriteError';
+  }
+}
+
 function buildEndpointUrl(gatewayUrl: string, path: string): string {
   const base = gatewayUrl.replace(/\/+$/, '');
   return `${base}${path}`;
@@ -93,13 +100,21 @@ export function rewriteCurlArgumentsForGateway(
   targetUrl: string,
   gatewayUrl: string
 ): readonly string[] {
+  const occurrences = curlArguments.reduce(
+    (count, argument) => (argument === targetUrl ? count + 1 : count),
+    0
+  );
+  if (occurrences === 0) {
+    throw new GatewayCurlRewriteError(
+      `Target URL '${targetUrl}' not found in curl arguments; refusing to rewrite.`
+    );
+  }
+  if (occurrences > 1) {
+    throw new GatewayCurlRewriteError(
+      `Target URL '${targetUrl}' appears ${occurrences.toString()} times in curl arguments; ` +
+        `refusing to rewrite to avoid ambiguous substitution.`
+    );
+  }
   const proxyUrl = buildGatewayProxyUrl(gatewayUrl, targetUrl);
-  let rewritten = false;
-  return curlArguments.map((argument) => {
-    if (!rewritten && argument === targetUrl) {
-      rewritten = true;
-      return proxyUrl;
-    }
-    return argument;
-  });
+  return curlArguments.map((argument) => (argument === targetUrl ? proxyUrl : argument));
 }

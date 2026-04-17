@@ -46,6 +46,7 @@ import { startGateway } from './gateway.js';
 import {
   callLatchkeyEndpoint,
   GatewayCommandNotSupportedError,
+  GatewayCurlRewriteError,
   GatewayRequestError,
   rewriteCurlArgumentsForGateway,
 } from './gatewayClient.js';
@@ -694,11 +695,20 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           deps.errorLog(ErrorMessages.couldNotExtractUrl);
           deps.exit(1);
         }
-        const rewritten = rewriteCurlArgumentsForGateway(
-          curlArguments,
-          targetUrl,
-          deps.config.gatewayUrl
-        );
+        let rewritten: readonly string[];
+        try {
+          rewritten = rewriteCurlArgumentsForGateway(
+            curlArguments,
+            targetUrl,
+            deps.config.gatewayUrl
+          );
+        } catch (error) {
+          if (error instanceof GatewayCurlRewriteError) {
+            deps.errorLog(`Error: ${error.message}`);
+            deps.exit(1);
+          }
+          throw error;
+        }
         const result = deps.runCurl(rewritten);
         deps.exit(result.returncode);
       }
