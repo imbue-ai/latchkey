@@ -311,6 +311,8 @@ describe('CLI commands with dependency injection', () => {
       permissionsDoNotUseBuiltinSchemas: overrides.permissionsDoNotUseBuiltinSchemas ?? false,
       passthroughUnknown: overrides.passthroughUnknown ?? false,
       gatewayUrl: overrides.gatewayUrl ?? null,
+      gatewayListenHost: overrides.gatewayListenHost ?? 'localhost',
+      gatewayListenPort: overrides.gatewayListenPort ?? 1989,
       checkSensitiveFilePermissions: () => undefined,
       checkSystemPrerequisites: () => undefined,
     };

@@ -39,6 +39,8 @@ const SettingsSchema = z.object({
   permissionsDoNotUseBuiltinSchemas: z.boolean().optional(),
   passthroughUnknown: z.boolean().optional(),
   gateway: z.string().optional(),
+  gatewayListenHost: z.string().optional(),
+  gatewayListenPort: z.number().int().min(0).max(65535).optional(),
 });
 
 export type Settings = z.infer<typeof SettingsSchema>;

@@ -313,7 +313,8 @@ defaults:
 - `LATCHKEY_PERMISSIONS_CONFIG`: override the `permissions.json` location.
 - `LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS`: do not use the built-in permission definitions.
 - `LATCHKEY_PASSTHROUGH_UNKNOWN`: if set, Latchkey will forward requests (via `latchkey curl` or gateway) even if no credentials are injected.
-- `LATCHKEY_GATEWAY`: when set to a base URL (e.g. `http://localhost:8000`), the CLI delegates commands to a remote Latchkey gateway instead of running them locally. Commands that change local state (`auth set`, `auth clear`, `services register`, `ensure-browser`, `gateway`) cannot run in this mode.
+- `LATCHKEY_GATEWAY`: when set to a base URL (e.g. `http://localhost:1989`), the CLI delegates commands to a remote Latchkey gateway instead of running them locally. Commands that change local state (`auth set`, `auth clear`, `services register`, `ensure-browser`, `gateway`) cannot run in this mode.
+- `LATCHKEY_GATEWAY_LISTEN_HOST`, `LATCHKEY_GATEWAY_LISTEN_PORT`: default address and port the local `latchkey gateway` command binds to when `--host` / `--port` are not supplied (defaults: `localhost`, `1989`). Distinct from `LATCHKEY_GATEWAY`, which configures a *remote* gateway URL.
 
 All of the above settings, except for `LATCHKEY_DIRECTORY` and
 `LATCHKEY_ENCRYPTION_KEY`, can alternatively be specified in the
@@ -331,7 +332,9 @@ In case of a clash, environment variables override `config.json` values.
     "permissionsConfig": "/etc/latchkey/permissions.json",
     "permissionsDoNotUseBuiltinSchemas": false,
     "passthroughUnknown": false,
-    "gateway": "http://localhost:8000"
+    "gateway": "http://localhost:1989",
+    "gatewayListenHost": "localhost",
+    "gatewayListenPort": 1989
   }
 }
 ```

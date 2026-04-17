@@ -24,6 +24,15 @@ export class CurlNotFoundError extends Error {
   }
 }
 
+export class InvalidGatewayListenPortError extends Error {
+  constructor(rawValue: string) {
+    super(
+      `Invalid LATCHKEY_GATEWAY_LISTEN_PORT value '${rawValue}': must be an integer between 0 and 65535.`
+    );
+    this.name = 'InvalidGatewayListenPortError';
+  }
+}
+
 const LATCHKEY_DIRECTORY_ENV_VAR = 'LATCHKEY_DIRECTORY';
 const LATCHKEY_CURL_ENV_VAR = 'LATCHKEY_CURL';
 const LATCHKEY_ENCRYPTION_KEY_ENV_VAR = 'LATCHKEY_ENCRYPTION_KEY';
@@ -36,9 +45,13 @@ const LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS_ENV_VAR =
   'LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS';
 const LATCHKEY_PASSTHROUGH_UNKNOWN_ENV_VAR = 'LATCHKEY_PASSTHROUGH_UNKNOWN';
 const LATCHKEY_GATEWAY_ENV_VAR = 'LATCHKEY_GATEWAY';
+const LATCHKEY_GATEWAY_LISTEN_HOST_ENV_VAR = 'LATCHKEY_GATEWAY_LISTEN_HOST';
+const LATCHKEY_GATEWAY_LISTEN_PORT_ENV_VAR = 'LATCHKEY_GATEWAY_LISTEN_PORT';
 
 export const DEFAULT_KEYRING_SERVICE_NAME = 'latchkey';
 export const DEFAULT_KEYRING_ACCOUNT_NAME = 'encryption-key';
+export const DEFAULT_GATEWAY_LISTEN_HOST = 'localhost';
+export const DEFAULT_GATEWAY_LISTEN_PORT = 1989;
 
 const DEFAULT_DIRECTORY = join(homedir(), '.latchkey');
 
@@ -110,6 +123,25 @@ function resolveOptionalString(
 }
 
 /**
+ * Resolve the gateway listen port with precedence: env var > config file > default.
+ * Empty env var falls through. Non-integer or out-of-range env values throw.
+ */
+function resolveGatewayListenPort(
+  envValue: string | undefined,
+  fileValue: number | undefined
+): number {
+  if (envValue !== undefined && envValue !== '') {
+    const parsed = Number(envValue);
+    if (!Number.isInteger(parsed) || parsed < 0 || parsed > 65535) {
+      throw new InvalidGatewayListenPortError(envValue);
+    }
+    return parsed;
+  }
+  if (fileValue !== undefined) return fileValue;
+  return DEFAULT_GATEWAY_LISTEN_PORT;
+}
+
+/**
  * Resolve a boolean flag with precedence: env var > config file > false.
  * A non-empty env var means true. An unset or empty env var falls through
  * (consistent with how the README describes LATCHKEY_DISABLE_*).
@@ -165,6 +197,17 @@ export class Config {
    * `/gateway/` endpoint; most other commands are forwarded to `/latchkey/`.
    */
   readonly gatewayUrl: string | null;
+  /**
+   * Address the local `latchkey gateway` command binds to when started
+   * without an explicit `--host` flag. Distinct from `gatewayUrl`, which
+   * is the URL of a remote gateway this CLI talks to.
+   */
+  readonly gatewayListenHost: string;
+  /**
+   * Port the local `latchkey gateway` command listens on when started
+   * without an explicit `--port` flag.
+   */
+  readonly gatewayListenPort: number;
 
   constructor(
     getEnv: (name: string) => string | undefined = (name) => process.env[name],
@@ -215,6 +258,16 @@ export class Config {
 
     const gatewayUrl = resolveOptionalString(getEnv(LATCHKEY_GATEWAY_ENV_VAR), settings.gateway);
     this.gatewayUrl = gatewayUrl ? gatewayUrl.replace(/\/+$/, '') : null;
+
+    this.gatewayListenHost = resolveString(
+      getEnv(LATCHKEY_GATEWAY_LISTEN_HOST_ENV_VAR),
+      settings.gatewayListenHost,
+      DEFAULT_GATEWAY_LISTEN_HOST
+    );
+    this.gatewayListenPort = resolveGatewayListenPort(
+      getEnv(LATCHKEY_GATEWAY_LISTEN_PORT_ENV_VAR),
+      settings.gatewayListenPort
+    );
   }
 
   get credentialStorePath(): string {
