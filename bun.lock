@@ -5,7 +5,7 @@
     "": {
       "name": "latchkey",
       "dependencies": {
-        "@imbue-ai/detent": "^1.1.1",
+        "@imbue-ai/detent": "^1.1.2",
         "@napi-rs/keyring": "^1.2.0",
         "commander": "^12.0.0",
         "playwright": "^1.58.2",
@@ -57,7 +57,7 @@
 
     "@humanwhocodes/retry": ["@humanwhocodes/retry@0.4.3", "", {}, "sha512-bV0Tgo9K4hfPCek+aMAn81RppFKv2ySDQeMoSZuvTASywNTnVJCArCZE2FWqpvIatKu7VMRLWlR1EazvVhDyhQ=="],
 
-    "@imbue-ai/detent": ["@imbue-ai/detent@1.1.1", "", { "dependencies": { "@cfworker/json-schema": "^4.1.1", "commander": "^14.0.3" }, "bin": { "detent": "dist/src/cli.js" } }, "sha512-khQb2vHt/ezbok5KTHaBnB+pS553s57cSnPnq4HVpC46VvY5abFi2H0KAXf14zfOovuAM/IaDcvtPn7IIvyKug=="],
+    "@imbue-ai/detent": ["@imbue-ai/detent@1.1.2", "", { "dependencies": { "@cfworker/json-schema": "^4.1.1", "commander": "^14.0.3" }, "bin": { "detent": "dist/src/cli.js" } }, "sha512-x/f6LLWWsQI48rs8gKJnZUjl1UIN2N/AqLutPWUnxAQksRjB9eM3htf32x/asj0iBbC/pbSN1YA15a/uIhpCHg=="],
 
     "@jridgewell/sourcemap-codec": ["@jridgewell/sourcemap-codec@1.5.5", "", {}, "sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og=="],
 
