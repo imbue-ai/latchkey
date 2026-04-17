@@ -5,8 +5,8 @@
 import type { Command } from 'commander';
 import { existsSync, unlinkSync } from 'node:fs';
 import { createInterface } from 'node:readline';
-import { ApiCredentialStore } from './apiCredentialStore.js';
-import { ApiCredentials, RawCurlCredentials } from './apiCredentials.js';
+import { ApiCredentialStore } from './apiCredentials/store.js';
+import { ApiCredentials, RawCurlCredentials } from './apiCredentials/base.js';
 import {
   CredentialsExpiredError,
   NoCredentialsForServiceError,
@@ -49,15 +49,15 @@ import { extractUrlFromCurlArguments, run as curlRun, runAsync as curlRunAsync }
 import { checkPermission, PermissionCheckError } from './permissions.js';
 import { ErrorMessages } from './errorMessages.js';
 import { getSkillMdContent } from './skillMd.js';
-import { startGateway } from './gateway.js';
+import { startGateway } from './gateway/server.js';
 import {
   callLatchkeyEndpoint,
   GatewayCommandNotSupportedError,
   GatewayCurlRewriteError,
   GatewayRequestError,
   rewriteCurlArgumentsForGateway,
-} from './gatewayClient.js';
-import type { LatchkeyRequest } from './latchkeyEndpoint.js';
+} from './gateway/client.js';
+import type { LatchkeyRequest } from './gateway/latchkeyEndpoint.js';
 import {
   servicesList,
   servicesInfo,

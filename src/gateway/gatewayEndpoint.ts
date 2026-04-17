@@ -1,14 +1,18 @@
 /**
- * Local HTTP gateway that proxies requests through latchkey's credential injection pipeline.
+ * HTTP handler for the `/gateway/<target-url>` proxy endpoint.
+ *
+ * Forwards the incoming HTTP request through latchkey's credential injection
+ * pipeline (via `curl`) to the target URL and streams the upstream response
+ * back to the client.
  */
 
 import * as http from 'node:http';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import type { ApiCredentialStore } from './apiCredentialStore.js';
-import type { AsyncCurlResult } from './curl.js';
-import type { CliDependencies } from './cliCommands.js';
+import type { ApiCredentialStore } from '../apiCredentials/store.js';
+import type { AsyncCurlResult } from '../curl.js';
+import type { CliDependencies } from '../cliCommands.js';
 import {
   CredentialsExpiredError,
   NoCredentialsForServiceError,
@@ -16,11 +20,9 @@ import {
   prepareCurlInvocation,
   RequestNotPermittedError,
   UrlExtractionFailedError,
-} from './curlInjection.js';
-import type { EncryptedStorage } from './encryptedStorage.js';
-import { handleLatchkeyRequest } from './latchkeyEndpoint.js';
-import { PermissionCheckError } from './permissions.js';
-import { ErrorMessages } from './errorMessages.js';
+} from '../curlInjection.js';
+import { PermissionCheckError } from '../permissions.js';
+import { ErrorMessages } from '../errorMessages.js';
 
 /**
  * Headers that should not be forwarded between client and upstream (hop-by-hop).
@@ -37,7 +39,20 @@ const HOP_BY_HOP_HEADERS = new Set([
   'host',
 ]);
 
-const GATEWAY_PATH_PREFIX = '/gateway/';
+export const GATEWAY_PATH_PREFIX = '/gateway/';
+
+export class BodyTooLargeError extends Error {
+  constructor() {
+    super(ErrorMessages.requestBodyTooLarge);
+    this.name = 'BodyTooLargeError';
+  }
+}
+
+export interface GatewayOptions {
+  readonly port: number;
+  readonly host: string;
+  readonly maxBodySize: number;
+}
 
 function sendErrorResponse(
   response: http.ServerResponse,
@@ -46,13 +61,6 @@ function sendErrorResponse(
 ): void {
   response.writeHead(statusCode, { 'Content-Type': 'application/json' });
   response.end(JSON.stringify({ error: message }));
-}
-
-export class BodyTooLargeError extends Error {
-  constructor() {
-    super(ErrorMessages.requestBodyTooLarge);
-    this.name = 'BodyTooLargeError';
-  }
 }
 
 /**
@@ -188,16 +196,32 @@ function readRequestBody(
   });
 }
 
-export interface GatewayOptions {
-  readonly port: number;
-  readonly host: string;
-  readonly maxBodySize: number;
+/**
+ * Forward parsed upstream response to the client.
+ */
+function forwardResponse(
+  response: http.ServerResponse,
+  parsed: { statusCode: number; headers: ReadonlyMap<string, readonly string[]> },
+  body: Buffer
+): void {
+  for (const [name, values] of parsed.headers) {
+    if (HOP_BY_HOP_HEADERS.has(name)) {
+      continue;
+    }
+    if (values.length === 1) {
+      response.setHeader(name, values[0]!);
+    } else {
+      response.setHeader(name, [...values]);
+    }
+  }
+  response.writeHead(parsed.statusCode);
+  response.end(body);
 }
 
 /**
  * Execute a proxied request through the credential injection pipeline.
  */
-async function handleGatewayRequest(
+export async function handleGatewayRequest(
   request: http.IncomingMessage,
   response: http.ServerResponse,
   targetUrl: string,
@@ -325,140 +349,4 @@ async function handleGatewayRequest(
       // Ignore cleanup errors
     }
   }
-}
-
-/**
- * Forward parsed upstream response to the client.
- */
-function forwardResponse(
-  response: http.ServerResponse,
-  parsed: { statusCode: number; headers: ReadonlyMap<string, readonly string[]> },
-  body: Buffer
-): void {
-  for (const [name, values] of parsed.headers) {
-    if (HOP_BY_HOP_HEADERS.has(name)) {
-      continue;
-    }
-    if (values.length === 1) {
-      response.setHeader(name, values[0]!);
-    } else {
-      response.setHeader(name, [...values]);
-    }
-  }
-  response.writeHead(parsed.statusCode);
-  response.end(body);
-}
-
-export interface GatewayServer {
-  readonly server: http.Server;
-  readonly close: () => Promise<void>;
-}
-
-/**
- * Start the gateway HTTP server.
- */
-export function startGateway(
-  deps: CliDependencies,
-  apiCredentialStore: ApiCredentialStore,
-  encryptedStorage: EncryptedStorage,
-  options: GatewayOptions
-): Promise<GatewayServer> {
-  const inFlightRequests = new Set<Promise<void>>();
-
-  const server = http.createServer((request, response) => {
-    const rawUrl = request.url ?? '';
-
-    // Health endpoint
-    if (rawUrl === '/' && request.method === 'GET') {
-      response.writeHead(200, { 'Content-Type': 'application/json' });
-      response.end(JSON.stringify({ status: 'ok', version: deps.version }));
-      return;
-    }
-
-    // Latchkey RPC endpoint
-    if (rawUrl === '/latchkey/' || rawUrl === '/latchkey') {
-      const requestPromise = handleLatchkeyRequest(
-        request,
-        response,
-        deps,
-        apiCredentialStore,
-        encryptedStorage
-      ).catch((error: unknown) => {
-        deps.errorLog(
-          `Unexpected error handling /latchkey/: ${error instanceof Error ? error.message : String(error)}`
-        );
-        if (!response.headersSent) {
-          sendErrorResponse(response, 500, 'Internal error');
-        }
-      });
-
-      inFlightRequests.add(requestPromise);
-      void requestPromise.finally(() => {
-        inFlightRequests.delete(requestPromise);
-      });
-      return;
-    }
-
-    // Extract target URL
-    const targetUrl = extractTargetUrl(rawUrl);
-    if (targetUrl === null) {
-      if (rawUrl.startsWith(GATEWAY_PATH_PREFIX)) {
-        const method = request.method ?? 'UNKNOWN';
-        deps.log(`${method} ${rawUrl.slice(GATEWAY_PATH_PREFIX.length)} -> 400`);
-        sendErrorResponse(response, 400, ErrorMessages.couldNotExtractUrl);
-      } else {
-        response.writeHead(404);
-        response.end();
-      }
-      return;
-    }
-
-    const requestPromise = handleGatewayRequest(
-      request,
-      response,
-      targetUrl,
-      deps,
-      apiCredentialStore,
-      options
-    ).catch((error: unknown) => {
-      const method = request.method ?? 'UNKNOWN';
-      deps.errorLog(
-        `Unexpected error handling ${method} ${targetUrl}: ${error instanceof Error ? error.message : String(error)}`
-      );
-      if (!response.headersSent) {
-        sendErrorResponse(response, 502, ErrorMessages.upstreamRequestFailed);
-      }
-    });
-
-    inFlightRequests.add(requestPromise);
-    void requestPromise.finally(() => {
-      inFlightRequests.delete(requestPromise);
-    });
-  });
-
-  const SHUTDOWN_TIMEOUT_MS = 10_000;
-
-  const close = (): Promise<void> => {
-    return new Promise((resolve) => {
-      deps.log('Shutting down...');
-      server.close(() => {
-        resolve();
-      });
-
-      // Force-close after timeout
-      setTimeout(() => {
-        server.closeAllConnections();
-        resolve();
-      }, SHUTDOWN_TIMEOUT_MS);
-    });
-  };
-
-  return new Promise((resolve, reject) => {
-    server.on('error', reject);
-
-    server.listen(options.port, options.host, () => {
-      deps.log(`Latchkey gateway listening on ${options.host}:${String(options.port)}`);
-      resolve({ server, close });
-    });
-  });
 }

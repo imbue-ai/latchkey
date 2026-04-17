@@ -9,7 +9,7 @@
 import fs from 'node:fs/promises';
 import { z } from 'zod';
 import type { Browser, BrowserContext, Page, Response } from 'playwright';
-import { type ApiCredentials, OAuthCredentials } from '../../apiCredentials.js';
+import { type ApiCredentials, OAuthCredentials } from '../../apiCredentials/base.js';
 import { extractUrlFromCurlArguments } from '../../curl.js';
 import {
   generateLatchkeyAppName,

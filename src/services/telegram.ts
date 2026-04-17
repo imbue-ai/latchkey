@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { type ApiCredentials } from '../apiCredentials.js';
+import { type ApiCredentials } from '../apiCredentials/base.js';
 import { extractUrlFromCurlArguments } from '../curl.js';
 import { NoCurlCredentialsNotSupportedError, Service } from './core/base.js';
 

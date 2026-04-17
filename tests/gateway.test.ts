@@ -8,16 +8,15 @@ import {
   extractTargetUrl,
   buildCurlArguments,
   parseResponseHeaders,
-  startGateway,
   type GatewayOptions,
-  type GatewayServer,
-} from '../src/gateway.js';
+} from '../src/gateway/gatewayEndpoint.js';
+import { startGateway, type GatewayServer } from '../src/gateway/server.js';
 import type { AsyncCurlResult, CurlResult } from '../src/curl.js';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
-import { ApiCredentialStore } from '../src/apiCredentialStore.js';
+import { ApiCredentialStore } from '../src/apiCredentials/store.js';
 import { Config } from '../src/config.js';
 import { Registry } from '../src/registry.js';
-import { ApiCredentialStatus } from '../src/apiCredentials.js';
+import { ApiCredentialStatus } from '../src/apiCredentials/base.js';
 import { NoCurlCredentialsNotSupportedError, Service } from '../src/services/core/base.js';
 
 const TEST_ENCRYPTION_KEY = 'dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q=';

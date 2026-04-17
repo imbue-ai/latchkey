@@ -6,9 +6,9 @@
  * rather than writing to stdout or calling process.exit.
  */
 
-import { ApiCredentialStatus } from './apiCredentials.js';
-import type { ApiCredentialStore } from './apiCredentialStore.js';
-import { getCredentialStatus } from './apiCredentialsUtils.js';
+import { ApiCredentialStatus } from './apiCredentials/base.js';
+import type { ApiCredentialStore } from './apiCredentials/store.js';
+import { getCredentialStatus } from './apiCredentials/utils.js';
 import type { Config } from './config.js';
 import { loadBrowserConfig } from './configDataStore.js';
 import type { EncryptedStorage } from './encryptedStorage.js';

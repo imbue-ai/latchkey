@@ -4,7 +4,7 @@
 
 import type { Response } from 'playwright';
 import { z } from 'zod';
-import { ApiCredentialStatus, type ApiCredentials } from '../apiCredentials.js';
+import { ApiCredentialStatus, type ApiCredentials } from '../apiCredentials/base.js';
 import { runCaptured } from '../curl.js';
 import { Service, SimpleServiceSession } from './core/base.js';
 

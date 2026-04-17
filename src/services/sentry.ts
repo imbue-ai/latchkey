@@ -2,7 +2,7 @@ import {
   ApiCredentialStatus,
   type ApiCredentials,
   ApiCredentialsUsageError,
-} from '../apiCredentials.js';
+} from '../apiCredentials/base.js';
 import { runCaptured } from '../curl.js';
 import { Service } from './core/base.js';
 

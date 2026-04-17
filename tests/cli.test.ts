@@ -10,7 +10,7 @@ import { hasGraphicalEnvironment } from '../src/playwrightUtils.js';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { Config } from '../src/config.js';
 import { Registry } from '../src/registry.js';
-import { ApiCredentialStatus } from '../src/apiCredentials.js';
+import { ApiCredentialStatus } from '../src/apiCredentials/base.js';
 import { SlackApiCredentials } from '../src/services/slack.js';
 import { NoCurlCredentialsNotSupportedError, Service } from '../src/services/core/base.js';
 import { RegisteredService } from '../src/services/core/registered.js';

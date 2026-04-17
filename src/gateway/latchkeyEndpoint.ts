@@ -8,9 +8,9 @@
 import * as http from 'node:http';
 import { text } from 'node:stream/consumers';
 import { z } from 'zod';
-import type { ApiCredentialStore } from './apiCredentialStore.js';
-import type { CliDependencies } from './cliCommands.js';
-import type { EncryptedStorage } from './encryptedStorage.js';
+import type { ApiCredentialStore } from '../apiCredentials/store.js';
+import type { CliDependencies } from '../cliCommands.js';
+import type { EncryptedStorage } from '../encryptedStorage.js';
 import {
   servicesList,
   servicesInfo,
@@ -20,13 +20,13 @@ import {
   UnknownServiceError,
   BrowserNotConfiguredError,
   PreparationRequiredError,
-} from './sharedOperations.js';
+} from '../sharedOperations.js';
 import {
   BrowserDisabledError,
   BrowserFlowsNotSupportedError,
   GraphicalEnvironmentNotFoundError,
-} from './playwrightUtils.js';
-import { LoginCancelledError, LoginFailedError } from './services/index.js';
+} from '../playwrightUtils.js';
+import { LoginCancelledError, LoginFailedError } from '../services/index.js';
 
 const serviceNameParamsMessage = "missing required argument 'service_name'";
 const serviceNameParams = z.object(

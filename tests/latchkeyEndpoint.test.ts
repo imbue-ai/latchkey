@@ -3,15 +3,16 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
-import { ApiCredentialStore } from '../src/apiCredentialStore.js';
-import { ApiCredentialStatus } from '../src/apiCredentials.js';
+import { ApiCredentialStore } from '../src/apiCredentials/store.js';
+import { ApiCredentialStatus } from '../src/apiCredentials/base.js';
 import { NoCurlCredentialsNotSupportedError, Service } from '../src/services/core/base.js';
 import { Registry } from '../src/registry.js';
 import { Config } from '../src/config.js';
 import type { CliDependencies } from '../src/cliCommands.js';
 import type { CurlResult } from '../src/curl.js';
-import { startGateway, type GatewayServer, type GatewayOptions } from '../src/gateway.js';
-import { LatchkeyRequestSchema } from '../src/latchkeyEndpoint.js';
+import { startGateway, type GatewayServer } from '../src/gateway/server.js';
+import type { GatewayOptions } from '../src/gateway/gatewayEndpoint.js';
+import { LatchkeyRequestSchema } from '../src/gateway/latchkeyEndpoint.js';
 
 const TEST_ENCRYPTION_KEY = 'dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q=';
 

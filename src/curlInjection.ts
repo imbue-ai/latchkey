@@ -10,9 +10,9 @@
  * stream request bodies and capture response headers.
  */
 
-import type { ApiCredentials } from './apiCredentials.js';
-import type { ApiCredentialStore } from './apiCredentialStore.js';
-import { maybeRefreshCredentials } from './apiCredentialsUtils.js';
+import type { ApiCredentials } from './apiCredentials/base.js';
+import type { ApiCredentialStore } from './apiCredentials/store.js';
+import { maybeRefreshCredentials } from './apiCredentials/utils.js';
 import { extractUrlFromCurlArguments } from './curl.js';
 import { ErrorMessages } from './errorMessages.js';
 import type { Registry } from './registry.js';

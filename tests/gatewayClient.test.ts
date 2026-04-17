@@ -5,7 +5,7 @@ import {
   GatewayCurlRewriteError,
   GatewayRequestError,
   rewriteCurlArgumentsForGateway,
-} from '../src/gatewayClient.js';
+} from '../src/gateway/client.js';
 
 const GATEWAY_URL = 'http://localhost:8000';
 

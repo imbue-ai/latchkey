@@ -3,12 +3,12 @@ import {
   AuthorizationBearer,
   AuthorizationBare,
   RawCurlCredentials,
-} from '../src/apiCredentials.js';
+} from '../src/apiCredentials/base.js';
 import {
   deserializeCredentials,
   serializeCredentials,
   ApiCredentialsSchema,
-} from '../src/apiCredentialsSerialization.js';
+} from '../src/apiCredentials/serialization.js';
 import { SlackApiCredentials } from '../src/services/slack.js';
 import { TelegramBotCredentials } from '../src/services/telegram.js';
 import { AwsCredentials } from '../src/services/aws.js';
@@ -177,7 +177,7 @@ describe('AwsCredentials', () => {
 describe('serialization roundtrip', () => {
   const cases: {
     name: string;
-    credentials: () => import('../src/apiCredentials.js').ApiCredentials;
+    credentials: () => import('../src/apiCredentials/base.js').ApiCredentials;
   }[] = [
     { name: 'AuthorizationBearer', credentials: () => new AuthorizationBearer('test-token') },
     { name: 'AuthorizationBare', credentials: () => new AuthorizationBare('test-token') },

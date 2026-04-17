@@ -1,6 +1,6 @@
 import { createHash, createHmac } from 'node:crypto';
 import { z } from 'zod';
-import { type ApiCredentials } from '../apiCredentials.js';
+import { type ApiCredentials } from '../apiCredentials/base.js';
 import {
   extractBodyFromCurlArguments,
   extractHeadersFromCurlArguments,

@@ -22,7 +22,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import type { Response, Request } from 'playwright';
-import { ApiCredentials } from '../src/apiCredentials.js';
+import { ApiCredentials } from '../src/apiCredentials/base.js';
 import { REGISTRY } from '../src/registry.js';
 import { Service, SimpleServiceSession } from '../src/services/core/base.js';
 

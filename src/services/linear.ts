@@ -3,7 +3,7 @@
  */
 
 import type { Response, BrowserContext } from 'playwright';
-import { ApiCredentials, AuthorizationBare } from '../apiCredentials.js';
+import { ApiCredentials, AuthorizationBare } from '../apiCredentials/base.js';
 import { generateLatchkeyAppName, typeLikeHuman } from '../playwrightUtils.js';
 import { Service, BrowserFollowupServiceSession, LoginFailedError } from './core/base.js';
 

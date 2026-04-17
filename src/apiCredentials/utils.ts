@@ -2,9 +2,9 @@
  * Shared credential utilities used by both the CLI and the gateway.
  */
 
-import { ApiCredentialStatus, type ApiCredentials } from './apiCredentials.js';
-import type { ApiCredentialStore } from './apiCredentialStore.js';
-import type { Service } from './services/core/base.js';
+import { ApiCredentialStatus, type ApiCredentials } from './base.js';
+import type { ApiCredentialStore } from './store.js';
+import type { Service } from '../services/core/base.js';
 
 /**
  * Try to refresh expired credentials if the service supports it.

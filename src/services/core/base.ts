@@ -7,7 +7,7 @@ import {
   ApiCredentialStatus,
   ApiCredentials,
   ApiCredentialsUsageError,
-} from '../../apiCredentials.js';
+} from '../../apiCredentials/base.js';
 import { runCaptured } from '../../curl.js';
 import { EncryptedStorage } from '../../encryptedStorage.js';
 import {

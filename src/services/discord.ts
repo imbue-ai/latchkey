@@ -3,7 +3,7 @@
  */
 
 import type { Response } from 'playwright';
-import { ApiCredentials, AuthorizationBare } from '../apiCredentials.js';
+import { ApiCredentials, AuthorizationBare } from '../apiCredentials/base.js';
 import { Service, SimpleServiceSession } from './core/base.js';
 
 class DiscordServiceSession extends SimpleServiceSession {

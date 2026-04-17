@@ -1,4 +1,4 @@
-import type { ApiCredentials } from '../../apiCredentials.js';
+import type { ApiCredentials } from '../../apiCredentials/base.js';
 import { Service, NoCurlCredentialsNotSupportedError } from '../core/base.js';
 import { GoogleApiKeyCredentials } from './base.js';
 

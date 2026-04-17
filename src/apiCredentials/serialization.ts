@@ -1,9 +1,9 @@
 /**
  * Serialization and deserialization of API credentials.
  *
- * This module is separate from apiCredentials.ts to avoid circular dependencies:
- * service files import base types from apiCredentials.ts, and this module imports
- * from both apiCredentials.ts and service files.
+ * This module is separate from base.ts to avoid circular dependencies:
+ * service files import base types from base.ts, and this module imports
+ * from both base.ts and service files.
  */
 
 import { z } from 'zod';
@@ -17,11 +17,11 @@ import {
   OAuthCredentialsSchema,
   RawCurlCredentials,
   RawCurlCredentialsSchema,
-} from './apiCredentials.js';
-import { AwsCredentials, AwsCredentialsSchema } from './services/aws.js';
-import { GoogleApiKeyCredentials, GoogleApiKeyCredentialsSchema } from './services/google/base.js';
-import { SlackApiCredentials, SlackApiCredentialsSchema } from './services/slack.js';
-import { TelegramBotCredentials, TelegramBotCredentialsSchema } from './services/telegram.js';
+} from './base.js';
+import { AwsCredentials, AwsCredentialsSchema } from '../services/aws.js';
+import { GoogleApiKeyCredentials, GoogleApiKeyCredentialsSchema } from '../services/google/base.js';
+import { SlackApiCredentials, SlackApiCredentialsSchema } from '../services/slack.js';
+import { TelegramBotCredentials, TelegramBotCredentialsSchema } from '../services/telegram.js';
 
 /**
  * Union schema for all credential types.
