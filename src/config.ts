@@ -5,6 +5,7 @@
 import { accessSync, constants, existsSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { delimiter, isAbsolute, join, resolve } from 'node:path';
+import { loadSettings, type Settings } from './configDataStore.js';
 
 export class InsecureFilePermissionsError extends Error {
   constructor(filePath: string, permissions: number) {
@@ -81,7 +82,44 @@ function findInPath(command: string): boolean {
 }
 
 /**
- * Configuration for Latchkey, sourced from environment variables with sensible defaults.
+ * Resolve a string-valued setting with precedence: env var > config file > default.
+ * Environment variables override even when set to an empty string.
+ */
+function resolveString(envValue: string | undefined, fileValue: string | undefined, defaultValue: string): string {
+  if (envValue !== undefined) return envValue;
+  if (fileValue !== undefined) return fileValue;
+  return defaultValue;
+}
+
+/**
+ * Resolve an optional path/url-like setting with precedence: env var > config file > null.
+ * Empty strings are treated as unset so that `FOO=` in the environment doesn't mask
+ * a config file value.
+ */
+function resolveOptionalString(
+  envValue: string | undefined,
+  fileValue: string | undefined
+): string | null {
+  if (envValue !== undefined && envValue !== '') return envValue;
+  if (fileValue !== undefined && fileValue !== '') return fileValue;
+  return null;
+}
+
+/**
+ * Resolve a boolean flag with precedence: env var > config file > false.
+ * A non-empty env var means true. An unset or empty env var falls through
+ * (consistent with how the README describes LATCHKEY_DISABLE_*).
+ */
+function resolveBoolean(envValue: string | undefined, fileValue: boolean | undefined): boolean {
+  if (envValue !== undefined && envValue !== '') return true;
+  if (fileValue !== undefined) return fileValue;
+  return false;
+}
+
+/**
+ * Configuration for Latchkey, sourced from environment variables and config.json with sensible defaults.
+ * Precedence for each setting: environment variable > config.json > default.
+ * LATCHKEY_DIRECTORY and LATCHKEY_ENCRYPTION_KEY are env-only.
  */
 export class Config {
   readonly directory: string;
@@ -124,44 +162,55 @@ export class Config {
    */
   readonly gatewayUrl: string | null;
 
-  constructor(getEnv: (name: string) => string | undefined = (name) => process.env[name]) {
-    this.curlCommand = getEnv(LATCHKEY_CURL_ENV_VAR) ?? 'curl';
-    this.encryptionKeyOverride = getEnv(LATCHKEY_ENCRYPTION_KEY_ENV_VAR) ?? null;
-    this.serviceName =
-      getEnv(LATCHKEY_KEYRING_SERVICE_NAME_ENV_VAR) ?? DEFAULT_KEYRING_SERVICE_NAME;
-    this.accountName =
-      getEnv(LATCHKEY_KEYRING_ACCOUNT_NAME_ENV_VAR) ?? DEFAULT_KEYRING_ACCOUNT_NAME;
-
-    const browserDisabledEnv = getEnv(LATCHKEY_DISABLE_BROWSER_ENV_VAR);
-    this.browserDisabled = browserDisabledEnv !== undefined && browserDisabledEnv !== '';
-
-    const countingDisabledEnv = getEnv(LATCHKEY_DISABLE_COUNTING_ENV_VAR);
-    this.countingDisabled = countingDisabledEnv !== undefined && countingDisabledEnv !== '';
-
+  constructor(
+    getEnv: (name: string) => string | undefined = (name) => process.env[name],
+    loadSettingsFromFile: (configPath: string) => Settings = loadSettings
+  ) {
+    // The directory and encryption key are configured exclusively via environment variables;
+    // they cannot be set from config.json (the directory determines where config.json lives).
     const directoryEnv = getEnv(LATCHKEY_DIRECTORY_ENV_VAR);
     this.directory = directoryEnv ? resolvePathWithTildeExpansion(directoryEnv) : DEFAULT_DIRECTORY;
+    this.encryptionKeyOverride = getEnv(LATCHKEY_ENCRYPTION_KEY_ENV_VAR) ?? null;
 
-    const permissionsConfigEnv = getEnv(LATCHKEY_PERMISSIONS_CONFIG_ENV_VAR);
-    this.permissionsConfigOverride =
-      permissionsConfigEnv !== undefined && permissionsConfigEnv !== ''
-        ? permissionsConfigEnv
-        : null;
+    const settings = loadSettingsFromFile(join(this.directory, CONFIG_FILENAME));
 
-    const doNotUseBuiltinSchemasEnv = getEnv(
-      LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS_ENV_VAR
+    this.curlCommand = resolveString(getEnv(LATCHKEY_CURL_ENV_VAR), settings.curlCommand, 'curl');
+    this.serviceName = resolveString(
+      getEnv(LATCHKEY_KEYRING_SERVICE_NAME_ENV_VAR),
+      settings.keyringServiceName,
+      DEFAULT_KEYRING_SERVICE_NAME
     );
-    this.permissionsDoNotUseBuiltinSchemas =
-      doNotUseBuiltinSchemasEnv !== undefined && doNotUseBuiltinSchemasEnv !== '';
+    this.accountName = resolveString(
+      getEnv(LATCHKEY_KEYRING_ACCOUNT_NAME_ENV_VAR),
+      settings.keyringAccountName,
+      DEFAULT_KEYRING_ACCOUNT_NAME
+    );
 
-    const passthroughUnknownEnv = getEnv(LATCHKEY_PASSTHROUGH_UNKNOWN_ENV_VAR);
-    this.passthroughUnknown =
-      passthroughUnknownEnv !== undefined && passthroughUnknownEnv !== '';
+    this.browserDisabled = resolveBoolean(
+      getEnv(LATCHKEY_DISABLE_BROWSER_ENV_VAR),
+      settings.browserDisabled
+    );
+    this.countingDisabled = resolveBoolean(
+      getEnv(LATCHKEY_DISABLE_COUNTING_ENV_VAR),
+      settings.countingDisabled
+    );
+    this.permissionsDoNotUseBuiltinSchemas = resolveBoolean(
+      getEnv(LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS_ENV_VAR),
+      settings.permissionsDoNotUseBuiltinSchemas
+    );
+    this.passthroughUnknown = resolveBoolean(
+      getEnv(LATCHKEY_PASSTHROUGH_UNKNOWN_ENV_VAR),
+      settings.passthroughUnknown
+    );
 
-    const gatewayUrlEnv = getEnv(LATCHKEY_GATEWAY_ENV_VAR);
-    this.gatewayUrl =
-      gatewayUrlEnv !== undefined && gatewayUrlEnv !== ''
-        ? gatewayUrlEnv.replace(/\/+$/, '')
-        : null;
+    const permissionsConfig = resolveOptionalString(
+      getEnv(LATCHKEY_PERMISSIONS_CONFIG_ENV_VAR),
+      settings.permissionsConfig
+    );
+    this.permissionsConfigOverride = permissionsConfig;
+
+    const gatewayUrl = resolveOptionalString(getEnv(LATCHKEY_GATEWAY_ENV_VAR), settings.gateway);
+    this.gatewayUrl = gatewayUrl ? gatewayUrl.replace(/\/+$/, '') : null;
   }
 
   get credentialStorePath(): string {

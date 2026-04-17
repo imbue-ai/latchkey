@@ -315,6 +315,27 @@ defaults:
 - `LATCHKEY_PASSTHROUGH_UNKNOWN`: if set, Latchkey will forward requests (via `latchkey curl` or gateway) even if no credentials are injected.
 - `LATCHKEY_GATEWAY`: when set to a base URL (e.g. `http://localhost:8000`), the CLI delegates commands to a remote Latchkey gateway instead of running them locally. Commands that change local state (`auth set`, `auth clear`, `services register`, `ensure-browser`, `gateway`) cannot run in this mode.
 
+All of the above settings, except for `LATCHKEY_DIRECTORY` and
+`LATCHKEY_ENCRYPTION_KEY`, can alternatively be specified in the
+`settings` section of `config.json` inside the Latchkey directory.
+In case of a clash, environment variables override `config.json` values.
+
+```json
+{
+  "settings": {
+    "curlCommand": "/usr/local/bin/curl",
+    "keyringServiceName": "latchkey",
+    "keyringAccountName": "encryption-key",
+    "browserDisabled": false,
+    "countingDisabled": true,
+    "permissionsConfig": "/etc/latchkey/permissions.json",
+    "permissionsDoNotUseBuiltinSchemas": false,
+    "passthroughUnknown": false,
+    "gateway": "http://localhost:8000"
+  }
+}
+```
+
 
 ## Disclaimers
 

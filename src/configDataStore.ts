@@ -29,9 +29,24 @@ const BrowserConfigSchema = z.object({
 
 export type BrowserConfig = z.infer<typeof BrowserConfigSchema>;
 
+const SettingsSchema = z.object({
+  curlCommand: z.string().optional(),
+  keyringServiceName: z.string().optional(),
+  keyringAccountName: z.string().optional(),
+  browserDisabled: z.boolean().optional(),
+  countingDisabled: z.boolean().optional(),
+  permissionsConfig: z.string().optional(),
+  permissionsDoNotUseBuiltinSchemas: z.boolean().optional(),
+  passthroughUnknown: z.boolean().optional(),
+  gateway: z.string().optional(),
+});
+
+export type Settings = z.infer<typeof SettingsSchema>;
+
 const ConfigFileSchema = z.object({
   browser: BrowserConfigSchema.optional(),
   registeredServices: RegisteredServicesSchema.optional(),
+  settings: SettingsSchema.optional(),
 });
 
 /**
@@ -110,6 +125,20 @@ export function deleteRegisteredService(configPath: string, name: string): void 
   existingConfig.registeredServices = rest;
 
   writeConfigFile(configPath, existingConfig);
+}
+
+/**
+ * Load the persisted settings from config.json.
+ * Returns an empty object if the file doesn't exist, is unparseable, or has
+ * an invalid settings section.
+ */
+export function loadSettings(configPath: string): Settings {
+  const raw = readConfigFile(configPath);
+  const parsed = SettingsSchema.safeParse(raw.settings ?? {});
+  if (!parsed.success) {
+    return {};
+  }
+  return parsed.data;
 }
 
 export function loadBrowserConfig(configPath: string): BrowserConfig | null {
