@@ -27,7 +27,7 @@ import type { Service } from './services/index.js';
 export class UnknownServiceError extends Error {
   constructor(serviceName: string) {
     super(
-      `Unknown service: ${serviceName}. Use 'latchkey services list' to see available services.`,
+      `Unknown service: ${serviceName}. Use 'latchkey services list' to see available services.`
     );
     this.name = 'UnknownServiceError';
   }
@@ -44,7 +44,7 @@ export class PreparationRequiredError extends Error {
   constructor(serviceName: string) {
     super(
       `Service ${serviceName} requires preparation first. ` +
-        `Run 'latchkey auth browser-prepare ${serviceName}' before logging in.`,
+        `Run 'latchkey auth browser-prepare ${serviceName}' before logging in.`
     );
     this.name = 'PreparationRequiredError';
   }
@@ -86,7 +86,7 @@ export function servicesList(
   registry: Registry,
   apiCredentialStore: ApiCredentialStore,
   config: Config,
-  options: { builtin?: boolean; viable?: boolean },
+  options: { builtin?: boolean; viable?: boolean }
 ): readonly string[] {
   let services = [...registry.services];
 
@@ -101,9 +101,7 @@ export function servicesList(
         return true;
       }
       const supportsBrowser =
-        service.getSession !== undefined &&
-        !config.browserDisabled &&
-        hasGraphicalEnvironment();
+        service.getSession !== undefined && !config.browserDisabled && hasGraphicalEnvironment();
       return supportsBrowser;
     });
   }
@@ -124,7 +122,7 @@ export async function servicesInfo(
   registry: Registry,
   apiCredentialStore: ApiCredentialStore,
   config: Config,
-  serviceName: string,
+  serviceName: string
 ): Promise<ServicesInfoResult> {
   const service = lookupService(registry, serviceName);
 
@@ -148,7 +146,7 @@ export async function servicesInfo(
 
 export async function authList(
   registry: Registry,
-  apiCredentialStore: ApiCredentialStore,
+  apiCredentialStore: ApiCredentialStore
 ): Promise<Record<string, { credentialType: string; credentialStatus: ApiCredentialStatus }>> {
   const allCredentials = apiCredentialStore.getAll();
 
@@ -164,7 +162,7 @@ export async function authList(
           : ApiCredentialStatus.Valid;
 
       return [serviceName, { credentialType: credentials.objectType, credentialStatus }];
-    },
+    }
   );
 
   return Object.fromEntries(await Promise.all(statusChecks));
@@ -175,7 +173,7 @@ export async function authBrowser(
   apiCredentialStore: ApiCredentialStore,
   encryptedStorage: EncryptedStorage,
   config: Config,
-  serviceName: string,
+  serviceName: string
 ): Promise<void> {
   const service = lookupService(registry, serviceName);
 
@@ -194,7 +192,7 @@ export async function authBrowser(
   const apiCredentials = await session.login(
     encryptedStorage,
     launchOptions,
-    oldCredentials ?? undefined,
+    oldCredentials ?? undefined
   );
   apiCredentialStore.save(service.name, apiCredentials);
 }
@@ -208,7 +206,7 @@ export async function authBrowserPrepare(
   apiCredentialStore: ApiCredentialStore,
   encryptedStorage: EncryptedStorage,
   config: Config,
-  serviceName: string,
+  serviceName: string
 ): Promise<AuthBrowserPrepareResult> {
   const service = lookupService(registry, serviceName);
 

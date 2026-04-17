@@ -2149,28 +2149,23 @@ describe('CLI commands with dependency injection', () => {
       ['auth list', ['auth', 'list']],
       ['auth browser', ['auth', 'browser', 'slack']],
       ['auth browser-prepare', ['auth', 'browser-prepare', 'slack']],
-    ])(
-      'reports gateway errors on stderr (not stdout) for `%s`',
-      async (_name, argv) => {
-        makeFetchMock(
-          new Response(JSON.stringify({ error: 'Unknown service: foo.' }), { status: 400 })
-        );
-        const deps = createMockDependencies({
-          config: createMockConfig({ gatewayUrl: GATEWAY_URL }),
-        });
+    ])('reports gateway errors on stderr (not stdout) for `%s`', async (_name, argv) => {
+      makeFetchMock(
+        new Response(JSON.stringify({ error: 'Unknown service: foo.' }), { status: 400 })
+      );
+      const deps = createMockDependencies({
+        config: createMockConfig({ gatewayUrl: GATEWAY_URL }),
+      });
 
-        await runCommand(argv, deps);
+      await runCommand(argv, deps);
 
-        expect(exitCode).toBe(1);
-        expect(errorLogs.some((message) => message.includes('Unknown service: foo.'))).toBe(
-          true
-        );
-        // The error message must never be printed to stdout — that would
-        // interleave into JSON output consumed by callers.
-        expect(logs.join('\n')).not.toContain('Unknown service: foo.');
-        expect(logs).toEqual([]);
-      }
-    );
+      expect(exitCode).toBe(1);
+      expect(errorLogs.some((message) => message.includes('Unknown service: foo.'))).toBe(true);
+      // The error message must never be printed to stdout — that would
+      // interleave into JSON output consumed by callers.
+      expect(logs.join('\n')).not.toContain('Unknown service: foo.');
+      expect(logs).toEqual([]);
+    });
 
     it('rewrites the curl target URL to the gateway /gateway endpoint', async () => {
       const fetchMock = vi.fn();
@@ -2201,7 +2196,10 @@ describe('CLI commands with dependency injection', () => {
     });
 
     it.each([
-      ['services register', ['services', 'register', 'my-gitlab', '--base-api-url', 'https://gitlab.example.com']],
+      [
+        'services register',
+        ['services', 'register', 'my-gitlab', '--base-api-url', 'https://gitlab.example.com'],
+      ],
       ['services deregister', ['services', 'deregister', 'my-gitlab']],
       ['auth clear', ['auth', 'clear', 'slack']],
       ['auth set', ['auth', 'set', 'slack', '-H', 'Authorization: Bearer xoxb-test']],
@@ -2216,9 +2214,7 @@ describe('CLI commands with dependency injection', () => {
       await runCommand(argv, deps);
 
       expect(exitCode).toBe(1);
-      expect(
-        errorLogs.some((message) => message.includes('LATCHKEY_GATEWAY'))
-      ).toBe(true);
+      expect(errorLogs.some((message) => message.includes('LATCHKEY_GATEWAY'))).toBe(true);
     });
   });
 });

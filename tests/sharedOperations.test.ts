@@ -56,7 +56,7 @@ function createMockConfig(overrides: Partial<Config> = {}): Config {
     Object.create(Object.getPrototypeOf(defaultConfig) as object) as Config,
     defaultConfig,
     { encryptionKeyOverride: TEST_ENCRYPTION_KEY },
-    overrides,
+    overrides
   );
   return config;
 }
@@ -73,7 +73,7 @@ describe('operations', () => {
   });
 
   async function createApiCredentialStore(
-    credentialsData: Record<string, unknown> = {},
+    credentialsData: Record<string, unknown> = {}
   ): Promise<ApiCredentialStore> {
     const storePath = join(tempDir, 'credentials.json');
     await writeSecureFile(storePath, JSON.stringify(credentialsData));
@@ -158,7 +158,7 @@ describe('operations', () => {
       const config = createMockConfig();
 
       await expect(servicesInfo(registry, store, config, 'unknown')).rejects.toThrow(
-        UnknownServiceError,
+        UnknownServiceError
       );
     });
 
@@ -236,7 +236,7 @@ describe('operations', () => {
       const config = createMockConfig();
 
       await expect(
-        authBrowser(registry, store, encryptedStorage, config, 'unknown'),
+        authBrowser(registry, store, encryptedStorage, config, 'unknown')
       ).rejects.toThrow(UnknownServiceError);
     });
 
@@ -249,9 +249,9 @@ describe('operations', () => {
       });
       const config = createMockConfig();
 
-      await expect(
-        authBrowser(registry, store, encryptedStorage, config, 'slack'),
-      ).rejects.toThrow(BrowserFlowsNotSupportedError);
+      await expect(authBrowser(registry, store, encryptedStorage, config, 'slack')).rejects.toThrow(
+        BrowserFlowsNotSupportedError
+      );
     });
 
     it('should throw PreparationRequiredError when prepare is required but not done', async () => {
@@ -268,9 +268,9 @@ describe('operations', () => {
       });
       const config = createMockConfig();
 
-      await expect(
-        authBrowser(registry, store, encryptedStorage, config, 'slack'),
-      ).rejects.toThrow(PreparationRequiredError);
+      await expect(authBrowser(registry, store, encryptedStorage, config, 'slack')).rejects.toThrow(
+        PreparationRequiredError
+      );
     });
   });
 
@@ -284,7 +284,7 @@ describe('operations', () => {
       const config = createMockConfig();
 
       await expect(
-        authBrowserPrepare(registry, store, encryptedStorage, config, 'unknown'),
+        authBrowserPrepare(registry, store, encryptedStorage, config, 'unknown')
       ).rejects.toThrow(UnknownServiceError);
     });
 
@@ -302,13 +302,7 @@ describe('operations', () => {
       });
       const config = createMockConfig();
 
-      const result = await authBrowserPrepare(
-        registry,
-        store,
-        encryptedStorage,
-        config,
-        'slack',
-      );
+      const result = await authBrowserPrepare(registry, store, encryptedStorage, config, 'slack');
 
       expect(result.alreadyPrepared).toBe(true);
     });
@@ -329,13 +323,7 @@ describe('operations', () => {
       });
       const config = createMockConfig();
 
-      const result = await authBrowserPrepare(
-        registry,
-        store,
-        encryptedStorage,
-        config,
-        'slack',
-      );
+      const result = await authBrowserPrepare(registry, store, encryptedStorage, config, 'slack');
 
       expect(result.alreadyPrepared).toBe(true);
     });
@@ -349,13 +337,7 @@ describe('operations', () => {
       });
       const config = createMockConfig();
 
-      const result = await authBrowserPrepare(
-        registry,
-        store,
-        encryptedStorage,
-        config,
-        'slack',
-      );
+      const result = await authBrowserPrepare(registry, store, encryptedStorage, config, 'slack');
 
       expect(result.alreadyPrepared).toBe(true);
     });

@@ -24,7 +24,13 @@ describe('buildGatewayProxyUrl', () => {
 
 describe('rewriteCurlArgumentsForGateway', () => {
   it('replaces the target URL in place with the proxy URL', () => {
-    const arguments_ = ['-X', 'POST', '-H', 'Content-Type: application/json', 'https://slack.com/api/auth.test'];
+    const arguments_ = [
+      '-X',
+      'POST',
+      '-H',
+      'Content-Type: application/json',
+      'https://slack.com/api/auth.test',
+    ];
     const rewritten = rewriteCurlArgumentsForGateway(
       arguments_,
       'https://slack.com/api/auth.test',
@@ -111,7 +117,9 @@ describe('callLatchkeyEndpoint', () => {
   });
 
   it('throws GatewayRequestError when the transport fails', async () => {
-    globalThis.fetch = vi.fn().mockRejectedValue(new Error('connect ECONNREFUSED')) as unknown as typeof fetch;
+    globalThis.fetch = vi
+      .fn()
+      .mockRejectedValue(new Error('connect ECONNREFUSED')) as unknown as typeof fetch;
 
     await expect(
       callLatchkeyEndpoint(GATEWAY_URL, { command: 'services list' })

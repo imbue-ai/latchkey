@@ -50,19 +50,14 @@ export async function callLatchkeyEndpoint(
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new GatewayRequestError(
-      `Failed to reach latchkey gateway at ${endpoint}: ${message}`,
-      0
-    );
+    throw new GatewayRequestError(`Failed to reach latchkey gateway at ${endpoint}: ${message}`, 0);
   }
 
   const bodyText = await response.text();
   let parsedBody: { result?: unknown; error?: string };
   try {
     parsedBody =
-      bodyText === ''
-        ? {}
-        : (JSON.parse(bodyText) as { result?: unknown; error?: string });
+      bodyText === '' ? {} : (JSON.parse(bodyText) as { result?: unknown; error?: string });
   } catch {
     throw new GatewayRequestError(
       `Latchkey gateway returned invalid JSON (status ${response.status.toString()}): ${bodyText}`,

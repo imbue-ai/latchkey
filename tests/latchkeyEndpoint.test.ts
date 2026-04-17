@@ -10,11 +10,7 @@ import { Registry } from '../src/registry.js';
 import { Config } from '../src/config.js';
 import type { CliDependencies } from '../src/cliCommands.js';
 import type { CurlResult } from '../src/curl.js';
-import {
-  startGateway,
-  type GatewayServer,
-  type GatewayOptions,
-} from '../src/gateway.js';
+import { startGateway, type GatewayServer, type GatewayOptions } from '../src/gateway.js';
 import { LatchkeyRequestSchema } from '../src/latchkeyEndpoint.js';
 
 const TEST_ENCRYPTION_KEY = 'dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q=';
@@ -126,14 +122,14 @@ describe('/latchkey/ endpoint', () => {
     return Object.assign(
       Object.create(Object.getPrototypeOf(base) as object) as Config,
       base,
-      configOverrides,
+      configOverrides
     );
   }
 
   async function createTestGateway(
     credentialsData: Record<string, unknown> = {},
     overrides: Partial<CliDependencies> = {},
-    configOverrides: Partial<Config> = {},
+    configOverrides: Partial<Config> = {}
   ): Promise<GatewayServer> {
     const storePath = join(tempDir, 'credentials.json');
     await writeSecureFile(storePath, JSON.stringify(credentialsData));
@@ -369,7 +365,7 @@ describe('/latchkey/ endpoint', () => {
       gateway = await createTestGateway(
         {},
         { registry: new Registry([browserSlack]) },
-        { browserDisabled: true },
+        { browserDisabled: true }
       );
       const response = await postLatchkey({
         command: 'auth browser',
@@ -398,10 +394,7 @@ describe('/latchkey/ endpoint', () => {
         },
       };
 
-      gateway = await createTestGateway(
-        {},
-        { registry: new Registry([noLoginService]) },
-      );
+      gateway = await createTestGateway({}, { registry: new Registry([noLoginService]) });
       const response = await postLatchkey({
         command: 'auth browser',
         params: { serviceName: 'nologin' },
@@ -448,7 +441,7 @@ describe('/latchkey/ endpoint', () => {
       await postLatchkey({ command: 'services list' });
 
       expect(logs.some((l) => l.includes('POST /latchkey/') && l.includes('services list'))).toBe(
-        true,
+        true
       );
     });
   });

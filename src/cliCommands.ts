@@ -115,10 +115,7 @@ export function createDefaultDependencies(): CliDependencies {
  * Forward a request to the gateway's `/latchkey/` endpoint. On transport or
  * protocol errors the CLI exits with status 1 after logging the error message.
  */
-async function forwardToGateway(
-  deps: CliDependencies,
-  request: LatchkeyRequest
-): Promise<unknown> {
+async function forwardToGateway(deps: CliDependencies, request: LatchkeyRequest): Promise<unknown> {
   const gatewayUrl = deps.config.gatewayUrl;
   if (gatewayUrl === null) {
     throw new GatewayCommandNotSupportedError(request.command);

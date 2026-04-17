@@ -85,7 +85,11 @@ function findInPath(command: string): boolean {
  * Resolve a string-valued setting with precedence: env var > config file > default.
  * Environment variables override even when set to an empty string.
  */
-function resolveString(envValue: string | undefined, fileValue: string | undefined, defaultValue: string): string {
+function resolveString(
+  envValue: string | undefined,
+  fileValue: string | undefined,
+  defaultValue: string
+): string {
   if (envValue !== undefined) return envValue;
   if (fileValue !== undefined) return fileValue;
   return defaultValue;

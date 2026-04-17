@@ -190,9 +190,7 @@ describe('gateway server', () => {
     },
   };
 
-  function createMockConfig(
-    configOverrides: Partial<Config> = {}
-  ): Config {
+  function createMockConfig(configOverrides: Partial<Config> = {}): Config {
     const base = new Config((name) => {
       if (name === 'LATCHKEY_DIRECTORY') return tempDir;
       if (name === 'LATCHKEY_ENCRYPTION_KEY') return TEST_ENCRYPTION_KEY;
@@ -201,7 +199,11 @@ describe('gateway server', () => {
     if (Object.keys(configOverrides).length === 0) {
       return base;
     }
-    return Object.assign(Object.create(Object.getPrototypeOf(base) as object) as Config, base, configOverrides);
+    return Object.assign(
+      Object.create(Object.getPrototypeOf(base) as object) as Config,
+      base,
+      configOverrides
+    );
   }
 
   async function createTestGateway(

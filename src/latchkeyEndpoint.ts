@@ -29,9 +29,12 @@ import {
 import { LoginCancelledError, LoginFailedError } from './services/index.js';
 
 const serviceNameParamsMessage = "missing required argument 'service_name'";
-const serviceNameParams = z.object({
-  serviceName: z.string({ required_error: serviceNameParamsMessage }),
-}, { required_error: serviceNameParamsMessage });
+const serviceNameParams = z.object(
+  {
+    serviceName: z.string({ required_error: serviceNameParamsMessage }),
+  },
+  { required_error: serviceNameParamsMessage }
+);
 
 const ServicesListRequestSchema = z.object({
   command: z.literal('services list'),
@@ -97,7 +100,11 @@ function sendSuccess(response: http.ServerResponse, result: unknown): void {
   sendJsonResponse(response, 200, { result });
 }
 
-function sendErrorResponse(response: http.ServerResponse, statusCode: number, message: string): void {
+function sendErrorResponse(
+  response: http.ServerResponse,
+  statusCode: number,
+  message: string
+): void {
   sendJsonResponse(response, statusCode, { error: message });
 }
 
@@ -113,23 +120,18 @@ async function dispatch(
   parsed: LatchkeyRequest,
   deps: CliDependencies,
   apiCredentialStore: ApiCredentialStore,
-  encryptedStorage: EncryptedStorage,
+  encryptedStorage: EncryptedStorage
 ): Promise<unknown> {
   switch (parsed.command) {
     case 'services list':
-      return servicesList(
-        deps.registry,
-        apiCredentialStore,
-        deps.config,
-        parsed.params ?? {},
-      );
+      return servicesList(deps.registry, apiCredentialStore, deps.config, parsed.params ?? {});
 
     case 'services info':
       return servicesInfo(
         deps.registry,
         apiCredentialStore,
         deps.config,
-        parsed.params.serviceName,
+        parsed.params.serviceName
       );
 
     case 'auth list':
@@ -141,7 +143,7 @@ async function dispatch(
         apiCredentialStore,
         encryptedStorage,
         deps.config,
-        parsed.params.serviceName,
+        parsed.params.serviceName
       );
       return null;
 
@@ -151,7 +153,7 @@ async function dispatch(
         apiCredentialStore,
         encryptedStorage,
         deps.config,
-        parsed.params.serviceName,
+        parsed.params.serviceName
       );
   }
 }
@@ -161,7 +163,7 @@ export async function handleLatchkeyRequest(
   response: http.ServerResponse,
   deps: CliDependencies,
   apiCredentialStore: ApiCredentialStore,
-  encryptedStorage: EncryptedStorage,
+  encryptedStorage: EncryptedStorage
 ): Promise<void> {
   if (request.method !== 'POST') {
     sendErrorResponse(response, 405, 'Method not allowed. Use POST.');
@@ -183,16 +185,18 @@ export async function handleLatchkeyRequest(
 
   const parseResult = LatchkeyRequestSchema.safeParse(bodyJson);
   if (!parseResult.success) {
-    const message = parseResult.error.errors.map((e) => {
-      if (e.code === 'invalid_union_discriminator') {
-        const received = (bodyJson as Record<string, unknown> | null)?.command;
-        if (typeof received === 'string') {
-          return `unknown command '${received}'`;
+    const message = parseResult.error.errors
+      .map((e) => {
+        if (e.code === 'invalid_union_discriminator') {
+          const received = (bodyJson as Record<string, unknown> | null)?.command;
+          if (typeof received === 'string') {
+            return `unknown command '${received}'`;
+          }
+          return "missing required field 'command'";
         }
-        return 'missing required field \'command\'';
-      }
-      return e.message;
-    }).join('; ');
+        return e.message;
+      })
+      .join('; ');
     sendErrorResponse(response, 400, message);
     return;
   }
@@ -211,7 +215,7 @@ export async function handleLatchkeyRequest(
       return;
     }
     deps.errorLog(
-      `Unexpected error handling POST /latchkey/ ${description}: ${error instanceof Error ? error.message : String(error)}`,
+      `Unexpected error handling POST /latchkey/ ${description}: ${error instanceof Error ? error.message : String(error)}`
     );
     sendErrorResponse(response, 500, 'Internal error');
   }

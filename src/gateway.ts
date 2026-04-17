@@ -283,9 +283,7 @@ async function handleGatewayRequest(
 
   // Inject credentials (or pass through as-is)
   const allArguments =
-    apiCredentials !== null
-      ? apiCredentials.injectIntoCurlCall(curlArguments)
-      : [...curlArguments];
+    apiCredentials !== null ? apiCredentials.injectIntoCurlCall(curlArguments) : [...curlArguments];
 
   // Create temp directory for header dump
   const tempDir = mkdtempSync(join(tmpdir(), 'latchkey-gw-'));
@@ -403,7 +401,7 @@ export function startGateway(
         response,
         deps,
         apiCredentialStore,
-        encryptedStorage,
+        encryptedStorage
       ).catch((error: unknown) => {
         deps.errorLog(
           `Unexpected error handling /latchkey/: ${error instanceof Error ? error.message : String(error)}`
