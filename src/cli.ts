@@ -15,7 +15,7 @@ import {
 } from './encryptedStorage.js';
 import { KeychainTimeoutError } from './keychain.js';
 import { MigrationError, runMigrations } from './migrations.js';
-import { loadRegisteredServicesIntoRegistry } from './registry.js';
+import { loadRegisteredServicesIntoServiceRegistry } from './serviceRegistry.js';
 import { countDailyIfNeeded } from './dailyCounting.js';
 import { VERSION } from './version.js';
 
@@ -76,7 +76,7 @@ if (!gatewayMode) {
     throw error;
   }
 
-  loadRegisteredServicesIntoRegistry(deps.config.configPath, deps.registry);
+  loadRegisteredServicesIntoServiceRegistry(deps.config.configPath, deps.registry);
 }
 
 program

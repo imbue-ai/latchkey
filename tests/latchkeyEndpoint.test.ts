@@ -6,7 +6,7 @@ import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { ApiCredentialStore } from '../src/apiCredentials/store.js';
 import { ApiCredentialStatus } from '../src/apiCredentials/base.js';
 import { NoCurlCredentialsNotSupportedError, Service } from '../src/services/core/base.js';
-import { Registry } from '../src/registry.js';
+import { ServiceRegistry } from '../src/serviceRegistry.js';
 import { Config } from '../src/config.js';
 import type { CliDependencies } from '../src/cliCommands.js';
 import type { CurlResult } from '../src/curl.js';
@@ -141,7 +141,7 @@ describe('/latchkey/ endpoint', () => {
     const apiCredentialStore = new ApiCredentialStore(storePath, encryptedStorage);
 
     const deps: CliDependencies = {
-      registry: new Registry([mockSlackService]),
+      registry: new ServiceRegistry([mockSlackService]),
       config: createMockConfig(configOverrides),
       runCurl: (): CurlResult => ({ returncode: 0, stdout: '', stderr: '' }),
       runCurlAsync: () => Promise.resolve({ returncode: 0, stdout: Buffer.from(''), stderr: '' }),
@@ -365,7 +365,7 @@ describe('/latchkey/ endpoint', () => {
       });
       gateway = await createTestGateway(
         {},
-        { registry: new Registry([browserSlack]) },
+        { registry: new ServiceRegistry([browserSlack]) },
         { browserDisabled: true }
       );
       const response = await postLatchkey({
@@ -395,7 +395,7 @@ describe('/latchkey/ endpoint', () => {
         },
       };
 
-      gateway = await createTestGateway({}, { registry: new Registry([noLoginService]) });
+      gateway = await createTestGateway({}, { registry: new ServiceRegistry([noLoginService]) });
       const response = await postLatchkey({
         command: 'auth browser',
         params: { serviceName: 'nologin' },

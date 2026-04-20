@@ -9,7 +9,7 @@ import { CurlParseError, extractUrlFromCurlArguments } from '../src/curl.js';
 import { hasGraphicalEnvironment } from '../src/playwrightUtils.js';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { Config } from '../src/config.js';
-import { Registry } from '../src/registry.js';
+import { ServiceRegistry } from '../src/serviceRegistry.js';
 import { ApiCredentialStatus } from '../src/apiCredentials/base.js';
 import { SlackApiCredentials } from '../src/services/slack.js';
 import { NoCurlCredentialsNotSupportedError, Service } from '../src/services/core/base.js';
@@ -22,7 +22,7 @@ import {
   loadRegisteredServices,
   saveRegisteredService,
 } from '../src/configDataStore.js';
-import { loadRegisteredServicesIntoRegistry } from '../src/registry.js';
+import { loadRegisteredServicesIntoServiceRegistry } from '../src/serviceRegistry.js';
 import type { CurlResult } from '../src/curl.js';
 
 // Use a fixed test key for deterministic test behavior (32 bytes = 256 bits, base64 encoded)
@@ -353,7 +353,7 @@ describe('CLI commands with dependency injection', () => {
       }),
     };
 
-    const mockRegistry = new Registry([mockSlackService]);
+    const mockRegistry = new ServiceRegistry([mockSlackService]);
 
     return {
       registry: mockRegistry,
@@ -502,7 +502,7 @@ describe('CLI commands with dependency injection', () => {
       };
 
       const deps = createMockDependencies({
-        registry: new Registry([noLoginService]),
+        registry: new ServiceRegistry([noLoginService]),
       });
       await runCommand(['services', 'list', '--viable'], deps);
 
@@ -693,7 +693,7 @@ describe('CLI commands with dependency injection', () => {
       };
 
       const deps = createMockDependencies({
-        registry: new Registry([noLoginService]),
+        registry: new ServiceRegistry([noLoginService]),
       });
       await runCommand(['services', 'info', 'nologin'], deps);
 
@@ -953,7 +953,7 @@ describe('CLI commands with dependency injection', () => {
       await writeSecureFile(storePath, '{}');
 
       const deps = createMockDependencies({
-        registry: new Registry([TELEGRAM]),
+        registry: new ServiceRegistry([TELEGRAM]),
       });
 
       await runCommand(['auth', 'set-nocurl', 'telegram', '123456:ABC-DEF'], deps);
@@ -988,7 +988,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should return error when telegram token is missing', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([TELEGRAM]),
+        registry: new ServiceRegistry([TELEGRAM]),
       });
 
       await runCommand(['auth', 'set-nocurl', 'telegram'], deps);
@@ -998,7 +998,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should return error when telegram token format is invalid', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([TELEGRAM]),
+        registry: new ServiceRegistry([TELEGRAM]),
       });
 
       await runCommand(['auth', 'set-nocurl', 'telegram', 'not-a-valid-token'], deps);
@@ -1188,7 +1188,7 @@ describe('CLI commands with dependency injection', () => {
       };
 
       const deps = createMockDependencies({
-        registry: new Registry([mockSlackService]),
+        registry: new ServiceRegistry([mockSlackService]),
       });
 
       await runCommand(['curl', 'https://slack.com/api/test'], deps);
@@ -1218,7 +1218,7 @@ describe('CLI commands with dependency injection', () => {
       );
 
       const deps = createMockDependencies({
-        registry: new Registry([TELEGRAM]),
+        registry: new ServiceRegistry([TELEGRAM]),
       });
 
       await runCommand(['curl', 'https://api.telegram.org/getMe'], deps);
@@ -1254,7 +1254,7 @@ describe('CLI commands with dependency injection', () => {
       };
 
       const deps = createMockDependencies({
-        registry: new Registry([noLoginService]),
+        registry: new ServiceRegistry([noLoginService]),
       });
 
       await runCommand(['curl', 'https://nologin.example.com/api/test'], deps);
@@ -1346,7 +1346,7 @@ describe('CLI commands with dependency injection', () => {
       };
 
       const deps = createMockDependencies({
-        registry: new Registry([noLoginService]),
+        registry: new ServiceRegistry([noLoginService]),
       });
 
       await runCommand(['auth', 'browser', 'nologin'], deps);
@@ -1408,7 +1408,7 @@ describe('CLI commands with dependency injection', () => {
       };
 
       const deps = createMockDependencies({
-        registry: new Registry([nocurlService]),
+        registry: new ServiceRegistry([nocurlService]),
       });
 
       await runCommand(['auth', 'browser', 'nocurl-only'], deps);
@@ -1420,7 +1420,7 @@ describe('CLI commands with dependency injection', () => {
   describe('services register command', () => {
     it('should register a new service', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       await runCommand(
@@ -1448,7 +1448,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should persist registration to config.json', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       await runCommand(
@@ -1474,7 +1474,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should reject unknown service family', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       await runCommand(
@@ -1496,7 +1496,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should reject duplicate service name', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       await runCommand(
@@ -1518,7 +1518,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should canonicalize service name to lowercase', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       await runCommand(
@@ -1541,7 +1541,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should convert spaces to hyphens in service name', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       await runCommand(
@@ -1556,7 +1556,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should reject service name with invalid characters', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       await runCommand(
@@ -1573,7 +1573,7 @@ describe('CLI commands with dependency injection', () => {
       await writeSecureFile(storePath, '{}');
 
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       await runCommand(
@@ -1599,7 +1599,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should persist and restore loginUrl', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITHUB]),
+        registry: new ServiceRegistry([GITHUB]),
       });
 
       await runCommand(
@@ -1623,7 +1623,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should reject --login-url without --service-family', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([]),
+        registry: new ServiceRegistry([]),
       });
 
       await runCommand(
@@ -1645,7 +1645,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should reject --login-url when service family does not support browser login', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       await runCommand(
@@ -1669,7 +1669,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should require --login-url when service family supports browser login', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITHUB]),
+        registry: new ServiceRegistry([GITHUB]),
       });
 
       await runCommand(
@@ -1691,7 +1691,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should make registered service usable with auth set', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       // Register the service
@@ -1722,7 +1722,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should register a service without --service-family', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       await runCommand(
@@ -1742,7 +1742,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should persist registration without service family to config.json', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       await runCommand(
@@ -1762,7 +1762,7 @@ describe('CLI commands with dependency injection', () => {
       await writeSecureFile(storePath, '{}');
 
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       await runCommand(
@@ -1780,7 +1780,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should make service without family usable with auth set and curl', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       // Register the service without family
@@ -1813,7 +1813,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should reject browser login for service without family', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       await runCommand(
@@ -1832,7 +1832,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should reject set-nocurl for service without family', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       await runCommand(
@@ -1851,7 +1851,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should make registered service usable with curl', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       // Register the service
@@ -1894,7 +1894,7 @@ describe('CLI commands with dependency injection', () => {
   describe('services deregister command', () => {
     it('should deregister a registered service', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       // Register a service first
@@ -1921,7 +1921,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should remove service from config.json', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       await runCommand(
@@ -1965,7 +1965,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should reject deregistering when credentials still exist', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       // Register a service
@@ -2010,7 +2010,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should allow deregistering after credentials are cleared', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       // Register
@@ -2290,8 +2290,8 @@ describe('registeredServiceStore', () => {
       serviceFamily: 'gitlab',
     });
 
-    const registry = new Registry([GITLAB]);
-    loadRegisteredServicesIntoRegistry(configPath, registry);
+    const registry = new ServiceRegistry([GITLAB]);
+    loadRegisteredServicesIntoServiceRegistry(configPath, registry);
 
     const service = registry.getByName('my-gitlab');
     expect(service).not.toBeNull();
@@ -2306,8 +2306,8 @@ describe('registeredServiceStore', () => {
       loginUrl: 'https://gitlab.mycompany.com/users/sign_in',
     });
 
-    const registry = new Registry([GITLAB]);
-    loadRegisteredServicesIntoRegistry(configPath, registry);
+    const registry = new ServiceRegistry([GITLAB]);
+    loadRegisteredServicesIntoServiceRegistry(configPath, registry);
 
     const service = registry.getByName('my-gitlab');
     expect(service).not.toBeNull();
@@ -2320,8 +2320,8 @@ describe('registeredServiceStore', () => {
       baseApiUrl: 'https://api.example.com/',
     });
 
-    const registry = new Registry([GITLAB]);
-    loadRegisteredServicesIntoRegistry(configPath, registry);
+    const registry = new ServiceRegistry([GITLAB]);
+    loadRegisteredServicesIntoServiceRegistry(configPath, registry);
 
     const service = registry.getByName('my-api');
     expect(service).not.toBeNull();
@@ -2337,8 +2337,8 @@ describe('registeredServiceStore', () => {
       serviceFamily: 'nonexistent',
     });
 
-    const registry = new Registry([GITLAB]);
-    loadRegisteredServicesIntoRegistry(configPath, registry);
+    const registry = new ServiceRegistry([GITLAB]);
+    loadRegisteredServicesIntoServiceRegistry(configPath, registry);
 
     expect(registry.getByName('my-unknown')).toBeNull();
   });

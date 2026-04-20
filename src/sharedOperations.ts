@@ -18,11 +18,11 @@ import {
   GraphicalEnvironmentNotFoundError,
   hasGraphicalEnvironment,
 } from './playwrightUtils.js';
-import type { Registry } from './registry.js';
+import type { ServiceRegistry } from './serviceRegistry.js';
 import { RegisteredService } from './services/core/registered.js';
 import type { Service } from './services/index.js';
 
-// ─── Error classes ────────────────────────────────────────────────────────────
+// Error classes
 
 export class UnknownServiceError extends Error {
   constructor(serviceName: string) {
@@ -50,9 +50,9 @@ export class PreparationRequiredError extends Error {
   }
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// Helpers
 
-function lookupService(registry: Registry, serviceName: string): Service {
+function lookupService(registry: ServiceRegistry, serviceName: string): Service {
   const service = registry.getByName(serviceName);
   if (service === null) {
     throw new UnknownServiceError(serviceName);
@@ -80,10 +80,10 @@ function getBrowserLaunchOptions(config: Config): {
   };
 }
 
-// ─── Operations ───────────────────────────────────────────────────────────────
+// Operations
 
 export function servicesList(
-  registry: Registry,
+  registry: ServiceRegistry,
   apiCredentialStore: ApiCredentialStore,
   config: Config,
   options: { builtin?: boolean; viable?: boolean }
@@ -119,7 +119,7 @@ export interface ServicesInfoResult {
 }
 
 export async function servicesInfo(
-  registry: Registry,
+  registry: ServiceRegistry,
   apiCredentialStore: ApiCredentialStore,
   config: Config,
   serviceName: string
@@ -145,7 +145,7 @@ export async function servicesInfo(
 }
 
 export async function authList(
-  registry: Registry,
+  registry: ServiceRegistry,
   apiCredentialStore: ApiCredentialStore
 ): Promise<Record<string, { credentialType: string; credentialStatus: ApiCredentialStatus }>> {
   const allCredentials = apiCredentialStore.getAll();
@@ -169,7 +169,7 @@ export async function authList(
 }
 
 export async function authBrowser(
-  registry: Registry,
+  registry: ServiceRegistry,
   apiCredentialStore: ApiCredentialStore,
   encryptedStorage: EncryptedStorage,
   config: Config,
@@ -202,7 +202,7 @@ export interface AuthBrowserPrepareResult {
 }
 
 export async function authBrowserPrepare(
-  registry: Registry,
+  registry: ServiceRegistry,
   apiCredentialStore: ApiCredentialStore,
   encryptedStorage: EncryptedStorage,
   config: Config,

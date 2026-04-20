@@ -15,7 +15,7 @@ import type { AsyncCurlResult, CurlResult } from '../src/curl.js';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { ApiCredentialStore } from '../src/apiCredentials/store.js';
 import { Config } from '../src/config.js';
-import { Registry } from '../src/registry.js';
+import { ServiceRegistry } from '../src/serviceRegistry.js';
 import { ApiCredentialStatus } from '../src/apiCredentials/base.js';
 import { NoCurlCredentialsNotSupportedError, Service } from '../src/services/core/base.js';
 
@@ -222,7 +222,7 @@ describe('gateway server', () => {
     const apiCredentialStore = new ApiCredentialStore(storePath, encryptedStorage);
 
     const deps: CliDependencies = {
-      registry: new Registry([mockSlackService]),
+      registry: new ServiceRegistry([mockSlackService]),
       config: createMockConfig(configOverrides),
       runCurl: (): CurlResult => ({ returncode: 0, stdout: '', stderr: '' }),
       runCurlAsync: async (
@@ -705,7 +705,7 @@ describe('gateway CLI command registration', () => {
     const errorLogs: string[] = [];
 
     const mockDeps: CliDependencies = {
-      registry: new Registry([]),
+      registry: new ServiceRegistry([]),
       config: new Config(() => undefined),
       runCurl: (): CurlResult => ({ returncode: 0, stdout: '', stderr: '' }),
       runCurlAsync: () => Promise.resolve({ returncode: 0, stdout: Buffer.from(''), stderr: '' }),

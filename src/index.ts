@@ -68,5 +68,5 @@ export {
   LINEAR,
 } from './services/index.js';
 
-// Registry
-export { Registry, REGISTRY } from './registry.js';
+// ServiceRegistry
+export { ServiceRegistry, SERVICE_REGISTRY } from './serviceRegistry.js';

@@ -15,7 +15,7 @@ import type { ApiCredentialStore } from './apiCredentials/store.js';
 import { maybeRefreshCredentials } from './apiCredentials/utils.js';
 import { CurlParseError, extractUrlFromCurlArguments } from './curl.js';
 import { ErrorMessages } from './errorMessages.js';
-import type { Registry } from './registry.js';
+import type { ServiceRegistry } from './serviceRegistry.js';
 
 export class RequestNotPermittedError extends Error {
   constructor() {
@@ -62,7 +62,7 @@ export class CredentialsExpiredError extends Error {
 }
 
 export interface CurlInjectionDependencies {
-  readonly registry: Registry;
+  readonly registry: ServiceRegistry;
   readonly checkPermission: (
     curlArguments: readonly string[],
     configPath: string,

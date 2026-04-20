@@ -8,7 +8,7 @@ import { ApiCredentialStatus } from '../src/apiCredentials/base.js';
 import { SlackApiCredentials } from '../src/services/slack.js';
 import { NoCurlCredentialsNotSupportedError, Service } from '../src/services/core/base.js';
 import { RegisteredService } from '../src/services/core/registered.js';
-import { Registry } from '../src/registry.js';
+import { ServiceRegistry } from '../src/serviceRegistry.js';
 import { Config } from '../src/config.js';
 import {
   servicesList,
@@ -87,7 +87,7 @@ describe('operations', () => {
     it('should return sorted service names', async () => {
       const serviceA = createMockService({ name: 'zzz-service' });
       const serviceB = createMockService({ name: 'aaa-service' });
-      const registry = new Registry([serviceA, serviceB]);
+      const registry = new ServiceRegistry([serviceA, serviceB]);
       const store = await createApiCredentialStore();
       const config = createMockConfig();
 
@@ -99,7 +99,7 @@ describe('operations', () => {
     it('should filter to builtin services only', async () => {
       const builtinService = createMockService({ name: 'slack' });
       const registeredService = new RegisteredService('my-gitlab', 'https://gitlab.example.com');
-      const registry = new Registry([builtinService]);
+      const registry = new ServiceRegistry([builtinService]);
       registry.addService(registeredService);
       const store = await createApiCredentialStore();
       const config = createMockConfig();
@@ -112,7 +112,7 @@ describe('operations', () => {
 
     it('should filter to viable services with stored credentials', async () => {
       const service = createMockService({ name: 'slack', getSession: undefined });
-      const registry = new Registry([service]);
+      const registry = new ServiceRegistry([service]);
       const store = await createApiCredentialStore({
         slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
       });
@@ -125,7 +125,7 @@ describe('operations', () => {
 
     it('should exclude non-viable services without credentials or browser', async () => {
       const service = createMockService({ name: 'nologin', getSession: undefined });
-      const registry = new Registry([service]);
+      const registry = new ServiceRegistry([service]);
       const store = await createApiCredentialStore({});
       const config = createMockConfig();
 
@@ -138,7 +138,7 @@ describe('operations', () => {
   describe('servicesInfo', () => {
     it('should return service info', async () => {
       const service = createMockService();
-      const registry = new Registry([service]);
+      const registry = new ServiceRegistry([service]);
       const store = await createApiCredentialStore();
       const config = createMockConfig();
 
@@ -153,7 +153,7 @@ describe('operations', () => {
     });
 
     it('should throw UnknownServiceError for unknown service', async () => {
-      const registry = new Registry([]);
+      const registry = new ServiceRegistry([]);
       const store = await createApiCredentialStore();
       const config = createMockConfig();
 
@@ -164,7 +164,7 @@ describe('operations', () => {
 
     it('should exclude browser from authOptions when browser disabled', async () => {
       const service = createMockService();
-      const registry = new Registry([service]);
+      const registry = new ServiceRegistry([service]);
       const store = await createApiCredentialStore();
       const config = createMockConfig({ browserDisabled: true } as Partial<Config>);
 
@@ -175,7 +175,7 @@ describe('operations', () => {
 
     it('should show user-registered type for registered services', async () => {
       const registeredService = new RegisteredService('my-gitlab', 'https://gitlab.example.com');
-      const registry = new Registry([]);
+      const registry = new ServiceRegistry([]);
       registry.addService(registeredService);
       const store = await createApiCredentialStore();
       const config = createMockConfig();
@@ -189,7 +189,7 @@ describe('operations', () => {
   describe('authList', () => {
     it('should return stored credentials with status', async () => {
       const service = createMockService();
-      const registry = new Registry([service]);
+      const registry = new ServiceRegistry([service]);
       const store = await createApiCredentialStore({
         slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
       });
@@ -203,7 +203,7 @@ describe('operations', () => {
     });
 
     it('should return empty object when no credentials stored', async () => {
-      const registry = new Registry([]);
+      const registry = new ServiceRegistry([]);
       const store = await createApiCredentialStore({});
 
       const result = await authList(registry, store);
@@ -212,7 +212,7 @@ describe('operations', () => {
     });
 
     it('should treat unknown services as valid', async () => {
-      const registry = new Registry([]);
+      const registry = new ServiceRegistry([]);
       const store = await createApiCredentialStore({
         unknown: { objectType: 'rawCurl', curlArguments: ['-H', 'X-Token: secret'] },
       });
@@ -228,7 +228,7 @@ describe('operations', () => {
 
   describe('authBrowser', () => {
     it('should throw UnknownServiceError for unknown service', async () => {
-      const registry = new Registry([]);
+      const registry = new ServiceRegistry([]);
       const store = await createApiCredentialStore();
       const encryptedStorage = await EncryptedStorage.create({
         encryptionKeyOverride: TEST_ENCRYPTION_KEY,
@@ -242,7 +242,7 @@ describe('operations', () => {
 
     it('should throw BrowserFlowsNotSupportedError when service has no browser support', async () => {
       const service = createMockService({ getSession: undefined });
-      const registry = new Registry([service]);
+      const registry = new ServiceRegistry([service]);
       const store = await createApiCredentialStore();
       const encryptedStorage = await EncryptedStorage.create({
         encryptionKeyOverride: TEST_ENCRYPTION_KEY,
@@ -261,7 +261,7 @@ describe('operations', () => {
           login: vi.fn(),
         }),
       });
-      const registry = new Registry([service]);
+      const registry = new ServiceRegistry([service]);
       const store = await createApiCredentialStore({});
       const encryptedStorage = await EncryptedStorage.create({
         encryptionKeyOverride: TEST_ENCRYPTION_KEY,
@@ -276,7 +276,7 @@ describe('operations', () => {
 
   describe('authBrowserPrepare', () => {
     it('should throw UnknownServiceError for unknown service', async () => {
-      const registry = new Registry([]);
+      const registry = new ServiceRegistry([]);
       const store = await createApiCredentialStore();
       const encryptedStorage = await EncryptedStorage.create({
         encryptionKeyOverride: TEST_ENCRYPTION_KEY,
@@ -295,7 +295,7 @@ describe('operations', () => {
           // No prepare method
         }),
       });
-      const registry = new Registry([service]);
+      const registry = new ServiceRegistry([service]);
       const store = await createApiCredentialStore();
       const encryptedStorage = await EncryptedStorage.create({
         encryptionKeyOverride: TEST_ENCRYPTION_KEY,
@@ -314,7 +314,7 @@ describe('operations', () => {
           login: vi.fn(),
         }),
       });
-      const registry = new Registry([service]);
+      const registry = new ServiceRegistry([service]);
       const store = await createApiCredentialStore({
         slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
       });
@@ -330,7 +330,7 @@ describe('operations', () => {
 
     it('should return alreadyPrepared true when service has no getSession', async () => {
       const service = createMockService({ getSession: undefined });
-      const registry = new Registry([service]);
+      const registry = new ServiceRegistry([service]);
       const store = await createApiCredentialStore();
       const encryptedStorage = await EncryptedStorage.create({
         encryptionKeyOverride: TEST_ENCRYPTION_KEY,

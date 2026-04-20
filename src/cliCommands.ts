@@ -34,10 +34,10 @@ import { EncryptedStorage } from './encryptedStorage.js';
 import {
   DuplicateServiceNameError,
   InvalidServiceNameError,
-  Registry,
-  REGISTRY,
+  ServiceRegistry,
+  SERVICE_REGISTRY,
   canonicalizeServiceName,
-} from './registry.js';
+} from './serviceRegistry.js';
 import { RegisteredService } from './services/core/registered.js';
 import {
   LoginCancelledError,
@@ -86,7 +86,7 @@ export const PERMISSION_DENIED_EXIT_CODE = 126;
  * Dependencies that can be injected for testing.
  */
 export interface CliDependencies {
-  readonly registry: Registry;
+  readonly registry: ServiceRegistry;
   readonly config: Config;
   readonly runCurl: (args: readonly string[]) => CurlResult;
   readonly runCurlAsync: typeof curlRunAsync;
@@ -107,7 +107,7 @@ export interface CliDependencies {
  */
 export function createDefaultDependencies(): CliDependencies {
   return {
-    registry: REGISTRY,
+    registry: SERVICE_REGISTRY,
     config: CONFIG,
     runCurl: curlRun,
     runCurlAsync: curlRunAsync,
