@@ -70,10 +70,7 @@ function sendErrorResponse(
  * equivalent passthrough-mode call would have shown. When stderr is empty
  * we fall back to a generic placeholder.
  */
-function sendUpstreamCurlFailure(
-  response: http.ServerResponse,
-  result: AsyncCurlResult
-): void {
+function sendUpstreamCurlFailure(response: http.ServerResponse, result: AsyncCurlResult): void {
   const stderrMessage = result.stderr.trim();
   const message = stderrMessage === '' ? ErrorMessages.upstreamRequestFailed : stderrMessage;
   sendErrorResponse(response, 502, message);

@@ -193,11 +193,7 @@ export class OAuthCredentials implements ApiCredentials {
         'OAuth credentials missing access token. Run login to obtain access tokens.'
       );
     }
-    return Promise.resolve([
-      '-H',
-      `Authorization: Bearer ${this.accessToken}`,
-      ...curlArguments,
-    ]);
+    return Promise.resolve(['-H', `Authorization: Bearer ${this.accessToken}`, ...curlArguments]);
   }
 
   isExpired(): boolean | undefined {

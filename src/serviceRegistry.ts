@@ -105,7 +105,10 @@ export class ServiceRegistry {
   }
 }
 
-export function loadRegisteredServicesIntoServiceRegistry(configPath: string, registry: ServiceRegistry): void {
+export function loadRegisteredServicesIntoServiceRegistry(
+  configPath: string,
+  registry: ServiceRegistry
+): void {
   const entries = loadRegisteredServices(configPath);
   for (const [name, entry] of entries) {
     let familyService: Service | undefined;

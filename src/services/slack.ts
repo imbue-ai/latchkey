@@ -117,9 +117,7 @@ export class Slack extends Service {
     return new SlackServiceSession(this);
   }
 
-  override async checkApiCredentials(
-    apiCredentials: ApiCredentials
-  ): Promise<ApiCredentialStatus> {
+  override async checkApiCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentialStatus> {
     const result = runCaptured(
       await apiCredentials.injectIntoCurlCall(['-s', ...this.credentialCheckCurlArguments]),
       10

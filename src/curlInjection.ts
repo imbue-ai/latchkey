@@ -26,7 +26,11 @@ export class RequestNotPermittedError extends Error {
 
 export class UrlExtractionFailedError extends Error {
   constructor(detail?: string) {
-    super(detail === undefined ? ErrorMessages.couldNotExtractUrl : `${ErrorMessages.couldNotExtractUrl} ${detail}`);
+    super(
+      detail === undefined
+        ? ErrorMessages.couldNotExtractUrl
+        : `${ErrorMessages.couldNotExtractUrl} ${detail}`
+    );
     this.name = 'UrlExtractionFailedError';
   }
 }
