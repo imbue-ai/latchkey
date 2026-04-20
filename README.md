@@ -296,7 +296,30 @@ This would mean that:
 - No requests are allowed to any other domains.
 
 Ideally make the file read-only: `chmod -w ~/.latchkey/permissions.json`.
-For more details, check out the [Detent docs](https://github.com/imbue-ai/detent).
+For more details, check out the [permission docs](https://docs.imbue.com/latchkey/basics/permissions).
+
+
+### Gateway mode
+
+People sometimes run agents in isolated sandboxes for higher
+security. Using gateway mode lets you extend the isolation
+to Latchkey itself. Run this to start a Latchkey server on the
+machine where your main configuration lives:
+
+```bash
+# Listens on localhost:1989 by default.
+# You can override this using the LATCHKEY_GATEWAY_LISTEN_HOST
+# and LATCHKEY_GATEWAY_LISTEN_PORT environment variables.
+latchkey gateway
+```
+
+Suppose you run an agent inside a container on the same machine,
+with the gateway port mapped into the container. Then setting
+`LATCHKEY_GATEWAY=http://localhost:1989` in your container will
+route your agent's `latchkey` calls to the host Latchkey
+(limited to a selected safe subset of commands). That way the
+agent won't be able to tamper with your Latchkey configuration
+while still being able to use Latchkey itself as intended.
 
 
 ### Other configuration
