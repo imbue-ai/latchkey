@@ -3,7 +3,13 @@
  */
 
 import { spawn, spawnSync, SpawnSyncReturns } from 'node:child_process';
+import { CurlParseError, parseCurlArgs } from '@imbue-ai/detent';
 import { CONFIG } from './config.js';
+
+// Re-export detent's curl-parsing primitives so the rest of the codebase can
+// treat `./curl.js` as the single entry point for curl parsing and doesn't
+// have to depend on detent directly.
+export { CurlParseError, parseCurlArgs };
 
 export interface CurlResult {
   readonly returncode: number;
@@ -182,104 +188,47 @@ export function runAsync(
   return asyncSubprocessRunner(args, options);
 }
 
-// Curl flags that don't affect the HTTP request semantics but may not be supported by URL extraction.
-const CURL_PASSTHROUGH_FLAGS = new Set(['-v', '--verbose']);
-
-function filterPassthroughFlags(args: string[]): string[] {
-  return args.filter((arg) => !CURL_PASSTHROUGH_FLAGS.has(arg));
-}
-
 /**
- * Parse the HTTP method from curl arguments. Defaults to GET unless -d / --data* is present
- * (which implies POST) or -X / --request overrides it.
+ * Extract the target URL argument from a curl invocation.
+ *
+ * Delegates curl flag parsing to `parseCurlArgs` from detent (which knows the
+ * full curl flag vocabulary) to determine the canonical request URL, and then
+ * returns the original, unnormalized argument string so callers can use it for
+ * positional substitution (gateway rewriting, Telegram URL rewriting, ...).
+ *
+ * Schemeless URLs (e.g. `www.example.com`) are supported: curl defaults them
+ * to `http://`, and we do the same when normalizing for the comparison.
+ * Only http(s) URLs are recognized; other schemes (ftp, file, ...) return
+ * null.
+ *
+ * Throws `CurlParseError` (from detent) when the arguments don't form a valid
+ * curl invocation (missing URL, malformed header, ...). The error message
+ * carries useful detail for the user, so callers should surface it rather
+ * than silently swallow it.
  */
-export function extractMethodFromCurlArguments(curlArguments: readonly string[]): string {
-  let method: string | undefined;
-  let hasData = false;
-  for (let i = 0; i < curlArguments.length; i++) {
-    const argument = curlArguments[i]!;
-    if (argument === '-X' || argument === '--request') {
-      method = curlArguments[i + 1]?.toUpperCase();
-      i++;
-    } else if (
-      argument === '-d' ||
-      argument === '--data' ||
-      argument === '--data-raw' ||
-      argument === '--data-binary' ||
-      argument === '--data-urlencode'
-    ) {
-      hasData = true;
-      i++;
-    }
-  }
-  if (method !== undefined) {
-    return method;
-  }
-  return hasData ? 'POST' : 'GET';
-}
-
-/** Extract the request body from -d / --data* curl arguments. */
-export function extractBodyFromCurlArguments(curlArguments: readonly string[]): string {
-  for (let i = 0; i < curlArguments.length; i++) {
-    const argument = curlArguments[i]!;
-    if (
-      argument === '-d' ||
-      argument === '--data' ||
-      argument === '--data-raw' ||
-      argument === '--data-binary'
-    ) {
-      return curlArguments[i + 1] ?? '';
-    }
-  }
-  return '';
-}
-
-/** Extract headers already present in curl arguments. */
-export function extractHeadersFromCurlArguments(
-  curlArguments: readonly string[]
-): Record<string, string> {
-  const headers: Record<string, string> = {};
-  for (let i = 0; i < curlArguments.length; i++) {
-    const argument = curlArguments[i]!;
-    if (argument === '-H' || argument === '--header') {
-      const headerValue = curlArguments[i + 1];
-      if (headerValue !== undefined) {
-        const colonIndex = headerValue.indexOf(':');
-        if (colonIndex > 0) {
-          const name = headerValue.slice(0, colonIndex).trim().toLowerCase();
-          const value = headerValue.slice(colonIndex + 1).trim();
-          headers[name] = value;
-        }
-      }
-      i++;
-    }
-  }
-  return headers;
-}
-
 export function extractUrlFromCurlArguments(args: readonly string[]): string | null {
-  const filteredArgs = filterPassthroughFlags([...args]);
-
-  // Simple URL extraction: look for arguments that look like URLs
-  // or parse known curl argument patterns
-  for (let i = 0; i < filteredArgs.length; i++) {
-    const arg = filteredArgs[i];
-    if (arg === undefined) continue;
-
-    // Skip flags and their values
-    if (arg.startsWith('-')) {
-      // Skip flags that take a value
-      if (['-H', '-d', '-X', '-o', '-w', '-u', '-A', '-e', '-b', '-c', '-F', '-T'].includes(arg)) {
-        i++; // Skip the next argument which is the value
-      }
+  const parsedUrl = parseCurlArgs(args).url;
+  if (!parsedUrl.startsWith('http://') && !parsedUrl.startsWith('https://')) {
+    return null;
+  }
+  // Find the original input argument that produced this URL, so callers can
+  // substitute it in-place. Each candidate arg is normalized the same way
+  // curl / parseCurlArgs would (defaulting the scheme to http://) before the
+  // comparison.
+  for (const arg of args) {
+    if (arg === parsedUrl) {
+      return arg;
+    }
+    const withScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(arg) ? arg : `http://${arg}`;
+    let normalized: string;
+    try {
+      normalized = new URL(withScheme).href;
+    } catch {
       continue;
     }
-
-    // This looks like a URL
-    if (arg.startsWith('http://') || arg.startsWith('https://')) {
+    if (normalized === parsedUrl) {
       return arg;
     }
   }
-
   return null;
 }

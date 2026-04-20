@@ -122,6 +122,33 @@ describe('checkPermission', () => {
     );
   });
 
+  it('should accept URLs without a scheme (defaulting to http://) when rules allow them', async () => {
+    const configPath = join(tempDir, 'permissions.json');
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        rules: [{ any: ['any'] }],
+      })
+    );
+
+    const result = await checkPermission(['www.seznam.cz'], configPath);
+    expect(result).toBe(true);
+  });
+
+  it('should throw PermissionCheckError when a rule references an unknown schema', async () => {
+    const configPath = join(tempDir, 'permissions.json');
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        rules: [{ 'non-existent-schema': ['any'] }],
+      })
+    );
+
+    await expect(
+      checkPermission(['https://api.example.com/anything'], configPath, true)
+    ).rejects.toThrow(PermissionCheckError);
+  });
+
   it('should allow all requests with the any/any rule', async () => {
     const configPath = join(tempDir, 'permissions.json');
     writeFileSync(

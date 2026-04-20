@@ -57,7 +57,7 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@imbue-ai/detent": "^1.1.2",
+    "@imbue-ai/detent": "^1.1.4",
     "@napi-rs/keyring": "^1.2.0",
     "commander": "^12.0.0",
     "playwright": "^1.58.2",

@@ -7,7 +7,13 @@
  */
 
 import { existsSync } from 'node:fs';
-import { check, parseCurlArgs, CurlParseError, ConfigError } from '@imbue-ai/detent';
+import {
+  check,
+  parseCurlArgs,
+  CurlParseError,
+  ConfigError,
+  RequestSchemaError,
+} from '@imbue-ai/detent';
 
 export class PermissionCheckError extends Error {
   constructor(message: string) {
@@ -43,7 +49,11 @@ export async function checkPermission(
     const useBuiltinSchemas = !doNotUseBuiltinSchemas;
     return await check(request, configPath, useBuiltinSchemas);
   } catch (error) {
-    if (error instanceof CurlParseError || error instanceof ConfigError) {
+    if (
+      error instanceof CurlParseError ||
+      error instanceof ConfigError ||
+      error instanceof RequestSchemaError
+    ) {
       throw new PermissionCheckError(`Permission check failed: ${error.message}`);
     }
     throw error;

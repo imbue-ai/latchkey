@@ -23,10 +23,15 @@ export class Sentry extends Service {
     return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
   }
 
-  override checkApiCredentials(apiCredentials: ApiCredentials): ApiCredentialStatus {
+  override async checkApiCredentials(
+    apiCredentials: ApiCredentials
+  ): Promise<ApiCredentialStatus> {
     let allCurlArgs: readonly string[];
     try {
-      allCurlArgs = apiCredentials.injectIntoCurlCall(['-s', ...this.credentialCheckCurlArguments]);
+      allCurlArgs = await apiCredentials.injectIntoCurlCall([
+        '-s',
+        ...this.credentialCheckCurlArguments,
+      ]);
     } catch (error) {
       if (error instanceof ApiCredentialsUsageError) {
         return ApiCredentialStatus.Missing;

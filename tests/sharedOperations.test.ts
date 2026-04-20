@@ -36,7 +36,7 @@ function createMockService(overrides: Partial<Service> = {}): Service {
     loginUrl: 'https://slack.com/signin',
     info: 'Test info for Slack service.',
     credentialCheckCurlArguments: ['https://slack.com/api/auth.test'],
-    checkApiCredentials: vi.fn().mockReturnValue(ApiCredentialStatus.Valid),
+    checkApiCredentials: vi.fn().mockResolvedValue(ApiCredentialStatus.Valid),
     setCredentialsExample(serviceName: string) {
       return `latchkey auth set ${serviceName} -H "Authorization: Bearer xoxb-your-token"`;
     },

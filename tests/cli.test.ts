@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { execSync, ExecSyncOptionsWithStringEncoding } from 'node:child_process';
 import { Command } from 'commander';
 import { registerCommands, type CliDependencies } from '../src/cliCommands.js';
-import { extractUrlFromCurlArguments } from '../src/curl.js';
+import { CurlParseError, extractUrlFromCurlArguments } from '../src/curl.js';
 import { hasGraphicalEnvironment } from '../src/playwrightUtils.js';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { Config } from '../src/config.js';
@@ -146,14 +146,14 @@ describe('extractUrlFromCurlArguments', () => {
     expect(extractUrlFromCurlArguments(arguments_)).toBe('https://api.example.com');
   });
 
-  it('should return null when no URL is present', () => {
+  it('should throw CurlParseError when no URL is present', () => {
     const arguments_ = ['-X', 'POST', '-H', 'Content-Type: application/json'];
-    expect(extractUrlFromCurlArguments(arguments_)).toBeNull();
+    expect(() => extractUrlFromCurlArguments(arguments_)).toThrow(CurlParseError);
   });
 
-  it('should return null for empty arguments', () => {
+  it('should throw CurlParseError for empty arguments', () => {
     const arguments_: string[] = [];
-    expect(extractUrlFromCurlArguments(arguments_)).toBeNull();
+    expect(() => extractUrlFromCurlArguments(arguments_)).toThrow(CurlParseError);
   });
 
   it('should handle verbose flag', () => {
@@ -170,6 +170,21 @@ describe('extractUrlFromCurlArguments', () => {
   it('should skip flags without values', () => {
     const arguments_ = ['-k', '--compressed', '-s', '-i', 'https://api.example.com'];
     expect(extractUrlFromCurlArguments(arguments_)).toBe('https://api.example.com');
+  });
+
+  it('should return the raw arg for schemeless URLs (curl defaults to http://)', () => {
+    expect(extractUrlFromCurlArguments(['www.seznam.cz'])).toBe('www.seznam.cz');
+    expect(extractUrlFromCurlArguments(['-X', 'POST', 'api.example.com/path'])).toBe(
+      'api.example.com/path'
+    );
+  });
+
+  it('should return null for non-http(s) schemes', () => {
+    expect(extractUrlFromCurlArguments(['ftp://example.com/'])).toBeNull();
+  });
+
+  it('should propagate CurlParseError for malformed arguments', () => {
+    expect(() => extractUrlFromCurlArguments(['-H', 'no-colon-here'])).toThrow(CurlParseError);
   });
 });
 
@@ -326,7 +341,7 @@ describe('CLI commands with dependency injection', () => {
       loginUrl: 'https://slack.com/signin',
       info: 'Test info for Slack service.',
       credentialCheckCurlArguments: ['https://slack.com/api/auth.test'],
-      checkApiCredentials: vi.fn().mockReturnValue(ApiCredentialStatus.Valid),
+      checkApiCredentials: vi.fn().mockResolvedValue(ApiCredentialStatus.Valid),
       setCredentialsExample(serviceName: string) {
         return `latchkey auth set ${serviceName} -H "Authorization: Bearer xoxb-your-token"`;
       },
@@ -477,7 +492,7 @@ describe('CLI commands with dependency injection', () => {
         loginUrl: 'https://nologin.example.com',
         info: 'A service without browser login support.',
         credentialCheckCurlArguments: [],
-        checkApiCredentials: vi.fn().mockReturnValue(ApiCredentialStatus.Missing),
+        checkApiCredentials: vi.fn().mockResolvedValue(ApiCredentialStatus.Missing),
         setCredentialsExample(serviceName: string) {
           return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
         },
@@ -668,7 +683,7 @@ describe('CLI commands with dependency injection', () => {
         loginUrl: 'https://nologin.example.com',
         info: 'A service without browser login support.',
         credentialCheckCurlArguments: [],
-        checkApiCredentials: vi.fn().mockReturnValue(ApiCredentialStatus.Missing),
+        checkApiCredentials: vi.fn().mockResolvedValue(ApiCredentialStatus.Missing),
         setCredentialsExample(serviceName: string) {
           return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
         },
@@ -1228,7 +1243,7 @@ describe('CLI commands with dependency injection', () => {
         loginUrl: 'https://nologin.example.com',
         info: 'A service without browser login support.',
         credentialCheckCurlArguments: [],
-        checkApiCredentials: vi.fn().mockReturnValue(ApiCredentialStatus.Valid),
+        checkApiCredentials: vi.fn().mockResolvedValue(ApiCredentialStatus.Valid),
         setCredentialsExample(serviceName: string) {
           return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
         },

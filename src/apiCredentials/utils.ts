@@ -35,5 +35,5 @@ export async function getCredentialStatus(
     return ApiCredentialStatus.Missing;
   }
   const refreshed = await maybeRefreshCredentials(service, credentials, apiCredentialStore);
-  return service.checkApiCredentials(refreshed);
+  return await service.checkApiCredentials(refreshed);
 }

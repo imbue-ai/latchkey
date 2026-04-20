@@ -75,10 +75,10 @@ export abstract class Service {
   /**
    * Check if the given API credentials are valid for this service.
    */
-  checkApiCredentials(apiCredentials: ApiCredentials): ApiCredentialStatus {
+  async checkApiCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentialStatus> {
     let allCurlArgs: readonly string[];
     try {
-      allCurlArgs = apiCredentials.injectIntoCurlCall([
+      allCurlArgs = await apiCredentials.injectIntoCurlCall([
         '-s',
         '-o',
         '/dev/null',

@@ -1,12 +1,7 @@
 import { createHash, createHmac } from 'node:crypto';
 import { z } from 'zod';
 import { type ApiCredentials } from '../apiCredentials/base.js';
-import {
-  extractBodyFromCurlArguments,
-  extractHeadersFromCurlArguments,
-  extractMethodFromCurlArguments,
-  extractUrlFromCurlArguments,
-} from '../curl.js';
+import { CurlParseError, parseCurlArgs } from '../curl.js';
 import { NoCurlCredentialsNotSupportedError, Service } from './core/base.js';
 
 /**
@@ -224,20 +219,26 @@ export class AwsCredentials implements ApiCredentials {
     this.secretAccessKey = secretAccessKey;
   }
 
-  injectIntoCurlCall(curlArguments: readonly string[]): readonly string[] {
-    const url = extractUrlFromCurlArguments(curlArguments as string[]);
-    if (url === null) {
-      return curlArguments;
+  async injectIntoCurlCall(curlArguments: readonly string[]): Promise<readonly string[]> {
+    let request: Request;
+    try {
+      request = parseCurlArgs(curlArguments);
+    } catch (error) {
+      if (error instanceof CurlParseError) {
+        return curlArguments;
+      }
+      throw error;
     }
 
-    const method = extractMethodFromCurlArguments(curlArguments);
-    const body = extractBodyFromCurlArguments(curlArguments);
-    const existingHeaders = extractHeadersFromCurlArguments(curlArguments);
-    const parsedUrl = new URL(url);
+    const existingHeaders: Record<string, string> = {};
+    request.headers.forEach((value, name) => {
+      existingHeaders[name] = value;
+    });
+    const body = await request.text();
 
     const signingHeaders = signAwsRequest(
-      method,
-      parsedUrl,
+      request.method,
+      new URL(request.url),
       existingHeaders,
       body,
       this.accessKeyId,

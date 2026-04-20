@@ -51,12 +51,12 @@ export class GoogleApiKeyCredentials implements ApiCredentials {
     this.apiKey = apiKey;
   }
 
-  injectIntoCurlCall(curlArguments: readonly string[]): readonly string[] {
+  injectIntoCurlCall(curlArguments: readonly string[]): Promise<readonly string[]> {
     const url = extractUrlFromCurlArguments(curlArguments as string[]);
     if (!url?.startsWith('https://') || !url.includes('.googleapis.com')) {
-      return curlArguments;
+      return Promise.resolve(curlArguments);
     }
-    return ['-H', `X-Goog-Api-Key: ${this.apiKey}`, ...curlArguments];
+    return Promise.resolve(['-H', `X-Goog-Api-Key: ${this.apiKey}`, ...curlArguments]);
   }
 
   isExpired(): boolean | undefined {

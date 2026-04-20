@@ -13,7 +13,7 @@
 import type { ApiCredentials } from './apiCredentials/base.js';
 import type { ApiCredentialStore } from './apiCredentials/store.js';
 import { maybeRefreshCredentials } from './apiCredentials/utils.js';
-import { extractUrlFromCurlArguments } from './curl.js';
+import { CurlParseError, extractUrlFromCurlArguments } from './curl.js';
 import { ErrorMessages } from './errorMessages.js';
 import type { Registry } from './registry.js';
 
@@ -25,8 +25,8 @@ export class RequestNotPermittedError extends Error {
 }
 
 export class UrlExtractionFailedError extends Error {
-  constructor() {
-    super(ErrorMessages.couldNotExtractUrl);
+  constructor(detail?: string) {
+    super(detail === undefined ? ErrorMessages.couldNotExtractUrl : `${ErrorMessages.couldNotExtractUrl} ${detail}`);
     this.name = 'UrlExtractionFailedError';
   }
 }
@@ -93,7 +93,15 @@ export async function prepareCurlInvocation(
     throw new RequestNotPermittedError();
   }
 
-  const url = extractUrlFromCurlArguments(curlArguments);
+  let url: string | null;
+  try {
+    url = extractUrlFromCurlArguments(curlArguments);
+  } catch (error) {
+    if (error instanceof CurlParseError) {
+      throw new UrlExtractionFailedError(error.message);
+    }
+    throw error;
+  }
   if (url === null) {
     throw new UrlExtractionFailedError();
   }
@@ -121,5 +129,5 @@ export async function prepareCurlInvocation(
     }
   }
 
-  return apiCredentials.injectIntoCurlCall(curlArguments);
+  return await apiCredentials.injectIntoCurlCall(curlArguments);
 }

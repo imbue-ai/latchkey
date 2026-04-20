@@ -180,7 +180,7 @@ describe('gateway server', () => {
     loginUrl: 'https://slack.com/signin',
     info: 'Test Slack service.',
     credentialCheckCurlArguments: ['https://slack.com/api/auth.test'],
-    checkApiCredentials: vi.fn().mockReturnValue(ApiCredentialStatus.Valid),
+    checkApiCredentials: vi.fn().mockResolvedValue(ApiCredentialStatus.Valid),
     setCredentialsExample(serviceName: string) {
       return `latchkey auth set ${serviceName} -H "Authorization: Bearer xoxb-your-token"`;
     },

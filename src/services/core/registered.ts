@@ -42,8 +42,8 @@ export class RegisteredService extends Service {
 
   override getSession?(): ServiceSession;
 
-  override checkApiCredentials(): ApiCredentialStatus {
-    return ApiCredentialStatus.Unknown;
+  override checkApiCredentials(): Promise<ApiCredentialStatus> {
+    return Promise.resolve(ApiCredentialStatus.Unknown);
   }
 
   setCredentialsExample(serviceName: string): string {

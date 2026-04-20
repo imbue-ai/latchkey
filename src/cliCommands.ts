@@ -45,7 +45,12 @@ import {
   NoCurlCredentialsNotSupportedError,
   Service,
 } from './services/index.js';
-import { extractUrlFromCurlArguments, run as curlRun, runAsync as curlRunAsync } from './curl.js';
+import {
+  CurlParseError,
+  extractUrlFromCurlArguments,
+  run as curlRun,
+  runAsync as curlRunAsync,
+} from './curl.js';
 import { checkPermission, PermissionCheckError } from './permissions.js';
 import { ErrorMessages } from './errorMessages.js';
 import { getSkillMdContent } from './skillMd.js';
@@ -697,7 +702,16 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       const curlArguments = command.args;
 
       if (deps.config.gatewayUrl !== null) {
-        const targetUrl = extractUrlFromCurlArguments(curlArguments);
+        let targetUrl: string | null;
+        try {
+          targetUrl = extractUrlFromCurlArguments(curlArguments);
+        } catch (error) {
+          if (error instanceof CurlParseError) {
+            deps.errorLog(`${ErrorMessages.couldNotExtractUrl} ${error.message}`);
+            deps.exit(1);
+          }
+          throw error;
+        }
         if (targetUrl === null) {
           deps.errorLog(ErrorMessages.couldNotExtractUrl);
           deps.exit(1);
