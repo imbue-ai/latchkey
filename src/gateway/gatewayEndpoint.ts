@@ -64,6 +64,22 @@ function sendErrorResponse(
 }
 
 /**
+ * Send a 502 describing a failure of the upstream curl invocation. The
+ * error message is taken from curl's stderr when available, so callers see
+ * the actual failure reason (DNS, connection refused, TLS, ...) that an
+ * equivalent passthrough-mode call would have shown. When stderr is empty
+ * we fall back to a generic placeholder.
+ */
+function sendUpstreamCurlFailure(
+  response: http.ServerResponse,
+  result: AsyncCurlResult
+): void {
+  const stderrMessage = result.stderr.trim();
+  const message = stderrMessage === '' ? ErrorMessages.upstreamRequestFailed : stderrMessage;
+  sendErrorResponse(response, 502, message);
+}
+
+/**
  * Extract the target URL from a raw gateway request URL.
  * Strips the `/gateway/` prefix and returns the target URL.
  * Returns null if the path doesn't start with `/gateway/` or the target URL is invalid.
@@ -295,8 +311,12 @@ export async function handleGatewayRequest(
   const headerFile = join(tempDir, 'headers');
 
   try {
-    // Add curl flags for capturing response metadata
-    const curlArgs = ['-s', '-D', headerFile, ...allArguments];
+    // Add curl flags for capturing response metadata. `-sS` silences the
+    // progress meter (which would otherwise pollute the captured response
+    // body) while still letting error messages reach stderr, so
+    // `sendUpstreamCurlFailure` can surface the real failure reason to the
+    // client instead of the generic fallback.
+    const curlArgs = ['-sS', '-D', headerFile, ...allArguments];
 
     const result: AsyncCurlResult = await deps.runCurlAsync(curlArgs, {
       stdin: body ?? undefined,
@@ -309,13 +329,13 @@ export async function handleGatewayRequest(
         headerDump = readFileSync(headerFile, 'utf-8');
       } catch {
         deps.log(`${method} ${targetUrl} -> 502`);
-        sendErrorResponse(response, 502, ErrorMessages.upstreamRequestFailed);
+        sendUpstreamCurlFailure(response, result);
         return;
       }
 
       if (headerDump.trim() === '') {
         deps.log(`${method} ${targetUrl} -> 502`);
-        sendErrorResponse(response, 502, ErrorMessages.upstreamRequestFailed);
+        sendUpstreamCurlFailure(response, result);
         return;
       }
 
@@ -332,7 +352,7 @@ export async function handleGatewayRequest(
       headerDump = readFileSync(headerFile, 'utf-8');
     } catch {
       deps.log(`${method} ${targetUrl} -> 502`);
-      sendErrorResponse(response, 502, ErrorMessages.upstreamRequestFailed);
+      sendUpstreamCurlFailure(response, result);
       return;
     }
 

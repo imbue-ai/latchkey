@@ -555,13 +555,44 @@ describe('gateway server', () => {
       expect(body.error).toContain('body too large');
     });
 
-    it('should return 502 for curl failure with no headers', async () => {
+    it('should return 502 with curl stderr as the error message', async () => {
+      mockCurlResponse = {
+        returncode: 6,
+        stdout: Buffer.from(''),
+        stderr: 'curl: (6) Could not resolve host: nonexistent',
+      };
+      // Don't write any header file
+      gateway = await createTestGateway(
+        {
+          slack: {
+            objectType: 'rawCurl',
+            curlArguments: ['-H', 'Authorization: Bearer test-token'],
+          },
+        },
+        {
+          runCurlAsync: (args: readonly string[]): Promise<AsyncCurlResult> => {
+            capturedCurlArgs = args;
+            return Promise.resolve(mockCurlResponse);
+          },
+        }
+      );
+
+      const response = await fetch('/gateway/https://slack.com/api/auth.test');
+
+      expect(response.status).toBe(502);
+      const body = (await response.json()) as { error: string };
+      // The upstream curl stderr is surfaced verbatim so callers see the
+      // actual failure reason (DNS, connection refused, TLS, ...) rather
+      // than a generic "Upstream request failed." placeholder.
+      expect(body.error).toContain('Could not resolve host: nonexistent');
+    });
+
+    it('falls back to the generic message when upstream curl produces no stderr', async () => {
       mockCurlResponse = {
         returncode: 7,
         stdout: Buffer.from(''),
-        stderr: 'Failed to connect',
+        stderr: '',
       };
-      // Don't write any header file
       gateway = await createTestGateway(
         {
           slack: {
