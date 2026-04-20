@@ -8,11 +8,11 @@ export {
   ApiCredentialStatus,
   AuthorizationBearer,
   AuthorizationBare,
-} from './apiCredentials.js';
-export { deserializeCredentials, serializeCredentials } from './apiCredentialsSerialization.js';
+} from './apiCredentials/base.js';
+export { deserializeCredentials, serializeCredentials } from './apiCredentials/serialization.js';
 export { SlackApiCredentials } from './services/slack.js';
 
-export { ApiCredentialStore, ApiCredentialStoreError } from './apiCredentialStore.js';
+export { ApiCredentialStore, ApiCredentialStoreError } from './apiCredentials/store.js';
 
 export { Config, CONFIG, InsecureFilePermissionsError } from './config.js';
 
@@ -68,5 +68,5 @@ export {
   LINEAR,
 } from './services/index.js';
 
-// Registry
-export { Registry, REGISTRY } from './registry.js';
+// ServiceRegistry
+export { ServiceRegistry, SERVICE_REGISTRY } from './serviceRegistry.js';

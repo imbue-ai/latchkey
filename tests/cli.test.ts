@@ -5,12 +5,12 @@ import { tmpdir } from 'node:os';
 import { execSync, ExecSyncOptionsWithStringEncoding } from 'node:child_process';
 import { Command } from 'commander';
 import { registerCommands, type CliDependencies } from '../src/cliCommands.js';
-import { extractUrlFromCurlArguments } from '../src/curl.js';
+import { CurlParseError, extractUrlFromCurlArguments } from '../src/curl.js';
 import { hasGraphicalEnvironment } from '../src/playwrightUtils.js';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { Config } from '../src/config.js';
-import { Registry } from '../src/registry.js';
-import { ApiCredentialStatus } from '../src/apiCredentials.js';
+import { ServiceRegistry } from '../src/serviceRegistry.js';
+import { ApiCredentialStatus } from '../src/apiCredentials/base.js';
 import { SlackApiCredentials } from '../src/services/slack.js';
 import { NoCurlCredentialsNotSupportedError, Service } from '../src/services/core/base.js';
 import { RegisteredService } from '../src/services/core/registered.js';
@@ -22,7 +22,7 @@ import {
   loadRegisteredServices,
   saveRegisteredService,
 } from '../src/configDataStore.js';
-import { loadRegisteredServicesIntoRegistry } from '../src/registry.js';
+import { loadRegisteredServicesIntoServiceRegistry } from '../src/serviceRegistry.js';
 import type { CurlResult } from '../src/curl.js';
 
 // Use a fixed test key for deterministic test behavior (32 bytes = 256 bits, base64 encoded)
@@ -146,14 +146,14 @@ describe('extractUrlFromCurlArguments', () => {
     expect(extractUrlFromCurlArguments(arguments_)).toBe('https://api.example.com');
   });
 
-  it('should return null when no URL is present', () => {
+  it('should throw CurlParseError when no URL is present', () => {
     const arguments_ = ['-X', 'POST', '-H', 'Content-Type: application/json'];
-    expect(extractUrlFromCurlArguments(arguments_)).toBeNull();
+    expect(() => extractUrlFromCurlArguments(arguments_)).toThrow(CurlParseError);
   });
 
-  it('should return null for empty arguments', () => {
+  it('should throw CurlParseError for empty arguments', () => {
     const arguments_: string[] = [];
-    expect(extractUrlFromCurlArguments(arguments_)).toBeNull();
+    expect(() => extractUrlFromCurlArguments(arguments_)).toThrow(CurlParseError);
   });
 
   it('should handle verbose flag', () => {
@@ -170,6 +170,21 @@ describe('extractUrlFromCurlArguments', () => {
   it('should skip flags without values', () => {
     const arguments_ = ['-k', '--compressed', '-s', '-i', 'https://api.example.com'];
     expect(extractUrlFromCurlArguments(arguments_)).toBe('https://api.example.com');
+  });
+
+  it('should return the raw arg for schemeless URLs (curl defaults to http://)', () => {
+    expect(extractUrlFromCurlArguments(['www.seznam.cz'])).toBe('www.seznam.cz');
+    expect(extractUrlFromCurlArguments(['-X', 'POST', 'api.example.com/path'])).toBe(
+      'api.example.com/path'
+    );
+  });
+
+  it('should return null for non-http(s) schemes', () => {
+    expect(extractUrlFromCurlArguments(['ftp://example.com/'])).toBeNull();
+  });
+
+  it('should propagate CurlParseError for malformed arguments', () => {
+    expect(() => extractUrlFromCurlArguments(['-H', 'no-colon-here'])).toThrow(CurlParseError);
   });
 });
 
@@ -309,6 +324,10 @@ describe('CLI commands with dependency injection', () => {
       browserDisabled: overrides.browserDisabled ?? false,
       countingDisabled: overrides.countingDisabled ?? false,
       permissionsDoNotUseBuiltinSchemas: overrides.permissionsDoNotUseBuiltinSchemas ?? false,
+      passthroughUnknown: overrides.passthroughUnknown ?? false,
+      gatewayUrl: overrides.gatewayUrl ?? null,
+      gatewayListenHost: overrides.gatewayListenHost ?? 'localhost',
+      gatewayListenPort: overrides.gatewayListenPort ?? 1989,
       checkSensitiveFilePermissions: () => undefined,
       checkSystemPrerequisites: () => undefined,
     };
@@ -322,7 +341,7 @@ describe('CLI commands with dependency injection', () => {
       loginUrl: 'https://slack.com/signin',
       info: 'Test info for Slack service.',
       credentialCheckCurlArguments: ['https://slack.com/api/auth.test'],
-      checkApiCredentials: vi.fn().mockReturnValue(ApiCredentialStatus.Valid),
+      checkApiCredentials: vi.fn().mockResolvedValue(ApiCredentialStatus.Valid),
       setCredentialsExample(serviceName: string) {
         return `latchkey auth set ${serviceName} -H "Authorization: Bearer xoxb-your-token"`;
       },
@@ -334,7 +353,7 @@ describe('CLI commands with dependency injection', () => {
       }),
     };
 
-    const mockRegistry = new Registry([mockSlackService]);
+    const mockRegistry = new ServiceRegistry([mockSlackService]);
 
     return {
       registry: mockRegistry,
@@ -343,6 +362,7 @@ describe('CLI commands with dependency injection', () => {
         capturedArgs.push(...args);
         return { returncode: 0, stdout: '', stderr: '' };
       },
+      runCurlAsync: () => Promise.resolve({ returncode: 0, stdout: Buffer.from(''), stderr: '' }),
       checkPermission: () => Promise.resolve(true),
       confirm: () => Promise.resolve(true),
       exit: (code: number): never => {
@@ -355,6 +375,7 @@ describe('CLI commands with dependency injection', () => {
       errorLog: (message: string) => {
         errorLogs.push(message);
       },
+      version: '0.0.0-test',
       ...overrides,
     };
   }
@@ -471,7 +492,7 @@ describe('CLI commands with dependency injection', () => {
         loginUrl: 'https://nologin.example.com',
         info: 'A service without browser login support.',
         credentialCheckCurlArguments: [],
-        checkApiCredentials: vi.fn().mockReturnValue(ApiCredentialStatus.Missing),
+        checkApiCredentials: vi.fn().mockResolvedValue(ApiCredentialStatus.Missing),
         setCredentialsExample(serviceName: string) {
           return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
         },
@@ -481,7 +502,7 @@ describe('CLI commands with dependency injection', () => {
       };
 
       const deps = createMockDependencies({
-        registry: new Registry([noLoginService]),
+        registry: new ServiceRegistry([noLoginService]),
       });
       await runCommand(['services', 'list', '--viable'], deps);
 
@@ -662,7 +683,7 @@ describe('CLI commands with dependency injection', () => {
         loginUrl: 'https://nologin.example.com',
         info: 'A service without browser login support.',
         credentialCheckCurlArguments: [],
-        checkApiCredentials: vi.fn().mockReturnValue(ApiCredentialStatus.Missing),
+        checkApiCredentials: vi.fn().mockResolvedValue(ApiCredentialStatus.Missing),
         setCredentialsExample(serviceName: string) {
           return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
         },
@@ -672,7 +693,7 @@ describe('CLI commands with dependency injection', () => {
       };
 
       const deps = createMockDependencies({
-        registry: new Registry([noLoginService]),
+        registry: new ServiceRegistry([noLoginService]),
       });
       await runCommand(['services', 'info', 'nologin'], deps);
 
@@ -932,7 +953,7 @@ describe('CLI commands with dependency injection', () => {
       await writeSecureFile(storePath, '{}');
 
       const deps = createMockDependencies({
-        registry: new Registry([TELEGRAM]),
+        registry: new ServiceRegistry([TELEGRAM]),
       });
 
       await runCommand(['auth', 'set-nocurl', 'telegram', '123456:ABC-DEF'], deps);
@@ -967,7 +988,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should return error when telegram token is missing', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([TELEGRAM]),
+        registry: new ServiceRegistry([TELEGRAM]),
       });
 
       await runCommand(['auth', 'set-nocurl', 'telegram'], deps);
@@ -977,7 +998,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should return error when telegram token format is invalid', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([TELEGRAM]),
+        registry: new ServiceRegistry([TELEGRAM]),
       });
 
       await runCommand(['auth', 'set-nocurl', 'telegram', 'not-a-valid-token'], deps);
@@ -1093,6 +1114,52 @@ describe('CLI commands with dependency injection', () => {
       expect(exitCode).toBe(1);
     });
 
+    it('should pass through unknown service when passthroughUnknown is enabled', async () => {
+      const deps = createMockDependencies({
+        config: createMockConfig({ passthroughUnknown: true }),
+      });
+
+      await runCommand(['curl', 'https://unknown-api.example.com/test'], deps);
+
+      expect(exitCode).toBe(0);
+      expect(capturedArgs).toEqual(['https://unknown-api.example.com/test']);
+      expect(errorLogs).toHaveLength(0);
+    });
+
+    it('should pass through missing credentials when passthroughUnknown is enabled', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      await writeSecureFile(storePath, '{}');
+
+      const deps = createMockDependencies({
+        config: createMockConfig({ passthroughUnknown: true }),
+      });
+
+      await runCommand(['curl', 'https://slack.com/api/test'], deps);
+
+      expect(exitCode).toBe(0);
+      expect(capturedArgs).toEqual(['https://slack.com/api/test']);
+      expect(errorLogs).toHaveLength(0);
+    });
+
+    it('should still inject credentials for known services when passthroughUnknown is enabled', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      await writeSecureFile(
+        storePath,
+        JSON.stringify({
+          slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
+        })
+      );
+
+      const deps = createMockDependencies({
+        config: createMockConfig({ passthroughUnknown: true }),
+      });
+
+      await runCommand(['curl', 'https://slack.com/api/test'], deps);
+
+      expect(exitCode).toBe(0);
+      expect(capturedArgs).toContain('Authorization: Bearer stored-token');
+    });
+
     it('should read credentials from store and not call login', async () => {
       const storePath = join(tempDir, 'credentials.json');
       await writeSecureFile(
@@ -1121,7 +1188,7 @@ describe('CLI commands with dependency injection', () => {
       };
 
       const deps = createMockDependencies({
-        registry: new Registry([mockSlackService]),
+        registry: new ServiceRegistry([mockSlackService]),
       });
 
       await runCommand(['curl', 'https://slack.com/api/test'], deps);
@@ -1151,7 +1218,7 @@ describe('CLI commands with dependency injection', () => {
       );
 
       const deps = createMockDependencies({
-        registry: new Registry([TELEGRAM]),
+        registry: new ServiceRegistry([TELEGRAM]),
       });
 
       await runCommand(['curl', 'https://api.telegram.org/getMe'], deps);
@@ -1176,7 +1243,7 @@ describe('CLI commands with dependency injection', () => {
         loginUrl: 'https://nologin.example.com',
         info: 'A service without browser login support.',
         credentialCheckCurlArguments: [],
-        checkApiCredentials: vi.fn().mockReturnValue(ApiCredentialStatus.Valid),
+        checkApiCredentials: vi.fn().mockResolvedValue(ApiCredentialStatus.Valid),
         setCredentialsExample(serviceName: string) {
           return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
         },
@@ -1187,7 +1254,7 @@ describe('CLI commands with dependency injection', () => {
       };
 
       const deps = createMockDependencies({
-        registry: new Registry([noLoginService]),
+        registry: new ServiceRegistry([noLoginService]),
       });
 
       await runCommand(['curl', 'https://nologin.example.com/api/test'], deps);
@@ -1279,7 +1346,7 @@ describe('CLI commands with dependency injection', () => {
       };
 
       const deps = createMockDependencies({
-        registry: new Registry([noLoginService]),
+        registry: new ServiceRegistry([noLoginService]),
       });
 
       await runCommand(['auth', 'browser', 'nologin'], deps);
@@ -1341,7 +1408,7 @@ describe('CLI commands with dependency injection', () => {
       };
 
       const deps = createMockDependencies({
-        registry: new Registry([nocurlService]),
+        registry: new ServiceRegistry([nocurlService]),
       });
 
       await runCommand(['auth', 'browser', 'nocurl-only'], deps);
@@ -1353,7 +1420,7 @@ describe('CLI commands with dependency injection', () => {
   describe('services register command', () => {
     it('should register a new service', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       await runCommand(
@@ -1381,7 +1448,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should persist registration to config.json', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       await runCommand(
@@ -1407,7 +1474,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should reject unknown service family', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       await runCommand(
@@ -1429,7 +1496,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should reject duplicate service name', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       await runCommand(
@@ -1451,7 +1518,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should canonicalize service name to lowercase', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       await runCommand(
@@ -1474,7 +1541,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should convert spaces to hyphens in service name', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       await runCommand(
@@ -1489,7 +1556,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should reject service name with invalid characters', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       await runCommand(
@@ -1506,7 +1573,7 @@ describe('CLI commands with dependency injection', () => {
       await writeSecureFile(storePath, '{}');
 
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       await runCommand(
@@ -1532,7 +1599,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should persist and restore loginUrl', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITHUB]),
+        registry: new ServiceRegistry([GITHUB]),
       });
 
       await runCommand(
@@ -1556,7 +1623,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should reject --login-url without --service-family', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([]),
+        registry: new ServiceRegistry([]),
       });
 
       await runCommand(
@@ -1578,7 +1645,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should reject --login-url when service family does not support browser login', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       await runCommand(
@@ -1602,7 +1669,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should require --login-url when service family supports browser login', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITHUB]),
+        registry: new ServiceRegistry([GITHUB]),
       });
 
       await runCommand(
@@ -1624,7 +1691,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should make registered service usable with auth set', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       // Register the service
@@ -1655,7 +1722,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should register a service without --service-family', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       await runCommand(
@@ -1675,7 +1742,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should persist registration without service family to config.json', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       await runCommand(
@@ -1695,7 +1762,7 @@ describe('CLI commands with dependency injection', () => {
       await writeSecureFile(storePath, '{}');
 
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       await runCommand(
@@ -1713,7 +1780,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should make service without family usable with auth set and curl', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       // Register the service without family
@@ -1746,7 +1813,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should reject browser login for service without family', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       await runCommand(
@@ -1765,7 +1832,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should reject set-nocurl for service without family', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       await runCommand(
@@ -1784,7 +1851,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should make registered service usable with curl', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       // Register the service
@@ -1827,7 +1894,7 @@ describe('CLI commands with dependency injection', () => {
   describe('services deregister command', () => {
     it('should deregister a registered service', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       // Register a service first
@@ -1854,7 +1921,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should remove service from config.json', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       await runCommand(
@@ -1898,7 +1965,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should reject deregistering when credentials still exist', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       // Register a service
@@ -1943,7 +2010,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('should allow deregistering after credentials are cleared', async () => {
       const deps = createMockDependencies({
-        registry: new Registry([GITLAB]),
+        registry: new ServiceRegistry([GITLAB]),
       });
 
       // Register
@@ -1986,6 +2053,185 @@ describe('CLI commands with dependency injection', () => {
 
       expect(exitCode).toBeNull();
       expect(logs).toContain("Service 'my-gitlab' deregistered.");
+    });
+  });
+
+  describe('gateway mode (LATCHKEY_GATEWAY)', () => {
+    const GATEWAY_URL = 'http://localhost:9000';
+    const originalFetch = globalThis.fetch;
+
+    afterEach(() => {
+      globalThis.fetch = originalFetch;
+    });
+
+    function makeFetchMock(response: Response) {
+      const fetchMock = vi.fn().mockResolvedValue(response);
+      globalThis.fetch = fetchMock as unknown as typeof fetch;
+      return fetchMock;
+    }
+
+    it('forwards `services list` to the gateway /latchkey endpoint', async () => {
+      const fetchMock = makeFetchMock(
+        new Response(JSON.stringify({ result: ['slack', 'github'] }), { status: 200 })
+      );
+      const deps = createMockDependencies({
+        config: createMockConfig({ gatewayUrl: GATEWAY_URL }),
+      });
+
+      await runCommand(['services', 'list', '--builtin'], deps);
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe(`${GATEWAY_URL}/latchkey`);
+      expect(init.method).toBe('POST');
+      expect(JSON.parse(init.body as string) as unknown).toEqual({
+        command: 'services list',
+        params: { builtin: true },
+      });
+      expect(logs).toHaveLength(1);
+      expect(JSON.parse(logs[0] ?? '') as unknown).toEqual(['slack', 'github']);
+    });
+
+    it('forwards `services info` to the gateway /latchkey endpoint', async () => {
+      const fetchMock = makeFetchMock(
+        new Response(JSON.stringify({ result: { type: 'built-in' } }), { status: 200 })
+      );
+      const deps = createMockDependencies({
+        config: createMockConfig({ gatewayUrl: GATEWAY_URL }),
+      });
+
+      await runCommand(['services', 'info', 'slack'], deps);
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(JSON.parse(init.body as string) as unknown).toEqual({
+        command: 'services info',
+        params: { serviceName: 'slack' },
+      });
+    });
+
+    it('forwards `auth list` to the gateway /latchkey endpoint', async () => {
+      const fetchMock = makeFetchMock(
+        new Response(JSON.stringify({ result: { slack: { credentialType: 'slack' } } }), {
+          status: 200,
+        })
+      );
+      const deps = createMockDependencies({
+        config: createMockConfig({ gatewayUrl: GATEWAY_URL }),
+      });
+
+      await runCommand(['auth', 'list'], deps);
+
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(JSON.parse(init.body as string) as unknown).toEqual({ command: 'auth list' });
+      expect(JSON.parse(logs[0] ?? '') as unknown).toEqual({
+        slack: { credentialType: 'slack' },
+      });
+    });
+
+    it('forwards `auth browser` to the gateway /latchkey endpoint', async () => {
+      const fetchMock = makeFetchMock(
+        new Response(JSON.stringify({ result: null }), { status: 200 })
+      );
+      const deps = createMockDependencies({
+        config: createMockConfig({ gatewayUrl: GATEWAY_URL }),
+      });
+
+      await runCommand(['auth', 'browser', 'slack'], deps);
+
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(JSON.parse(init.body as string) as unknown).toEqual({
+        command: 'auth browser',
+        params: { serviceName: 'slack' },
+      });
+      expect(logs).toContain('Done');
+    });
+
+    it('forwards `auth browser-prepare` and reports `Already prepared.` when the gateway says so', async () => {
+      makeFetchMock(
+        new Response(JSON.stringify({ result: { alreadyPrepared: true } }), { status: 200 })
+      );
+      const deps = createMockDependencies({
+        config: createMockConfig({ gatewayUrl: GATEWAY_URL }),
+      });
+
+      await runCommand(['auth', 'browser-prepare', 'slack'], deps);
+
+      expect(logs).toContain('Already prepared.');
+    });
+
+    it.each([
+      ['services list', ['services', 'list']],
+      ['services info', ['services', 'info', 'foo']],
+      ['auth list', ['auth', 'list']],
+      ['auth browser', ['auth', 'browser', 'slack']],
+      ['auth browser-prepare', ['auth', 'browser-prepare', 'slack']],
+    ])('reports gateway errors on stderr (not stdout) for `%s`', async (_name, argv) => {
+      makeFetchMock(
+        new Response(JSON.stringify({ error: 'Unknown service: foo.' }), { status: 400 })
+      );
+      const deps = createMockDependencies({
+        config: createMockConfig({ gatewayUrl: GATEWAY_URL }),
+      });
+
+      await runCommand(argv, deps);
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs.some((message) => message.includes('Unknown service: foo.'))).toBe(true);
+      // The error message must never be printed to stdout — that would
+      // interleave into JSON output consumed by callers.
+      expect(logs.join('\n')).not.toContain('Unknown service: foo.');
+      expect(logs).toEqual([]);
+    });
+
+    it('rewrites the curl target URL to the gateway /gateway endpoint', async () => {
+      const fetchMock = vi.fn();
+      globalThis.fetch = fetchMock as unknown as typeof fetch;
+      const deps = createMockDependencies({
+        config: createMockConfig({ gatewayUrl: GATEWAY_URL }),
+      });
+
+      await runCommand(['curl', '-X', 'GET', 'https://slack.com/api/auth.test'], deps);
+
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(capturedArgs).toEqual([
+        '-X',
+        'GET',
+        `${GATEWAY_URL}/gateway/https://slack.com/api/auth.test`,
+      ]);
+    });
+
+    it('errors when `latchkey curl` has no URL to rewrite', async () => {
+      const deps = createMockDependencies({
+        config: createMockConfig({ gatewayUrl: GATEWAY_URL }),
+      });
+
+      await runCommand(['curl', '-X', 'GET'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(capturedArgs).toEqual([]);
+    });
+
+    it.each([
+      [
+        'services register',
+        ['services', 'register', 'my-gitlab', '--base-api-url', 'https://gitlab.example.com'],
+      ],
+      ['services deregister', ['services', 'deregister', 'my-gitlab']],
+      ['auth clear', ['auth', 'clear', 'slack']],
+      ['auth set', ['auth', 'set', 'slack', '-H', 'Authorization: Bearer xoxb-test']],
+      ['auth set-nocurl', ['auth', 'set-nocurl', 'slack', 'x']],
+      ['gateway', ['gateway']],
+      ['ensure-browser', ['ensure-browser']],
+    ])('refuses to run `%s` in gateway mode', async (_name, argv) => {
+      const deps = createMockDependencies({
+        config: createMockConfig({ gatewayUrl: GATEWAY_URL }),
+      });
+
+      await runCommand(argv, deps);
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs.some((message) => message.includes('LATCHKEY_GATEWAY'))).toBe(true);
     });
   });
 });
@@ -2044,8 +2290,8 @@ describe('registeredServiceStore', () => {
       serviceFamily: 'gitlab',
     });
 
-    const registry = new Registry([GITLAB]);
-    loadRegisteredServicesIntoRegistry(configPath, registry);
+    const registry = new ServiceRegistry([GITLAB]);
+    loadRegisteredServicesIntoServiceRegistry(configPath, registry);
 
     const service = registry.getByName('my-gitlab');
     expect(service).not.toBeNull();
@@ -2060,8 +2306,8 @@ describe('registeredServiceStore', () => {
       loginUrl: 'https://gitlab.mycompany.com/users/sign_in',
     });
 
-    const registry = new Registry([GITLAB]);
-    loadRegisteredServicesIntoRegistry(configPath, registry);
+    const registry = new ServiceRegistry([GITLAB]);
+    loadRegisteredServicesIntoServiceRegistry(configPath, registry);
 
     const service = registry.getByName('my-gitlab');
     expect(service).not.toBeNull();
@@ -2074,8 +2320,8 @@ describe('registeredServiceStore', () => {
       baseApiUrl: 'https://api.example.com/',
     });
 
-    const registry = new Registry([GITLAB]);
-    loadRegisteredServicesIntoRegistry(configPath, registry);
+    const registry = new ServiceRegistry([GITLAB]);
+    loadRegisteredServicesIntoServiceRegistry(configPath, registry);
 
     const service = registry.getByName('my-api');
     expect(service).not.toBeNull();
@@ -2091,8 +2337,8 @@ describe('registeredServiceStore', () => {
       serviceFamily: 'nonexistent',
     });
 
-    const registry = new Registry([GITLAB]);
-    loadRegisteredServicesIntoRegistry(configPath, registry);
+    const registry = new ServiceRegistry([GITLAB]);
+    loadRegisteredServicesIntoServiceRegistry(configPath, registry);
 
     expect(registry.getByName('my-unknown')).toBeNull();
   });

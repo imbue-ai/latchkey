@@ -296,7 +296,30 @@ This would mean that:
 - No requests are allowed to any other domains.
 
 Ideally make the file read-only: `chmod -w ~/.latchkey/permissions.json`.
-For more details, check out the [Detent docs](https://github.com/imbue-ai/detent).
+For more details, check out the [permission docs](https://docs.imbue.com/latchkey/basics/permissions).
+
+
+### Gateway mode
+
+People sometimes run agents in isolated sandboxes for higher
+security. Using gateway mode lets you extend the isolation
+to Latchkey itself. Run this to start a Latchkey server on the
+machine where your main configuration lives:
+
+```bash
+# Listens on localhost:1989 by default.
+# You can override this using the LATCHKEY_GATEWAY_LISTEN_HOST
+# and LATCHKEY_GATEWAY_LISTEN_PORT environment variables.
+latchkey gateway
+```
+
+Suppose you run an agent inside a container on the same machine,
+with the gateway port mapped into the container. Then setting
+`LATCHKEY_GATEWAY=http://localhost:1989` in your container will
+route your agent's `latchkey` calls to the host Latchkey
+(limited to a selected safe subset of commands). That way the
+agent won't be able to tamper with your Latchkey configuration
+while still being able to use Latchkey itself as intended.
 
 
 ### Other configuration
@@ -312,6 +335,32 @@ defaults:
 - `LATCHKEY_DISABLE_COUNTING`: when set to a non-empty value, disables daily usage counting.
 - `LATCHKEY_PERMISSIONS_CONFIG`: override the `permissions.json` location.
 - `LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS`: do not use the built-in permission definitions.
+- `LATCHKEY_PASSTHROUGH_UNKNOWN`: if set, Latchkey will forward requests (via `latchkey curl` or gateway) even if no credentials are injected.
+- `LATCHKEY_GATEWAY`: when set to a base URL (e.g. `http://localhost:1989`), the CLI delegates commands to a remote Latchkey gateway instead of running them locally. Commands that change local state (`auth set`, `auth clear`, `services register`, `ensure-browser`, `gateway`) cannot run in this mode.
+- `LATCHKEY_GATEWAY_LISTEN_HOST`, `LATCHKEY_GATEWAY_LISTEN_PORT`: default address and port the local `latchkey gateway` command binds to when `--host` / `--port` are not supplied (defaults: `localhost`, `1989`). Distinct from `LATCHKEY_GATEWAY`, which configures a *remote* gateway URL.
+
+All of the above settings, except for `LATCHKEY_DIRECTORY` and
+`LATCHKEY_ENCRYPTION_KEY`, can alternatively be specified in the
+`settings` section of `config.json` inside the Latchkey directory.
+In case of a clash, environment variables override `config.json` values.
+
+```json
+{
+  "settings": {
+    "curlCommand": "/usr/local/bin/curl",
+    "keyringServiceName": "latchkey",
+    "keyringAccountName": "encryption-key",
+    "browserDisabled": false,
+    "countingDisabled": true,
+    "permissionsConfig": "/etc/latchkey/permissions.json",
+    "permissionsDoNotUseBuiltinSchemas": false,
+    "passthroughUnknown": false,
+    "gateway": "http://localhost:1989",
+    "gatewayListenHost": "localhost",
+    "gatewayListenPort": 1989
+  }
+}
+```
 
 
 ## Disclaimers

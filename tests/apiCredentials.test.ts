@@ -3,21 +3,21 @@ import {
   AuthorizationBearer,
   AuthorizationBare,
   RawCurlCredentials,
-} from '../src/apiCredentials.js';
+} from '../src/apiCredentials/base.js';
 import {
   deserializeCredentials,
   serializeCredentials,
   ApiCredentialsSchema,
-} from '../src/apiCredentialsSerialization.js';
+} from '../src/apiCredentials/serialization.js';
 import { SlackApiCredentials } from '../src/services/slack.js';
 import { TelegramBotCredentials } from '../src/services/telegram.js';
 import { AwsCredentials } from '../src/services/aws.js';
 import { GoogleApiKeyCredentials } from '../src/services/google/base.js';
 
 describe('AuthorizationBearer', () => {
-  it('should inject Bearer token header', () => {
+  it('should inject Bearer token header', async () => {
     const credentials = new AuthorizationBearer('test-token-123');
-    expect(credentials.injectIntoCurlCall([])).toEqual([
+    await expect(credentials.injectIntoCurlCall([])).resolves.toEqual([
       '-H',
       'Authorization: Bearer test-token-123',
     ]);
@@ -25,16 +25,19 @@ describe('AuthorizationBearer', () => {
 });
 
 describe('AuthorizationBare', () => {
-  it('should inject raw Authorization header', () => {
+  it('should inject raw Authorization header', async () => {
     const credentials = new AuthorizationBare('raw-token-456');
-    expect(credentials.injectIntoCurlCall([])).toEqual(['-H', 'Authorization: raw-token-456']);
+    await expect(credentials.injectIntoCurlCall([])).resolves.toEqual([
+      '-H',
+      'Authorization: raw-token-456',
+    ]);
   });
 });
 
 describe('SlackApiCredentials', () => {
-  it('should inject token and cookie headers', () => {
+  it('should inject token and cookie headers', async () => {
     const credentials = new SlackApiCredentials('xoxc-token', 'd-cookie-value');
-    expect(credentials.injectIntoCurlCall([])).toEqual([
+    await expect(credentials.injectIntoCurlCall([])).resolves.toEqual([
       '-H',
       'Authorization: Bearer xoxc-token',
       '-H',
@@ -44,9 +47,9 @@ describe('SlackApiCredentials', () => {
 });
 
 describe('RawCurlCredentials', () => {
-  it('should inject raw curl arguments', () => {
+  it('should inject raw curl arguments', async () => {
     const credentials = new RawCurlCredentials(['-H', 'X-Token: secret', '-H', 'X-Other: value']);
-    expect(credentials.injectIntoCurlCall([])).toEqual([
+    await expect(credentials.injectIntoCurlCall([])).resolves.toEqual([
       '-H',
       'X-Token: secret',
       '-H',
@@ -54,67 +57,67 @@ describe('RawCurlCredentials', () => {
     ]);
   });
 
-  it('should handle empty curl arguments', () => {
+  it('should handle empty curl arguments', async () => {
     const credentials = new RawCurlCredentials([]);
-    expect(credentials.injectIntoCurlCall([])).toEqual([]);
+    await expect(credentials.injectIntoCurlCall([])).resolves.toEqual([]);
   });
 });
 
 describe('TelegramBotCredentials', () => {
-  it('should inject token into telegram API URL path', () => {
+  it('should inject token into telegram API URL path', async () => {
     const credentials = new TelegramBotCredentials('123456:ABC-DEF');
-    expect(credentials.injectIntoCurlCall(['https://api.telegram.org/getMe'])).toEqual([
-      'https://api.telegram.org/bot123456:ABC-DEF/getMe',
-    ]);
+    await expect(
+      credentials.injectIntoCurlCall(['https://api.telegram.org/getMe'])
+    ).resolves.toEqual(['https://api.telegram.org/bot123456:ABC-DEF/getMe']);
   });
 
-  it('should not modify non-telegram URLs', () => {
+  it('should not modify non-telegram URLs', async () => {
     const credentials = new TelegramBotCredentials('123456:ABC-DEF');
-    expect(
+    await expect(
       credentials.injectIntoCurlCall([
         '-H',
         'Content-Type: application/json',
         'https://other.example.com/api',
       ])
-    ).toEqual(['-H', 'Content-Type: application/json', 'https://other.example.com/api']);
+    ).resolves.toEqual(['-H', 'Content-Type: application/json', 'https://other.example.com/api']);
   });
 
-  it('should preserve other curl arguments', () => {
+  it('should preserve other curl arguments', async () => {
     const credentials = new TelegramBotCredentials('123456:ABC-DEF');
-    expect(
+    await expect(
       credentials.injectIntoCurlCall(['-X', 'POST', 'https://api.telegram.org/getMe'])
-    ).toEqual(['-X', 'POST', 'https://api.telegram.org/bot123456:ABC-DEF/getMe']);
+    ).resolves.toEqual(['-X', 'POST', 'https://api.telegram.org/bot123456:ABC-DEF/getMe']);
   });
 });
 
 describe('GoogleApiKeyCredentials', () => {
-  it('should inject X-Goog-Api-Key header for googleapis.com URLs', () => {
+  it('should inject X-Goog-Api-Key header for googleapis.com URLs', async () => {
     const credentials = new GoogleApiKeyCredentials('AIzaSyTestKey123');
-    expect(
+    await expect(
       credentials.injectIntoCurlCall(['https://routes.googleapis.com/directions/v2:computeRoutes'])
-    ).toEqual([
+    ).resolves.toEqual([
       '-H',
       'X-Goog-Api-Key: AIzaSyTestKey123',
       'https://routes.googleapis.com/directions/v2:computeRoutes',
     ]);
   });
 
-  it('should not modify non-googleapis.com URLs', () => {
+  it('should not modify non-googleapis.com URLs', async () => {
     const credentials = new GoogleApiKeyCredentials('AIzaSyTestKey123');
-    expect(
+    await expect(
       credentials.injectIntoCurlCall([
         '-H',
         'Content-Type: application/json',
         'https://other.example.com/api',
       ])
-    ).toEqual(['-H', 'Content-Type: application/json', 'https://other.example.com/api']);
+    ).resolves.toEqual(['-H', 'Content-Type: application/json', 'https://other.example.com/api']);
   });
 });
 
 describe('AwsCredentials', () => {
-  it('should inject Authorization, x-amz-date, and x-amz-content-sha256 headers', () => {
+  it('should inject Authorization, x-amz-date, and x-amz-content-sha256 headers', async () => {
     const credentials = new AwsCredentials('AKIAIOSFODNN7EXAMPLE', 'wJalrXUtnFEMI/K7MDENG');
-    const result = credentials.injectIntoCurlCall([
+    const result = await credentials.injectIntoCurlCall([
       'https://sts.amazonaws.com/?Action=GetCallerIdentity&Version=2011-06-15',
     ]);
     const resultStrings = result as string[];
@@ -132,9 +135,9 @@ describe('AwsCredentials', () => {
     );
   });
 
-  it('should include content-type in signed headers when present', () => {
+  it('should include content-type in signed headers when present', async () => {
     const credentials = new AwsCredentials('AKIAIOSFODNN7EXAMPLE', 'wJalrXUtnFEMI/K7MDENG');
-    const result = credentials.injectIntoCurlCall([
+    const result = await credentials.injectIntoCurlCall([
       '-H',
       'Content-Type: application/json',
       '-d',
@@ -146,9 +149,9 @@ describe('AwsCredentials', () => {
     expect(authHeader).toContain('SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date');
   });
 
-  it('should sign S3 virtual-hosted-style URLs with default region', () => {
+  it('should sign S3 virtual-hosted-style URLs with default region', async () => {
     const credentials = new AwsCredentials('AKIAIOSFODNN7EXAMPLE', 'wJalrXUtnFEMI/K7MDENG');
-    const result = credentials.injectIntoCurlCall([
+    const result = await credentials.injectIntoCurlCall([
       'https://test-int8-transient.s3.amazonaws.com/',
     ]);
     const resultStrings = result as string[];
@@ -157,9 +160,9 @@ describe('AwsCredentials', () => {
     expect(authHeader).toMatch(/Credential=AKIAIOSFODNN7EXAMPLE\/\d{8}\/us-east-1\/s3\//);
   });
 
-  it('should sign S3 virtual-hosted-style URLs with explicit region', () => {
+  it('should sign S3 virtual-hosted-style URLs with explicit region', async () => {
     const credentials = new AwsCredentials('AKIAIOSFODNN7EXAMPLE', 'wJalrXUtnFEMI/K7MDENG');
-    const result = credentials.injectIntoCurlCall([
+    const result = await credentials.injectIntoCurlCall([
       'https://test-int8-transient.s3.us-west-2.amazonaws.com/',
     ]);
     const resultStrings = result as string[];
@@ -167,9 +170,9 @@ describe('AwsCredentials', () => {
     expect(authHeader).toMatch(/Credential=AKIAIOSFODNN7EXAMPLE\/\d{8}\/us-west-2\/s3\//);
   });
 
-  it('should pass through arguments unchanged when no URL is present', () => {
+  it('should pass through arguments unchanged when no URL is present', async () => {
     const credentials = new AwsCredentials('AKIAIOSFODNN7EXAMPLE', 'wJalrXUtnFEMI/K7MDENG');
-    const result = credentials.injectIntoCurlCall(['-v']);
+    const result = await credentials.injectIntoCurlCall(['-v']);
     expect(result).toEqual(['-v']);
   });
 });
@@ -177,7 +180,7 @@ describe('AwsCredentials', () => {
 describe('serialization roundtrip', () => {
   const cases: {
     name: string;
-    credentials: () => import('../src/apiCredentials.js').ApiCredentials;
+    credentials: () => import('../src/apiCredentials/base.js').ApiCredentials;
   }[] = [
     { name: 'AuthorizationBearer', credentials: () => new AuthorizationBearer('test-token') },
     { name: 'AuthorizationBare', credentials: () => new AuthorizationBare('test-token') },

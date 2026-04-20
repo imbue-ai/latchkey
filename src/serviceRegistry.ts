@@ -60,7 +60,7 @@ export function canonicalizeServiceName(name: string): string {
   return canonicalized;
 }
 
-export class Registry {
+export class ServiceRegistry {
   private readonly _services: Service[];
 
   constructor(services: readonly Service[]) {
@@ -105,7 +105,10 @@ export class Registry {
   }
 }
 
-export function loadRegisteredServicesIntoRegistry(configPath: string, registry: Registry): void {
+export function loadRegisteredServicesIntoServiceRegistry(
+  configPath: string,
+  registry: ServiceRegistry
+): void {
   const entries = loadRegisteredServices(configPath);
   for (const [name, entry] of entries) {
     let familyService: Service | undefined;
@@ -128,7 +131,7 @@ export function loadRegisteredServicesIntoRegistry(configPath: string, registry:
   }
 }
 
-export const REGISTRY = new Registry([
+export const SERVICE_REGISTRY = new ServiceRegistry([
   SLACK,
   DISCORD,
   DROPBOX,

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { type ApiCredentials } from '../apiCredentials.js';
+import { type ApiCredentials } from '../apiCredentials/base.js';
 import { extractUrlFromCurlArguments } from '../curl.js';
 import { NoCurlCredentialsNotSupportedError, Service } from './core/base.js';
 
@@ -25,14 +25,16 @@ export class TelegramBotCredentials implements ApiCredentials {
     this.token = token;
   }
 
-  injectIntoCurlCall(curlArguments: readonly string[]): readonly string[] {
+  injectIntoCurlCall(curlArguments: readonly string[]): Promise<readonly string[]> {
     const url = extractUrlFromCurlArguments(curlArguments as string[]);
     if (!url?.startsWith(BASE_API_URL)) {
-      return curlArguments;
+      return Promise.resolve(curlArguments);
     }
     const pathAfterBase = url.slice(BASE_API_URL.length);
     const rewrittenUrl = `${BASE_API_URL}bot${this.token}/${pathAfterBase}`;
-    return curlArguments.map((argument) => (argument === url ? rewrittenUrl : argument));
+    return Promise.resolve(
+      curlArguments.map((argument) => (argument === url ? rewrittenUrl : argument))
+    );
   }
 
   isExpired(): boolean | undefined {

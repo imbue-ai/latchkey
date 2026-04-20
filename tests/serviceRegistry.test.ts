@@ -2,10 +2,10 @@ import { describe, it, expect } from 'vitest';
 import {
   DuplicateServiceNameError,
   InvalidServiceNameError,
-  Registry,
-  REGISTRY,
+  ServiceRegistry,
+  SERVICE_REGISTRY,
   canonicalizeServiceName,
-} from '../src/registry.js';
+} from '../src/serviceRegistry.js';
 import { RegisteredService } from '../src/services/core/registered.js';
 import {
   SLACK,
@@ -26,7 +26,7 @@ import {
   TELEGRAM,
 } from '../src/services/index.js';
 
-describe('Registry', () => {
+describe('ServiceRegistry', () => {
   describe('getByName', () => {
     const namedServices = [
       ['slack', SLACK],
@@ -48,16 +48,16 @@ describe('Registry', () => {
 
     for (const [name, service] of namedServices) {
       it(`should find ${name} by name`, () => {
-        expect(REGISTRY.getByName(name)).toBe(service);
+        expect(SERVICE_REGISTRY.getByName(name)).toBe(service);
       });
     }
 
     it('should return null for unknown service', () => {
-      expect(REGISTRY.getByName('unknown')).toBeNull();
+      expect(SERVICE_REGISTRY.getByName('unknown')).toBeNull();
     });
 
     it('should be case-sensitive', () => {
-      expect(REGISTRY.getByName('Slack')).toBeNull();
+      expect(SERVICE_REGISTRY.getByName('Slack')).toBeNull();
     });
   });
 
@@ -83,31 +83,31 @@ describe('Registry', () => {
 
     for (const [url, service] of urlMappings) {
       it(`should find ${service.name} by URL ${url}`, () => {
-        expect(REGISTRY.getByUrl(url)).toBe(service);
+        expect(SERVICE_REGISTRY.getByUrl(url)).toBe(service);
       });
     }
 
     it('should return null for unknown URL', () => {
-      expect(REGISTRY.getByUrl('https://example.com/api')).toBeNull();
+      expect(SERVICE_REGISTRY.getByUrl('https://example.com/api')).toBeNull();
     });
 
     it('should not match partial URLs', () => {
-      expect(REGISTRY.getByUrl('https://slack.com/')).toBeNull();
+      expect(SERVICE_REGISTRY.getByUrl('https://slack.com/')).toBeNull();
     });
   });
 
   describe('services', () => {
     it('should contain all registered services', () => {
-      expect(REGISTRY.services.length).toBeGreaterThan(0);
-      expect(REGISTRY.services).toContain(SLACK);
-      expect(REGISTRY.services).toContain(GITHUB);
-      expect(REGISTRY.services).toContain(AWS);
+      expect(SERVICE_REGISTRY.services.length).toBeGreaterThan(0);
+      expect(SERVICE_REGISTRY.services).toContain(SLACK);
+      expect(SERVICE_REGISTRY.services).toContain(GITHUB);
+      expect(SERVICE_REGISTRY.services).toContain(AWS);
     });
   });
 
   describe('custom registry', () => {
     it('should work with custom service list', () => {
-      const customRegistry = new Registry([SLACK, GITHUB]);
+      const customRegistry = new ServiceRegistry([SLACK, GITHUB]);
       expect(customRegistry.services).toHaveLength(2);
       expect(customRegistry.getByName('slack')).toBe(SLACK);
       expect(customRegistry.getByName('github')).toBe(GITHUB);
@@ -117,7 +117,7 @@ describe('Registry', () => {
 
   describe('addService', () => {
     it('should add a service to the registry', () => {
-      const registry = new Registry([SLACK]);
+      const registry = new ServiceRegistry([SLACK]);
       const registered = new RegisteredService(
         'my-gitlab',
         'https://gitlab.mycompany.com/api/',
@@ -130,7 +130,7 @@ describe('Registry', () => {
     });
 
     it('should throw DuplicateServiceNameError for existing built-in name', () => {
-      const registry = new Registry([SLACK]);
+      const registry = new ServiceRegistry([SLACK]);
       const duplicate = new RegisteredService('slack', 'https://slack.mycompany.com/api/', SLACK);
 
       expect(() => {
@@ -139,7 +139,7 @@ describe('Registry', () => {
     });
 
     it('should throw DuplicateServiceNameError for existing registered name', () => {
-      const registry = new Registry([GITLAB]);
+      const registry = new ServiceRegistry([GITLAB]);
       const first = new RegisteredService('my-gitlab', 'https://gitlab.mycompany.com/api/', GITLAB);
       const second = new RegisteredService('my-gitlab', 'https://gitlab.other.com/api/', GITLAB);
 

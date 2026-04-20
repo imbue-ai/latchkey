@@ -15,18 +15,18 @@ import {
 } from './encryptedStorage.js';
 import { KeychainTimeoutError } from './keychain.js';
 import { MigrationError, runMigrations } from './migrations.js';
-import { loadRegisteredServicesIntoRegistry } from './registry.js';
+import { loadRegisteredServicesIntoServiceRegistry } from './serviceRegistry.js';
 import { countDailyIfNeeded } from './dailyCounting.js';
-import { createRequire } from 'node:module';
-
-const require = createRequire(import.meta.url);
-const packageJson = require('../../package.json') as { version: string };
+import { VERSION } from './version.js';
 
 const deps = createDefaultDependencies();
+const gatewayMode = deps.config.gatewayUrl !== null;
 
 try {
-  deps.config.checkSensitiveFilePermissions();
   deps.config.checkSystemPrerequisites();
+  if (!gatewayMode) {
+    deps.config.checkSensitiveFilePermissions();
+  }
 } catch (error) {
   if (error instanceof InsecureFilePermissionsError || error instanceof CurlNotFoundError) {
     console.error(`Error: ${error.message}`);
@@ -35,54 +35,56 @@ try {
   throw error;
 }
 
-try {
-  countDailyIfNeeded(deps.config);
-} catch {
-  // Non-essential daily usage counting — never prevent the main application from running.
+if (!gatewayMode) {
+  try {
+    countDailyIfNeeded(deps.config);
+  } catch {
+    // Non-essential daily usage counting — never prevent the main application from running.
+  }
+
+  const hasEncryptedData =
+    existsSync(deps.config.credentialStorePath) || existsSync(deps.config.browserStatePath);
+
+  try {
+    const encryptedStorage = await EncryptedStorage.create({
+      encryptionKeyOverride: deps.config.encryptionKeyOverride,
+      serviceName: deps.config.serviceName,
+      accountName: deps.config.accountName,
+      allowKeyGeneration: !hasEncryptedData,
+    });
+    runMigrations(deps.config, encryptedStorage);
+  } catch (error) {
+    if (error instanceof KeychainTimeoutError) {
+      console.error(`Error: ${error.message}`);
+      process.exit(1);
+    }
+    if (error instanceof EncryptionKeyLostError || error instanceof MigrationError) {
+      console.error(`Error: ${error.message}`);
+      process.exit(1);
+    }
+    if (error instanceof EncryptedStorageError) {
+      console.error(
+        'No encryption key available.\n\n' +
+          'Latchkey needs an encryption key to store credentials securely.\n' +
+          'Either ensure your system keychain is accessible, or set the\n' +
+          'LATCHKEY_ENCRYPTION_KEY environment variable. For example:\n\n' +
+          '  export LATCHKEY_ENCRYPTION_KEY="$(openssl rand -base64 32)"\n\n' +
+          'Add this to your shell profile to persist it across sessions.'
+      );
+      process.exit(1);
+    }
+    throw error;
+  }
+
+  loadRegisteredServicesIntoServiceRegistry(deps.config.configPath, deps.registry);
 }
-
-const hasEncryptedData =
-  existsSync(deps.config.credentialStorePath) || existsSync(deps.config.browserStatePath);
-
-try {
-  const encryptedStorage = await EncryptedStorage.create({
-    encryptionKeyOverride: deps.config.encryptionKeyOverride,
-    serviceName: deps.config.serviceName,
-    accountName: deps.config.accountName,
-    allowKeyGeneration: !hasEncryptedData,
-  });
-  runMigrations(deps.config, encryptedStorage);
-} catch (error) {
-  if (error instanceof KeychainTimeoutError) {
-    console.error(`Error: ${error.message}`);
-    process.exit(1);
-  }
-  if (error instanceof EncryptionKeyLostError || error instanceof MigrationError) {
-    console.error(`Error: ${error.message}`);
-    process.exit(1);
-  }
-  if (error instanceof EncryptedStorageError) {
-    console.error(
-      'No encryption key available.\n\n' +
-        'Latchkey needs an encryption key to store credentials securely.\n' +
-        'Either ensure your system keychain is accessible, or set the\n' +
-        'LATCHKEY_ENCRYPTION_KEY environment variable. For example:\n\n' +
-        '  export LATCHKEY_ENCRYPTION_KEY="$(openssl rand -base64 32)"\n\n' +
-        'Add this to your shell profile to persist it across sessions.'
-    );
-    process.exit(1);
-  }
-  throw error;
-}
-
-loadRegisteredServicesIntoRegistry(deps.config.configPath, deps.registry);
 
 program
   .name('latchkey')
   .description(
     'A command-line tool that injects API credentials to curl requests to known public APIs.'
   )
-  .version(packageJson.version);
+  .version(VERSION);
 
 registerCommands(program, deps);
 

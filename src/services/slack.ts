@@ -4,7 +4,7 @@
 
 import type { Response } from 'playwright';
 import { z } from 'zod';
-import { ApiCredentialStatus, type ApiCredentials } from '../apiCredentials.js';
+import { ApiCredentialStatus, type ApiCredentials } from '../apiCredentials/base.js';
 import { runCaptured } from '../curl.js';
 import { Service, SimpleServiceSession } from './core/base.js';
 
@@ -29,14 +29,14 @@ export class SlackApiCredentials implements ApiCredentials {
     this.dCookie = dCookie;
   }
 
-  injectIntoCurlCall(curlArguments: readonly string[]): readonly string[] {
-    return [
+  injectIntoCurlCall(curlArguments: readonly string[]): Promise<readonly string[]> {
+    return Promise.resolve([
       '-H',
       `Authorization: Bearer ${this.token}`,
       '-H',
       `Cookie: d=${this.dCookie}`,
       ...curlArguments,
-    ];
+    ]);
   }
 
   isExpired(): boolean | undefined {
@@ -117,9 +117,9 @@ export class Slack extends Service {
     return new SlackServiceSession(this);
   }
 
-  override checkApiCredentials(apiCredentials: ApiCredentials): ApiCredentialStatus {
+  override async checkApiCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentialStatus> {
     const result = runCaptured(
-      apiCredentials.injectIntoCurlCall(['-s', ...this.credentialCheckCurlArguments]),
+      await apiCredentials.injectIntoCurlCall(['-s', ...this.credentialCheckCurlArguments]),
       10
     );
 

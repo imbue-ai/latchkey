@@ -22,8 +22,8 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import type { Response, Request } from 'playwright';
-import { ApiCredentials } from '../src/apiCredentials.js';
-import { REGISTRY } from '../src/registry.js';
+import { ApiCredentials } from '../src/apiCredentials/base.js';
+import { SERVICE_REGISTRY } from '../src/serviceRegistry.js';
 import { Service, SimpleServiceSession } from '../src/services/core/base.js';
 
 // Get the directory of this file
@@ -216,7 +216,7 @@ describe('Services Against Recordings', () => {
 
   for (const { serviceName, recordingPath } of discoveredRecordings) {
     it(`should extract credentials from ${serviceName} recording`, async () => {
-      const service = REGISTRY.getByName(serviceName);
+      const service = SERVICE_REGISTRY.getByName(serviceName);
 
       if (service === null) {
         // Skip if service not found in registry
@@ -229,7 +229,7 @@ describe('Services Against Recordings', () => {
       // Verify API credentials are valid
       expect(apiCredentials).not.toBeNull();
 
-      const curlArgs = apiCredentials.injectIntoCurlCall([]);
+      const curlArgs = await apiCredentials.injectIntoCurlCall([]);
       expect(curlArgs.length).toBeGreaterThan(0);
     });
   }

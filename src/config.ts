@@ -5,6 +5,7 @@
 import { accessSync, constants, existsSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { delimiter, isAbsolute, join, resolve } from 'node:path';
+import { loadSettings, type Settings } from './configDataStore.js';
 
 export class InsecureFilePermissionsError extends Error {
   constructor(filePath: string, permissions: number) {
@@ -23,6 +24,15 @@ export class CurlNotFoundError extends Error {
   }
 }
 
+export class InvalidGatewayListenPortError extends Error {
+  constructor(rawValue: string) {
+    super(
+      `Invalid LATCHKEY_GATEWAY_LISTEN_PORT value '${rawValue}': must be an integer between 0 and 65535.`
+    );
+    this.name = 'InvalidGatewayListenPortError';
+  }
+}
+
 const LATCHKEY_DIRECTORY_ENV_VAR = 'LATCHKEY_DIRECTORY';
 const LATCHKEY_CURL_ENV_VAR = 'LATCHKEY_CURL';
 const LATCHKEY_ENCRYPTION_KEY_ENV_VAR = 'LATCHKEY_ENCRYPTION_KEY';
@@ -33,9 +43,15 @@ const LATCHKEY_DISABLE_COUNTING_ENV_VAR = 'LATCHKEY_DISABLE_COUNTING';
 const LATCHKEY_PERMISSIONS_CONFIG_ENV_VAR = 'LATCHKEY_PERMISSIONS_CONFIG';
 const LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS_ENV_VAR =
   'LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS';
+const LATCHKEY_PASSTHROUGH_UNKNOWN_ENV_VAR = 'LATCHKEY_PASSTHROUGH_UNKNOWN';
+const LATCHKEY_GATEWAY_ENV_VAR = 'LATCHKEY_GATEWAY';
+const LATCHKEY_GATEWAY_LISTEN_HOST_ENV_VAR = 'LATCHKEY_GATEWAY_LISTEN_HOST';
+const LATCHKEY_GATEWAY_LISTEN_PORT_ENV_VAR = 'LATCHKEY_GATEWAY_LISTEN_PORT';
 
 export const DEFAULT_KEYRING_SERVICE_NAME = 'latchkey';
 export const DEFAULT_KEYRING_ACCOUNT_NAME = 'encryption-key';
+export const DEFAULT_GATEWAY_LISTEN_HOST = 'localhost';
+export const DEFAULT_GATEWAY_LISTEN_PORT = 1989;
 
 const DEFAULT_DIRECTORY = join(homedir(), '.latchkey');
 
@@ -79,7 +95,67 @@ function findInPath(command: string): boolean {
 }
 
 /**
- * Configuration for Latchkey, sourced from environment variables with sensible defaults.
+ * Resolve a string-valued setting with precedence: env var > config file > default.
+ * Environment variables override even when set to an empty string.
+ */
+function resolveString(
+  envValue: string | undefined,
+  fileValue: string | undefined,
+  defaultValue: string
+): string {
+  if (envValue !== undefined) return envValue;
+  if (fileValue !== undefined) return fileValue;
+  return defaultValue;
+}
+
+/**
+ * Resolve an optional path/url-like setting with precedence: env var > config file > null.
+ * Empty strings are treated as unset so that `FOO=` in the environment doesn't mask
+ * a config file value.
+ */
+function resolveOptionalString(
+  envValue: string | undefined,
+  fileValue: string | undefined
+): string | null {
+  if (envValue !== undefined && envValue !== '') return envValue;
+  if (fileValue !== undefined && fileValue !== '') return fileValue;
+  return null;
+}
+
+/**
+ * Resolve the gateway listen port with precedence: env var > config file > default.
+ * Empty env var falls through. Non-integer or out-of-range env values throw.
+ */
+function resolveGatewayListenPort(
+  envValue: string | undefined,
+  fileValue: number | undefined
+): number {
+  if (envValue !== undefined && envValue !== '') {
+    const parsed = Number(envValue);
+    if (!Number.isInteger(parsed) || parsed < 0 || parsed > 65535) {
+      throw new InvalidGatewayListenPortError(envValue);
+    }
+    return parsed;
+  }
+  if (fileValue !== undefined) return fileValue;
+  return DEFAULT_GATEWAY_LISTEN_PORT;
+}
+
+/**
+ * Resolve a boolean flag with precedence: env var > config file > false.
+ * A non-empty env var means true. An unset or empty env var falls through
+ * (consistent with how the README describes LATCHKEY_DISABLE_*).
+ */
+function resolveBoolean(envValue: string | undefined, fileValue: boolean | undefined): boolean {
+  if (envValue !== undefined && envValue !== '') return true;
+  if (fileValue !== undefined) return fileValue;
+  return false;
+}
+
+/**
+ * Configuration for Latchkey, sourced from environment variables and config.json with sensible defaults.
+ * Precedence for each setting: environment variable > config.json > default.
+ * LATCHKEY_DIRECTORY and LATCHKEY_ENCRYPTION_KEY are env-only.
  */
 export class Config {
   readonly directory: string;
@@ -110,35 +186,88 @@ export class Config {
    * When true, detent's built-in schemas are not used during permission checks.
    */
   readonly permissionsDoNotUseBuiltinSchemas: boolean;
+  /**
+   * When true, requests to unrecognized services or services without credentials
+   * are passed through as-is instead of being rejected.
+   */
+  readonly passthroughUnknown: boolean;
+  /**
+   * When set, the CLI delegates commands to a remote latchkey gateway instead
+   * of running them locally. `latchkey curl` is proxied through the gateway's
+   * `/gateway/` endpoint; most other commands are forwarded to `/latchkey/`.
+   */
+  readonly gatewayUrl: string | null;
+  /**
+   * Address the local `latchkey gateway` command binds to when started
+   * without an explicit `--host` flag. Distinct from `gatewayUrl`, which
+   * is the URL of a remote gateway this CLI talks to.
+   */
+  readonly gatewayListenHost: string;
+  /**
+   * Port the local `latchkey gateway` command listens on when started
+   * without an explicit `--port` flag.
+   */
+  readonly gatewayListenPort: number;
 
-  constructor(getEnv: (name: string) => string | undefined = (name) => process.env[name]) {
-    this.curlCommand = getEnv(LATCHKEY_CURL_ENV_VAR) ?? 'curl';
-    this.encryptionKeyOverride = getEnv(LATCHKEY_ENCRYPTION_KEY_ENV_VAR) ?? null;
-    this.serviceName =
-      getEnv(LATCHKEY_KEYRING_SERVICE_NAME_ENV_VAR) ?? DEFAULT_KEYRING_SERVICE_NAME;
-    this.accountName =
-      getEnv(LATCHKEY_KEYRING_ACCOUNT_NAME_ENV_VAR) ?? DEFAULT_KEYRING_ACCOUNT_NAME;
-
-    const browserDisabledEnv = getEnv(LATCHKEY_DISABLE_BROWSER_ENV_VAR);
-    this.browserDisabled = browserDisabledEnv !== undefined && browserDisabledEnv !== '';
-
-    const countingDisabledEnv = getEnv(LATCHKEY_DISABLE_COUNTING_ENV_VAR);
-    this.countingDisabled = countingDisabledEnv !== undefined && countingDisabledEnv !== '';
-
+  constructor(
+    getEnv: (name: string) => string | undefined = (name) => process.env[name],
+    loadSettingsFromFile: (configPath: string) => Settings = loadSettings
+  ) {
+    // The directory and encryption key are configured exclusively via environment variables;
+    // they cannot be set from config.json (the directory determines where config.json lives).
     const directoryEnv = getEnv(LATCHKEY_DIRECTORY_ENV_VAR);
     this.directory = directoryEnv ? resolvePathWithTildeExpansion(directoryEnv) : DEFAULT_DIRECTORY;
+    this.encryptionKeyOverride = getEnv(LATCHKEY_ENCRYPTION_KEY_ENV_VAR) ?? null;
 
-    const permissionsConfigEnv = getEnv(LATCHKEY_PERMISSIONS_CONFIG_ENV_VAR);
-    this.permissionsConfigOverride =
-      permissionsConfigEnv !== undefined && permissionsConfigEnv !== ''
-        ? permissionsConfigEnv
-        : null;
+    const settings = loadSettingsFromFile(join(this.directory, CONFIG_FILENAME));
 
-    const doNotUseBuiltinSchemasEnv = getEnv(
-      LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS_ENV_VAR
+    this.curlCommand = resolveString(getEnv(LATCHKEY_CURL_ENV_VAR), settings.curlCommand, 'curl');
+    this.serviceName = resolveString(
+      getEnv(LATCHKEY_KEYRING_SERVICE_NAME_ENV_VAR),
+      settings.keyringServiceName,
+      DEFAULT_KEYRING_SERVICE_NAME
     );
-    this.permissionsDoNotUseBuiltinSchemas =
-      doNotUseBuiltinSchemasEnv !== undefined && doNotUseBuiltinSchemasEnv !== '';
+    this.accountName = resolveString(
+      getEnv(LATCHKEY_KEYRING_ACCOUNT_NAME_ENV_VAR),
+      settings.keyringAccountName,
+      DEFAULT_KEYRING_ACCOUNT_NAME
+    );
+
+    this.browserDisabled = resolveBoolean(
+      getEnv(LATCHKEY_DISABLE_BROWSER_ENV_VAR),
+      settings.browserDisabled
+    );
+    this.countingDisabled = resolveBoolean(
+      getEnv(LATCHKEY_DISABLE_COUNTING_ENV_VAR),
+      settings.countingDisabled
+    );
+    this.permissionsDoNotUseBuiltinSchemas = resolveBoolean(
+      getEnv(LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS_ENV_VAR),
+      settings.permissionsDoNotUseBuiltinSchemas
+    );
+    this.passthroughUnknown = resolveBoolean(
+      getEnv(LATCHKEY_PASSTHROUGH_UNKNOWN_ENV_VAR),
+      settings.passthroughUnknown
+    );
+
+    const permissionsConfig = resolveOptionalString(
+      getEnv(LATCHKEY_PERMISSIONS_CONFIG_ENV_VAR),
+      settings.permissionsConfig
+    );
+    this.permissionsConfigOverride = permissionsConfig;
+
+    const gatewayUrl = resolveOptionalString(getEnv(LATCHKEY_GATEWAY_ENV_VAR), settings.gateway);
+    this.gatewayUrl = gatewayUrl ? gatewayUrl.replace(/\/+$/, '') : null;
+
+    this.gatewayListenHost = resolveString(
+      getEnv(LATCHKEY_GATEWAY_LISTEN_HOST_ENV_VAR),
+      settings.gatewayListenHost,
+      DEFAULT_GATEWAY_LISTEN_HOST
+    );
+    this.gatewayListenPort = resolveGatewayListenPort(
+      getEnv(LATCHKEY_GATEWAY_LISTEN_PORT_ENV_VAR),
+      settings.gatewayListenPort
+    );
   }
 
   get credentialStorePath(): string {

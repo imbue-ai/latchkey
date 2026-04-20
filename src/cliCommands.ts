@@ -5,8 +5,16 @@
 import type { Command } from 'commander';
 import { existsSync, unlinkSync } from 'node:fs';
 import { createInterface } from 'node:readline';
-import { ApiCredentialStore } from './apiCredentialStore.js';
-import { ApiCredentialStatus, ApiCredentials, RawCurlCredentials } from './apiCredentials.js';
+import { ApiCredentialStore } from './apiCredentials/store.js';
+import { ApiCredentials, RawCurlCredentials } from './apiCredentials/base.js';
+import {
+  CredentialsExpiredError,
+  NoCredentialsForServiceError,
+  NoServiceForUrlError,
+  prepareCurlInvocation,
+  RequestNotPermittedError,
+  UrlExtractionFailedError,
+} from './curlInjection.js';
 import {
   BROWSER_SOURCES,
   BrowserNotFoundError,
@@ -15,25 +23,21 @@ import {
   type BrowserSource,
 } from './browserConfig.js';
 import { Config, CONFIG } from './config.js';
-import {
-  deleteRegisteredService,
-  loadBrowserConfig,
-  saveRegisteredService,
-} from './configDataStore.js';
+import { deleteRegisteredService, saveRegisteredService } from './configDataStore.js';
 import {
   BrowserDisabledError,
+  BrowserFlowsNotSupportedError,
   GraphicalEnvironmentNotFoundError,
-  hasGraphicalEnvironment,
 } from './playwrightUtils.js';
 import type { CurlResult } from './curl.js';
 import { EncryptedStorage } from './encryptedStorage.js';
 import {
   DuplicateServiceNameError,
   InvalidServiceNameError,
-  Registry,
-  REGISTRY,
+  ServiceRegistry,
+  SERVICE_REGISTRY,
   canonicalizeServiceName,
-} from './registry.js';
+} from './serviceRegistry.js';
 import { RegisteredService } from './services/core/registered.js';
 import {
   LoginCancelledError,
@@ -41,9 +45,35 @@ import {
   NoCurlCredentialsNotSupportedError,
   Service,
 } from './services/index.js';
-import { extractUrlFromCurlArguments, run as curlRun } from './curl.js';
+import {
+  CurlParseError,
+  extractUrlFromCurlArguments,
+  run as curlRun,
+  runAsync as curlRunAsync,
+} from './curl.js';
 import { checkPermission, PermissionCheckError } from './permissions.js';
+import { ErrorMessages } from './errorMessages.js';
 import { getSkillMdContent } from './skillMd.js';
+import { startGateway } from './gateway/server.js';
+import {
+  callLatchkeyEndpoint,
+  GatewayCommandNotSupportedError,
+  GatewayCurlRewriteError,
+  GatewayRequestError,
+  rewriteCurlArgumentsForGateway,
+} from './gateway/client.js';
+import type { LatchkeyRequest } from './gateway/latchkeyEndpoint.js';
+import {
+  servicesList,
+  servicesInfo,
+  authList,
+  authBrowser,
+  authBrowserPrepare,
+  UnknownServiceError,
+  BrowserNotConfiguredError,
+  PreparationRequiredError,
+} from './sharedOperations.js';
+import { VERSION } from './version.js';
 
 /**
  * Exit code used when a request is rejected by permission rules.
@@ -53,44 +83,13 @@ import { getSkillMdContent } from './skillMd.js';
 export const PERMISSION_DENIED_EXIT_CODE = 126;
 
 /**
- * Try to refresh expired credentials if the service supports it.
- * Returns refreshed credentials if successful, otherwise returns the original credentials.
- */
-async function maybeRefreshCredentials(
-  service: Service,
-  apiCredentials: ApiCredentials,
-  apiCredentialStore: ApiCredentialStore
-): Promise<ApiCredentials> {
-  if (apiCredentials.isExpired() !== true || !service.refreshCredentials) {
-    return apiCredentials;
-  }
-  const refreshedCredentials = await service.refreshCredentials(apiCredentials);
-  if (refreshedCredentials !== null) {
-    apiCredentialStore.save(service.name, refreshedCredentials);
-    return refreshedCredentials;
-  }
-  return apiCredentials;
-}
-
-async function getCredentialStatus(
-  service: Service,
-  credentials: ApiCredentials | null,
-  apiCredentialStore: ApiCredentialStore
-): Promise<ApiCredentialStatus> {
-  if (credentials === null) {
-    return ApiCredentialStatus.Missing;
-  }
-  const refreshed = await maybeRefreshCredentials(service, credentials, apiCredentialStore);
-  return service.checkApiCredentials(refreshed);
-}
-
-/**
  * Dependencies that can be injected for testing.
  */
 export interface CliDependencies {
-  readonly registry: Registry;
+  readonly registry: ServiceRegistry;
   readonly config: Config;
   readonly runCurl: (args: readonly string[]) => CurlResult;
+  readonly runCurlAsync: typeof curlRunAsync;
   readonly checkPermission: (
     curlArguments: readonly string[],
     configPath: string,
@@ -100,6 +99,7 @@ export interface CliDependencies {
   readonly exit: (code: number) => never;
   readonly log: (message: string) => void;
   readonly errorLog: (message: string) => void;
+  readonly version: string;
 }
 
 /**
@@ -107,9 +107,10 @@ export interface CliDependencies {
  */
 export function createDefaultDependencies(): CliDependencies {
   return {
-    registry: REGISTRY,
+    registry: SERVICE_REGISTRY,
     config: CONFIG,
     runCurl: curlRun,
+    runCurlAsync: curlRunAsync,
     checkPermission: checkPermission,
     confirm: defaultConfirm,
     exit: (code: number) => process.exit(code),
@@ -119,7 +120,40 @@ export function createDefaultDependencies(): CliDependencies {
     errorLog: (message: string) => {
       console.error(message);
     },
+    version: VERSION,
   };
+}
+
+/**
+ * Forward a request to the gateway's `/latchkey/` endpoint. On transport or
+ * protocol errors the CLI exits with status 1 after logging the error message.
+ */
+async function forwardToGateway(deps: CliDependencies, request: LatchkeyRequest): Promise<unknown> {
+  const gatewayUrl = deps.config.gatewayUrl;
+  if (gatewayUrl === null) {
+    throw new GatewayCommandNotSupportedError(request.command);
+  }
+  try {
+    return await callLatchkeyEndpoint(gatewayUrl, request);
+  } catch (error) {
+    if (error instanceof GatewayRequestError) {
+      deps.errorLog(`Error: ${error.message}`);
+      deps.exit(1);
+    }
+    throw error;
+  }
+}
+
+/**
+ * If the CLI is running in gateway mode, log an error and exit. Used for
+ * commands that manage local state and cannot be meaningfully delegated.
+ */
+function refuseInGatewayMode(deps: CliDependencies, commandName: string): void {
+  if (deps.config.gatewayUrl !== null) {
+    const error = new GatewayCommandNotSupportedError(commandName);
+    deps.errorLog(`Error: ${error.message}`);
+    deps.exit(1);
+  }
 }
 
 async function defaultConfirm(message: string): Promise<boolean> {
@@ -210,51 +244,6 @@ async function clearService(deps: CliDependencies, serviceName: string): Promise
 }
 
 /**
- * Check if browser login is disabled via environment variable.
- * Exits with error if LATCHKEY_DISABLE_BROWSER is set.
- */
-function checkBrowserNotDisabledOrExit(deps: CliDependencies): void {
-  if (deps.config.browserDisabled) {
-    deps.errorLog(new BrowserDisabledError().message);
-    deps.exit(1);
-  }
-}
-
-/**
- * Check if a graphical environment is available.
- * Exits with error if no display server (X11 or Wayland) is detected on Linux.
- */
-function checkGraphicalEnvironmentOrExit(deps: CliDependencies): void {
-  if (!hasGraphicalEnvironment()) {
-    deps.errorLog(new GraphicalEnvironmentNotFoundError().message);
-    deps.exit(1);
-  }
-}
-
-/**
- * Get the browser launch options from configuration, handling errors with CLI output.
- * Exits with error if no valid browser config exists, if browser is disabled,
- * or if no graphical environment is available.
- */
-function getBrowserLaunchOptionsOrExit(deps: CliDependencies): {
-  browserStatePath: string;
-  executablePath: string;
-} {
-  checkBrowserNotDisabledOrExit(deps);
-  checkGraphicalEnvironmentOrExit(deps);
-
-  const browserConfig = loadBrowserConfig(deps.config.configPath);
-  if (!browserConfig) {
-    deps.errorLog("Error: No browser configured. Run 'latchkey ensure-browser' first.");
-    deps.exit(1);
-  }
-  return {
-    browserStatePath: deps.config.browserStatePath,
-    executablePath: browserConfig.executablePath,
-  };
-}
-
-/**
  * Register all CLI commands on the given program.
  */
 export function registerCommands(program: Command, deps: CliDependencies): void {
@@ -271,30 +260,21 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       'Only list services that either have stored credentials or can be authenticated via a browser.'
     )
     .action(async (options: { builtin?: boolean; viable?: boolean }) => {
-      let services = deps.registry.services;
-      if (options.builtin === true) {
-        services = services.filter((service) => !(service instanceof RegisteredService));
-      }
-      if (options.viable === true) {
-        const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
-        const apiCredentialStore = new ApiCredentialStore(
-          deps.config.credentialStorePath,
-          encryptedStorage
-        );
-        const allCredentials = apiCredentialStore.getAll();
-        services = services.filter((service) => {
-          if (allCredentials.has(service.name)) {
-            return true;
-          }
-          const supportsBrowser =
-            service.getSession !== undefined &&
-            !deps.config.browserDisabled &&
-            hasGraphicalEnvironment();
-          return supportsBrowser;
+      if (deps.config.gatewayUrl !== null) {
+        const result = await forwardToGateway(deps, {
+          command: 'services list',
+          params: options,
         });
+        deps.log(JSON.stringify(result, null, 2));
+        return;
       }
-      const serviceNames = services.map((service) => service.name).sort();
-      deps.log(JSON.stringify(serviceNames, null, 2));
+      const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
+      const apiCredentialStore = new ApiCredentialStore(
+        deps.config.credentialStorePath,
+        encryptedStorage
+      );
+      const result = servicesList(deps.registry, apiCredentialStore, deps.config, options);
+      deps.log(JSON.stringify(result, null, 2));
     });
 
   servicesCommand
@@ -302,41 +282,34 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .description('Show information about a service.')
     .argument('<service_name>', 'Name of the service to get info for')
     .action(async (serviceName: string) => {
-      const service = deps.registry.getByName(serviceName);
-      if (service === null) {
-        deps.errorLog(`Error: Unknown service: ${serviceName}`);
-        deps.errorLog("Use 'latchkey services list' to see available services.");
-        deps.exit(1);
+      if (deps.config.gatewayUrl !== null) {
+        const info = await forwardToGateway(deps, {
+          command: 'services info',
+          params: { serviceName },
+        });
+        deps.log(JSON.stringify(info, null, 2));
+        return;
       }
-
-      // Login options
-      const supportsBrowser = service.getSession !== undefined && !deps.config.browserDisabled;
-      const authOptions = supportsBrowser ? ['browser', 'set'] : ['set'];
-
-      // Credentials status
-      const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
-      const apiCredentialStore = new ApiCredentialStore(
-        deps.config.credentialStorePath,
-        encryptedStorage
-      );
-      const apiCredentials = apiCredentialStore.get(serviceName);
-      const credentialStatus = await getCredentialStatus(
-        service,
-        apiCredentials,
-        apiCredentialStore
-      );
-
-      const serviceType = service instanceof RegisteredService ? 'user-registered' : 'built-in';
-
-      const info = {
-        type: serviceType,
-        baseApiUrls: service.baseApiUrls,
-        authOptions,
-        credentialStatus,
-        setCredentialsExample: service.setCredentialsExample(serviceName),
-        developerNotes: service.info,
-      };
-      deps.log(JSON.stringify(info, null, 2));
+      try {
+        const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
+        const apiCredentialStore = new ApiCredentialStore(
+          deps.config.credentialStorePath,
+          encryptedStorage
+        );
+        const info = await servicesInfo(
+          deps.registry,
+          apiCredentialStore,
+          deps.config,
+          serviceName
+        );
+        deps.log(JSON.stringify(info, null, 2));
+      } catch (error) {
+        if (error instanceof UnknownServiceError) {
+          deps.errorLog(`Error: ${error.message}`);
+          deps.exit(1);
+        }
+        throw error;
+      }
     });
 
   servicesCommand
@@ -354,6 +327,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         rawServiceName: string,
         options: { baseApiUrl: string; serviceFamily?: string; loginUrl?: string }
       ) => {
+        refuseInGatewayMode(deps, 'services register');
         let serviceName: string;
         try {
           serviceName = canonicalizeServiceName(rawServiceName);
@@ -428,6 +402,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .description('Deregister a previously registered service instance.')
     .argument('<service_name>', 'Name of the registered service to remove')
     .action(async (serviceName: string) => {
+      refuseInGatewayMode(deps, 'services deregister');
       const service = deps.registry.getByName(serviceName);
       if (service === null) {
         deps.errorLog(`Error: Unknown service: ${serviceName}`);
@@ -468,6 +443,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .argument('[service_name]', 'Name of the service to clear API credentials for')
     .option('-y, --yes', 'Skip confirmation prompt when clearing all data')
     .action(async (serviceName: string | undefined, options: { yes?: boolean }) => {
+      refuseInGatewayMode(deps, 'auth clear');
       if (serviceName === undefined) {
         await clearAll(deps, options.yes ?? false);
       } else {
@@ -479,31 +455,17 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .command('list')
     .description('List all stored credentials and their status.')
     .action(async () => {
+      if (deps.config.gatewayUrl !== null) {
+        const entries = await forwardToGateway(deps, { command: 'auth list' });
+        deps.log(JSON.stringify(entries, null, 2));
+        return;
+      }
       const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
       const apiCredentialStore = new ApiCredentialStore(
         deps.config.credentialStorePath,
         encryptedStorage
       );
-
-      const allCredentials = apiCredentialStore.getAll();
-
-      const statusChecks = Array.from(
-        allCredentials,
-        async ([serviceName, credentials]): Promise<
-          readonly [string, { credentialType: string; credentialStatus: ApiCredentialStatus }]
-        > => {
-          const service = deps.registry.getByName(serviceName);
-          const credentialStatus =
-            service !== null
-              ? await getCredentialStatus(service, credentials, apiCredentialStore)
-              : ApiCredentialStatus.Valid;
-
-          return [serviceName, { credentialType: credentials.objectType, credentialStatus }];
-        }
-      );
-
-      const entries = Object.fromEntries(await Promise.all(statusChecks));
-
+      const entries = await authList(deps.registry, apiCredentialStore);
       deps.log(JSON.stringify(entries, null, 2));
     });
 
@@ -518,6 +480,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .allowUnknownOption()
     .allowExcessArguments()
     .action(async (_serviceName: string, _options: unknown, command: { args: string[] }) => {
+      refuseInGatewayMode(deps, 'auth set');
       const [serviceName, ...curlArguments] = command.args;
       if (serviceName === undefined) {
         deps.errorLog('Error: Service name is required.');
@@ -567,6 +530,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     )
     .allowExcessArguments()
     .action(async (_serviceName: string, _options: unknown, command: { args: string[] }) => {
+      refuseInGatewayMode(deps, 'auth set-nocurl');
       const [serviceName, ...noCurlArguments] = command.args;
       if (serviceName === undefined) {
         deps.errorLog('Error: Service name is required.');
@@ -606,45 +570,53 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .description('Login to a service via the browser and store the API credentials.')
     .argument('<service_name>', 'Name of the service to login to')
     .action(async (serviceName: string) => {
-      const service = deps.registry.getByName(serviceName);
-      if (service === null) {
-        deps.errorLog(`Error: Unknown service: ${serviceName}`);
-        deps.errorLog("Use 'latchkey services list' to see available services.");
-        deps.exit(1);
+      if (deps.config.gatewayUrl !== null) {
+        await forwardToGateway(deps, {
+          command: 'auth browser',
+          params: { serviceName },
+        });
+        deps.log('Done');
+        return;
       }
-
-      const session = service.getSession?.();
-      if (!session) {
-        deps.errorLog(
-          `Service '${serviceName}' does not support browser flows. ` +
-            `Use '${service.setCredentialsExample(serviceName)}' to set credentials manually.`
-        );
-        deps.exit(1);
-      }
-
-      const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
-      const apiCredentialStore = new ApiCredentialStore(
-        deps.config.credentialStorePath,
-        encryptedStorage
-      );
-
-      const oldCredentials = apiCredentialStore.get(service.name);
-      if (session.prepare && oldCredentials === null) {
-        deps.errorLog(`Error: Service ${serviceName} requires preparation first.`);
-        deps.errorLog(`Run 'latchkey auth browser-prepare ${serviceName}' before logging in.`);
-        deps.exit(1);
-      }
-      const launchOptions = getBrowserLaunchOptionsOrExit(deps);
-
       try {
-        const apiCredentials = await session.login(
-          encryptedStorage,
-          launchOptions,
-          oldCredentials ?? undefined
+        const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
+        const apiCredentialStore = new ApiCredentialStore(
+          deps.config.credentialStorePath,
+          encryptedStorage
         );
-        apiCredentialStore.save(service.name, apiCredentials);
+        await authBrowser(
+          deps.registry,
+          apiCredentialStore,
+          encryptedStorage,
+          deps.config,
+          serviceName
+        );
         deps.log('Done');
       } catch (error) {
+        if (error instanceof UnknownServiceError) {
+          deps.errorLog(`Error: ${error.message}`);
+          deps.exit(1);
+        }
+        if (error instanceof BrowserFlowsNotSupportedError) {
+          deps.errorLog(error.message);
+          deps.exit(1);
+        }
+        if (error instanceof PreparationRequiredError) {
+          deps.errorLog(`Error: ${error.message}`);
+          deps.exit(1);
+        }
+        if (error instanceof BrowserDisabledError) {
+          deps.errorLog(error.message);
+          deps.exit(1);
+        }
+        if (error instanceof GraphicalEnvironmentNotFoundError) {
+          deps.errorLog(error.message);
+          deps.exit(1);
+        }
+        if (error instanceof BrowserNotConfiguredError) {
+          deps.errorLog(`Error: ${error.message}`);
+          deps.exit(1);
+        }
         if (error instanceof LoginCancelledError) {
           deps.errorLog('Login cancelled.');
           deps.exit(1);
@@ -662,39 +634,53 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .description('Prepare a service to be used with the browser command.')
     .argument('<service_name>', 'Name of the service to prepare')
     .action(async (serviceName: string) => {
-      const service = deps.registry.getByName(serviceName);
-      if (service === null) {
-        deps.errorLog(`Error: Unknown service: ${serviceName}`);
-        deps.errorLog("Use 'latchkey services list' to see available services.");
-        deps.exit(1);
-      }
-
-      const session = service.getSession?.();
-      if (!session?.prepare) {
-        deps.log('This service does not require a preparation step.');
+      if (deps.config.gatewayUrl !== null) {
+        const result = (await forwardToGateway(deps, {
+          command: 'auth browser-prepare',
+          params: { serviceName },
+        })) as { alreadyPrepared?: boolean } | null;
+        if (result !== null && result.alreadyPrepared === true) {
+          deps.log('Already prepared.');
+        } else {
+          deps.log('Done');
+        }
         return;
       }
-
-      const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
-      const apiCredentialStore = new ApiCredentialStore(
-        deps.config.credentialStorePath,
-        encryptedStorage
-      );
-
-      // Check if already prepared (credentials exist)
-      const existingCredentials = apiCredentialStore.get(service.name);
-      if (existingCredentials !== null) {
-        deps.log('Already prepared.');
-        return;
-      }
-
-      const launchOptions = getBrowserLaunchOptionsOrExit(deps);
-
       try {
-        const apiCredentials = await session.prepare(encryptedStorage, launchOptions);
-        apiCredentialStore.save(service.name, apiCredentials);
-        deps.log('Done');
+        const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
+        const apiCredentialStore = new ApiCredentialStore(
+          deps.config.credentialStorePath,
+          encryptedStorage
+        );
+        const result = await authBrowserPrepare(
+          deps.registry,
+          apiCredentialStore,
+          encryptedStorage,
+          deps.config,
+          serviceName
+        );
+        if (result.alreadyPrepared) {
+          deps.log('Already prepared.');
+        } else {
+          deps.log('Done');
+        }
       } catch (error) {
+        if (error instanceof UnknownServiceError) {
+          deps.errorLog(`Error: ${error.message}`);
+          deps.exit(1);
+        }
+        if (error instanceof BrowserDisabledError) {
+          deps.errorLog(error.message);
+          deps.exit(1);
+        }
+        if (error instanceof GraphicalEnvironmentNotFoundError) {
+          deps.errorLog(error.message);
+          deps.exit(1);
+        }
+        if (error instanceof BrowserNotConfiguredError) {
+          deps.errorLog(`Error: ${error.message}`);
+          deps.exit(1);
+        }
         if (error instanceof LoginCancelledError) {
           deps.errorLog('Preparation cancelled.');
           deps.exit(1);
@@ -715,33 +701,111 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .action(async (_options: unknown, command: { args: string[] }) => {
       const curlArguments = command.args;
 
+      if (deps.config.gatewayUrl !== null) {
+        let targetUrl: string | null;
+        try {
+          targetUrl = extractUrlFromCurlArguments(curlArguments);
+        } catch (error) {
+          if (error instanceof CurlParseError) {
+            if (error.message) {
+              deps.errorLog(`${ErrorMessages.couldNotExtractUrlBrief} ${error.message}`);
+            } else {
+              deps.errorLog(`${ErrorMessages.couldNotExtractUrl} ${error.message}`);
+            }
+            deps.exit(1);
+          }
+          throw error;
+        }
+        if (targetUrl === null) {
+          deps.errorLog(ErrorMessages.couldNotExtractUrl);
+          deps.exit(1);
+        }
+        let rewritten: readonly string[];
+        try {
+          rewritten = rewriteCurlArgumentsForGateway(
+            curlArguments,
+            targetUrl,
+            deps.config.gatewayUrl
+          );
+        } catch (error) {
+          if (error instanceof GatewayCurlRewriteError) {
+            deps.errorLog(`Error: ${error.message}`);
+            deps.exit(1);
+          }
+          throw error;
+        }
+        const result = deps.runCurl(rewritten);
+        deps.exit(result.returncode);
+      }
+
+      const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
+      const apiCredentialStore = new ApiCredentialStore(
+        deps.config.credentialStorePath,
+        encryptedStorage
+      );
+
+      let finalArguments: readonly string[];
       try {
-        const allowed = await deps.checkPermission(
-          curlArguments,
-          deps.config.permissionsConfigPath,
-          deps.config.permissionsDoNotUseBuiltinSchemas
-        );
-        if (!allowed) {
-          deps.errorLog('Error: Request not permitted by the user.');
+        finalArguments = await prepareCurlInvocation(curlArguments, apiCredentialStore, {
+          registry: deps.registry,
+          checkPermission: deps.checkPermission,
+          permissionsConfigPath: deps.config.permissionsConfigPath,
+          permissionsDoNotUseBuiltinSchemas: deps.config.permissionsDoNotUseBuiltinSchemas,
+          passthroughUnknown: deps.config.passthroughUnknown,
+        });
+      } catch (error) {
+        if (error instanceof RequestNotPermittedError) {
+          deps.errorLog(error.message);
           deps.exit(PERMISSION_DENIED_EXIT_CODE);
         }
-      } catch (error) {
         if (error instanceof PermissionCheckError) {
           deps.errorLog(`Error: ${error.message}`);
           deps.exit(PERMISSION_DENIED_EXIT_CODE);
         }
+        if (
+          error instanceof UrlExtractionFailedError ||
+          error instanceof NoServiceForUrlError ||
+          error instanceof NoCredentialsForServiceError ||
+          error instanceof CredentialsExpiredError
+        ) {
+          deps.errorLog(error.message);
+          deps.exit(1);
+        }
         throw error;
       }
 
-      const url = extractUrlFromCurlArguments(curlArguments);
-      if (url === null) {
-        deps.errorLog('Error: Could not extract URL from curl arguments.');
+      const result = deps.runCurl(finalArguments);
+      deps.exit(result.returncode);
+    });
+
+  program
+    .command('gateway')
+    .description('Start a local HTTP gateway that proxies requests with credential injection.')
+    .option(
+      '--port <number>',
+      `Port to listen on (default: ${deps.config.gatewayListenPort.toString()}, configurable via config.json key 'gatewayListenPort')`
+    )
+    .option(
+      '--host <address>',
+      `Address to bind to (default: ${deps.config.gatewayListenHost}, configurable via config.json key 'gatewayListenHost')`
+    )
+    .option(
+      '--max-body-size <bytes>',
+      'Maximum request body size in bytes',
+      String(10 * 1024 * 1024)
+    )
+    .action(async (options: { port?: string; host?: string; maxBodySize: string }) => {
+      refuseInGatewayMode(deps, 'gateway');
+      const portString = options.port ?? deps.config.gatewayListenPort.toString();
+      const port = parseInt(portString, 10);
+      if (isNaN(port) || port < 0 || port > 65535) {
+        deps.errorLog(`Error: Invalid port number: ${portString}`);
         deps.exit(1);
       }
 
-      const service = deps.registry.getByUrl(url);
-      if (service === null) {
-        deps.errorLog(`Error: No service matches URL: ${url}`);
+      const maxBodySize = parseInt(options.maxBodySize, 10);
+      if (isNaN(maxBodySize) || maxBodySize <= 0) {
+        deps.errorLog(`Error: Invalid max body size: ${options.maxBodySize}`);
         deps.exit(1);
       }
 
@@ -750,34 +814,20 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         deps.config.credentialStorePath,
         encryptedStorage
       );
-      let apiCredentials: ApiCredentials | null = apiCredentialStore.get(service.name);
 
-      // Check if credentials exist but are expired
-      const isExpired = apiCredentials?.isExpired() === true;
+      const gateway = await startGateway(deps, apiCredentialStore, encryptedStorage, {
+        port,
+        host: options.host ?? deps.config.gatewayListenHost,
+        maxBodySize,
+      });
 
-      if (apiCredentials === null) {
-        deps.errorLog(`Error: No credentials found for ${service.name}.`);
-        deps.errorLog(
-          `Run 'latchkey auth browser ${service.name}' or 'latchkey auth set ${service.name}' first.`
-        );
-        deps.exit(1);
-      }
+      const shutdown = async () => {
+        await gateway.close();
+        deps.exit(0);
+      };
 
-      if (isExpired) {
-        apiCredentials = await maybeRefreshCredentials(service, apiCredentials, apiCredentialStore);
-
-        if (apiCredentials.isExpired() === true) {
-          deps.errorLog(`Error: Credentials for ${service.name} are expired.`);
-          deps.errorLog(
-            `Run 'latchkey auth browser ${service.name}' or 'latchkey auth set ${service.name}' to refresh them.`
-          );
-          deps.exit(1);
-        }
-      }
-
-      const allArguments = apiCredentials.injectIntoCurlCall(curlArguments);
-      const result = deps.runCurl(allArguments);
-      deps.exit(result.returncode);
+      process.on('SIGINT', () => void shutdown());
+      process.on('SIGTERM', () => void shutdown());
     });
 
   program
@@ -796,6 +846,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       DEFAULT_BROWSER_SOURCES.join(',')
     )
     .action(async (options: { source: string }) => {
+      refuseInGatewayMode(deps, 'ensure-browser');
       const configPath = deps.config.configPath;
 
       // Parse and validate sources

@@ -5,6 +5,9 @@ dist/
 # bun-compiled binary
 /latchkey
 
+# generated from package.json by scripts/generateVersion.js
+/src/version.ts
+
 .mng/settings.local.toml
 
 __pycache__/

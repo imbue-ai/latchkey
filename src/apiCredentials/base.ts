@@ -21,7 +21,7 @@ export interface ApiCredentials {
    * Inject credentials into a curl call by modifying the given arguments array.
    * Implementations may add headers, change the URL, or transform arguments in any way.
    */
-  injectIntoCurlCall(curlArguments: readonly string[]): readonly string[];
+  injectIntoCurlCall(curlArguments: readonly string[]): Promise<readonly string[]>;
   /**
    * Check if the credentials are expired.
    * Returns true if expired, false if valid, or undefined if expiration is unknown.
@@ -47,8 +47,8 @@ export class AuthorizationBearer implements ApiCredentials {
     this.token = token;
   }
 
-  injectIntoCurlCall(curlArguments: readonly string[]): readonly string[] {
-    return ['-H', `Authorization: Bearer ${this.token}`, ...curlArguments];
+  injectIntoCurlCall(curlArguments: readonly string[]): Promise<readonly string[]> {
+    return Promise.resolve(['-H', `Authorization: Bearer ${this.token}`, ...curlArguments]);
   }
 
   isExpired(): boolean | undefined {
@@ -85,8 +85,8 @@ export class AuthorizationBare implements ApiCredentials {
     this.token = token;
   }
 
-  injectIntoCurlCall(curlArguments: readonly string[]): readonly string[] {
-    return ['-H', `Authorization: ${this.token}`, ...curlArguments];
+  injectIntoCurlCall(curlArguments: readonly string[]): Promise<readonly string[]> {
+    return Promise.resolve(['-H', `Authorization: ${this.token}`, ...curlArguments]);
   }
 
   isExpired(): boolean | undefined {
@@ -124,8 +124,8 @@ export class RawCurlCredentials implements ApiCredentials {
     this.curlArguments = curlArguments;
   }
 
-  injectIntoCurlCall(curlArguments: readonly string[]): readonly string[] {
-    return [...this.curlArguments, ...curlArguments];
+  injectIntoCurlCall(curlArguments: readonly string[]): Promise<readonly string[]> {
+    return Promise.resolve([...this.curlArguments, ...curlArguments]);
   }
 
   isExpired(): boolean | undefined {
@@ -187,13 +187,13 @@ export class OAuthCredentials implements ApiCredentials {
     this.refreshTokenExpiresAt = refreshTokenExpiresAt;
   }
 
-  injectIntoCurlCall(curlArguments: readonly string[]): readonly string[] {
+  injectIntoCurlCall(curlArguments: readonly string[]): Promise<readonly string[]> {
     if (this.accessToken === undefined) {
       throw new ApiCredentialsUsageError(
         'OAuth credentials missing access token. Run login to obtain access tokens.'
       );
     }
-    return ['-H', `Authorization: Bearer ${this.accessToken}`, ...curlArguments];
+    return Promise.resolve(['-H', `Authorization: Bearer ${this.accessToken}`, ...curlArguments]);
   }
 
   isExpired(): boolean | undefined {
