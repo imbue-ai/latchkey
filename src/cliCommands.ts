@@ -708,9 +708,9 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         } catch (error) {
           if (error instanceof CurlParseError) {
             if (error.message) {
-                deps.errorLog(`${ErrorMessages.couldNotExtractUrlBrief} ${error.message}`);
+              deps.errorLog(`${ErrorMessages.couldNotExtractUrlBrief} ${error.message}`);
             } else {
-                deps.errorLog(`${ErrorMessages.couldNotExtractUrl} ${error.message}`);
+              deps.errorLog(`${ErrorMessages.couldNotExtractUrl} ${error.message}`);
             }
             deps.exit(1);
           }
