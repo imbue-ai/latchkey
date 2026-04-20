@@ -707,7 +707,11 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           targetUrl = extractUrlFromCurlArguments(curlArguments);
         } catch (error) {
           if (error instanceof CurlParseError) {
-            deps.errorLog(`${ErrorMessages.couldNotExtractUrl} ${error.message}`);
+            if (error.message) {
+                deps.errorLog(`${ErrorMessages.couldNotExtractUrlBrief} ${error.message}`);
+            } else {
+                deps.errorLog(`${ErrorMessages.couldNotExtractUrl} ${error.message}`);
+            }
             deps.exit(1);
           }
           throw error;

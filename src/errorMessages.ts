@@ -6,6 +6,8 @@ export const ErrorMessages = {
   requestNotPermitted: 'Error: Request not permitted by the user.',
   couldNotExtractUrl:
     'Error: Could not extract URL from curl arguments. Only http(s) requests are supported.',
+  couldNotExtractUrlBrief:
+    'Error: Could not extract URL from curl arguments.',
   upstreamRequestFailed: 'Error: Upstream request failed.',
   requestBodyTooLarge: 'Error: Request body too large.',
 

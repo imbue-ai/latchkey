@@ -29,7 +29,7 @@ export class UrlExtractionFailedError extends Error {
     super(
       detail === undefined
         ? ErrorMessages.couldNotExtractUrl
-        : `${ErrorMessages.couldNotExtractUrl} ${detail}`
+        : `${ErrorMessages.couldNotExtractUrlBrief} ${detail}`
     );
     this.name = 'UrlExtractionFailedError';
   }
