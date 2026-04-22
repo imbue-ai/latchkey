@@ -11,8 +11,8 @@ import {
 
 describe('playwrightDownload', () => {
   describe('getChromiumExecutable', () => {
-    it('should return Chromium executable info with download URLs', () => {
-      const executable = getChromiumExecutable();
+    it('should return Chromium executable info with download URLs', async () => {
+      const executable = await getChromiumExecutable();
 
       expect(executable.name).toBe('chromium');
       expect(executable.directory).toBeDefined();

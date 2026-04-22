@@ -50,8 +50,8 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Browser, BrowserContext, Page, Locator, LaunchOptions } from 'playwright';
-import { chromium } from 'playwright';
 import { EncryptedStorage } from './encryptedStorage.js';
+import { loadPlaywright } from './playwrightLoader.js';
 
 export interface BrowserWithContext {
   readonly browser: Browser;
@@ -96,6 +96,7 @@ export async function withTempBrowserContext<T>(
     }
   }
 
+  const { chromium } = await loadPlaywright();
   const playwrightLaunchOptions: LaunchOptions = { headless: false };
   if (options.executablePath) {
     playwrightLaunchOptions.executablePath = options.executablePath;

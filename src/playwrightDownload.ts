@@ -15,8 +15,7 @@ import { get as httpsGet } from 'node:https';
 import { get as httpGet, type IncomingMessage } from 'node:http';
 import { platform, tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
-import { registry } from 'playwright-core/lib/server/registry/index';
-import { extract } from 'playwright-core/lib/zipBundle';
+import { loadPlaywrightRegistry, loadPlaywrightZipBundle } from './playwrightLoader.js';
 
 /**
  * Error thrown when browser download fails.
@@ -78,7 +77,8 @@ function formatErrorDetails(error: unknown): string {
 /**
  * Gets the Chromium executable info from Playwright's registry.
  */
-export function getChromiumExecutable() {
+export async function getChromiumExecutable() {
+  const { registry } = await loadPlaywrightRegistry();
   const chromiumExecutable = registry.findExecutable('chromium');
 
   if (!chromiumExecutable) {
@@ -168,6 +168,7 @@ export async function downloadFile(url: string, destinationPath: string): Promis
  * Extracts a zip file to a directory using Playwright's internal zip extraction.
  */
 export async function extractZip(zipPath: string, destinationDirectory: string): Promise<void> {
+  const { extract } = await loadPlaywrightZipBundle();
   mkdirSync(destinationDirectory, { recursive: true });
   await extract(zipPath, { dir: destinationDirectory });
 }
@@ -186,7 +187,7 @@ export function setExecutablePermissions(executablePath: string): void {
  * Returns the path to the browser executable.
  */
 export async function downloadChromium(): Promise<string> {
-  const chromiumExecutable = getChromiumExecutable();
+  const chromiumExecutable = await getChromiumExecutable();
 
   const browserDirectory = chromiumExecutable.directory;
   if (!browserDirectory) {
