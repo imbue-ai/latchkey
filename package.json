@@ -1,6 +1,6 @@
 {
   "name": "latchkey",
-  "version": "2.7.0",
+  "version": "2.7.1",
   "description": "A CLI tool that injects API credentials into curl requests to third-party services",
   "author": "Imbue <hynek@imbue.com>",
   "repository": {
@@ -40,7 +40,7 @@
     "test:watch": "vitest",
     "start": "node dist/cli.js",
     "prebun-compile": "node scripts/generateVersion.js",
-    "bun-compile": "bun build ./src/cli.ts --compile --external chromium-bidi --external electron --outfile latchkey",
+    "bun-compile": "bun build ./src/cli.ts --compile --external chromium-bidi --external electron --external playwright --external playwright-core --outfile latchkey",
     "release-binaries": "npm install && bash scripts/releaseBinaries.sh"
   },
   "keywords": [

@@ -11,9 +11,9 @@
 import { existsSync } from 'node:fs';
 import { platform } from 'node:os';
 import { join } from 'node:path';
-import { chromium } from 'playwright';
 import { loadBrowserConfig, saveBrowserConfig, type BrowserConfig } from './configDataStore.js';
 import { downloadChromium } from './playwrightDownload.js';
+import { BrowserFeaturesUnavailableError, loadPlaywright } from './playwrightLoader.js';
 
 /**
  * Browser sources that can be used for discovery.
@@ -142,8 +142,21 @@ export function findSystemBrowser(): string | null {
 /**
  * Find Chrome/Chromium installed by Playwright.
  * Returns the path to the executable if found, null otherwise.
+ *
+ * In the standalone binary playwright is not available at runtime; in that
+ * case we return null so that discovery falls through to the next source
+ * (which ultimately surfaces a clear BrowserFeaturesUnavailableError).
  */
-export function findPlaywrightBrowser(): string | null {
+export async function findPlaywrightBrowser(): Promise<string | null> {
+  let chromium: typeof import('playwright').chromium;
+  try {
+    ({ chromium } = await loadPlaywright());
+  } catch (error) {
+    if (error instanceof BrowserFeaturesUnavailableError) {
+      return null;
+    }
+    throw error;
+  }
   const executablePath = chromium.executablePath();
   if (executablePath && existsSync(executablePath)) {
     return executablePath;
@@ -187,7 +200,7 @@ async function tryBrowserSource(
       return null;
     }
     case 'existing-playwright-browser': {
-      const playwrightPath = findPlaywrightBrowser();
+      const playwrightPath = await findPlaywrightBrowser();
       if (playwrightPath) {
         return {
           executablePath: playwrightPath,
