@@ -110,7 +110,7 @@ class GithubServiceSession extends BrowserFollowupServiceSession {
 export class Github extends Service {
   readonly name = 'github';
   readonly displayName = 'GitHub';
-  readonly baseApiUrls = ['https://api.github.com/'] as const;
+  readonly baseApiUrls = ['https://api.github.com/', 'https://uploads.github.com/'] as const;
   readonly loginUrl = GITHUB_NEW_TOKEN_URL;
   readonly info =
     'https://docs.github.com/en/rest. ' +

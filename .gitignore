@@ -5,6 +5,9 @@ dist/
 # bun-compiled binary
 /latchkey
 
+# cross-compiled release binaries produced by scripts/releaseBinaries.sh
+/release-binaries/
+
 # generated from package.json by scripts/generateVersion.js
 /src/version.ts
 
