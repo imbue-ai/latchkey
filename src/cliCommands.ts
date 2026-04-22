@@ -29,6 +29,7 @@ import {
   BrowserFlowsNotSupportedError,
   GraphicalEnvironmentNotFoundError,
 } from './playwrightUtils.js';
+import { BrowserFeaturesUnavailableError, loadPlaywright } from './playwrightLoader.js';
 import type { CurlResult } from './curl.js';
 import { EncryptedStorage } from './encryptedStorage.js';
 import {
@@ -625,6 +626,10 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           deps.errorLog(error.message);
           deps.exit(1);
         }
+        if (error instanceof BrowserFeaturesUnavailableError) {
+          deps.errorLog(error.message);
+          deps.exit(1);
+        }
         throw error;
       }
     });
@@ -686,6 +691,10 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           deps.exit(1);
         }
         if (error instanceof LoginFailedError) {
+          deps.errorLog(error.message);
+          deps.exit(1);
+        }
+        if (error instanceof BrowserFeaturesUnavailableError) {
           deps.errorLog(error.message);
           deps.exit(1);
         }
@@ -861,6 +870,20 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       }
       const sources = sourceList as BrowserSource[];
 
+      // In the standalone binary, playwright is not available at runtime.
+      // Refuse `ensure-browser` up front rather than silently succeeding via
+      // a stale `existing-config` source that points to a browser we could
+      // never actually launch anyway.
+      try {
+        await loadPlaywright();
+      } catch (error) {
+        if (error instanceof BrowserFeaturesUnavailableError) {
+          deps.errorLog(error.message);
+          deps.exit(1);
+        }
+        throw error;
+      }
+
       deps.log(`Discovering browser using sources: ${sources.join(', ')}`);
 
       try {
@@ -875,6 +898,10 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       } catch (error) {
         if (error instanceof BrowserNotFoundError) {
           deps.errorLog(`Error: ${error.message}`);
+          deps.exit(1);
+        }
+        if (error instanceof BrowserFeaturesUnavailableError) {
+          deps.errorLog(error.message);
           deps.exit(1);
         }
         throw error;
