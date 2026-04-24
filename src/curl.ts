@@ -201,6 +201,13 @@ export function runAsync(
  * Only http(s) URLs are recognized; other schemes (ftp, file, ...) return
  * null.
  *
+ * Matching happens in two passes: first we look for an argv token that fully
+ * matches the parsed URL (including query string). If none is found we fall
+ * back to matching with the query string and fragment stripped from both
+ * sides, which handles `-G` combined with `--data-urlencode`/`-d`/`--data`
+ * (where detent folds the data into the parsed URL but argv still carries
+ * just the bare endpoint).
+ *
  * Throws `CurlParseError` (from detent) when the arguments don't form a valid
  * curl invocation (missing URL, malformed header, ...). The error message
  * carries useful detail for the user, so callers should surface it rather
@@ -211,22 +218,39 @@ export function extractUrlFromCurlArguments(args: readonly string[]): string | n
   if (!parsedUrl.startsWith('http://') && !parsedUrl.startsWith('https://')) {
     return null;
   }
-  // Find the original input argument that produced this URL, so callers can
-  // substitute it in-place. Each candidate arg is normalized the same way
-  // curl / parseCurlArgs would (defaulting the scheme to http://) before the
-  // comparison.
+
+  const normalizeArg = (arg: string): string | null => {
+    const withScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(arg) ? arg : `http://${arg}`;
+    try {
+      return new URL(withScheme).href;
+    } catch {
+      return null;
+    }
+  };
+
+  // Preferred: the argv token normalizes to exactly the parsed URL.
   for (const arg of args) {
-    if (arg === parsedUrl) {
+    if (arg === parsedUrl || normalizeArg(arg) === parsedUrl) {
       return arg;
     }
-    const withScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(arg) ? arg : `http://${arg}`;
-    let normalized: string;
+  }
+
+  // Fallback: the argv token matches when query string and fragment are
+  // stripped from both sides. Covers `-G` with `--data-urlencode`/`-d`.
+  const stripQueryAndFragment = (href: string): string => {
     try {
-      normalized = new URL(withScheme).href;
+      const url = new URL(href);
+      url.search = '';
+      url.hash = '';
+      return url.href;
     } catch {
-      continue;
+      return href;
     }
-    if (normalized === parsedUrl) {
+  };
+  const parsedUrlBase = stripQueryAndFragment(parsedUrl);
+  for (const arg of args) {
+    const normalized = normalizeArg(arg);
+    if (normalized !== null && stripQueryAndFragment(normalized) === parsedUrlBase) {
       return arg;
     }
   }

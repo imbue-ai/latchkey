@@ -186,6 +186,38 @@ describe('extractUrlFromCurlArguments', () => {
   it('should propagate CurlParseError for malformed arguments', () => {
     expect(() => extractUrlFromCurlArguments(['-H', 'no-colon-here'])).toThrow(CurlParseError);
   });
+
+  it('should extract the bare URL when -G folds --data-urlencode into the query', () => {
+    const arguments_ = [
+      '-s',
+      '-G',
+      'https://slack.com/api/search.messages',
+      '--data-urlencode',
+      'query=from:me',
+    ];
+    expect(extractUrlFromCurlArguments(arguments_)).toBe('https://slack.com/api/search.messages');
+  });
+
+  it('should extract the bare URL when -G folds -d into the query', () => {
+    const arguments_ = ['-G', 'https://example.com/api', '-d', 'foo=bar', '-d', 'baz=qux'];
+    expect(extractUrlFromCurlArguments(arguments_)).toBe('https://example.com/api');
+  });
+
+  it('should prefer an exact-match argv token over the stripped-query fallback', () => {
+    // If the user already put the query in the URL, we must return *that*
+    // argv token, not some other URL-looking arg with the same path.
+    const arguments_ = [
+      '-G',
+      'https://example.com/api?query=from%3Ame',
+      '--data-urlencode',
+      'extra=value',
+    ];
+    // With -G, detent appends the --data-urlencode to the existing query.
+    // The parsed URL has both params; neither exact nor stripped form matches
+    // the argv token exactly, but the stripped form does — and that's the
+    // argv token we want to return for positional substitution.
+    expect(extractUrlFromCurlArguments(arguments_)).toBe('https://example.com/api?query=from%3Ame');
+  });
 });
 
 describe('hasGraphicalEnvironment', () => {
