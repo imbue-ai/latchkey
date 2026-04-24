@@ -216,9 +216,7 @@ describe('extractUrlFromCurlArguments', () => {
     // The parsed URL has both params; neither exact nor stripped form matches
     // the argv token exactly, but the stripped form does — and that's the
     // argv token we want to return for positional substitution.
-    expect(extractUrlFromCurlArguments(arguments_)).toBe(
-      'https://example.com/api?query=from%3Ame'
-    );
+    expect(extractUrlFromCurlArguments(arguments_)).toBe('https://example.com/api?query=from%3Ame');
   });
 });
 
