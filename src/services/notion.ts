@@ -14,7 +14,7 @@ import { Service, BrowserFollowupServiceSession, LoginFailedError } from './core
 
 const DEFAULT_TIMEOUT_MS = 8000;
 
-const NOTION_INTEGRATIONS_URL = 'https://www.notion.so/profile/integrations/form/new-integration';
+const NOTION_INTEGRATIONS_URL = 'https://www.notion.so/profile/integrations/internal/form/new-integration';
 
 class NotionServiceSession extends BrowserFollowupServiceSession {
   private isLoggedIn = false;
@@ -47,7 +47,7 @@ class NotionServiceSession extends BrowserFollowupServiceSession {
     await page.getByRole('textbox').click();
     await page.getByRole('textbox').fill(generateLatchkeyAppName());
     // Workspace - initially empty
-    await page.getByRole('button').filter({ hasText: /^$/ }).click();
+    await page.locator('form').getByRole('button').filter({ hasText: /^$/ }).click();
     // Just pick the first workspace
     await page.getByRole('menuitem').click();
     // Create integration
