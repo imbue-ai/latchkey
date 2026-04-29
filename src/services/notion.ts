@@ -14,7 +14,8 @@ import { Service, BrowserFollowupServiceSession, LoginFailedError } from './core
 
 const DEFAULT_TIMEOUT_MS = 8000;
 
-const NOTION_INTEGRATIONS_URL = 'https://www.notion.so/profile/integrations/internal/form/new-integration';
+const NOTION_INTEGRATIONS_URL =
+  'https://www.notion.so/profile/integrations/internal/form/new-integration';
 
 class NotionServiceSession extends BrowserFollowupServiceSession {
   private isLoggedIn = false;
