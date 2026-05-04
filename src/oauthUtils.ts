@@ -2,6 +2,7 @@
  * Generic OAuth utilities for localhost callback server and token exchange.
  */
 
+import * as crypto from 'node:crypto';
 import * as http from 'node:http';
 import { runCaptured } from './curl.js';
 import { LoginCancelledError, LoginFailedError } from './services/core/base.js';
@@ -136,27 +137,48 @@ export function startOAuthCallbackServer(
 }
 
 /**
+ * Generate a PKCE code verifier (RFC 7636).
+ */
+export function generateCodeVerifier(): string {
+  return crypto.randomBytes(32).toString('base64url');
+}
+
+/**
+ * Generate a PKCE code challenge from a verifier using S256.
+ */
+export function generateCodeChallenge(verifier: string): string {
+  return crypto.createHash('sha256').update(verifier).digest('base64url');
+}
+
+/**
  * Exchange authorization code for access and refresh tokens.
  * @param tokenEndpoint - The OAuth token endpoint URL
  * @param code - The authorization code received from the OAuth callback
  * @param clientId - The OAuth client ID
- * @param clientSecret - The OAuth client secret
+ * @param clientSecret - The OAuth client secret (empty string for public clients)
  * @param redirectUri - The redirect URI used in the authorization request
+ * @param codeVerifier - Optional PKCE code verifier
  */
 export function exchangeCodeForTokens(
   tokenEndpoint: string,
   code: string,
   clientId: string,
   clientSecret: string,
-  redirectUri: string
+  redirectUri: string,
+  codeVerifier?: string
 ): OAuthTokenExchangeResponse {
   const body = new URLSearchParams({
     code,
     client_id: clientId,
-    client_secret: clientSecret,
     redirect_uri: redirectUri,
     grant_type: 'authorization_code',
   });
+  if (clientSecret) {
+    body.set('client_secret', clientSecret);
+  }
+  if (codeVerifier) {
+    body.set('code_verifier', codeVerifier);
+  }
 
   const result = runCaptured(
     [
@@ -211,9 +233,11 @@ export function refreshAccessToken(
   const body = new URLSearchParams({
     refresh_token: refreshToken,
     client_id: clientId,
-    client_secret: clientSecret,
     grant_type: 'refresh_token',
   });
+  if (clientSecret) {
+    body.set('client_secret', clientSecret);
+  }
 
   const result = runCaptured(
     [
