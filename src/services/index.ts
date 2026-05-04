@@ -28,6 +28,7 @@ export { GoogleSheets, GOOGLE_SHEETS } from './google/sheets.js';
 export { GoogleDocs, GOOGLE_DOCS } from './google/docs.js';
 export { GooglePeople, GOOGLE_PEOPLE } from './google/people.js';
 export { Notion, NOTION } from './notion.js';
+export { NotionMcp, NOTION_MCP } from './notion-mcp.js';
 export { Mailchimp, MAILCHIMP } from './mailchimp.js';
 export { Gitlab, GITLAB } from './gitlab.js';
 export { Zoom, ZOOM } from './zoom.js';
