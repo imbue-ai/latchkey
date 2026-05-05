@@ -108,7 +108,7 @@ export class Notion extends Service {
     'https://developers.notion.com/reference for API reference. ' +
     'The initial login will not work if the locale is not English. ' +
     'Access is limited to pages that existed when the login happened for the first time, and pages that the current user owns. ' +
-    'For that reason, we recommend instead using the notion-mcp service which uses mcp.notion.com. ';
+    'For that reason, when connecting to organization notions (which is the majority of use cases), we recommmend instead using the notion-mcp service to connect to mcp.notion. com. For personal notion spaces, or for exclusively editing private notion pages, this integration can still be used.';
 
   readonly credentialCheckCurlArguments = [
     '-H',
