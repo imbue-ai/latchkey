@@ -14,7 +14,13 @@ export default tseslint.config(
     },
   },
   {
-    ignores: ["dist/", "node_modules/", "eslint.config.js", "scripts/generateVersion.js"],
+    ignores: [
+      "dist/",
+      "node_modules/",
+      "eslint.config.js",
+      "scripts/generateVersion.js",
+      "scripts/watch.js",
+    ],
   },
   {
     rules: {
