@@ -179,7 +179,11 @@ export class NotionMcp extends Service {
   readonly displayName = 'Notion MCP';
   readonly baseApiUrls = ['https://mcp.notion.com/'] as const;
   readonly loginUrl = AUTHORIZATION_ENDPOINT;
-  readonly info = 'Notion MCP (Beta). OAuth 2.0 with PKCE via mcp.notion.com.';
+  readonly info =
+    'https://developers.notion.com/guides/mcp/build-mcp-client (integration guide: server URL, transport, OAuth, worked client code). ' +
+    'https://developers.notion.com/guides/mcp/mcp-supported-tools (tool catalog: names, descriptions, example prompts). ' +
+    'https://spec.modelcontextprotocol.io (MCP protocol spec for JSON-RPC framing). ' +
+    'Tool input schemas are not published as static docs — use authed MCP to call `tools/list` at runtime to discover them.';
 
   readonly credentialCheckCurlArguments = [
     '-X',
