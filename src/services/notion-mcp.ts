@@ -190,8 +190,13 @@ export class NotionMcp extends Service {
     'POST',
     '-H',
     'Content-Type: application/json',
+    // MCP Streamable HTTP requires clients to advertise both JSON and SSE
+    // acceptance (spec 2025-06-18 §Sending Messages, item 2); mcp.notion.com
+    // returns HTTP 406 otherwise, which would mark valid tokens as Invalid.
+    '-H',
+    'Accept: application/json, text/event-stream',
     '-d',
-    '{"jsonrpc":"2.0","method":"initialize","id":1}',
+    '{"jsonrpc":"2.0","method":"initialize","id":1,"params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"latchkey","version":"1"}}}',
     'https://mcp.notion.com/mcp',
   ] as const;
 
