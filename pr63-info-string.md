@@ -39,7 +39,7 @@ All public and unauthenticated. Order is what an unfamiliar reader who wants to 
 ## Caveats / things still not checked
 
 - **Authenticated MCP session probes.** We haven't completed an OAuth round-trip and called `initialize` / `resources/list` / `prompts/list` against the live server. The MCP `initialize` response can carry an optional `instructions` field — Notion may already populate it with usage guidance, in which case we should mention that an agent can read it post-handshake. Worth checking before final wording.
-- **Stability of `/guides/mcp/*` URLs.** They show as `/docs/...` in some places and `/guides/mcp/...` in others on developers.notion.com — need to confirm which form is canonical for linking. The `llms.txt` index uses `/guides/mcp/*.md`, which suggests those are the canonical paths.
+- ~~**Stability of `/guides/mcp/*` URLs.**~~ **Resolved 2026-05-05.** Curl confirms `/guides/mcp/build-mcp-client` and `/guides/mcp/mcp-supported-tools` return 200, `/docs/build-mcp-client` returns 404, and `/docs/mcp-supported-tools` 302-redirects to `/guides/mcp/...`. `/guides/mcp/...` is canonical.
 
 ## Implications for ask #3 (revised)
 
@@ -55,6 +55,6 @@ The `info` string itself is an overview of NotionMcp, so linking ★1 (`/guides/
 
 In all options, also describe in prose what the service is, that it's OAuth-gated, and that exact tool input schemas are discovered via `tools/list` at runtime.
 
-## Tentative lean
+## Decision
 
-Option 1 (★2 + ★3). Two links, each load-bearing, no overlap. Prose around them mentions: hosted MCP server at `https://mcp.notion.com/mcp`, OAuth 2.0 + PKCE + DCR, tool input schemas via runtime `tools/list`. Confirm canonical URL form (`/guides/mcp/...` vs `/docs/...`) before committing.
+**Option 2 chosen** (★2 + ★3 + `spec.modelcontextprotocol.io`). Three links, with the protocol spec included for agents that want JSON-RPC framing without going through the SDK. Implemented in `src/services/notion-mcp.ts` (commit on branch `bowei/notion-via-mcp`). Also added a one-line cross-reference from `Notion.info` (`src/services/notion.ts`) pointing readers at the `notion-mcp` service for the OAuth-gated MCP transport. Canonical URL form confirmed as `/guides/mcp/...` (see resolved caveat above).
