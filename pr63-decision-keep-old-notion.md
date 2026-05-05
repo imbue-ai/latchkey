@@ -1,14 +1,10 @@
-# Decision: keep the old `Notion` integration, mark it limited-functionality
-
-Answer to ask #2 of Hynek's review on PR #63 (see `pr63-asks-summary.md`). Working notes — including the pros/cons deliberation that led here — live in `pr63-notion-deprecation.md`.
-
 ## Decision
 
 Keep both `Notion` and `NotionMcp`. Update `Notion.info` to mark the old integration as limited-functionality and steer agents to `NotionMcp` as the default; the old REST integration stays as a fallback for the gaps documented below.
 
 ## Why
 
-1. **MCP HTTP documentation is thinner than the REST reference and is likely to change faster.** The REST API publishes full per-endpoint request/response schemas under `developers.notion.com/reference/*`; the MCP server publishes a tool catalog and a client-build guide but no per-tool HTTP request/response schemas — agents using `mcp.notion.com` directly over HTTP have to discover schemas via runtime `tools/list`. This is the concern Hynek flagged in the review. The MCP surface is also younger than the REST surface and we expect it to move more.
+1. **MCP HTTP documentation is thinner than the REST reference and is likely to change faster.** The REST API publishes full per-endpoint request/response schemas under `developers.notion.com/reference/*`; the corresponding MCP endpoints are less well-documented and are likely to change.
 2. **REST exposes functionality the MCP server doesn't** — see the gap table below.
 
 ## REST-vs-MCP gaps
@@ -26,7 +22,3 @@ Sources:
 | Token introspection / revoke | `llms.txt:79` [introspect-token](https://developers.notion.com/reference/introspect-token.md) — "Get a token's active status, scope, and issued time." · `llms.txt:111` [revoke-token](https://developers.notion.com/reference/revoke-token.md) — "Revoke an access token." | None. Less load-bearing for agent workflows but still a real gap. |
 | Page-trash and granular page-property reads | `llms.txt:116` [trash-page](https://developers.notion.com/reference/trash-page.md) — "Trash a page." · `llms.txt:105` [retrieve-a-page-property](https://developers.notion.com/reference/retrieve-a-page-property.md) — "Retrieve a page property item." | No dedicated page-trash tool. No retrieve-page-property-item tool — both subsumed into the broader `notion-fetch` / `notion-update-page` shape. |
 
-## What changes in the codebase
-
-- **`Notion.info` (`src/services/notion.ts`)** — append a line marking the integration as limited-functionality, recommending `notion-mcp` as the default, and naming the gap categories above (per-block CRUD, file uploads, webhooks, token introspection/revoke, page-trash, granular page-property reads) as the reasons to use this fallback.
-- **`NotionMcp.info` (`src/services/notion-mcp.ts`)** — expanded per ask #3. Wording lives in `pr63-info-string.md`; not duplicated here.
