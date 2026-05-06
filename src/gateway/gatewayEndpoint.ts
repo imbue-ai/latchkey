@@ -308,24 +308,20 @@ export async function handleGatewayRequest(
     throw error;
   }
 
-  // Build curl arguments from the incoming request
+  // Build curl arguments from the incoming request, dropping headers that
+  // must not be forwarded upstream: HTTP hop-by-hop headers and headers
+  // the gateway itself consumes (password, permissions override).
   const method = request.method ?? 'GET';
   const headerMap = new Map<string, string>();
   const rawHeaders = request.rawHeaders;
   for (let i = 0; i < rawHeaders.length; i += 2) {
     const name = rawHeaders[i]!;
     const value = rawHeaders[i + 1]!;
-    if (!HOP_BY_HOP_HEADERS.has(name.toLowerCase())) {
-      headerMap.set(name, value);
+    const lowerName = name.toLowerCase();
+    if (HOP_BY_HOP_HEADERS.has(lowerName) || GATEWAY_INTERNAL_HEADERS.has(lowerName)) {
+      continue;
     }
-  }
-
-  // Strip the gateway-internal password header so it is never forwarded
-  // to upstream services along with the proxied request.
-  for (const name of [...headerMap.keys()]) {
-    if (GATEWAY_INTERNAL_HEADERS.has(name.toLowerCase())) {
-      headerMap.delete(name);
-    }
+    headerMap.set(name, value);
   }
 
   const curlArguments = buildCurlArguments(method, headerMap, targetUrl, body !== null);
