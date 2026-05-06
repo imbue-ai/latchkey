@@ -34,7 +34,7 @@ const JWT_HEADER_ENCODED = Buffer.from(JSON.stringify(JWT_HEADER), 'utf-8').toSt
 
 export class InvalidPermissionsOverrideError extends Error {
   constructor(message: string) {
-    super(message);
+    super(`Latchkey: ${message}`);
     this.name = 'InvalidPermissionsOverrideError';
   }
 }
