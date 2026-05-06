@@ -331,6 +331,27 @@ the gateway responds with `401`. The password is carried in the
 upstream, so it stays internal to Latchkey.
 
 
+#### Permission overrides
+
+Individual gateway requests can also override which
+`permissions.json` file the gateway consults by sending a
+`X-Latchkey-Gateway-Permissions-Override` header. The header
+value is a minimal HS256 JWT whose only payload field,
+`permissionsConfig`, is an absolute path. The signing key is
+derived from your Latchkey encryption key, so only someone with
+access to that key can mint valid pointers. Generate one with:
+
+```bash
+latchkey gateway create-jwt /etc/latchkey/permissions-readonly.json
+```
+
+(Pass `--no-validate` to skip the existence check, e.g. when
+the target file lives on a different machine.) The gateway
+responds with `401` for invalid or missing-signature JWTs and
+with `400` when the JWT is valid but the referenced file does
+not exist.
+
+
 ### Other configuration
 
 You can set these environment variables to override certain

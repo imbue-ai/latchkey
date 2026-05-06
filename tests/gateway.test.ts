@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Command } from 'commander';
@@ -10,6 +10,11 @@ import {
   parseResponseHeaders,
   type GatewayOptions,
 } from '../src/gateway/gatewayEndpoint.js';
+import {
+  createPermissionsOverrideJwt,
+  derivePermissionsOverrideSigningKey,
+  PERMISSIONS_OVERRIDE_HEADER,
+} from '../src/gateway/permissionsOverride.js';
 import { startGateway, type GatewayServer } from '../src/gateway/server.js';
 import type { AsyncCurlResult, CurlResult } from '../src/curl.js';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
@@ -21,8 +26,8 @@ import { NoCurlCredentialsNotSupportedError, Service } from '../src/services/cor
 
 const TEST_ENCRYPTION_KEY = 'dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q=';
 
-async function writeSecureFile(path: string, content: string): Promise<void> {
-  const storage = await EncryptedStorage.create({ encryptionKeyOverride: TEST_ENCRYPTION_KEY });
+function writeSecureFile(path: string, content: string): void {
+  const storage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
   storage.writeFile(path, content);
 }
 
@@ -214,11 +219,9 @@ describe('gateway server', () => {
     configOverrides: Partial<Config> = {}
   ): Promise<GatewayServer> {
     const storePath = join(tempDir, 'credentials.json');
-    await writeSecureFile(storePath, JSON.stringify(credentialsData));
+    writeSecureFile(storePath, JSON.stringify(credentialsData));
 
-    const encryptedStorage = await EncryptedStorage.create({
-      encryptionKeyOverride: TEST_ENCRYPTION_KEY,
-    });
+    const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
     const apiCredentialStore = new ApiCredentialStore(storePath, encryptedStorage);
 
     const deps: CliDependencies = {
@@ -262,6 +265,7 @@ describe('gateway server', () => {
       host: 'localhost',
       maxBodySize: 10 * 1024 * 1024,
       password: null,
+      permissionsOverrideSigningKey: derivePermissionsOverrideSigningKey(TEST_ENCRYPTION_KEY),
       ...optionOverrides,
     };
 
@@ -780,6 +784,116 @@ describe('gateway server', () => {
 
       const response = await fetch('/');
       expect(response.status).toBe(200);
+    });
+  });
+
+  describe('permissions override header', () => {
+    const signingKey = derivePermissionsOverrideSigningKey(TEST_ENCRYPTION_KEY);
+    const HEADER = PERMISSIONS_OVERRIDE_HEADER;
+
+    it('uses the referenced permissions.json instead of the default', async () => {
+      const customPermissionsPath = join(tempDir, 'custom-permissions.json');
+      writeFileSync(customPermissionsPath, '{}');
+      const seenConfigPaths: string[] = [];
+      gateway = await createTestGateway(
+        {
+          slack: {
+            objectType: 'rawCurl',
+            curlArguments: ['-H', 'Authorization: Bearer test-token'],
+          },
+        },
+        {
+          checkPermission: (_args, configPath) => {
+            seenConfigPaths.push(configPath);
+            return Promise.resolve(true);
+          },
+        }
+      );
+      const token = createPermissionsOverrideJwt(customPermissionsPath, signingKey);
+      const response = await fetch('/gateway/https://slack.com/api/auth.test', {
+        headers: { [HEADER]: token },
+      });
+
+      expect(response.status).toBe(200);
+      expect(seenConfigPaths).toEqual([customPermissionsPath]);
+    });
+
+    it('falls back to the default permissions config when no header is provided', async () => {
+      const seenConfigPaths: string[] = [];
+      gateway = await createTestGateway(
+        {
+          slack: {
+            objectType: 'rawCurl',
+            curlArguments: ['-H', 'Authorization: Bearer test-token'],
+          },
+        },
+        {
+          checkPermission: (_args, configPath) => {
+            seenConfigPaths.push(configPath);
+            return Promise.resolve(true);
+          },
+        }
+      );
+      await fetch('/gateway/https://slack.com/api/auth.test');
+      expect(seenConfigPaths).toHaveLength(1);
+      expect(seenConfigPaths[0]).not.toBe(join(tempDir, 'custom-permissions.json'));
+    });
+
+    it('strips the permissions-override header from upstream forwarding', async () => {
+      const customPermissionsPath = join(tempDir, 'custom-permissions.json');
+      writeFileSync(customPermissionsPath, '{}');
+      gateway = await createTestGateway();
+      const token = createPermissionsOverrideJwt(customPermissionsPath, signingKey);
+      await fetch('/gateway/https://slack.com/api/auth.test', {
+        headers: { [HEADER]: token },
+      });
+      const headerArgs: string[] = [];
+      for (let i = 0; i < capturedCurlArgs.length; i++) {
+        if (capturedCurlArgs[i] === '-H' && i + 1 < capturedCurlArgs.length) {
+          headerArgs.push(capturedCurlArgs[i + 1]!);
+        }
+      }
+      expect(
+        headerArgs.some((h) =>
+          h.toLowerCase().startsWith('x-latchkey-gateway-permissions-override:')
+        )
+      ).toBe(false);
+    });
+
+    it('rejects an invalid JWT with 401', async () => {
+      gateway = await createTestGateway();
+      const response = await fetch('/gateway/https://slack.com/api/auth.test', {
+        headers: { [HEADER]: 'not.a.jwt' },
+      });
+      expect(response.status).toBe(401);
+    });
+
+    it('rejects a JWT signed with the wrong key', async () => {
+      gateway = await createTestGateway();
+      const otherKey = derivePermissionsOverrideSigningKey(
+        'b3RoZXJrZXlvdGhlcmtleW90aGVya2V5b3RoZXJrZXk='
+      );
+      const customPermissionsPath = join(tempDir, 'custom-permissions.json');
+      writeFileSync(customPermissionsPath, '{}');
+      const token = createPermissionsOverrideJwt(customPermissionsPath, otherKey);
+      const response = await fetch('/gateway/https://slack.com/api/auth.test', {
+        headers: { [HEADER]: token },
+      });
+      expect(response.status).toBe(401);
+    });
+
+    it('rejects a JWT pointing at a missing file with 400', async () => {
+      gateway = await createTestGateway();
+      const token = createPermissionsOverrideJwt(
+        join(tempDir, 'missing-permissions.json'),
+        signingKey
+      );
+      const response = await fetch('/gateway/https://slack.com/api/auth.test', {
+        headers: { [HEADER]: token },
+      });
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as { error: string };
+      expect(body.error).toContain('missing-permissions.json');
     });
   });
 

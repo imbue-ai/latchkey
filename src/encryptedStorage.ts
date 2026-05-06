@@ -1,19 +1,14 @@
 /**
- * Encrypted file storage with automatic key management.
- * Encryption keys are retrieved from:
- * 1. Provided encryptionKeyOverride option
- * 2. System keychain
- * 3. Generated and stored in keychain (first run)
- *
- * Throws if neither a system keychain nor LATCHKEY_ENCRYPTION_KEY is available.
+ * Encrypted file storage. The master encryption key is resolved by
+ * `resolveEncryptionKey` (see `encryption.ts`), which handles the keychain /
+ * override / generate-on-first-run logic. This module only deals with
+ * reading and writing encrypted files.
  */
 
 import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { writeFileAtomic } from './atomicWrite.js';
-import { DEFAULT_KEYRING_SERVICE_NAME, DEFAULT_KEYRING_ACCOUNT_NAME } from './config.js';
-import { encrypt, decrypt, generateKey, DecryptionError } from './encryption.js';
-import { retrieveFromKeychain, storeInKeychain, KeychainNotAvailableError } from './keychain.js';
+import { decrypt, DecryptionError, encrypt } from './encryption.js';
 
 const ENCRYPTED_FILE_PREFIX = 'LATCHKEY_ENCRYPTED:';
 
@@ -24,18 +19,6 @@ export class EncryptedStorageError extends Error {
   }
 }
 
-export class EncryptionKeyLostError extends EncryptedStorageError {
-  constructor() {
-    super(
-      'The encryption key was lost from the system keychain and encrypted data already exists. ' +
-        'Generating a new key would make existing data unreadable. ' +
-        'Restore the keychain or set LATCHKEY_ENCRYPTION_KEY, ' +
-        'or delete the encrypted files and start fresh with `latchkey auth clear`.'
-    );
-    this.name = 'EncryptionKeyLostError';
-  }
-}
-
 export class PathIsDirectoryError extends Error {
   constructor(filePath: string) {
     super(`Path is a directory, not a file: ${filePath}`);
@@ -43,65 +26,17 @@ export class PathIsDirectoryError extends Error {
   }
 }
 
-export interface EncryptedStorageOptions {
-  encryptionKeyOverride?: string | null;
-  serviceName?: string;
-  accountName?: string;
-  /**
-   * When false, refuse to generate a new encryption key if the keychain has no key.
-   * This prevents silently replacing a lost key, which would make existing encrypted data unreadable.
-   * Set to false when encrypted files already exist on disk.
-   */
-  allowKeyGeneration?: boolean;
-}
-
 /**
- * Manages encrypted file storage with automatic key handling.
+ * Read and write encrypted files using a pre-resolved master key. Use
+ * `resolveEncryptionKey` (from `encryption.ts`) to obtain the key from the
+ * keychain / environment / generation-on-first-run logic, then construct
+ * `EncryptedStorage` directly.
  */
 export class EncryptedStorage {
   private readonly key: string;
 
-  private constructor(key: string) {
+  constructor(key: string) {
     this.key = key;
-  }
-
-  static async create(options: EncryptedStorageOptions = {}): Promise<EncryptedStorage> {
-    const key = await EncryptedStorage.initializeKey(options);
-    return new EncryptedStorage(key);
-  }
-
-  private static async initializeKey(options: EncryptedStorageOptions): Promise<string> {
-    // If key was provided via override, use it
-    if (options.encryptionKeyOverride !== undefined && options.encryptionKeyOverride !== null) {
-      return options.encryptionKeyOverride;
-    }
-
-    const serviceName = options.serviceName ?? DEFAULT_KEYRING_SERVICE_NAME;
-    const accountName = options.accountName ?? DEFAULT_KEYRING_ACCOUNT_NAME;
-
-    try {
-      const keychainKey = await retrieveFromKeychain(serviceName, accountName);
-      if (keychainKey) {
-        return keychainKey;
-      }
-
-      if (options.allowKeyGeneration === false) {
-        throw new EncryptionKeyLostError();
-      }
-
-      // Generate new key and store in keychain
-      const newKey = generateKey();
-      await storeInKeychain(serviceName, accountName, newKey);
-      return newKey;
-    } catch (error) {
-      if (error instanceof KeychainNotAvailableError) {
-        throw new EncryptedStorageError(
-          'No encryption key available. ' +
-            'Set LATCHKEY_ENCRYPTION_KEY or ensure system keychain is accessible.'
-        );
-      }
-      throw error;
-    }
   }
 
   /**

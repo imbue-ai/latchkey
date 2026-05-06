@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
+import { derivePermissionsOverrideSigningKey } from '../src/gateway/permissionsOverride.js';
 import { ApiCredentialStore } from '../src/apiCredentials/store.js';
 import { ApiCredentialStatus } from '../src/apiCredentials/base.js';
 import { NoCurlCredentialsNotSupportedError, Service } from '../src/services/core/base.js';
@@ -16,8 +17,8 @@ import { LatchkeyRequestSchema } from '../src/gateway/latchkeyEndpoint.js';
 
 const TEST_ENCRYPTION_KEY = 'dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q=';
 
-async function writeSecureFile(path: string, content: string): Promise<void> {
-  const storage = await EncryptedStorage.create({ encryptionKeyOverride: TEST_ENCRYPTION_KEY });
+function writeSecureFile(path: string, content: string): void {
+  const storage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
   storage.writeFile(path, content);
 }
 
@@ -133,11 +134,9 @@ describe('/latchkey/ endpoint', () => {
     configOverrides: Partial<Config> = {}
   ): Promise<GatewayServer> {
     const storePath = join(tempDir, 'credentials.json');
-    await writeSecureFile(storePath, JSON.stringify(credentialsData));
+    writeSecureFile(storePath, JSON.stringify(credentialsData));
 
-    const encryptedStorage = await EncryptedStorage.create({
-      encryptionKeyOverride: TEST_ENCRYPTION_KEY,
-    });
+    const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
     const apiCredentialStore = new ApiCredentialStore(storePath, encryptedStorage);
 
     const deps: CliDependencies = {
@@ -165,6 +164,7 @@ describe('/latchkey/ endpoint', () => {
       host: 'localhost',
       maxBodySize: 10 * 1024 * 1024,
       password: null,
+      permissionsOverrideSigningKey: derivePermissionsOverrideSigningKey(TEST_ENCRYPTION_KEY),
     };
 
     return startGateway(deps, apiCredentialStore, encryptedStorage, options);

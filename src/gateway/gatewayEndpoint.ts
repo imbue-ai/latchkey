@@ -24,6 +24,12 @@ import {
 import { PermissionCheckError } from '../permissions.js';
 import { ErrorMessages } from '../errorMessages.js';
 import { GATEWAY_PASSWORD_HEADER } from './password.js';
+import {
+  InvalidPermissionsOverrideError,
+  PERMISSIONS_OVERRIDE_HEADER,
+  PermissionsOverrideFileMissingError,
+  resolvePermissionsOverride,
+} from './permissionsOverride.js';
 
 /**
  * Headers that should not be forwarded between client and upstream (hop-by-hop).
@@ -44,7 +50,7 @@ const HOP_BY_HOP_HEADERS = new Set([
  * Headers that the gateway consumes itself and must not forward to upstream
  * (in addition to hop-by-hop headers).
  */
-const GATEWAY_INTERNAL_HEADERS = new Set([GATEWAY_PASSWORD_HEADER]);
+const GATEWAY_INTERNAL_HEADERS = new Set([GATEWAY_PASSWORD_HEADER, PERMISSIONS_OVERRIDE_HEADER]);
 
 export const GATEWAY_PATH_PREFIX = '/gateway/';
 
@@ -65,6 +71,11 @@ export interface GatewayOptions {
    * authentication is enforced.
    */
   readonly password: string | null;
+  /**
+   * HMAC key used to verify per-request `X-Latchkey-Gateway-Permissions-Override`
+   * JWTs.
+   */
+  readonly permissionsOverrideSigningKey: Buffer;
 }
 
 function sendErrorResponse(
@@ -255,6 +266,34 @@ export async function handleGatewayRequest(
   apiCredentialStore: ApiCredentialStore,
   options: GatewayOptions
 ): Promise<void> {
+  // Resolve the permissions config for this request. When the client
+  // supplied a permissions-override JWT, validate it and use the referenced
+  // file; otherwise fall back to the gateway's default config path.
+  const pointerHeader = request.headers[PERMISSIONS_OVERRIDE_HEADER];
+  const pointerToken = typeof pointerHeader === 'string' ? pointerHeader : undefined;
+  let permissionsConfigPath = deps.config.permissionsConfigPath;
+  if (pointerToken !== undefined) {
+    try {
+      permissionsConfigPath = resolvePermissionsOverride(
+        pointerToken,
+        options.permissionsOverrideSigningKey
+      );
+    } catch (error) {
+      const method = request.method ?? 'UNKNOWN';
+      if (error instanceof InvalidPermissionsOverrideError) {
+        deps.log(`${method} ${targetUrl} -> 401 (permissions override)`);
+        sendErrorResponse(response, 401, error.message);
+        return;
+      }
+      if (error instanceof PermissionsOverrideFileMissingError) {
+        deps.log(`${method} ${targetUrl} -> 400 (permissions override)`);
+        sendErrorResponse(response, 400, error.message);
+        return;
+      }
+      throw error;
+    }
+  }
+
   // Read body
   let body: Buffer | null;
   try {
@@ -296,7 +335,7 @@ export async function handleGatewayRequest(
     allArguments = await prepareCurlInvocation(curlArguments, apiCredentialStore, {
       registry: deps.registry,
       checkPermission: deps.checkPermission,
-      permissionsConfigPath: deps.config.permissionsConfigPath,
+      permissionsConfigPath,
       permissionsDoNotUseBuiltinSchemas: deps.config.permissionsDoNotUseBuiltinSchemas,
       passthroughUnknown: deps.config.passthroughUnknown,
     });
