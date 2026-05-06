@@ -225,12 +225,7 @@ describe('callLatchkeyEndpoint', () => {
     );
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
-    await callLatchkeyEndpoint(
-      GATEWAY_URL,
-      { command: 'services list' },
-      null,
-      'jwt.value.here'
-    );
+    await callLatchkeyEndpoint(GATEWAY_URL, { command: 'services list' }, null, 'jwt.value.here');
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const headers = init.headers as Record<string, string>;
