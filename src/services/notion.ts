@@ -105,9 +105,10 @@ export class Notion extends Service {
   readonly baseApiUrls = ['https://api.notion.com/'] as const;
   readonly loginUrl = NOTION_INTEGRATIONS_URL;
   readonly info =
-    'https://developers.notion.com/reference. ' +
+    'https://developers.notion.com/reference for API reference. ' +
     'The initial login will not work if the locale is not English. ' +
-    'Access is limited to pages that existed when the login happened for the first time.';
+    'Access is limited to pages that existed when the login happened for the first time, and pages that the current user owns. ' +
+    'For that reason, when connecting to organization notions (which is the majority of use cases), we recommmend instead using the notion-mcp service to connect to mcp.notion. com. For personal notion spaces, or for exclusively editing private notion pages, this integration can still be used.';
 
   readonly credentialCheckCurlArguments = [
     '-H',
