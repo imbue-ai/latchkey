@@ -141,7 +141,12 @@ async function forwardToGateway(deps: CliDependencies, request: LatchkeyRequest)
     throw new GatewayCommandNotSupportedError(request.command);
   }
   try {
-    return await callLatchkeyEndpoint(gatewayUrl, request, deps.config.gatewayPassword);
+    return await callLatchkeyEndpoint(
+      gatewayUrl,
+      request,
+      deps.config.gatewayPassword,
+      deps.config.gatewayPermissionsOverride
+    );
   } catch (error) {
     if (error instanceof GatewayRequestError) {
       deps.errorLog(`Error: ${error.message}`);
@@ -746,7 +751,8 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
             curlArguments,
             targetUrl,
             deps.config.gatewayUrl,
-            deps.config.gatewayPassword
+            deps.config.gatewayPassword,
+            deps.config.gatewayPermissionsOverride
           );
         } catch (error) {
           if (error instanceof GatewayCurlRewriteError) {

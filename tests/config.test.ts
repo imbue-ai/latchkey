@@ -212,6 +212,19 @@ describe('Config with config.json settings', () => {
     ).toBeNull();
   });
 
+  it('reads the gateway permissions override only from the environment', () => {
+    writeSettings({});
+    const config = makeConfig({ LATCHKEY_GATEWAY_PERMISSIONS_OVERRIDE: 'jwt.value.here' });
+    expect(config.gatewayPermissionsOverride).toBe('jwt.value.here');
+  });
+
+  it('treats unset or empty LATCHKEY_GATEWAY_PERMISSIONS_OVERRIDE as no override', () => {
+    expect(makeConfig().gatewayPermissionsOverride).toBeNull();
+    expect(
+      makeConfig({ LATCHKEY_GATEWAY_PERMISSIONS_OVERRIDE: '' }).gatewayPermissionsOverride
+    ).toBeNull();
+  });
+
   it('keeps client and listen gateway passwords independent', () => {
     const config = makeConfig({
       LATCHKEY_GATEWAY_PASSWORD: 'client',

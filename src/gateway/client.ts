@@ -7,6 +7,7 @@
 
 import type { LatchkeyRequest } from './latchkeyEndpoint.js';
 import { GATEWAY_PASSWORD_HEADER } from './password.js';
+import { PERMISSIONS_OVERRIDE_HEADER } from './permissionsOverride.js';
 
 export class GatewayRequestError extends Error {
   readonly statusCode: number;
@@ -43,18 +44,24 @@ function buildEndpointUrl(gatewayUrl: string, path: string): string {
 /**
  * POST a request to the gateway's `/latchkey/` endpoint and return its `result`.
  * When `password` is provided, it is sent in the gateway password header so
- * the request can be authenticated by a password-protected gateway.
+ * the request can be authenticated by a password-protected gateway. When
+ * `permissionsOverride` is provided, it is sent in the permissions-override
+ * header so the gateway uses an alternative permissions.json for this request.
  */
 export async function callLatchkeyEndpoint(
   gatewayUrl: string,
   request: LatchkeyRequest,
-  password: string | null = null
+  password: string | null = null,
+  permissionsOverride: string | null = null
 ): Promise<unknown> {
   const endpoint = buildEndpointUrl(gatewayUrl, '/latchkey');
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (password !== null) {
     headers[GATEWAY_PASSWORD_HEADER] = password;
+  }
+  if (permissionsOverride !== null) {
+    headers[PERMISSIONS_OVERRIDE_HEADER] = permissionsOverride;
   }
 
   let response: Response;
@@ -106,13 +113,16 @@ export function buildGatewayProxyUrl(gatewayUrl: string, targetUrl: string): str
  *
  * When `password` is provided, an `-H` argument carrying the gateway
  * password header is prepended so the rewritten curl call can authenticate
- * against a password-protected gateway.
+ * against a password-protected gateway. When `permissionsOverride` is
+ * provided, an `-H` argument carrying the permissions-override JWT is also
+ * prepended.
  */
 export function rewriteCurlArgumentsForGateway(
   curlArguments: readonly string[],
   targetUrl: string,
   gatewayUrl: string,
-  password: string | null = null
+  password: string | null = null,
+  permissionsOverride: string | null = null
 ): readonly string[] {
   const occurrences = curlArguments.reduce(
     (count, argument) => (argument === targetUrl ? count + 1 : count),
@@ -131,8 +141,12 @@ export function rewriteCurlArgumentsForGateway(
   }
   const proxyUrl = buildGatewayProxyUrl(gatewayUrl, targetUrl);
   const rewritten = curlArguments.map((argument) => (argument === targetUrl ? proxyUrl : argument));
-  if (password === null) {
-    return rewritten;
+  const extraHeaders: string[] = [];
+  if (password !== null) {
+    extraHeaders.push('-H', `${GATEWAY_PASSWORD_HEADER}: ${password}`);
   }
-  return ['-H', `${GATEWAY_PASSWORD_HEADER}: ${password}`, ...rewritten];
+  if (permissionsOverride !== null) {
+    extraHeaders.push('-H', `${PERMISSIONS_OVERRIDE_HEADER}: ${permissionsOverride}`);
+  }
+  return [...extraHeaders, ...rewritten];
 }

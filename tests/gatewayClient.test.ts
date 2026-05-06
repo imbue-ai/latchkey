@@ -94,6 +94,38 @@ describe('rewriteCurlArgumentsForGateway', () => {
     );
     expect(rewritten).toEqual(['http://localhost:8000/gateway/https://api.example.com']);
   });
+
+  it('prepends the permissions-override header when a JWT is provided', () => {
+    const rewritten = rewriteCurlArgumentsForGateway(
+      ['https://api.example.com'],
+      'https://api.example.com',
+      GATEWAY_URL,
+      null,
+      'jwt.value.here'
+    );
+    expect(rewritten).toEqual([
+      '-H',
+      'x-latchkey-gateway-permissions-override: jwt.value.here',
+      'http://localhost:8000/gateway/https://api.example.com',
+    ]);
+  });
+
+  it('prepends both the password and permissions-override headers when both are provided', () => {
+    const rewritten = rewriteCurlArgumentsForGateway(
+      ['https://api.example.com'],
+      'https://api.example.com',
+      GATEWAY_URL,
+      'top-secret',
+      'jwt.value.here'
+    );
+    expect(rewritten).toEqual([
+      '-H',
+      'x-latchkey-gateway-password: top-secret',
+      '-H',
+      'x-latchkey-gateway-permissions-override: jwt.value.here',
+      'http://localhost:8000/gateway/https://api.example.com',
+    ]);
+  });
 });
 
 describe('callLatchkeyEndpoint', () => {
@@ -182,5 +214,42 @@ describe('callLatchkeyEndpoint', () => {
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const headers = init.headers as Record<string, string>;
     expect('x-latchkey-gateway-password' in headers).toBe(false);
+  });
+
+  it('sends the permissions-override header when configured', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ result: null }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await callLatchkeyEndpoint(
+      GATEWAY_URL,
+      { command: 'services list' },
+      null,
+      'jwt.value.here'
+    );
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect(headers['x-latchkey-gateway-permissions-override']).toBe('jwt.value.here');
+  });
+
+  it('omits the permissions-override header when not configured', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ result: null }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await callLatchkeyEndpoint(GATEWAY_URL, { command: 'services list' });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect('x-latchkey-gateway-permissions-override' in headers).toBe(false);
   });
 });

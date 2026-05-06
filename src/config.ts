@@ -49,6 +49,7 @@ const LATCHKEY_GATEWAY_LISTEN_HOST_ENV_VAR = 'LATCHKEY_GATEWAY_LISTEN_HOST';
 const LATCHKEY_GATEWAY_LISTEN_PORT_ENV_VAR = 'LATCHKEY_GATEWAY_LISTEN_PORT';
 const LATCHKEY_GATEWAY_PASSWORD_ENV_VAR = 'LATCHKEY_GATEWAY_PASSWORD';
 const LATCHKEY_GATEWAY_LISTEN_PASSWORD_ENV_VAR = 'LATCHKEY_GATEWAY_LISTEN_PASSWORD';
+const LATCHKEY_GATEWAY_PERMISSIONS_OVERRIDE_ENV_VAR = 'LATCHKEY_GATEWAY_PERMISSIONS_OVERRIDE';
 
 export const DEFAULT_KEYRING_SERVICE_NAME = 'latchkey';
 export const DEFAULT_KEYRING_ACCOUNT_NAME = 'encryption-key';
@@ -229,6 +230,16 @@ export class Config {
    * files.
    */
   readonly gatewayListenPassword: string | null;
+  /**
+   * Optional permissions-override JWT (see `gateway create-jwt`) the CLI
+   * sends in the `X-Latchkey-Gateway-Permissions-Override` header on every
+   * outgoing gateway request. When set, the remote gateway uses the
+   * referenced permissions.json instead of its default one.
+   *
+   * Sourced from `LATCHKEY_GATEWAY_PERMISSIONS_OVERRIDE` (env-only, never
+   * persisted in config.json).
+   */
+  readonly gatewayPermissionsOverride: string | null;
 
   constructor(
     getEnv: (name: string) => string | undefined = (name) => process.env[name],
@@ -298,6 +309,12 @@ export class Config {
     this.gatewayListenPassword =
       gatewayListenPassword !== undefined && gatewayListenPassword !== ''
         ? gatewayListenPassword
+        : null;
+
+    const gatewayPermissionsOverride = getEnv(LATCHKEY_GATEWAY_PERMISSIONS_OVERRIDE_ENV_VAR);
+    this.gatewayPermissionsOverride =
+      gatewayPermissionsOverride !== undefined && gatewayPermissionsOverride !== ''
+        ? gatewayPermissionsOverride
         : null;
   }
 
