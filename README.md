@@ -321,6 +321,40 @@ route your agent's `latchkey` calls to the host Latchkey
 agent won't be able to tamper with your Latchkey configuration
 while still being able to use Latchkey itself as intended.
 
+You can additionally protect the gateway with a shared password.
+Set `LATCHKEY_GATEWAY_LISTEN_PASSWORD` on the machine running
+`latchkey gateway` (the value the server requires) and
+`LATCHKEY_GATEWAY_PASSWORD` on the client (the value the CLI
+sends). When the two match, the request is accepted; otherwise
+the gateway responds with `401`. The password is carried in the
+`X-Latchkey-Gateway-Password` header and is never forwarded
+upstream, so it stays internal to Latchkey.
+
+
+#### Permission overrides
+
+Individual gateway requests can also override which
+`permissions.json` file the gateway consults by sending a
+`X-Latchkey-Gateway-Permissions-Override` header. The header
+value is a minimal HS256 JWT whose only payload field,
+`permissionsConfig`, is an absolute path. The signing key is
+derived from your Latchkey encryption key, so only someone with
+access to that key can mint valid pointers. Generate one with:
+
+```bash
+latchkey gateway create-jwt /etc/latchkey/permissions-readonly.json
+```
+
+(Pass `--no-validate` to skip the existence check, e.g. when
+the target file lives on a different machine.) The gateway
+responds with `401` for invalid or missing-signature JWTs and
+with `400` when the JWT is valid but the referenced file does
+not exist.
+
+On the client side, set `LATCHKEY_GATEWAY_PERMISSIONS_OVERRIDE`
+to the JWT and the CLI will attach it to every outgoing gateway
+request automatically (analogous to `LATCHKEY_GATEWAY_PASSWORD`).
+
 
 ### Other configuration
 
@@ -338,11 +372,17 @@ defaults:
 - `LATCHKEY_PASSTHROUGH_UNKNOWN`: if set, Latchkey will forward requests (via `latchkey curl` or gateway) even if no credentials are injected.
 - `LATCHKEY_GATEWAY`: when set to a base URL (e.g. `http://localhost:1989`), the CLI delegates commands to a remote Latchkey gateway instead of running them locally. Commands that change local state (`auth set`, `auth clear`, `services register`, `ensure-browser`, `gateway`) cannot run in this mode.
 - `LATCHKEY_GATEWAY_LISTEN_HOST`, `LATCHKEY_GATEWAY_LISTEN_PORT`: default address and port the local `latchkey gateway` command binds to when `--host` / `--port` are not supplied (defaults: `localhost`, `1989`). Distinct from `LATCHKEY_GATEWAY`, which configures a *remote* gateway URL.
+- `LATCHKEY_GATEWAY_PASSWORD`: optional shared secret used by the client side. When set together with `LATCHKEY_GATEWAY`, the CLI sends the value in the `X-Latchkey-Gateway-Password` header on every outgoing gateway request.
+- `LATCHKEY_GATEWAY_LISTEN_PASSWORD`: optional shared secret used by the server side. When set, `latchkey gateway` rejects (with `401`) any request that does not present the same value in the `X-Latchkey-Gateway-Password` header. The header is stripped before requests are forwarded upstream.
+- `LATCHKEY_GATEWAY_PERMISSIONS_OVERRIDE`: optional permissions-override JWT (see `latchkey gateway create-jwt`) used by the client side. When set together with `LATCHKEY_GATEWAY`, the CLI sends the value in the `X-Latchkey-Gateway-Permissions-Override` header on every outgoing gateway request, causing the remote gateway to enforce the permissions.json file referenced by the JWT instead of its default one.
 
-All of the above settings, except for `LATCHKEY_DIRECTORY` and
-`LATCHKEY_ENCRYPTION_KEY`, can alternatively be specified in the
-`settings` section of `config.json` inside the Latchkey directory.
-In case of a clash, environment variables override `config.json` values.
+All of the above settings, except for `LATCHKEY_DIRECTORY`,
+`LATCHKEY_ENCRYPTION_KEY`, `LATCHKEY_GATEWAY_PASSWORD`,
+`LATCHKEY_GATEWAY_LISTEN_PASSWORD`, and
+`LATCHKEY_GATEWAY_PERMISSIONS_OVERRIDE`, can alternatively be
+specified in the `settings` section of `config.json` inside the
+Latchkey directory.  In case of a clash, environment variables
+override `config.json` values.
 
 ```json
 {

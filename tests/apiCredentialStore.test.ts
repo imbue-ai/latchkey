@@ -13,10 +13,10 @@ describe('ApiCredentialStore', () => {
   let storePath: string;
   let encryptedStorage: EncryptedStorage;
 
-  beforeEach(async () => {
+  beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), 'latchkey-test-'));
     storePath = join(tempDir, 'credentials.json');
-    encryptedStorage = await EncryptedStorage.create({ encryptionKeyOverride: generateKey() });
+    encryptedStorage = new EncryptedStorage(generateKey());
   });
 
   afterEach(() => {

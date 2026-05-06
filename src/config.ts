@@ -47,6 +47,9 @@ const LATCHKEY_PASSTHROUGH_UNKNOWN_ENV_VAR = 'LATCHKEY_PASSTHROUGH_UNKNOWN';
 const LATCHKEY_GATEWAY_ENV_VAR = 'LATCHKEY_GATEWAY';
 const LATCHKEY_GATEWAY_LISTEN_HOST_ENV_VAR = 'LATCHKEY_GATEWAY_LISTEN_HOST';
 const LATCHKEY_GATEWAY_LISTEN_PORT_ENV_VAR = 'LATCHKEY_GATEWAY_LISTEN_PORT';
+const LATCHKEY_GATEWAY_PASSWORD_ENV_VAR = 'LATCHKEY_GATEWAY_PASSWORD';
+const LATCHKEY_GATEWAY_LISTEN_PASSWORD_ENV_VAR = 'LATCHKEY_GATEWAY_LISTEN_PASSWORD';
+const LATCHKEY_GATEWAY_PERMISSIONS_OVERRIDE_ENV_VAR = 'LATCHKEY_GATEWAY_PERMISSIONS_OVERRIDE';
 
 export const DEFAULT_KEYRING_SERVICE_NAME = 'latchkey';
 export const DEFAULT_KEYRING_ACCOUNT_NAME = 'encryption-key';
@@ -208,6 +211,35 @@ export class Config {
    * without an explicit `--port` flag.
    */
   readonly gatewayListenPort: number;
+  /**
+   * Optional shared secret the CLI sends in the
+   * `X-Latchkey-Gateway-Password` header when forwarding requests to a
+   * remote gateway (i.e. when `gatewayUrl` is set).
+   *
+   * Sourced from `LATCHKEY_GATEWAY_PASSWORD` (env-only, never persisted in
+   * config.json) to keep the secret out of plain-text config files.
+   */
+  readonly gatewayPassword: string | null;
+  /**
+   * Optional shared secret the local `latchkey gateway` server requires
+   * incoming requests to present in the `X-Latchkey-Gateway-Password`
+   * header. When null, the server does not enforce authentication.
+   *
+   * Sourced from `LATCHKEY_GATEWAY_LISTEN_PASSWORD` (env-only, never
+   * persisted in config.json) to keep the secret out of plain-text config
+   * files.
+   */
+  readonly gatewayListenPassword: string | null;
+  /**
+   * Optional permissions-override JWT (see `gateway create-jwt`) the CLI
+   * sends in the `X-Latchkey-Gateway-Permissions-Override` header on every
+   * outgoing gateway request. When set, the remote gateway uses the
+   * referenced permissions.json instead of its default one.
+   *
+   * Sourced from `LATCHKEY_GATEWAY_PERMISSIONS_OVERRIDE` (env-only, never
+   * persisted in config.json).
+   */
+  readonly gatewayPermissionsOverride: string | null;
 
   constructor(
     getEnv: (name: string) => string | undefined = (name) => process.env[name],
@@ -268,6 +300,22 @@ export class Config {
       getEnv(LATCHKEY_GATEWAY_LISTEN_PORT_ENV_VAR),
       settings.gatewayListenPort
     );
+
+    const gatewayPassword = getEnv(LATCHKEY_GATEWAY_PASSWORD_ENV_VAR);
+    this.gatewayPassword =
+      gatewayPassword !== undefined && gatewayPassword !== '' ? gatewayPassword : null;
+
+    const gatewayListenPassword = getEnv(LATCHKEY_GATEWAY_LISTEN_PASSWORD_ENV_VAR);
+    this.gatewayListenPassword =
+      gatewayListenPassword !== undefined && gatewayListenPassword !== ''
+        ? gatewayListenPassword
+        : null;
+
+    const gatewayPermissionsOverride = getEnv(LATCHKEY_GATEWAY_PERMISSIONS_OVERRIDE_ENV_VAR);
+    this.gatewayPermissionsOverride =
+      gatewayPermissionsOverride !== undefined && gatewayPermissionsOverride !== ''
+        ? gatewayPermissionsOverride
+        : null;
   }
 
   get credentialStorePath(): string {

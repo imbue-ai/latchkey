@@ -22,7 +22,7 @@ import { program } from 'commander';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { CONFIG } from '../src/config.js';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
-import { encrypt, generateKey } from '../src/encryption.js';
+import { encrypt, generateKey, resolveEncryptionKey } from '../src/encryption.js';
 import { retrieveFromKeychain, KeychainNotAvailableError } from '../src/keychain.js';
 
 const ENCRYPTED_FILE_PREFIX = 'LATCHKEY_ENCRYPTED:';
@@ -66,7 +66,7 @@ async function decryptCommand(filePath: string): Promise<void> {
     process.exit(1);
   }
 
-  const storage = await EncryptedStorage.create(CONFIG);
+  const storage = new EncryptedStorage(await resolveEncryptionKey(CONFIG));
   const content = storage.readFile(filePath);
 
   if (content === null) {

@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url';
 import type { Response } from 'playwright';
 import { CONFIG } from '../src/config.js';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
+import { resolveEncryptionKey } from '../src/encryption.js';
 import { withTempBrowserContext } from '../src/playwrightUtils.js';
 import { SERVICE_REGISTRY } from '../src/serviceRegistry.js';
 
@@ -210,11 +211,13 @@ async function record(
   const recordedEntries: RecordedEntry[] = [];
   const startTime = { value: 0 };
 
-  const encryptedStorage = await EncryptedStorage.create({
-    encryptionKeyOverride: CONFIG.encryptionKeyOverride,
-    serviceName: CONFIG.serviceName,
-    accountName: CONFIG.accountName,
-  });
+  const encryptedStorage = new EncryptedStorage(
+    await resolveEncryptionKey({
+      encryptionKeyOverride: CONFIG.encryptionKeyOverride,
+      serviceName: CONFIG.serviceName,
+      accountName: CONFIG.accountName,
+    })
+  );
 
   await withTempBrowserContext(encryptedStorage, { browserStatePath }, async ({ context }) => {
     const page = await context.newPage();

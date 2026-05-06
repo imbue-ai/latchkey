@@ -23,6 +23,13 @@ import {
 } from '../curlInjection.js';
 import { PermissionCheckError } from '../permissions.js';
 import { ErrorMessages } from '../errorMessages.js';
+import { GATEWAY_PASSWORD_HEADER } from './password.js';
+import {
+  InvalidPermissionsOverrideError,
+  PERMISSIONS_OVERRIDE_HEADER,
+  PermissionsOverrideFileMissingError,
+  resolvePermissionsOverride,
+} from './permissionsOverride.js';
 
 /**
  * Headers that should not be forwarded between client and upstream (hop-by-hop).
@@ -39,6 +46,12 @@ const HOP_BY_HOP_HEADERS = new Set([
   'host',
 ]);
 
+/**
+ * Headers that the gateway consumes itself and must not forward to upstream
+ * (in addition to hop-by-hop headers).
+ */
+const GATEWAY_INTERNAL_HEADERS = new Set([GATEWAY_PASSWORD_HEADER, PERMISSIONS_OVERRIDE_HEADER]);
+
 export const GATEWAY_PATH_PREFIX = '/gateway/';
 
 export class BodyTooLargeError extends Error {
@@ -52,6 +65,17 @@ export interface GatewayOptions {
   readonly port: number;
   readonly host: string;
   readonly maxBodySize: number;
+  /**
+   * When set, the gateway requires every incoming request to present this
+   * value in the `X-Latchkey-Gateway-Password` header. When null, no
+   * authentication is enforced.
+   */
+  readonly password: string | null;
+  /**
+   * HMAC key used to verify per-request `X-Latchkey-Gateway-Permissions-Override`
+   * JWTs.
+   */
+  readonly permissionsOverrideSigningKey: Buffer;
 }
 
 function sendErrorResponse(
@@ -242,6 +266,34 @@ export async function handleGatewayRequest(
   apiCredentialStore: ApiCredentialStore,
   options: GatewayOptions
 ): Promise<void> {
+  // Resolve the permissions config for this request. When the client
+  // supplied a permissions-override JWT, validate it and use the referenced
+  // file; otherwise fall back to the gateway's default config path.
+  const pointerHeader = request.headers[PERMISSIONS_OVERRIDE_HEADER];
+  const pointerToken = typeof pointerHeader === 'string' ? pointerHeader : undefined;
+  let permissionsConfigPath = deps.config.permissionsConfigPath;
+  if (pointerToken !== undefined) {
+    try {
+      permissionsConfigPath = resolvePermissionsOverride(
+        pointerToken,
+        options.permissionsOverrideSigningKey
+      );
+    } catch (error) {
+      const method = request.method ?? 'UNKNOWN';
+      if (error instanceof InvalidPermissionsOverrideError) {
+        deps.log(`${method} ${targetUrl} -> 401 (permissions override)`);
+        sendErrorResponse(response, 401, error.message);
+        return;
+      }
+      if (error instanceof PermissionsOverrideFileMissingError) {
+        deps.log(`${method} ${targetUrl} -> 400 (permissions override)`);
+        sendErrorResponse(response, 400, error.message);
+        return;
+      }
+      throw error;
+    }
+  }
+
   // Read body
   let body: Buffer | null;
   try {
@@ -256,16 +308,20 @@ export async function handleGatewayRequest(
     throw error;
   }
 
-  // Build curl arguments from the incoming request
+  // Build curl arguments from the incoming request, dropping headers that
+  // must not be forwarded upstream: HTTP hop-by-hop headers and headers
+  // the gateway itself consumes (password, permissions override).
   const method = request.method ?? 'GET';
   const headerMap = new Map<string, string>();
   const rawHeaders = request.rawHeaders;
   for (let i = 0; i < rawHeaders.length; i += 2) {
     const name = rawHeaders[i]!;
     const value = rawHeaders[i + 1]!;
-    if (!HOP_BY_HOP_HEADERS.has(name.toLowerCase())) {
-      headerMap.set(name, value);
+    const lowerName = name.toLowerCase();
+    if (HOP_BY_HOP_HEADERS.has(lowerName) || GATEWAY_INTERNAL_HEADERS.has(lowerName)) {
+      continue;
     }
+    headerMap.set(name, value);
   }
 
   const curlArguments = buildCurlArguments(method, headerMap, targetUrl, body !== null);
@@ -275,7 +331,7 @@ export async function handleGatewayRequest(
     allArguments = await prepareCurlInvocation(curlArguments, apiCredentialStore, {
       registry: deps.registry,
       checkPermission: deps.checkPermission,
-      permissionsConfigPath: deps.config.permissionsConfigPath,
+      permissionsConfigPath,
       permissionsDoNotUseBuiltinSchemas: deps.config.permissionsDoNotUseBuiltinSchemas,
       passthroughUnknown: deps.config.passthroughUnknown,
     });

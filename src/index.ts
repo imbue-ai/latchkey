@@ -16,13 +16,19 @@ export { ApiCredentialStore, ApiCredentialStoreError } from './apiCredentials/st
 
 export { Config, CONFIG, InsecureFilePermissionsError } from './config.js';
 
-export { encrypt, decrypt, generateKey, EncryptionError, DecryptionError } from './encryption.js';
-
 export {
-  EncryptedStorage,
-  EncryptedStorageError,
+  encrypt,
+  decrypt,
+  generateKey,
+  resolveEncryptionKey,
+  EncryptionError,
+  DecryptionError,
+  EncryptionKeyError,
   EncryptionKeyLostError,
-} from './encryptedStorage.js';
+  EncryptionKeyUnavailableError,
+} from './encryption.js';
+
+export { EncryptedStorage, EncryptedStorageError } from './encryptedStorage.js';
 
 export {
   storeInKeychain,

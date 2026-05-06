@@ -8,11 +8,12 @@ import { existsSync } from 'node:fs';
 import { program } from 'commander';
 import { registerCommands, createDefaultDependencies } from './cliCommands.js';
 import { CurlNotFoundError, InsecureFilePermissionsError } from './config.js';
+import { EncryptedStorage } from './encryptedStorage.js';
 import {
-  EncryptedStorage,
-  EncryptedStorageError,
   EncryptionKeyLostError,
-} from './encryptedStorage.js';
+  EncryptionKeyUnavailableError,
+  resolveEncryptionKey,
+} from './encryption.js';
 import { KeychainTimeoutError } from './keychain.js';
 import { MigrationError, runMigrations } from './migrations.js';
 import { loadRegisteredServicesIntoServiceRegistry } from './serviceRegistry.js';
@@ -46,13 +47,13 @@ if (!gatewayMode) {
     existsSync(deps.config.credentialStorePath) || existsSync(deps.config.browserStatePath);
 
   try {
-    const encryptedStorage = await EncryptedStorage.create({
+    const encryptionKey = await resolveEncryptionKey({
       encryptionKeyOverride: deps.config.encryptionKeyOverride,
       serviceName: deps.config.serviceName,
       accountName: deps.config.accountName,
       allowKeyGeneration: !hasEncryptedData,
     });
-    runMigrations(deps.config, encryptedStorage);
+    runMigrations(deps.config, new EncryptedStorage(encryptionKey));
   } catch (error) {
     if (error instanceof KeychainTimeoutError) {
       console.error(`Error: ${error.message}`);
@@ -62,7 +63,7 @@ if (!gatewayMode) {
       console.error(`Error: ${error.message}`);
       process.exit(1);
     }
-    if (error instanceof EncryptedStorageError) {
+    if (error instanceof EncryptionKeyUnavailableError) {
       console.error(
         'No encryption key available.\n\n' +
           'Latchkey needs an encryption key to store credentials securely.\n' +

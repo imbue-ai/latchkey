@@ -32,6 +32,7 @@ import {
 import { BrowserFeaturesUnavailableError, loadPlaywright } from './playwrightLoader.js';
 import type { CurlResult } from './curl.js';
 import { EncryptedStorage } from './encryptedStorage.js';
+import { resolveEncryptionKey } from './encryption.js';
 import {
   DuplicateServiceNameError,
   InvalidServiceNameError,
@@ -64,6 +65,11 @@ import {
   rewriteCurlArgumentsForGateway,
 } from './gateway/client.js';
 import type { LatchkeyRequest } from './gateway/latchkeyEndpoint.js';
+import {
+  createPermissionsOverrideJwt,
+  derivePermissionsOverrideSigningKey,
+  InvalidPermissionsOverrideError,
+} from './gateway/permissionsOverride.js';
 import {
   servicesList,
   servicesInfo,
@@ -135,7 +141,12 @@ async function forwardToGateway(deps: CliDependencies, request: LatchkeyRequest)
     throw new GatewayCommandNotSupportedError(request.command);
   }
   try {
-    return await callLatchkeyEndpoint(gatewayUrl, request);
+    return await callLatchkeyEndpoint(
+      gatewayUrl,
+      request,
+      deps.config.gatewayPassword,
+      deps.config.gatewayPermissionsOverride
+    );
   } catch (error) {
     if (error instanceof GatewayRequestError) {
       deps.errorLog(`Error: ${error.message}`);
@@ -211,15 +222,20 @@ async function clearAll(deps: CliDependencies, yes: boolean): Promise<void> {
   }
 }
 
-async function createEncryptedStorageFromConfig(config: Config) {
+async function resolveEncryptionKeyFromConfig(config: Config): Promise<string> {
   const hasEncryptedData =
     existsSync(config.credentialStorePath) || existsSync(config.browserStatePath);
-  return EncryptedStorage.create({
+  return resolveEncryptionKey({
     encryptionKeyOverride: config.encryptionKeyOverride,
     serviceName: config.serviceName,
     accountName: config.accountName,
     allowKeyGeneration: !hasEncryptedData,
   });
+}
+
+async function createEncryptedStorageFromConfig(config: Config): Promise<EncryptedStorage> {
+  const key = await resolveEncryptionKeyFromConfig(config);
+  return new EncryptedStorage(key);
 }
 
 async function clearService(deps: CliDependencies, serviceName: string): Promise<void> {
@@ -734,7 +750,9 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           rewritten = rewriteCurlArgumentsForGateway(
             curlArguments,
             targetUrl,
-            deps.config.gatewayUrl
+            deps.config.gatewayUrl,
+            deps.config.gatewayPassword,
+            deps.config.gatewayPermissionsOverride
           );
         } catch (error) {
           if (error instanceof GatewayCurlRewriteError) {
@@ -787,7 +805,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       deps.exit(result.returncode);
     });
 
-  program
+  const gatewayCommand = program
     .command('gateway')
     .description('Start a local HTTP gateway that proxies requests with credential injection.')
     .option(
@@ -818,7 +836,8 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         deps.exit(1);
       }
 
-      const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
+      const encryptionKey = await resolveEncryptionKeyFromConfig(deps.config);
+      const encryptedStorage = new EncryptedStorage(encryptionKey);
       const apiCredentialStore = new ApiCredentialStore(
         deps.config.credentialStorePath,
         encryptedStorage
@@ -828,6 +847,8 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         port,
         host: options.host ?? deps.config.gatewayListenHost,
         maxBodySize,
+        password: deps.config.gatewayListenPassword,
+        permissionsOverrideSigningKey: derivePermissionsOverrideSigningKey(encryptionKey),
       });
 
       const shutdown = async () => {
@@ -837,6 +858,43 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
 
       process.on('SIGINT', () => void shutdown());
       process.on('SIGTERM', () => void shutdown());
+    });
+
+  gatewayCommand
+    .command('create-jwt')
+    .description(
+      'Create a permissions-override JWT for the X-Latchkey-Gateway-Permissions-Override header. ' +
+        'When the gateway receives a valid JWT, it uses the referenced permissions.json ' +
+        'instead of the default one for that single request.'
+    )
+    .argument('<permissions_config_path>', 'Absolute path to a permissions.json file')
+    .option(
+      '--no-validate',
+      'Skip checking that the path exists; only validate that it is absolute'
+    )
+    .action(async (permissionsConfigPath: string, options: { validate: boolean }) => {
+      refuseInGatewayMode(deps, 'gateway create-jwt');
+      if (options.validate) {
+        if (!existsSync(permissionsConfigPath)) {
+          deps.errorLog(`Error: File does not exist: ${permissionsConfigPath}`);
+          deps.errorLog('Pass --no-validate to skip this check.');
+          deps.exit(1);
+        }
+      }
+      const encryptionKey = await resolveEncryptionKeyFromConfig(deps.config);
+      try {
+        const jwt = createPermissionsOverrideJwt(
+          permissionsConfigPath,
+          derivePermissionsOverrideSigningKey(encryptionKey)
+        );
+        deps.log(jwt);
+      } catch (error) {
+        if (error instanceof InvalidPermissionsOverrideError) {
+          deps.errorLog(`Error: ${error.message}`);
+          deps.exit(1);
+        }
+        throw error;
+      }
     });
 
   program
