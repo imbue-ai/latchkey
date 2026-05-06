@@ -296,6 +296,8 @@ This would mean that:
 - No requests are allowed to any other domains.
 
 Ideally make the file read-only: `chmod -w ~/.latchkey/permissions.json`.
+In the gateway mode, you can use [permission overrides](#permission-overrides) to let
+different callers claim different permission policies.
 For more details, check out the [permission docs](https://docs.imbue.com/latchkey/basics/permissions).
 
 
@@ -320,6 +322,8 @@ route your agent's `latchkey` calls to the host Latchkey
 (limited to a selected safe subset of commands). That way the
 agent won't be able to tamper with your Latchkey configuration
 while still being able to use Latchkey itself as intended.
+
+#### Password
 
 You can additionally protect the gateway with a shared password.
 Set `LATCHKEY_GATEWAY_LISTEN_PASSWORD` on the machine running
