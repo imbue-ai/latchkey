@@ -86,7 +86,9 @@ function parsePayload(payloadEncoded: string): PermissionsOverridePayload {
   try {
     payloadJson = Buffer.from(payloadEncoded, 'base64url').toString('utf-8');
   } catch {
-    throw new InvalidPermissionsOverrideError('Permissions override payload is not valid base64url.');
+    throw new InvalidPermissionsOverrideError(
+      'Permissions override payload is not valid base64url.'
+    );
   }
 
   let payload: unknown;
@@ -144,7 +146,9 @@ export function verifyPermissionsOverrideJwt(
   try {
     headerJson = Buffer.from(headerEncoded, 'base64url').toString('utf-8');
   } catch {
-    throw new InvalidPermissionsOverrideError('Permissions override header is not valid base64url.');
+    throw new InvalidPermissionsOverrideError(
+      'Permissions override header is not valid base64url.'
+    );
   }
   let header: unknown;
   try {
@@ -167,7 +171,9 @@ export function verifyPermissionsOverrideJwt(
   try {
     providedSignature = Buffer.from(signatureEncoded, 'base64url');
   } catch {
-    throw new InvalidPermissionsOverrideError('Permissions override signature is not valid base64url.');
+    throw new InvalidPermissionsOverrideError(
+      'Permissions override signature is not valid base64url.'
+    );
   }
 
   const expectedSignature = createHmac('sha256', signingKey)

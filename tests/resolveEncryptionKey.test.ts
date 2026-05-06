@@ -1,9 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import {
-  EncryptionKeyLostError,
-  generateKey,
-  resolveEncryptionKey,
-} from '../src/encryption.js';
+import { EncryptionKeyLostError, generateKey, resolveEncryptionKey } from '../src/encryption.js';
 
 vi.mock('../src/keychain.js', async (importOriginal) => {
   const original = await importOriginal<typeof import('../src/keychain.js')>();
@@ -17,9 +13,7 @@ vi.mock('../src/keychain.js', async (importOriginal) => {
 describe('resolveEncryptionKey', () => {
   it('returns the override verbatim and does not touch the keychain', async () => {
     const override = generateKey();
-    await expect(resolveEncryptionKey({ encryptionKeyOverride: override })).resolves.toBe(
-      override
-    );
+    await expect(resolveEncryptionKey({ encryptionKeyOverride: override })).resolves.toBe(override);
   });
 
   it('throws EncryptionKeyLostError when allowKeyGeneration is false and keychain has no key', async () => {

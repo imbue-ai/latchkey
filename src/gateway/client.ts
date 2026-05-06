@@ -130,9 +130,7 @@ export function rewriteCurlArgumentsForGateway(
     );
   }
   const proxyUrl = buildGatewayProxyUrl(gatewayUrl, targetUrl);
-  const rewritten = curlArguments.map((argument) =>
-    argument === targetUrl ? proxyUrl : argument
-  );
+  const rewritten = curlArguments.map((argument) => (argument === targetUrl ? proxyUrl : argument));
   if (password === null) {
     return rewritten;
   }

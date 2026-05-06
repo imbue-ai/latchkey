@@ -806,7 +806,7 @@ describe('CLI commands with dependency injection', () => {
 
       await runCommand(['auth', 'clear', 'slack'], deps);
 
-      const storedData = JSON.parse((readSecureFile(storePath)) ?? '{}') as StoredCredentials;
+      const storedData = JSON.parse(readSecureFile(storePath) ?? '{}') as StoredCredentials;
       expect(storedData.slack).toBeUndefined();
     });
 
@@ -833,7 +833,7 @@ describe('CLI commands with dependency injection', () => {
 
       await runCommand(['auth', 'clear', 'slack'], deps);
 
-      const storedData = JSON.parse((readSecureFile(storePath)) ?? '{}') as StoredCredentials;
+      const storedData = JSON.parse(readSecureFile(storePath) ?? '{}') as StoredCredentials;
       expect(storedData.slack).toBeUndefined();
       expect(storedData.discord).toBeDefined();
       expect(storedData.discord?.token).toBe('discord-token');
@@ -925,10 +925,7 @@ describe('CLI commands with dependency injection', () => {
 
       expect(logs).toContain('Credentials stored.');
 
-      const storedData = JSON.parse((readSecureFile(storePath)) ?? '{}') as Record<
-        string,
-        unknown
-      >;
+      const storedData = JSON.parse(readSecureFile(storePath) ?? '{}') as Record<string, unknown>;
       expect(storedData.slack).toEqual({
         objectType: 'rawCurl',
         curlArguments: ['-H', 'X-Token: secret', '-H', 'X-Other: value'],
@@ -974,10 +971,7 @@ describe('CLI commands with dependency injection', () => {
 
       expect(logs).toContain('Credentials stored.');
 
-      const storedData = JSON.parse((readSecureFile(storePath)) ?? '{}') as Record<
-        string,
-        unknown
-      >;
+      const storedData = JSON.parse(readSecureFile(storePath) ?? '{}') as Record<string, unknown>;
       expect(storedData.slack).toEqual({
         objectType: 'rawCurl',
         curlArguments: ['-H', 'X-Token: new-secret'],
@@ -998,10 +992,7 @@ describe('CLI commands with dependency injection', () => {
 
       expect(logs).toContain('Credentials stored.');
 
-      const storedData = JSON.parse((readSecureFile(storePath)) ?? '{}') as Record<
-        string,
-        unknown
-      >;
+      const storedData = JSON.parse(readSecureFile(storePath) ?? '{}') as Record<string, unknown>;
       expect(storedData.telegram).toEqual({
         objectType: 'telegramBot',
         token: '123456:ABC-DEF',

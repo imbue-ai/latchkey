@@ -32,10 +32,7 @@ function sendErrorResponse(
  * Read a single header value, treating arrays (which Node returns for some
  * headers) as missing because the password header is not allowed to repeat.
  */
-function readSingleHeader(
-  request: http.IncomingMessage,
-  headerName: string
-): string | undefined {
+function readSingleHeader(request: http.IncomingMessage, headerName: string): string | undefined {
   const value = request.headers[headerName];
   if (typeof value === 'string') return value;
   return undefined;
@@ -176,8 +173,7 @@ export function startGateway(
     server.on('error', reject);
 
     server.listen(options.port, options.host, () => {
-      const passwordNote =
-        options.password === null ? '' : ' (password authentication enabled)';
+      const passwordNote = options.password === null ? '' : ' (password authentication enabled)';
       deps.log(
         `Latchkey gateway listening on ${options.host}:${String(options.port)}${passwordNote}`
       );
