@@ -23,6 +23,7 @@ import {
 } from '../curlInjection.js';
 import { PermissionCheckError } from '../permissions.js';
 import { ErrorMessages } from '../errorMessages.js';
+import { GATEWAY_PASSWORD_HEADER } from './password.js';
 
 /**
  * Headers that should not be forwarded between client and upstream (hop-by-hop).
@@ -39,6 +40,12 @@ const HOP_BY_HOP_HEADERS = new Set([
   'host',
 ]);
 
+/**
+ * Headers that the gateway consumes itself and must not forward to upstream
+ * (in addition to hop-by-hop headers).
+ */
+const GATEWAY_INTERNAL_HEADERS = new Set([GATEWAY_PASSWORD_HEADER]);
+
 export const GATEWAY_PATH_PREFIX = '/gateway/';
 
 export class BodyTooLargeError extends Error {
@@ -52,6 +59,12 @@ export interface GatewayOptions {
   readonly port: number;
   readonly host: string;
   readonly maxBodySize: number;
+  /**
+   * When set, the gateway requires every incoming request to present this
+   * value in the `X-Latchkey-Gateway-Password` header. When null, no
+   * authentication is enforced.
+   */
+  readonly password: string | null;
 }
 
 function sendErrorResponse(
@@ -265,6 +278,14 @@ export async function handleGatewayRequest(
     const value = rawHeaders[i + 1]!;
     if (!HOP_BY_HOP_HEADERS.has(name.toLowerCase())) {
       headerMap.set(name, value);
+    }
+  }
+
+  // Strip the gateway-internal password header so it is never forwarded
+  // to upstream services along with the proxied request.
+  for (const name of [...headerMap.keys()]) {
+    if (GATEWAY_INTERNAL_HEADERS.has(name.toLowerCase())) {
+      headerMap.delete(name);
     }
   }
 

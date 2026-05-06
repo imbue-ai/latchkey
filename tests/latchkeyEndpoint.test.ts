@@ -164,6 +164,7 @@ describe('/latchkey/ endpoint', () => {
       port: 0,
       host: 'localhost',
       maxBodySize: 10 * 1024 * 1024,
+      password: null,
     };
 
     return startGateway(deps, apiCredentialStore, encryptedStorage, options);

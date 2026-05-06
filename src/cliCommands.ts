@@ -135,7 +135,7 @@ async function forwardToGateway(deps: CliDependencies, request: LatchkeyRequest)
     throw new GatewayCommandNotSupportedError(request.command);
   }
   try {
-    return await callLatchkeyEndpoint(gatewayUrl, request);
+    return await callLatchkeyEndpoint(gatewayUrl, request, deps.config.gatewayPassword);
   } catch (error) {
     if (error instanceof GatewayRequestError) {
       deps.errorLog(`Error: ${error.message}`);
@@ -734,7 +734,8 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           rewritten = rewriteCurlArgumentsForGateway(
             curlArguments,
             targetUrl,
-            deps.config.gatewayUrl
+            deps.config.gatewayUrl,
+            deps.config.gatewayPassword
           );
         } catch (error) {
           if (error instanceof GatewayCurlRewriteError) {
@@ -828,6 +829,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         port,
         host: options.host ?? deps.config.gatewayListenHost,
         maxBodySize,
+        password: deps.config.gatewayListenPassword,
       });
 
       const shutdown = async () => {

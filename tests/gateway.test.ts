@@ -261,6 +261,7 @@ describe('gateway server', () => {
       port: 0, // auto-assign port
       host: 'localhost',
       maxBodySize: 10 * 1024 * 1024,
+      password: null,
       ...optionOverrides,
     };
 
@@ -673,6 +674,112 @@ describe('gateway server', () => {
       for (const response of responses) {
         expect(response.status).toBe(200);
       }
+    });
+  });
+
+  describe('password authentication', () => {
+    const PASSWORD = 'super-secret';
+    const HEADER = 'X-Latchkey-Gateway-Password';
+
+    it('rejects requests without the password header when configured', async () => {
+      gateway = await createTestGateway({}, {}, { password: PASSWORD });
+
+      const response = await fetch('/gateway/https://slack.com/api/auth.test');
+
+      expect(response.status).toBe(401);
+      const body = (await response.json()) as { error: string };
+      expect(body.error).toContain('Unauthorized');
+    });
+
+    it('rejects requests with the wrong password', async () => {
+      gateway = await createTestGateway({}, {}, { password: PASSWORD });
+
+      const response = await fetch('/gateway/https://slack.com/api/auth.test', {
+        headers: { [HEADER]: 'wrong' },
+      });
+
+      expect(response.status).toBe(401);
+    });
+
+    it('accepts requests with the correct password', async () => {
+      gateway = await createTestGateway(
+        {
+          slack: {
+            objectType: 'rawCurl',
+            curlArguments: ['-H', 'Authorization: Bearer test-token'],
+          },
+        },
+        {},
+        { password: PASSWORD }
+      );
+
+      const response = await fetch('/gateway/https://slack.com/api/auth.test', {
+        headers: { [HEADER]: PASSWORD },
+      });
+
+      expect(response.status).toBe(200);
+    });
+
+    it('strips the password header from requests forwarded upstream', async () => {
+      gateway = await createTestGateway(
+        {
+          slack: {
+            objectType: 'rawCurl',
+            curlArguments: ['-H', 'Authorization: Bearer test-token'],
+          },
+        },
+        {},
+        { password: PASSWORD }
+      );
+
+      await fetch('/gateway/https://slack.com/api/auth.test', {
+        headers: { [HEADER]: PASSWORD },
+      });
+
+      const headerArgs: string[] = [];
+      for (let i = 0; i < capturedCurlArgs.length; i++) {
+        if (capturedCurlArgs[i] === '-H' && i + 1 < capturedCurlArgs.length) {
+          headerArgs.push(capturedCurlArgs[i + 1]!);
+        }
+      }
+      expect(
+        headerArgs.some((h) => h.toLowerCase().startsWith('x-latchkey-gateway-password:'))
+      ).toBe(false);
+    });
+
+    it('protects the /latchkey/ endpoint as well', async () => {
+      gateway = await createTestGateway({}, {}, { password: PASSWORD });
+
+      const unauthorized = await fetch('/latchkey', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command: 'services list' }),
+      });
+      expect(unauthorized.status).toBe(401);
+
+      const authorized = await fetch('/latchkey', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', [HEADER]: PASSWORD },
+        body: JSON.stringify({ command: 'services list' }),
+      });
+      expect(authorized.status).toBe(200);
+    });
+
+    it('protects the health endpoint when a password is set', async () => {
+      gateway = await createTestGateway({}, {}, { password: PASSWORD });
+
+      const unauthorized = await fetch('/');
+      expect(unauthorized.status).toBe(401);
+
+      const authorized = await fetch('/', { headers: { [HEADER]: PASSWORD } });
+      expect(authorized.status).toBe(200);
+    });
+
+    it('does not enforce a password when none is configured', async () => {
+      gateway = await createTestGateway({}, {}, { password: null });
+
+      const response = await fetch('/');
+      expect(response.status).toBe(200);
     });
   });
 

@@ -360,6 +360,8 @@ describe('CLI commands with dependency injection', () => {
       gatewayUrl: overrides.gatewayUrl ?? null,
       gatewayListenHost: overrides.gatewayListenHost ?? 'localhost',
       gatewayListenPort: overrides.gatewayListenPort ?? 1989,
+      gatewayPassword: overrides.gatewayPassword ?? null,
+      gatewayListenPassword: overrides.gatewayListenPassword ?? null,
       checkSensitiveFilePermissions: () => undefined,
       checkSystemPrerequisites: () => undefined,
     };

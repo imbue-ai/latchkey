@@ -6,6 +6,7 @@
  */
 
 import type { LatchkeyRequest } from './latchkeyEndpoint.js';
+import { GATEWAY_PASSWORD_HEADER } from './password.js';
 
 export class GatewayRequestError extends Error {
   readonly statusCode: number;
@@ -41,18 +42,26 @@ function buildEndpointUrl(gatewayUrl: string, path: string): string {
 
 /**
  * POST a request to the gateway's `/latchkey/` endpoint and return its `result`.
+ * When `password` is provided, it is sent in the gateway password header so
+ * the request can be authenticated by a password-protected gateway.
  */
 export async function callLatchkeyEndpoint(
   gatewayUrl: string,
-  request: LatchkeyRequest
+  request: LatchkeyRequest,
+  password: string | null = null
 ): Promise<unknown> {
   const endpoint = buildEndpointUrl(gatewayUrl, '/latchkey');
+
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (password !== null) {
+    headers[GATEWAY_PASSWORD_HEADER] = password;
+  }
 
   let response: Response;
   try {
     response = await fetch(endpoint, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(request),
     });
   } catch (error) {
@@ -94,11 +103,16 @@ export function buildGatewayProxyUrl(gatewayUrl: string, targetUrl: string): str
 /**
  * Rewrite a curl argument list so the target URL points at the gateway's
  * `/gateway/<target>` endpoint. Returns a new array; the original is unchanged.
+ *
+ * When `password` is provided, an `-H` argument carrying the gateway
+ * password header is prepended so the rewritten curl call can authenticate
+ * against a password-protected gateway.
  */
 export function rewriteCurlArgumentsForGateway(
   curlArguments: readonly string[],
   targetUrl: string,
-  gatewayUrl: string
+  gatewayUrl: string,
+  password: string | null = null
 ): readonly string[] {
   const occurrences = curlArguments.reduce(
     (count, argument) => (argument === targetUrl ? count + 1 : count),
@@ -116,5 +130,11 @@ export function rewriteCurlArgumentsForGateway(
     );
   }
   const proxyUrl = buildGatewayProxyUrl(gatewayUrl, targetUrl);
-  return curlArguments.map((argument) => (argument === targetUrl ? proxyUrl : argument));
+  const rewritten = curlArguments.map((argument) =>
+    argument === targetUrl ? proxyUrl : argument
+  );
+  if (password === null) {
+    return rewritten;
+  }
+  return ['-H', `${GATEWAY_PASSWORD_HEADER}: ${password}`, ...rewritten];
 }

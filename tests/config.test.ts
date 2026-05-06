@@ -185,6 +185,42 @@ describe('Config with config.json settings', () => {
     expect(config.browserDisabled).toBe(false);
   });
 
+  it('reads the client-side gateway password only from the environment', () => {
+    writeSettings({});
+    const config = makeConfig({ LATCHKEY_GATEWAY_PASSWORD: 'top-secret' });
+    expect(config.gatewayPassword).toBe('top-secret');
+    expect(config.gatewayListenPassword).toBeNull();
+  });
+
+  it('reads the listen-side gateway password only from the environment', () => {
+    writeSettings({});
+    const config = makeConfig({ LATCHKEY_GATEWAY_LISTEN_PASSWORD: 'listen-secret' });
+    expect(config.gatewayListenPassword).toBe('listen-secret');
+    expect(config.gatewayPassword).toBeNull();
+  });
+
+  it('treats unset or empty gateway password env vars as no password', () => {
+    expect(makeConfig().gatewayPassword).toBeNull();
+    expect(makeConfig().gatewayListenPassword).toBeNull();
+    expect(
+      makeConfig({ LATCHKEY_GATEWAY_PASSWORD: '', LATCHKEY_GATEWAY_LISTEN_PASSWORD: '' })
+        .gatewayPassword
+    ).toBeNull();
+    expect(
+      makeConfig({ LATCHKEY_GATEWAY_PASSWORD: '', LATCHKEY_GATEWAY_LISTEN_PASSWORD: '' })
+        .gatewayListenPassword
+    ).toBeNull();
+  });
+
+  it('keeps client and listen gateway passwords independent', () => {
+    const config = makeConfig({
+      LATCHKEY_GATEWAY_PASSWORD: 'client',
+      LATCHKEY_GATEWAY_LISTEN_PASSWORD: 'server',
+    });
+    expect(config.gatewayPassword).toBe('client');
+    expect(config.gatewayListenPassword).toBe('server');
+  });
+
   it('ignores an unparseable config.json entirely', () => {
     writeFileSync(join(directory, 'config.json'), 'not json{');
 

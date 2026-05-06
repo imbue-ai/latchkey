@@ -321,6 +321,15 @@ route your agent's `latchkey` calls to the host Latchkey
 agent won't be able to tamper with your Latchkey configuration
 while still being able to use Latchkey itself as intended.
 
+You can additionally protect the gateway with a shared password.
+Set `LATCHKEY_GATEWAY_LISTEN_PASSWORD` on the machine running
+`latchkey gateway` (the value the server requires) and
+`LATCHKEY_GATEWAY_PASSWORD` on the client (the value the CLI
+sends). When the two match, the request is accepted; otherwise
+the gateway responds with `401`. The password is carried in the
+`X-Latchkey-Gateway-Password` header and is never forwarded
+upstream, so it stays internal to Latchkey.
+
 
 ### Other configuration
 
@@ -338,11 +347,15 @@ defaults:
 - `LATCHKEY_PASSTHROUGH_UNKNOWN`: if set, Latchkey will forward requests (via `latchkey curl` or gateway) even if no credentials are injected.
 - `LATCHKEY_GATEWAY`: when set to a base URL (e.g. `http://localhost:1989`), the CLI delegates commands to a remote Latchkey gateway instead of running them locally. Commands that change local state (`auth set`, `auth clear`, `services register`, `ensure-browser`, `gateway`) cannot run in this mode.
 - `LATCHKEY_GATEWAY_LISTEN_HOST`, `LATCHKEY_GATEWAY_LISTEN_PORT`: default address and port the local `latchkey gateway` command binds to when `--host` / `--port` are not supplied (defaults: `localhost`, `1989`). Distinct from `LATCHKEY_GATEWAY`, which configures a *remote* gateway URL.
+- `LATCHKEY_GATEWAY_PASSWORD`: optional shared secret used by the client side. When set together with `LATCHKEY_GATEWAY`, the CLI sends the value in the `X-Latchkey-Gateway-Password` header on every outgoing gateway request.
+- `LATCHKEY_GATEWAY_LISTEN_PASSWORD`: optional shared secret used by the server side. When set, `latchkey gateway` rejects (with `401`) any request that does not present the same value in the `X-Latchkey-Gateway-Password` header. The header is stripped before requests are forwarded upstream.
 
-All of the above settings, except for `LATCHKEY_DIRECTORY` and
-`LATCHKEY_ENCRYPTION_KEY`, can alternatively be specified in the
-`settings` section of `config.json` inside the Latchkey directory.
-In case of a clash, environment variables override `config.json` values.
+All of the above settings, except for `LATCHKEY_DIRECTORY`,
+`LATCHKEY_ENCRYPTION_KEY`, `LATCHKEY_GATEWAY_PASSWORD`, and
+`LATCHKEY_GATEWAY_LISTEN_PASSWORD`, can alternatively be
+specified in the `settings` section of `config.json` inside the
+Latchkey directory.  In case of a clash, environment variables
+override `config.json` values.
 
 ```json
 {
