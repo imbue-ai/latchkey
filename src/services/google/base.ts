@@ -283,7 +283,7 @@ async function addTestUser(page: Page, projectSlug: string, email: string): Prom
   await saveButton.evaluate((el) => {
     (el as unknown as { click(): void }).click();
   });
-  await usersInput.waitFor({ state: 'hidden', timeout: 2000 });
+  await usersInput.waitFor({ state: 'hidden', timeout: 5000 });
 }
 
 async function createOAuthClient(
