@@ -58,9 +58,17 @@ describe('loadExtensions', () => {
     expect(extensions).toEqual([]);
   });
 
-  it('skips files with unsupported suffixes', async () => {
+  it('skips files with unsupported suffixes (including .js)', async () => {
     writeExtension(extensionsDir, 'README.txt', 'not an extension');
     writeExtension(extensionsDir, 'config.json', '{}');
+    // .js is intentionally not supported: extensions must be `.mjs` so Node
+    // never has to fall back to the CommonJS-then-ESM reparse, which emits
+    // a MODULE_TYPELESS_PACKAGE_JSON warning.
+    writeExtension(
+      extensionsDir,
+      'looks-like-an-extension.js',
+      `export default () => false;`
+    );
     const extensions = await loadExtensions(extensionsDir);
     expect(extensions).toEqual([]);
   });

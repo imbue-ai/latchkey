@@ -2,9 +2,9 @@
 
 You can extend the gateway with your own HTTP endpoints.
 At startup, `latchkey gateway` scans `~/.latchkey/extensions/` (or the corresponding alternative if you override `LATCHKEY_DIRECTORY`) for
-files ending in `.js` or `.mjs` (in alphabetical order) and
-dynamically imports each one. Every module's default export
-must be a function with the signature
+files ending in `.mjs` (in alphabetical order) and dynamically
+imports each one. Every module's default export must be a
+function with the signature
 `(request, response) => boolean | Promise<boolean>`:
 
 - Return `true` (or a promise resolving to `true`) when the

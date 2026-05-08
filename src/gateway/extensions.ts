@@ -1,9 +1,9 @@
 /**
  * Extensions: user-supplied HTTP handlers mounted on the gateway.
  *
- * The gateway scans `extensionsDirectory` for `*.js` / `*.mjs` files at
- * startup and dynamically imports each one. Each module's default export
- * must be a function `(request, response) => boolean | Promise<boolean>`:
+ * The gateway scans `extensionsDirectory` for `*.mjs` files at startup
+ * and dynamically imports each one. Each module's default export must be
+ * a function `(request, response) => boolean | Promise<boolean>`:
  *
  *   - return `true` when the extension has handled the request (i.e. it
  *     has written / will write the response). The gateway will not consult
@@ -40,7 +40,7 @@ export const EXTENSION_PLACEHOLDER_SCHEME = 'https';
 export const EXTENSION_PLACEHOLDER_HOST = 'latchkey-self.invalid';
 export const EXTENSION_PLACEHOLDER_PORT = 1;
 
-const SUPPORTED_EXTENSION_FILE_SUFFIXES: readonly string[] = ['.js', '.mjs'];
+const EXTENSION_FILE_SUFFIX = '.mjs';
 
 export type ExtensionHandler = (
   request: http.IncomingMessage,
@@ -90,9 +90,7 @@ export async function loadExtensions(directory: string): Promise<readonly Loaded
 
   const fileNames = readdirSync(directory, { withFileTypes: true })
     .filter((entry) => entry.isFile())
-    .filter((entry) =>
-      SUPPORTED_EXTENSION_FILE_SUFFIXES.some((suffix) => entry.name.endsWith(suffix))
-    )
+    .filter((entry) => entry.name.endsWith(EXTENSION_FILE_SUFFIX))
     .map((entry) => entry.name)
     .sort();
 
