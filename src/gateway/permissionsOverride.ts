@@ -14,6 +14,7 @@
 
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { existsSync, statSync } from 'node:fs';
+import type * as http from 'node:http';
 import { isAbsolute } from 'node:path';
 
 /**
@@ -200,4 +201,22 @@ export function resolvePermissionsOverride(token: string, signingKey: Buffer): s
     throw new PermissionsOverrideFileMissingError(permissionsConfig);
   }
   return permissionsConfig;
+}
+
+/**
+ * Apply the optional `X-Latchkey-Gateway-Permissions-Override` header to a
+ * request: when absent, return the default config path; when present,
+ * validate the JWT and return the referenced path. Throws
+ * `InvalidPermissionsOverrideError` (=> 401) or
+ * `PermissionsOverrideFileMissingError` (=> 400) on invalid input.
+ */
+export function resolveRequestPermissionsConfig(
+  headers: http.IncomingHttpHeaders,
+  defaultConfigPath: string,
+  signingKey: Buffer
+): string {
+  const headerValue = headers[PERMISSIONS_OVERRIDE_HEADER];
+  const token = typeof headerValue === 'string' ? headerValue : undefined;
+  if (token === undefined) return defaultConfigPath;
+  return resolvePermissionsOverride(token, signingKey);
 }

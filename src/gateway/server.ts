@@ -18,6 +18,12 @@ import {
 } from './gatewayEndpoint.js';
 import { handleLatchkeyRequest } from './latchkeyEndpoint.js';
 import { GATEWAY_PASSWORD_HEADER, passwordsMatch } from './password.js';
+import { dispatchExtensionRequest, loadExtensions, type LoadedExtension } from './extensions.js';
+import {
+  InvalidPermissionsOverrideError,
+  PermissionsOverrideFileMissingError,
+  resolveRequestPermissionsConfig,
+} from './permissionsOverride.js';
 
 function sendErrorResponse(
   response: http.ServerResponse,
@@ -67,9 +73,63 @@ export interface GatewayServer {
 }
 
 /**
+ * Run an inbound request through the loaded extensions. Resolves to true when
+ * the request has been handled in some way and false if not.
+ */
+function runExtensions(
+  request: http.IncomingMessage,
+  response: http.ServerResponse,
+  extensions: readonly LoadedExtension[],
+  deps: CliDependencies,
+  options: GatewayOptions
+): Promise<boolean> {
+  if (extensions.length === 0) return Promise.resolve(false);
+
+  const rawUrl = request.url ?? '';
+  const method = (request.method ?? 'GET').toUpperCase();
+
+  let permissionsConfigPath: string;
+  try {
+    permissionsConfigPath = resolveRequestPermissionsConfig(
+      request.headers,
+      deps.config.permissionsConfigPath,
+      options.permissionsOverrideSigningKey
+    );
+  } catch (error) {
+    if (error instanceof InvalidPermissionsOverrideError) {
+      deps.log(`${method} ${rawUrl} -> 401 (extension)`);
+      sendErrorResponse(response, 401, error.message);
+      return Promise.resolve(true);
+    }
+    if (error instanceof PermissionsOverrideFileMissingError) {
+      deps.log(`${method} ${rawUrl} -> 400 (extension)`);
+      sendErrorResponse(response, 400, error.message);
+      return Promise.resolve(true);
+    }
+    // resolveRequestPermissionsConfig only throws the two known error
+    // types, so this branch is just defensive: an http.Server request
+    // listener is sync, and rethrowing here would crash the process.
+    deps.errorLog(
+      `Unexpected error resolving permissions override for ${method} ${rawUrl}: ` +
+        (error instanceof Error ? error.message : String(error))
+    );
+    sendErrorResponse(response, 500, 'Internal error');
+    return Promise.resolve(true);
+  }
+
+  return dispatchExtensionRequest(
+    request,
+    response,
+    extensions,
+    deps,
+    permissionsConfigPath
+  );
+}
+
+/**
  * Start the gateway HTTP server.
  */
-export function startGateway(
+export async function startGateway(
   deps: CliDependencies,
   apiCredentialStore: ApiCredentialStore,
   encryptedStorage: EncryptedStorage,
@@ -77,15 +137,18 @@ export function startGateway(
 ): Promise<GatewayServer> {
   const inFlightRequests = new Set<Promise<void>>();
 
+  const extensions = await loadExtensions(deps.config.extensionsDirectoryPath);
+
   const server = http.createServer((request, response) => {
     const rawUrl = request.url ?? '';
+    const method = request.method ?? 'UNKNOWN';
 
     if (!enforcePassword(request, response, options.password, deps)) {
       return;
     }
 
     // Health endpoint
-    if (rawUrl === '/' && request.method === 'GET') {
+    if (rawUrl === '/' && method === 'GET') {
       response.writeHead(200, { 'Content-Type': 'application/json' });
       response.end(JSON.stringify({ status: 'ok', version: deps.version }));
       return;
@@ -115,37 +178,55 @@ export function startGateway(
       return;
     }
 
-    // Extract target URL
-    const targetUrl = extractTargetUrl(rawUrl);
-    if (targetUrl === null) {
-      if (rawUrl.startsWith(GATEWAY_PATH_PREFIX)) {
-        const method = request.method ?? 'UNKNOWN';
+    // Gateway proxy endpoint
+    if (rawUrl.startsWith(GATEWAY_PATH_PREFIX)) {
+      const targetUrl = extractTargetUrl(rawUrl);
+      if (targetUrl === null) {
         deps.log(`${method} ${rawUrl.slice(GATEWAY_PATH_PREFIX.length)} -> 400`);
         sendErrorResponse(response, 400, ErrorMessages.couldNotExtractUrl);
-      } else {
-        response.writeHead(404);
-        response.end();
+        return;
       }
+
+      const requestPromise = handleGatewayRequest(
+        request,
+        response,
+        targetUrl,
+        deps,
+        apiCredentialStore,
+        options
+      ).catch((error: unknown) => {
+        deps.errorLog(
+          `Unexpected error handling ${method} ${targetUrl}: ${error instanceof Error ? error.message : String(error)}`
+        );
+        if (!response.headersSent) {
+          sendErrorResponse(response, 502, ErrorMessages.upstreamRequestFailed);
+        }
+      });
+
+      inFlightRequests.add(requestPromise);
+      void requestPromise.finally(() => {
+        inFlightRequests.delete(requestPromise);
+      });
       return;
     }
 
-    const requestPromise = handleGatewayRequest(
-      request,
-      response,
-      targetUrl,
-      deps,
-      apiCredentialStore,
-      options
-    ).catch((error: unknown) => {
-      const method = request.method ?? 'UNKNOWN';
-      deps.errorLog(
-        `Unexpected error handling ${method} ${targetUrl}: ${error instanceof Error ? error.message : String(error)}`
-      );
-      if (!response.headersSent) {
-        sendErrorResponse(response, 502, ErrorMessages.upstreamRequestFailed);
-      }
-    });
-
+    // Finally, try extensions (if any).
+    const requestPromise = runExtensions(request, response, extensions, deps, options)
+      .then((handled) => {
+        if (!handled && !response.headersSent) {
+          response.writeHead(404);
+          response.end();
+        }
+      })
+      .catch((error: unknown) => {
+        deps.errorLog(
+          `Unexpected error handling extension request ${method} ${rawUrl}: ` +
+            (error instanceof Error ? error.message : String(error))
+        );
+        if (!response.headersSent) {
+          sendErrorResponse(response, 500, 'Internal error');
+        }
+      });
     inFlightRequests.add(requestPromise);
     void requestPromise.finally(() => {
       inFlightRequests.delete(requestPromise);

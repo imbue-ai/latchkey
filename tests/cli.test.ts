@@ -353,6 +353,9 @@ describe('CLI commands with dependency injection', () => {
       get permissionsConfigPath() {
         return overrides.permissionsConfigOverride ?? join(directory, 'permissions.json');
       },
+      get extensionsDirectoryPath() {
+        return join(directory, 'extensions');
+      },
       curlCommand: overrides.curlCommand ?? defaultConfig.curlCommand,
       encryptionKeyOverride: overrides.encryptionKeyOverride ?? TEST_ENCRYPTION_KEY,
       serviceName: overrides.serviceName ?? defaultConfig.serviceName,

@@ -14,6 +14,7 @@ import type { ApiCredentials } from './apiCredentials/base.js';
 import type { ApiCredentialStore } from './apiCredentials/store.js';
 import { maybeRefreshCredentials } from './apiCredentials/utils.js';
 import { CurlParseError, extractUrlFromCurlArguments } from './curl.js';
+import { parseCurlArgs } from '@imbue-ai/detent';
 import { ErrorMessages } from './errorMessages.js';
 import type { ServiceRegistry } from './serviceRegistry.js';
 
@@ -68,7 +69,7 @@ export class CredentialsExpiredError extends Error {
 export interface CurlInjectionDependencies {
   readonly registry: ServiceRegistry;
   readonly checkPermission: (
-    curlArguments: readonly string[],
+    request: Request,
     configPath: string,
     doNotUseBuiltinSchemas: boolean
   ) => Promise<boolean>;
@@ -88,8 +89,21 @@ export async function prepareCurlInvocation(
   apiCredentialStore: ApiCredentialStore,
   dependencies: CurlInjectionDependencies
 ): Promise<readonly string[]> {
+  // Parse the curl arguments once for the permission check. A parse failure
+  // here means the user's curl invocation is malformed, which is treated as
+  // a URL-extraction failure (the same category as the second parse below),
+  // not a permission-check failure.
+  let parsedRequest: Request;
+  try {
+    parsedRequest = parseCurlArgs(curlArguments);
+  } catch (error) {
+    if (error instanceof CurlParseError) {
+      throw new UrlExtractionFailedError(error.message);
+    }
+    throw error;
+  }
   const allowed = await dependencies.checkPermission(
-    curlArguments,
+    parsedRequest,
     dependencies.permissionsConfigPath,
     dependencies.permissionsDoNotUseBuiltinSchemas
   );

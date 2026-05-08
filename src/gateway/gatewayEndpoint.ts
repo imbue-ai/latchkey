@@ -28,13 +28,13 @@ import {
   InvalidPermissionsOverrideError,
   PERMISSIONS_OVERRIDE_HEADER,
   PermissionsOverrideFileMissingError,
-  resolvePermissionsOverride,
+  resolveRequestPermissionsConfig,
 } from './permissionsOverride.js';
 
 /**
  * Headers that should not be forwarded between client and upstream (hop-by-hop).
  */
-const HOP_BY_HOP_HEADERS = new Set([
+export const HOP_BY_HOP_HEADERS: ReadonlySet<string> = new Set([
   'connection',
   'keep-alive',
   'proxy-authenticate',
@@ -50,7 +50,10 @@ const HOP_BY_HOP_HEADERS = new Set([
  * Headers that the gateway consumes itself and must not forward to upstream
  * (in addition to hop-by-hop headers).
  */
-const GATEWAY_INTERNAL_HEADERS = new Set([GATEWAY_PASSWORD_HEADER, PERMISSIONS_OVERRIDE_HEADER]);
+export const GATEWAY_INTERNAL_HEADERS: ReadonlySet<string> = new Set([
+  GATEWAY_PASSWORD_HEADER,
+  PERMISSIONS_OVERRIDE_HEADER,
+]);
 
 export const GATEWAY_PATH_PREFIX = '/gateway/';
 
@@ -119,7 +122,8 @@ export function extractTargetUrl(rawUrl: string): string | null {
 
 /**
  * Build curl arguments from an HTTP request's components.
- * Strips hop-by-hop headers and constructs a curl-compatible argument array.
+ *
+ * Hop-by-hop headers and gateway-internal headers are stripped.
  */
 export function buildCurlArguments(
   method: string,
@@ -134,7 +138,8 @@ export function buildCurlArguments(
   }
 
   for (const [name, value] of headers) {
-    if (HOP_BY_HOP_HEADERS.has(name.toLowerCase())) {
+    const lowerName = name.toLowerCase();
+    if (HOP_BY_HOP_HEADERS.has(lowerName) || GATEWAY_INTERNAL_HEADERS.has(lowerName)) {
       continue;
     }
     args.push('-H', `${name}: ${value}`);
@@ -147,6 +152,18 @@ export function buildCurlArguments(
   args.push(targetUrl);
 
   return args;
+}
+
+/**
+ * Build a `Map<string, string>` view of an `IncomingMessage`'s `rawHeaders`,
+ * preserving original case.
+ */
+function rawHeadersToMap(rawHeaders: readonly string[]): Map<string, string> {
+  const map = new Map<string, string>();
+  for (let index = 0; index < rawHeaders.length; index += 2) {
+    map.set(rawHeaders[index]!, rawHeaders[index + 1]!);
+  }
+  return map;
 }
 
 /**
@@ -269,29 +286,26 @@ export async function handleGatewayRequest(
   // Resolve the permissions config for this request. When the client
   // supplied a permissions-override JWT, validate it and use the referenced
   // file; otherwise fall back to the gateway's default config path.
-  const pointerHeader = request.headers[PERMISSIONS_OVERRIDE_HEADER];
-  const pointerToken = typeof pointerHeader === 'string' ? pointerHeader : undefined;
-  let permissionsConfigPath = deps.config.permissionsConfigPath;
-  if (pointerToken !== undefined) {
-    try {
-      permissionsConfigPath = resolvePermissionsOverride(
-        pointerToken,
-        options.permissionsOverrideSigningKey
-      );
-    } catch (error) {
-      const method = request.method ?? 'UNKNOWN';
-      if (error instanceof InvalidPermissionsOverrideError) {
-        deps.log(`${method} ${targetUrl} -> 401 (permissions override)`);
-        sendErrorResponse(response, 401, error.message);
-        return;
-      }
-      if (error instanceof PermissionsOverrideFileMissingError) {
-        deps.log(`${method} ${targetUrl} -> 400 (permissions override)`);
-        sendErrorResponse(response, 400, error.message);
-        return;
-      }
-      throw error;
+  let permissionsConfigPath: string;
+  try {
+    permissionsConfigPath = resolveRequestPermissionsConfig(
+      request.headers,
+      deps.config.permissionsConfigPath,
+      options.permissionsOverrideSigningKey
+    );
+  } catch (error) {
+    const method = request.method ?? 'UNKNOWN';
+    if (error instanceof InvalidPermissionsOverrideError) {
+      deps.log(`${method} ${targetUrl} -> 401 (permissions override)`);
+      sendErrorResponse(response, 401, error.message);
+      return;
     }
+    if (error instanceof PermissionsOverrideFileMissingError) {
+      deps.log(`${method} ${targetUrl} -> 400 (permissions override)`);
+      sendErrorResponse(response, 400, error.message);
+      return;
+    }
+    throw error;
   }
 
   // Read body
@@ -308,23 +322,16 @@ export async function handleGatewayRequest(
     throw error;
   }
 
-  // Build curl arguments from the incoming request, dropping headers that
-  // must not be forwarded upstream: HTTP hop-by-hop headers and headers
-  // the gateway itself consumes (password, permissions override).
+  // Build curl arguments from the incoming request. `buildCurlArguments`
+  // strips hop-by-hop and gateway-internal headers itself, so we just hand
+  // it the raw header map.
   const method = request.method ?? 'GET';
-  const headerMap = new Map<string, string>();
-  const rawHeaders = request.rawHeaders;
-  for (let i = 0; i < rawHeaders.length; i += 2) {
-    const name = rawHeaders[i]!;
-    const value = rawHeaders[i + 1]!;
-    const lowerName = name.toLowerCase();
-    if (HOP_BY_HOP_HEADERS.has(lowerName) || GATEWAY_INTERNAL_HEADERS.has(lowerName)) {
-      continue;
-    }
-    headerMap.set(name, value);
-  }
-
-  const curlArguments = buildCurlArguments(method, headerMap, targetUrl, body !== null);
+  const curlArguments = buildCurlArguments(
+    method,
+    rawHeadersToMap(request.rawHeaders),
+    targetUrl,
+    body !== null
+  );
 
   let allArguments: readonly string[];
   try {

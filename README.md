@@ -360,6 +360,12 @@ to the JWT and the CLI will attach it to every outgoing gateway
 request automatically (analogous to `LATCHKEY_GATEWAY_PASSWORD`).
 
 
+#### Extensions
+
+You can extend the gateway with your own HTTP endpoints. For
+details, see the [./docs/extensions.md](extensions docs).
+
+
 ### Other configuration
 
 You can set these environment variables to override certain

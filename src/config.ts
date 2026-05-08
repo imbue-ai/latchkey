@@ -62,6 +62,7 @@ const CREDENTIAL_STORE_FILENAME = 'credentials.json.enc';
 const BROWSER_STATE_FILENAME = 'browser_state.json.enc';
 const CONFIG_FILENAME = 'config.json';
 const PERMISSIONS_CONFIG_FILENAME = 'permissions.json';
+const EXTENSIONS_DIRECTORY_NAME = 'extensions';
 
 function resolvePathWithTildeExpansion(path: string): string {
   if (path.startsWith('~')) {
@@ -332,6 +333,14 @@ export class Config {
 
   get permissionsConfigPath(): string {
     return this.permissionsConfigOverride ?? join(this.directory, PERMISSIONS_CONFIG_FILENAME);
+  }
+
+  /**
+   * Directory the gateway scans for extension modules at startup.
+   * See `src/gateway/extensions.ts`.
+   */
+  get extensionsDirectoryPath(): string {
+    return join(this.directory, EXTENSIONS_DIRECTORY_NAME);
   }
 
   /**
