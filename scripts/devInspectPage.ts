@@ -67,7 +67,9 @@ async function main(): Promise<void> {
     ignoreDefaultArgs: ['--enable-automation'],
   };
   const browser = await chromium.launch(launchOptions);
-  const context = await browser.newContext(storageStatePath ? { storageState: storageStatePath } : {});
+  const context = await browser.newContext(
+    storageStatePath ? { storageState: storageStatePath } : {}
+  );
   const page = await context.newPage();
 
   console.error(`[inspect] navigating to ${args.url}`);
