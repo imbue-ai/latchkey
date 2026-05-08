@@ -2,7 +2,12 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { parseCurlArgs } from '@imbue-ai/detent';
 import { checkPermission, PermissionCheckError } from '../src/permissions.js';
+
+function requestFromCurl(args: readonly string[]): Request {
+  return parseCurlArgs(args);
+}
 
 describe('checkPermission', () => {
   let tempDir: string;
@@ -19,7 +24,7 @@ describe('checkPermission', () => {
     const configPath = join(tempDir, 'nonexistent', 'permissions.json');
 
     const result = await checkPermission(
-      ['-X', 'GET', 'https://api.example.com/anything'],
+      requestFromCurl(['-X', 'GET', 'https://api.example.com/anything']),
       configPath
     );
 
@@ -49,7 +54,10 @@ describe('checkPermission', () => {
       })
     );
 
-    const result = await checkPermission(['https://api.example.com/users'], configPath);
+    const result = await checkPermission(
+      requestFromCurl(['https://api.example.com/users']),
+      configPath
+    );
 
     expect(result).toBe(true);
   });
@@ -78,7 +86,7 @@ describe('checkPermission', () => {
     );
 
     const result = await checkPermission(
-      ['-X', 'POST', 'https://api.example.com/users'],
+      requestFromCurl(['-X', 'POST', 'https://api.example.com/users']),
       configPath
     );
 
@@ -108,7 +116,10 @@ describe('checkPermission', () => {
       })
     );
 
-    const result = await checkPermission(['https://api.other.com/something'], configPath);
+    const result = await checkPermission(
+      requestFromCurl(['https://api.other.com/something']),
+      configPath
+    );
 
     expect(result).toBe(false);
   });
@@ -117,9 +128,9 @@ describe('checkPermission', () => {
     const configPath = join(tempDir, 'permissions.json');
     writeFileSync(configPath, 'not valid json');
 
-    await expect(checkPermission(['https://api.example.com/anything'], configPath)).rejects.toThrow(
-      PermissionCheckError
-    );
+    await expect(
+      checkPermission(requestFromCurl(['https://api.example.com/anything']), configPath)
+    ).rejects.toThrow(PermissionCheckError);
   });
 
   it('should accept URLs without a scheme (defaulting to http://) when rules allow them', async () => {
@@ -131,7 +142,7 @@ describe('checkPermission', () => {
       })
     );
 
-    const result = await checkPermission(['www.seznam.cz'], configPath);
+    const result = await checkPermission(requestFromCurl(['www.seznam.cz']), configPath);
     expect(result).toBe(true);
   });
 
@@ -145,7 +156,7 @@ describe('checkPermission', () => {
     );
 
     await expect(
-      checkPermission(['https://api.example.com/anything'], configPath, true)
+      checkPermission(requestFromCurl(['https://api.example.com/anything']), configPath, true)
     ).rejects.toThrow(PermissionCheckError);
   });
 
@@ -158,9 +169,12 @@ describe('checkPermission', () => {
       })
     );
 
-    const resultGet = await checkPermission(['https://api.example.com/anything'], configPath);
+    const resultGet = await checkPermission(
+      requestFromCurl(['https://api.example.com/anything']),
+      configPath
+    );
     const resultPost = await checkPermission(
-      ['-X', 'POST', '-d', '{"key":"value"}', 'https://api.other.com/resource'],
+      requestFromCurl(['-X', 'POST', '-d', '{"key":"value"}', 'https://api.other.com/resource']),
       configPath
     );
 
@@ -177,7 +191,10 @@ describe('checkPermission', () => {
       })
     );
 
-    const result = await checkPermission(['https://api.example.com/anything'], configPath);
+    const result = await checkPermission(
+      requestFromCurl(['https://api.example.com/anything']),
+      configPath
+    );
 
     expect(result).toBe(false);
   });

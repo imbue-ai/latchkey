@@ -98,7 +98,7 @@ export interface CliDependencies {
   readonly runCurl: (args: readonly string[]) => CurlResult;
   readonly runCurlAsync: typeof curlRunAsync;
   readonly checkPermission: (
-    curlArguments: readonly string[],
+    request: Request,
     configPath: string,
     doNotUseBuiltinSchemas: boolean
   ) => Promise<boolean>;

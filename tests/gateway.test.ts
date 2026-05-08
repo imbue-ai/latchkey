@@ -106,6 +106,21 @@ describe('buildCurlArguments', () => {
     expect(args.join(' ')).not.toContain('Keep-Alive');
   });
 
+  it('should strip gateway-internal headers so they cannot leak upstream', () => {
+    const headers = new Map([
+      ['Content-Type', 'application/json'],
+      ['X-Latchkey-Gateway-Password', 'sekret'],
+      ['X-Latchkey-Gateway-Permissions-Override', 'jwt-payload'],
+    ]);
+    const args = buildCurlArguments('GET', headers, 'https://api.example.com/test', false);
+    expect(args).toContain('Content-Type: application/json');
+    const joined = args.join('\n').toLowerCase();
+    expect(joined).not.toContain('x-latchkey-gateway-password');
+    expect(joined).not.toContain('x-latchkey-gateway-permissions-override');
+    expect(joined).not.toContain('sekret');
+    expect(joined).not.toContain('jwt-payload');
+  });
+
   it('should add --data-binary @- when body is present', () => {
     const args = buildCurlArguments(
       'POST',

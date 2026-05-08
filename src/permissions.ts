@@ -1,19 +1,10 @@
 /**
  * Permission checking for outgoing HTTP requests based on the
  * Detent library.
- *
- * When a permissions config file exists, outgoing curl requests are checked
- * against the user's permission rules before being sent.
  */
 
 import { existsSync } from 'node:fs';
-import {
-  check,
-  parseCurlArgs,
-  CurlParseError,
-  ConfigError,
-  RequestSchemaError,
-} from '@imbue-ai/detent';
+import { check, ConfigError, RequestSchemaError } from '@imbue-ai/detent';
 
 export class PermissionCheckError extends Error {
   constructor(message: string) {
@@ -23,20 +14,20 @@ export class PermissionCheckError extends Error {
 }
 
 /**
- * Check whether a curl request is allowed by permission rules.
+ * Check whether a request is allowed by permission rules.
  *
  * When no permissions config file is present at the given path, the check is
  * skipped (returns true). When a config exists, the request is validated
  * against its rules.
  *
- * @param curlArguments - The raw curl arguments (before credential injection).
+ * @param request - The request to check.
  * @param configPath - Path to the permissions config file.
  * @param doNotUseBuiltinSchemas - When true, detent's built-in schemas are not used.
  * @returns true if the request is allowed (or no config exists), false if denied.
  * @throws PermissionCheckError if parsing or checking fails unexpectedly.
  */
 export async function checkPermission(
-  curlArguments: readonly string[],
+  request: Request,
   configPath: string,
   doNotUseBuiltinSchemas = false
 ): Promise<boolean> {
@@ -45,15 +36,9 @@ export async function checkPermission(
   }
 
   try {
-    const request = parseCurlArgs(curlArguments);
-    const useBuiltinSchemas = !doNotUseBuiltinSchemas;
-    return await check(request, configPath, useBuiltinSchemas);
+    return await check(request, configPath, !doNotUseBuiltinSchemas);
   } catch (error) {
-    if (
-      error instanceof CurlParseError ||
-      error instanceof ConfigError ||
-      error instanceof RequestSchemaError
-    ) {
+    if (error instanceof ConfigError || error instanceof RequestSchemaError) {
       throw new PermissionCheckError(`Permission check failed: ${error.message}`);
     }
     throw error;
