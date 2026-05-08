@@ -277,13 +277,19 @@ async function addTestUser(page: Page, projectSlug: string, email: string): Prom
 
   const saveButton = page.locator('button[aria-label="Save"][type="submit"]').first();
   await saveButton.waitFor({ state: 'visible', timeout: DEFAULT_TIMEOUT_MS });
-  // Playwright's pointer-event click leaves the dialog open here even though
-  // the manual click works. Calling .click() directly on the DOM element
-  // bypasses whatever filtering is happening and submits reliably.
-  await saveButton.evaluate((el) => {
-    (el as unknown as { click(): void }).click();
-  });
-  await usersInput.waitFor({ state: 'hidden', timeout: 5000 });
+  // Try a normal click first — but Angular often needs a beat after the chip
+  // is added before submit is wired up, so this first click frequently
+  // no-ops. The 5s wait below gives Angular that beat; if the dialog still
+  // isn't closing, fall back to a direct DOM .click() which then submits.
+  await saveButton.click();
+  try {
+    await usersInput.waitFor({ state: 'hidden', timeout: 5000 });
+  } catch {
+    await saveButton.evaluate((el) => {
+      (el as unknown as { click(): void }).click();
+    });
+    await usersInput.waitFor({ state: 'hidden', timeout: DEFAULT_TIMEOUT_MS });
+  }
 }
 
 async function createOAuthClient(
