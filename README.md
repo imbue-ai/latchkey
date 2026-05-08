@@ -363,7 +363,7 @@ request automatically (analogous to `LATCHKEY_GATEWAY_PASSWORD`).
 #### Extensions
 
 You can extend the gateway with your own HTTP endpoints. For
-details, see the [./docs/extensions.md](extensions docs).
+details, see the [extensions docs](./docs/extensions.md).
 
 
 ### Other configuration
