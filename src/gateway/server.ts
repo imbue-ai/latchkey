@@ -117,13 +117,7 @@ function runExtensions(
     return Promise.resolve(true);
   }
 
-  return dispatchExtensionRequest(
-    request,
-    response,
-    extensions,
-    deps,
-    permissionsConfigPath
-  );
+  return dispatchExtensionRequest(request, response, extensions, deps, permissionsConfigPath);
 }
 
 /**
