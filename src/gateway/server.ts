@@ -18,7 +18,13 @@ import {
 } from './gatewayEndpoint.js';
 import { handleLatchkeyRequest } from './latchkeyEndpoint.js';
 import { GATEWAY_PASSWORD_HEADER, passwordsMatch } from './password.js';
-import { dispatchExtensionRequest, loadExtensions, type LoadedExtension } from './extensions.js';
+import {
+  dispatchExtensionRequest,
+  loadExtensions,
+  startExtensions,
+  stopExtensions,
+  type LoadedExtension,
+} from './extensions.js';
 import {
   InvalidPermissionsOverrideError,
   PermissionsOverrideFileMissingError,
@@ -132,6 +138,7 @@ export async function startGateway(
   const inFlightRequests = new Set<Promise<void>>();
 
   const extensions = await loadExtensions(deps.config.extensionsDirectoryPath);
+  await startExtensions(extensions);
 
   const server = http.createServer((request, response) => {
     const rawUrl = request.url ?? '';
@@ -232,6 +239,16 @@ export async function startGateway(
   const close = (): Promise<void> => {
     return new Promise((resolve) => {
       deps.log('Shutting down...');
+
+      // Give extensions a chance to release long-lived connections. A
+      // well-behaved stop() hook ends every response the extension is
+      // holding open, which lets server.close() complete naturally well
+      // before the force-close timeout fires. We don't await this here:
+      // server.close() will only signal completion once the response
+      // count actually drops to zero, so the two run concurrently and
+      // the result is the same either way.
+      void stopExtensions(extensions, deps);
+
       server.close(() => {
         resolve();
       });

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { CliDependencies } from '../src/cliCommands.js';
@@ -17,7 +17,10 @@ import type { GatewayOptions } from '../src/gateway/gatewayEndpoint.js';
 import {
   EXTENSION_PLACEHOLDER_HOST,
   ExtensionLoadError,
+  ExtensionStartError,
   loadExtensions,
+  startExtensions,
+  stopExtensions,
 } from '../src/gateway/extensions.js';
 import type { CurlResult, AsyncCurlResult } from '../src/curl.js';
 import { GATEWAY_PASSWORD_HEADER } from '../src/gateway/password.js';
@@ -112,6 +115,208 @@ describe('loadExtensions', () => {
   it('throws ExtensionLoadError when the default export is not a function', async () => {
     writeExtension(extensionsDir, 'object-default.mjs', `export default { handler: () => {} };`);
     await expect(loadExtensions(extensionsDir)).rejects.toThrow(/must export a default function/);
+  });
+
+  it('exposes optional start and stop hooks when the module exports them', async () => {
+    writeExtension(
+      extensionsDir,
+      'hooks.mjs',
+      `export default () => false;
+       export const start = async () => {};
+       export const stop = () => {};`
+    );
+    const extensions = await loadExtensions(extensionsDir);
+    expect(extensions).toHaveLength(1);
+    expect(typeof extensions[0]!.start).toBe('function');
+    expect(typeof extensions[0]!.stop).toBe('function');
+  });
+
+  it('leaves start and stop undefined when the module does not export them', async () => {
+    writeExtension(extensionsDir, 'nohooks.mjs', `export default () => false;`);
+    const extensions = await loadExtensions(extensionsDir);
+    expect(extensions[0]!.start).toBeUndefined();
+    expect(extensions[0]!.stop).toBeUndefined();
+  });
+
+  it('throws ExtensionLoadError when start is exported but is not a function', async () => {
+    writeExtension(
+      extensionsDir,
+      'badstart.mjs',
+      `export default () => false;
+       export const start = 'not-a-function';`
+    );
+    await expect(loadExtensions(extensionsDir)).rejects.toThrow(
+      /exports 'start' but it is not a function/
+    );
+  });
+
+  it('throws ExtensionLoadError when stop is exported but is not a function', async () => {
+    writeExtension(
+      extensionsDir,
+      'badstop.mjs',
+      `export default () => false;
+       export const stop = 42;`
+    );
+    await expect(loadExtensions(extensionsDir)).rejects.toThrow(
+      /exports 'stop' but it is not a function/
+    );
+  });
+});
+
+// ─── Unit tests: startExtensions / stopExtensions ────────────────────────────
+
+describe('startExtensions / stopExtensions', () => {
+  let tempDir: string;
+  let extensionsDir: string;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), 'latchkey-ext-lifecycle-'));
+    extensionsDir = join(tempDir, 'extensions');
+    mkdirSync(extensionsDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  function makeFakeDeps(errorLogs: string[]): CliDependencies {
+    return {
+      registry: new ServiceRegistry([]),
+      config: new Config(() => undefined),
+      runCurl: (): CurlResult => ({ returncode: 0, stdout: '', stderr: '' }),
+      runCurlAsync: (): Promise<AsyncCurlResult> =>
+        Promise.resolve({ returncode: 0, stdout: Buffer.alloc(0), stderr: '' }),
+      checkPermission: () => Promise.resolve(true),
+      confirm: () => Promise.resolve(true),
+      exit: (code: number): never => {
+        throw new Error(`process.exit(${String(code)})`);
+      },
+      log: (_message: string) => {
+        // intentionally ignored in lifecycle tests
+      },
+      errorLog: (message: string) => {
+        errorLogs.push(message);
+      },
+      version: '0.0.0-test',
+    };
+  }
+
+  it('calls start on every extension in load order', async () => {
+    const recordPath = join(tempDir, 'order.txt');
+    writeExtension(
+      extensionsDir,
+      'a.mjs',
+      `import { appendFileSync } from 'node:fs';
+       export default () => false;
+       export const start = () => appendFileSync(${JSON.stringify(recordPath)}, 'a-start\\n');`
+    );
+    writeExtension(
+      extensionsDir,
+      'b.mjs',
+      `import { appendFileSync } from 'node:fs';
+       export default () => false;
+       export const start = () => appendFileSync(${JSON.stringify(recordPath)}, 'b-start\\n');`
+    );
+    const extensions = await loadExtensions(extensionsDir);
+    await startExtensions(extensions);
+    const { readFileSync } = await import('node:fs');
+    expect(readFileSync(recordPath, 'utf-8')).toBe('a-start\nb-start\n');
+  });
+
+  it('awaits async start hooks before resuming', async () => {
+    const recordPath = join(tempDir, 'async-start.txt');
+    writeExtension(
+      extensionsDir,
+      'slow.mjs',
+      `import { writeFileSync } from 'node:fs';
+       export default () => false;
+       export const start = () => new Promise((resolve) => {
+         setTimeout(() => {
+           writeFileSync(${JSON.stringify(recordPath)}, 'started');
+           resolve();
+         }, 20);
+       });`
+    );
+    const extensions = await loadExtensions(extensionsDir);
+    await startExtensions(extensions);
+    const { readFileSync } = await import('node:fs');
+    expect(readFileSync(recordPath, 'utf-8')).toBe('started');
+  });
+
+  it('throws ExtensionStartError when a start hook throws and aborts subsequent starts', async () => {
+    const recordPath = join(tempDir, 'aborted.txt');
+    writeExtension(
+      extensionsDir,
+      'a-boom.mjs',
+      `export default () => false;
+       export const start = () => { throw new Error('start-failed'); };`
+    );
+    writeExtension(
+      extensionsDir,
+      'b-should-not-run.mjs',
+      `import { writeFileSync } from 'node:fs';
+       export default () => false;
+       export const start = () => writeFileSync(${JSON.stringify(recordPath)}, 'b-started');`
+    );
+    const extensions = await loadExtensions(extensionsDir);
+    await expect(startExtensions(extensions)).rejects.toThrow(ExtensionStartError);
+    await expect(startExtensions(extensions)).rejects.toThrow(/start-failed/);
+    expect(existsSync(recordPath)).toBe(false);
+  });
+
+  it('calls stop on every extension in load order', async () => {
+    const recordPath = join(tempDir, 'stop-order.txt');
+    writeExtension(
+      extensionsDir,
+      'a.mjs',
+      `import { appendFileSync } from 'node:fs';
+       export default () => false;
+       export const stop = () => appendFileSync(${JSON.stringify(recordPath)}, 'a-stop\\n');`
+    );
+    writeExtension(
+      extensionsDir,
+      'b.mjs',
+      `import { appendFileSync } from 'node:fs';
+       export default () => false;
+       export const stop = () => appendFileSync(${JSON.stringify(recordPath)}, 'b-stop\\n');`
+    );
+    const extensions = await loadExtensions(extensionsDir);
+    const errorLogs: string[] = [];
+    await stopExtensions(extensions, makeFakeDeps(errorLogs));
+    const { readFileSync } = await import('node:fs');
+    expect(readFileSync(recordPath, 'utf-8')).toBe('a-stop\nb-stop\n');
+    expect(errorLogs).toEqual([]);
+  });
+
+  it('logs and swallows errors thrown by stop hooks, continuing with subsequent extensions', async () => {
+    const recordPath = join(tempDir, 'stop-continued.txt');
+    writeExtension(
+      extensionsDir,
+      'a-boom.mjs',
+      `export default () => false;
+       export const stop = () => { throw new Error('stop-failed'); };`
+    );
+    writeExtension(
+      extensionsDir,
+      'b-still-runs.mjs',
+      `import { writeFileSync } from 'node:fs';
+       export default () => false;
+       export const stop = () => writeFileSync(${JSON.stringify(recordPath)}, 'b-stopped');`
+    );
+    const extensions = await loadExtensions(extensionsDir);
+    const errorLogs: string[] = [];
+    await stopExtensions(extensions, makeFakeDeps(errorLogs));
+    const { readFileSync } = await import('node:fs');
+    expect(readFileSync(recordPath, 'utf-8')).toBe('b-stopped');
+    expect(errorLogs.some((message) => message.includes('stop-failed'))).toBe(true);
+  });
+
+  it('skips extensions without lifecycle hooks', async () => {
+    writeExtension(extensionsDir, 'plain.mjs', `export default () => false;`);
+    const extensions = await loadExtensions(extensionsDir);
+    const errorLogs: string[] = [];
+    await expect(startExtensions(extensions)).resolves.toBeUndefined();
+    await expect(stopExtensions(extensions, makeFakeDeps(errorLogs))).resolves.toBeUndefined();
   });
 });
 
@@ -535,5 +740,98 @@ describe('gateway extensions integration', () => {
     const response = await fetch('/extensions/log');
     await response.text();
     expect(logs).toContain('GET /extensions/log -> 202 (extension)');
+  });
+
+  it('invokes extension start hooks before the HTTP listener accepts requests, and stop hooks at shutdown', async () => {
+    const markerPath = join(tempDir, 'lifecycle.txt');
+    writeExtension(
+      extensionsDir,
+      'lifecycle.mjs',
+      `import { appendFileSync } from 'node:fs';
+       export default (req, res) => {
+         res.writeHead(200, { 'Content-Type': 'text/plain' });
+         res.end('ok');
+         return true;
+       };
+       export const start = () => appendFileSync(${JSON.stringify(markerPath)}, 'start\\n');
+       export const stop = () => appendFileSync(${JSON.stringify(markerPath)}, 'stop\\n');`
+    );
+
+    gateway = await createTestGateway();
+    const { readFileSync } = await import('node:fs');
+    expect(readFileSync(markerPath, 'utf-8')).toBe('start\n');
+
+    const response = await fetch('/extensions/lifecycle');
+    expect(response.status).toBe(200);
+
+    await gateway.close();
+    gateway = undefined;
+    expect(readFileSync(markerPath, 'utf-8')).toBe('start\nstop\n');
+  });
+
+  it('aborts gateway startup when an extension start hook throws', async () => {
+    writeExtension(
+      extensionsDir,
+      'cant-start.mjs',
+      `export default () => false;
+       export const start = () => { throw new Error('nope'); };`
+    );
+    await expect(createTestGateway()).rejects.toThrow(ExtensionStartError);
+  });
+
+  it('lets a stop hook proactively end long-lived streams so shutdown completes promptly', async () => {
+    writeExtension(
+      extensionsDir,
+      'stream.mjs',
+      `const openResponses = new Set();
+       export default (req, res) => {
+         if (req.url !== '/extensions/stream') return false;
+         res.writeHead(200, { 'Content-Type': 'text/plain' });
+         res.flushHeaders();
+         res.write('hello\\n');
+         openResponses.add(res);
+         return new Promise((resolve) => {
+           const finish = () => {
+             openResponses.delete(res);
+             if (!res.writableEnded) res.end();
+             resolve(true);
+           };
+           req.on('close', finish);
+         });
+       };
+       export const stop = () => {
+         for (const res of openResponses) {
+           if (!res.writableEnded) res.end();
+         }
+       };`
+    );
+    gateway = await createTestGateway();
+
+    // Open a long-lived stream and read the initial chunk so we know the
+    // handler is parked on the close promise.
+    const controller = new AbortController();
+    const responsePromise = fetch('/extensions/stream', { signal: controller.signal });
+    const response = await responsePromise;
+    expect(response.status).toBe(200);
+    const reader = (response.body as ReadableStream<Uint8Array>).getReader();
+    const firstChunk = await reader.read();
+    if (firstChunk.value === undefined) {
+      throw new Error('Expected an initial chunk from the streaming extension.');
+    }
+    expect(new TextDecoder().decode(firstChunk.value)).toBe('hello\n');
+
+    // Shutdown should complete promptly thanks to the stop hook ending
+    // the response. The force-close timeout is 10s, so anything well
+    // under that proves the stop hook actually fired.
+    const startedAt = Date.now();
+    await gateway.close();
+    gateway = undefined;
+    const elapsedMilliseconds = Date.now() - startedAt;
+    expect(elapsedMilliseconds).toBeLessThan(2000);
+
+    // The reader should observe end-of-stream.
+    const nextChunk = await reader.read();
+    expect(nextChunk.done).toBe(true);
+    controller.abort();
   });
 });
