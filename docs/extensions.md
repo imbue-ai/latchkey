@@ -109,3 +109,29 @@ the outbound services your agents call, e.g.:
 Rules are evaluated top-to-bottom; the first whose scope matches
 the request decides the outcome, so the extension rule and the
 third-party-service rules don't interfere with each other.
+
+
+## Lifecycle hooks (`start` / `stop`)
+
+In addition to the default export, an extension module may export
+optional named `start` and `stop` functions:
+
+```js
+// ~/.latchkey/extensions/notify.mjs
+export default (request, response) => { /* ... */ };
+
+export async function start() {
+  // Allocate resources, open files, etc. Called once before the
+  // gateway begins listening on the HTTP port.
+}
+
+export async function stop() {
+  // Release resources, close long-lived responses, etc. Called once
+  // at gateway shutdown, just before the HTTP server stops accepting
+  // requests.
+}
+```
+
+Both hooks are optional and may be either synchronous or `async`. They
+are invoked sequentially across extensions in the same alphabetical
+order as the handlers themselves.

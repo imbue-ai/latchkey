@@ -11,6 +11,13 @@
  *   - return `false` to defer to the next extension. The handler must not
  *     touch the response in this case.
  *
+ * Extensions may additionally export optional named `start` and `stop`
+ * functions (`() => void | Promise<void>`). The gateway invokes `start`
+ * once for every loaded extension before it begins listening on the HTTP
+ * port, and `stop` once at shutdown (just before `server.close()`), so
+ * that extensions holding long-lived responses can release them and let
+ * shutdown complete without waiting for the force-close timeout.
+ *
  * Extensions only see Node's raw HTTP request / response. They do NOT have
  * access to credential storage, the curl-injection pipeline, or the service
  * registry. Each extension request is run through the same
@@ -47,14 +54,14 @@ export type ExtensionHandler = (
   response: http.ServerResponse
 ) => boolean | Promise<boolean>;
 
+export type ExtensionLifecycleHook = () => void | Promise<void>;
+
 export interface LoadedExtension {
   readonly handler: ExtensionHandler;
+  readonly start?: ExtensionLifecycleHook;
+  readonly stop?: ExtensionLifecycleHook;
   /** Absolute path of the file the handler was loaded from. */
   readonly sourceFile: string;
-}
-
-interface ExtensionModuleShape {
-  readonly default: ExtensionHandler;
 }
 
 export class ExtensionLoadError extends Error {
@@ -64,13 +71,44 @@ export class ExtensionLoadError extends Error {
   }
 }
 
-function isExtensionModuleShape(value: unknown): value is ExtensionModuleShape {
+export class ExtensionStartError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ExtensionStartError';
+  }
+}
+
+function hasDefaultFunctionExport(
+  value: unknown
+): value is { readonly default: ExtensionHandler } {
   return (
     typeof value === 'object' &&
     value !== null &&
     'default' in value &&
     typeof (value as { default: unknown }).default === 'function'
   );
+}
+
+/**
+ * Read an optional named export from an imported module. Returns the
+ * function when the export exists and is a function, `undefined` when the
+ * export is absent or explicitly `null`/`undefined`, and throws
+ * `ExtensionLoadError` when the export exists but is not callable.
+ */
+function extractOptionalLifecycleHook(
+  importedModule: unknown,
+  exportName: 'start' | 'stop',
+  filePath: string
+): ExtensionLifecycleHook | undefined {
+  if (typeof importedModule !== 'object' || importedModule === null) return undefined;
+  const value = (importedModule as Record<string, unknown>)[exportName];
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== 'function') {
+    throw new ExtensionLoadError(
+      `Extension '${filePath}' exports '${exportName}' but it is not a function.`
+    );
+  }
+  return value as ExtensionLifecycleHook;
 }
 
 /**
@@ -104,15 +142,69 @@ export async function loadExtensions(directory: string): Promise<readonly Loaded
       const message = error instanceof Error ? error.message : String(error);
       throw new ExtensionLoadError(`Failed to load extension '${filePath}': ${message}`);
     }
-    if (!isExtensionModuleShape(importedModule)) {
+    if (!hasDefaultFunctionExport(importedModule)) {
       throw new ExtensionLoadError(
         `Extension '${filePath}' must export a default function ` +
           `(request, response) => boolean | Promise<boolean>.`
       );
     }
-    extensions.push({ handler: importedModule.default, sourceFile: filePath });
+    const start = extractOptionalLifecycleHook(importedModule, 'start', filePath);
+    const stop = extractOptionalLifecycleHook(importedModule, 'stop', filePath);
+    extensions.push({
+      handler: importedModule.default,
+      start,
+      stop,
+      sourceFile: filePath,
+    });
   }
   return extensions;
+}
+
+/**
+ * Invoke every loaded extension's `start` hook sequentially, preserving
+ * load order. Throws `ExtensionStartError` on the first failure; the
+ * caller must avoid starting the HTTP server in that case.
+ *
+ * Extensions whose `start` already succeeded are NOT rolled back via
+ * `stop` on failure - the gateway process is expected to exit on startup
+ * failure, letting the OS reclaim any resources.
+ */
+export async function startExtensions(
+  extensions: readonly LoadedExtension[]
+): Promise<void> {
+  for (const extension of extensions) {
+    if (extension.start === undefined) continue;
+    try {
+      await extension.start();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new ExtensionStartError(
+        `Extension '${extension.sourceFile}' failed to start: ${message}`
+      );
+    }
+  }
+}
+
+/**
+ * Invoke every loaded extension's `stop` hook sequentially, preserving
+ * load order. Errors are logged via `deps.errorLog` and otherwise
+ * swallowed so that one misbehaving extension cannot block shutdown.
+ */
+export async function stopExtensions(
+  extensions: readonly LoadedExtension[],
+  deps: CliDependencies
+): Promise<void> {
+  for (const extension of extensions) {
+    if (extension.stop === undefined) continue;
+    try {
+      await extension.stop();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      deps.errorLog(
+        `Extension '${extension.sourceFile}' stop hook threw: ${message}`
+      );
+    }
+  }
 }
 
 /**
