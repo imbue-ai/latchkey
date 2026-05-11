@@ -78,9 +78,7 @@ export class ExtensionStartError extends Error {
   }
 }
 
-function hasDefaultFunctionExport(
-  value: unknown
-): value is { readonly default: ExtensionHandler } {
+function hasDefaultFunctionExport(value: unknown): value is { readonly default: ExtensionHandler } {
   return (
     typeof value === 'object' &&
     value !== null &&
@@ -169,9 +167,7 @@ export async function loadExtensions(directory: string): Promise<readonly Loaded
  * `stop` on failure - the gateway process is expected to exit on startup
  * failure, letting the OS reclaim any resources.
  */
-export async function startExtensions(
-  extensions: readonly LoadedExtension[]
-): Promise<void> {
+export async function startExtensions(extensions: readonly LoadedExtension[]): Promise<void> {
   for (const extension of extensions) {
     if (extension.start === undefined) continue;
     try {
@@ -200,9 +196,7 @@ export async function stopExtensions(
       await extension.stop();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      deps.errorLog(
-        `Extension '${extension.sourceFile}' stop hook threw: ${message}`
-      );
+      deps.errorLog(`Extension '${extension.sourceFile}' stop hook threw: ${message}`);
     }
   }
 }
