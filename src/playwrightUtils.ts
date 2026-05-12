@@ -138,9 +138,7 @@ export async function withTempBrowserContext<T>(
   }
 
   const { chromium } = await loadPlaywright();
-  // Use installed Chrome and strip the most obvious automation tells so
-  // services like Google's sign-in (which blocks bundled Chromium with
-  // "This browser or app may not be secure") let us through.
+  // Strip the most obvious automation tells so services like Google's sign-in let us through.
   const playwrightLaunchOptions: LaunchOptions = {
     headless: false,
     args: ['--disable-blink-features=AutomationControlled'],
@@ -148,8 +146,6 @@ export async function withTempBrowserContext<T>(
   };
   if (options.executablePath) {
     playwrightLaunchOptions.executablePath = options.executablePath;
-  } else {
-    playwrightLaunchOptions.channel = 'chrome';
   }
   const browser = await chromium.launch(playwrightLaunchOptions);
 
@@ -171,15 +167,17 @@ export async function withTempBrowserContext<T>(
 
     return result;
   } catch (error) {
-    if (context) {
-      const artifactsDir = await captureFailureArtifacts(context);
-      if (artifactsDir) {
-        console.error(`[latchkey] Browser flow failed. Debug artifacts saved to: ${artifactsDir}`);
+    if (process.env.LATCHKEY_DEBUG === '1') {
+      if (context) {
+        const artifactsDir = await captureFailureArtifacts(context);
+        if (artifactsDir) {
+          console.error(
+            `[latchkey] Browser flow failed. Debug artifacts saved to: ${artifactsDir}`
+          );
+        }
       }
-    }
-    if (process.env.LATCHKEY_DEV_PAUSE_ON_FAILURE === '1') {
       console.error(
-        '[latchkey] LATCHKEY_DEV_PAUSE_ON_FAILURE=1: browser left open for inspection. Press Ctrl+C to exit.'
+        '[latchkey] LATCHKEY_DEBUG=1: browser left open for inspection. Press Ctrl+C to exit.'
       );
       await new Promise(() => {
         /* hang indefinitely */
