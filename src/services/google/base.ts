@@ -137,6 +137,15 @@ async function createProject(page: Page, appName: string): Promise<string> {
   await projectNameInput.clear();
   await typeLikeHuman(page, projectNameInput, appName);
 
+  // Angular form sometimes fails to commit the typed value to its internal
+  // state, causing submit to report "fields not correct" even though the
+  // input is visibly populated. Deleting and retyping the last character
+  // forces the form state to update.
+  const lastChar = appName.slice(-1);
+  await projectNameInput.press('End');
+  await projectNameInput.press('Backspace');
+  await projectNameInput.pressSequentially(lastChar);
+
   const createButton = page.locator('button[type="submit"]');
   await createButton.click();
 
@@ -175,7 +184,18 @@ async function enableApi(page: Page, projectSlug: string, apiName: string): Prom
   await stopIndicator.waitFor({ timeout: 18000 });
 }
 
-async function configureBranding(page: Page, projectSlug: string, appName: string): Promise<void> {
+interface BrandingResult {
+  /** Whether the OAuth app was set up as External (true for personal Google accounts). */
+  isExternalApp: boolean;
+  /** The support email selected during branding (also the signed-in user's email for personal accounts). */
+  supportEmail: string;
+}
+
+async function configureBranding(
+  page: Page,
+  projectSlug: string,
+  appName: string
+): Promise<BrandingResult> {
   await page.goto(`https://console.cloud.google.com/auth/branding?project=${projectSlug}`, {
     timeout: DEFAULT_TIMEOUT_MS,
   });
@@ -195,9 +215,19 @@ async function configureBranding(page: Page, projectSlug: string, appName: strin
   const nextButton = page.locator('.cfc-stepper-step-button');
   await nextButton.click();
 
-  const internalAudienceRadio = page.locator('.mdc-radio').nth(0);
-  await internalAudienceRadio.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-  await internalAudienceRadio.click();
+  // Workspace accounts can pick "Internal"; personal accounts have it disabled
+  // and must use "External". Pick the first non-disabled radio either way.
+  // We detect External by checking whether the first (Internal) radio is disabled,
+  // because External apps need test users added later.
+  const internalRadio = page.locator('.mdc-radio').nth(0);
+  await internalRadio.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+  const isExternalApp: boolean = await internalRadio.evaluate(
+    (el: { classList: { contains(name: string): boolean } }): boolean =>
+      el.classList.contains('mdc-radio--disabled')
+  );
+  const audienceRadio = page.locator('.mdc-radio:not(.mdc-radio--disabled)').first();
+  await audienceRadio.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+  await audienceRadio.click();
   await nextButton.click();
 
   const contactEmailInput = page.locator('mat-chip-grid[formcontrolname="emails"] input');
@@ -213,6 +243,53 @@ async function configureBranding(page: Page, projectSlug: string, appName: strin
   const createButton = page.locator('.cfc-stepper-submit-button button');
   await createButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
   await createButton.click();
+
+  return { isExternalApp, supportEmail: supportEmailValue ?? '' };
+}
+
+/**
+ * Add a test user to the OAuth consent screen audience.
+ *
+ * External OAuth apps start in "Testing" mode, where only emails listed as
+ * test users can complete the OAuth flow — otherwise Google blocks with
+ * "Access blocked: app has not completed verification". Internal apps don't
+ * need this.
+ */
+async function addTestUser(page: Page, projectSlug: string, email: string): Promise<void> {
+  await page.goto(`https://console.cloud.google.com/auth/audience?project=${projectSlug}`, {
+    timeout: DEFAULT_TIMEOUT_MS,
+  });
+
+  const addUsersButton = page.getByRole('button', { name: /add users/i }).first();
+  await addUsersButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+  await addUsersButton.click();
+
+  const usersInput = page.locator('mat-chip-grid input').first();
+  await usersInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+  await typeLikeHuman(page, usersInput, email);
+  await usersInput.press('Enter');
+
+  // Wait for the email to materialize as a mat-chip-row in the grid before
+  // submitting — otherwise Save can fire while Angular still considers the
+  // form empty.
+  const chipRow = page.locator(`mat-chip-row:has-text("${email}")`).first();
+  await chipRow.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+
+  const saveButton = page.locator('button[aria-label="Save"][type="submit"]').first();
+  await saveButton.waitFor({ state: 'visible', timeout: DEFAULT_TIMEOUT_MS });
+  // Try a normal click first — but Angular often needs a beat after the chip
+  // is added before submit is wired up, so this first click frequently
+  // no-ops. The 5s wait below gives Angular that beat; if the dialog still
+  // isn't closing, fall back to a direct DOM .click() which then submits.
+  await saveButton.click();
+  try {
+    await usersInput.waitFor({ state: 'hidden', timeout: 5000 });
+  } catch {
+    await saveButton.evaluate((el) => {
+      (el as unknown as { click(): void }).click();
+    });
+    await usersInput.waitFor({ state: 'hidden', timeout: DEFAULT_TIMEOUT_MS });
+  }
 }
 
 async function createOAuthClient(
@@ -389,7 +466,10 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
       for (const api of this.config.apis) {
         await enableApi(page, projectSlug, api);
       }
-      await configureBranding(page, projectSlug, appName);
+      const { isExternalApp, supportEmail } = await configureBranding(page, projectSlug, appName);
+      if (isExternalApp && supportEmail) {
+        await addTestUser(page, projectSlug, supportEmail);
+      }
       const { clientId, clientSecret } = await createOAuthClient(page, appName);
       await page.close();
       return new OAuthCredentials(clientId, clientSecret);
