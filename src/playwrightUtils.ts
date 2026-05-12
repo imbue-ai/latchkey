@@ -76,6 +76,47 @@ export function generateLatchkeyAppName(suffix?: string): string {
 }
 
 /**
+ * Save a screenshot, HTML, and URL of every open page to a temp directory.
+ * Returns the directory path on success, null if anything goes wrong.
+ *
+ * Used to dump visible state when a Playwright flow fails so a user can
+ * inspect what the page actually looked like instead of guessing from a
+ * stack trace.
+ */
+async function captureFailureArtifacts(context: BrowserContext): Promise<string | null> {
+  try {
+    const pages = context.pages();
+    if (pages.length === 0) {
+      return null;
+    }
+    const dir = mkdtempSync(join(tmpdir(), 'latchkey-failure-'));
+    for (let i = 0; i < pages.length; i++) {
+      const page = pages[i]!;
+      const prefix = pages.length === 1 ? 'page' : `page-${String(i)}`;
+      try {
+        await page.screenshot({ path: join(dir, `${prefix}.png`), fullPage: true });
+      } catch {
+        // best-effort
+      }
+      try {
+        const html = await page.content();
+        writeFileSync(join(dir, `${prefix}.html`), html, { encoding: 'utf-8' });
+      } catch {
+        // best-effort
+      }
+      try {
+        writeFileSync(join(dir, `${prefix}.url.txt`), page.url(), { encoding: 'utf-8' });
+      } catch {
+        // best-effort
+      }
+    }
+    return dir;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Run a callback with a browser context initialized from encrypted storage state.
  * After the callback completes, persists browser state back to encrypted storage.
  */
@@ -97,17 +138,23 @@ export async function withTempBrowserContext<T>(
   }
 
   const { chromium } = await loadPlaywright();
-  const playwrightLaunchOptions: LaunchOptions = { headless: false };
+  // Strip the most obvious automation tells so services like Google's sign-in let us through.
+  const playwrightLaunchOptions: LaunchOptions = {
+    headless: false,
+    args: ['--disable-blink-features=AutomationControlled'],
+    ignoreDefaultArgs: ['--enable-automation'],
+  };
   if (options.executablePath) {
     playwrightLaunchOptions.executablePath = options.executablePath;
   }
   const browser = await chromium.launch(playwrightLaunchOptions);
 
+  let context: BrowserContext | undefined;
   try {
     const contextOptions: { storageState?: string } = {
       storageState: initialStorageState,
     };
-    const context = await browser.newContext(contextOptions);
+    context = await browser.newContext(contextOptions);
 
     const result = await callback({ browser, context });
 
@@ -119,6 +166,24 @@ export async function withTempBrowserContext<T>(
     }
 
     return result;
+  } catch (error) {
+    if (process.env.LATCHKEY_DEBUG === '1') {
+      if (context) {
+        const artifactsDir = await captureFailureArtifacts(context);
+        if (artifactsDir) {
+          console.error(
+            `[latchkey] Browser flow failed. Debug artifacts saved to: ${artifactsDir}`
+          );
+        }
+      }
+      console.error(
+        '[latchkey] LATCHKEY_DEBUG=1: browser left open for inspection. Press Ctrl+C to exit.'
+      );
+      await new Promise(() => {
+        /* hang indefinitely */
+      });
+    }
+    throw error;
   } finally {
     await browser.close();
     try {
