@@ -171,15 +171,17 @@ export async function withTempBrowserContext<T>(
 
     return result;
   } catch (error) {
-    if (context) {
-      const artifactsDir = await captureFailureArtifacts(context);
-      if (artifactsDir) {
-        console.error(`[latchkey] Browser flow failed. Debug artifacts saved to: ${artifactsDir}`);
+    if (process.env.LATCHKEY_DEBUG === '1') {
+      if (context) {
+        const artifactsDir = await captureFailureArtifacts(context);
+        if (artifactsDir) {
+          console.error(
+            `[latchkey] Browser flow failed. Debug artifacts saved to: ${artifactsDir}`
+          );
+        }
       }
-    }
-    if (process.env.LATCHKEY_DEV_PAUSE_ON_FAILURE === '1') {
       console.error(
-        '[latchkey] LATCHKEY_DEV_PAUSE_ON_FAILURE=1: browser left open for inspection. Press Ctrl+C to exit.'
+        '[latchkey] LATCHKEY_DEBUG=1: browser left open for inspection. Press Ctrl+C to exit.'
       );
       await new Promise(() => {
         /* hang indefinitely */
