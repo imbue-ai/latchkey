@@ -1,69 +1,26 @@
-# DoorDash Service for Latchkey — Implementation Report
+# DoorDash Service for Latchkey — Report
 
 ## What Was Done
 
-Added a `doordash` service to latchkey that captures `ddweb_token` + `csrf_token` session cookies via Playwright browser login. User runs `latchkey auth browser doordash`, logs into DoorDash in the browser, and credentials are automatically extracted and stored in latchkey's encrypted credential store.
+Added `doordash` service: `latchkey auth browser doordash` → browser login → captures `ddweb_token` + `csrf_token` cookies → stores in encrypted credential store. Modeled after Slack service.
 
-### Files Created
-- `src/services/doordash.ts` — `DoorDashApiCredentials` (Zod schema, cookie injection), `DoorDashServiceSession` (login detection + cookie extraction), `Doordash` service class
+**Files:** `src/services/doordash.ts` (new), `src/apiCredentials/serialization.ts`, `src/services/index.ts`, `src/serviceRegistry.ts`, `tests/apiCredentials.test.ts` (all edited). Debug harness in `spike/`.
 
-### Files Modified
-- `src/apiCredentials/serialization.ts` — wired `DoorDashApiCredentialsSchema` into discriminated union + serialize/deserialize
-- `src/services/index.ts` — exported `DOORDASH`
-- `src/serviceRegistry.ts` — registered in `SERVICE_REGISTRY`
-- `tests/apiCredentials.test.ts` — added credential injection + serialization roundtrip tests
+## Key Technical Issue
 
-### Files Created (debug, not shipped)
-- `spike/doordash-debug-harness.ts` — standalone Playwright script that saves/reloads browser state for iterating without re-login
-- `spike/doordash-state.json` — saved browser state
+Playwright's `response.headers()['set-cookie']` silently drops multi-value Set-Cookie headers. Must use `response.headersArray()`. DoorDash sets both cookies on `www.doordash.com/graphql/postLoginQuery` response, on domain `.doordash.com`. Reading cookies via `context.cookies()` (no URL filter) works.
 
-## Hiccups & What Made This Hard
+## Limitations
 
-### 1. Playwright `response.headers()` silently drops Set-Cookie (biggest blocker)
+- `latchkey curl` blocked by DoorDash TLS fingerprinting — cookies only useful for external consumers (doordash-mcp)
+- Session expiry unknown; user re-logins when needed
 
-`response.headers()['set-cookie']` returns undefined/empty for multi-value Set-Cookie headers in Playwright. This is underdocumented. The fix is to use `response.headersArray()` which returns each Set-Cookie as a separate entry. This cost ~4 failed login attempts before the debug harness identified it.
+## Process Retro
 
-**Recommendation:** Any future service that detects login completion via Set-Cookie headers MUST use `headersArray()`, not `headers()`. Consider adding a helper in `playwrightUtils.ts` like `getSetCookieValues(response)` to avoid this trap.
+**What went wrong:** 6 manual logins before getting it right. Should have been 2 (1 for debug harness, 1 final verification). The INSTR.md said to minimize manual QA, but the agent didn't follow through — it should have built the debug harness (saves browser state, eliminates re-logins) after the 2nd failure, not the 5th.
 
-### 2. Login completion URL was wrong
-
-Initial assumption: login redirects to `/home`. Reality: login redirects to `/?state=none&code=...` → `/post-login/` → then JS fires `postLoginQuery` GraphQL mutation which sets the actual cookies. The correct completion signal is detecting `ddweb_token` in the Set-Cookie of the `www.doordash.com/graphql/postLoginQuery` response.
-
-**Recommendation:** Don't guess the post-login URL. Build a debug harness first that logs all responses/cookies, then implement the detection.
-
-### 3. Cookie domain mismatch
-
-`context.cookies('https://www.doordash.com')` missed cookies set on `.doordash.com` (note leading dot = all subdomains). Fix: call `context.cookies()` with no URL filter.
-
-**Recommendation:** Always use `context.cookies()` without URL filter when extracting cookies in `finalizeCredentials`, then filter by name.
-
-### 4. Too many manual login iterations
-
-First 4 attempts were guess-and-check: change code → rebuild → ask user to log in → fail → repeat. Wasted ~30 min of human time.
-
-**Recommendation:** Build a debug harness (like `spike/doordash-debug-harness.ts`) BEFORE the first login attempt. The harness should:
-- Save browser state via `context.storageState()` after login
-- Reload state on subsequent runs (skip login)
-- Log all Set-Cookie headers via both `headers()` and `headersArray()` to surface discrepancies
-- Log all cookies from `context.cookies()` with domain info
-
-This would have reduced human logins from 6 to 1.
-
-## What Worked Well
-
-- Slack service was an excellent template for the credential type + serialization wiring
-- Latchkey's `ServiceSession` abstraction is clean — just implement `onResponse`, `isLoginComplete`, `finalizeCredentials`
-- The `LATCHKEY_DEBUG=1` mode (keeps browser open on failure, saves screenshots) was useful once we got to the right debugging stage
-
-## Known Limitations
-
-- **`latchkey curl` doesn't work with DoorDash** — curl gets connection refused / TLS fingerprint blocked. Cookies are only useful for external consumers (doordash-mcp, custom scripts). Credential check reports "invalid" for this reason.
-- **Session expiry unknown** — `isExpired()` returns `undefined`. Users must re-login when sessions expire.
-
-## Could Have Done Better
-
-1. **Debug harness first, implementation second.** The plan doc correctly identified testing early as important, but in practice I jumped to implementation and iterated via manual logins. Should have built the harness as step 1.
-
-2. **Read Playwright docs on `response.headers()` vs `headersArray()` upfront.** The Slack service uses `response.text()` (async) and `request.allHeaders()`, not `response.headers()['set-cookie']`. If I'd noticed Slack avoids `response.headers()` for cookies, I might have avoided the trap.
-
-3. **Could use `SimpleServiceSession` with `context.cookies()` polling instead of Set-Cookie detection.** An alternative approach: detect login completion by URL change (e.g., arriving at doordash.com after leaving identity.doordash.com), then poll `context.cookies()` in `finalizeCredentials` with a short wait. This would bypass the Set-Cookie header issue entirely. The harness proved this works (polls every 2s, found the cookie after ~24s).
+**For next time:**
+- Budget manual interactions upfront in the plan ("human logs in max N times")
+- Build debug harness FIRST, before any service code
+- Use `response.headersArray()` not `response.headers()` for Set-Cookie — consider adding a shared helper
+- Slack service's `getApiCredentialsFromResponse` avoids `response.headers()` for cookies — read existing code more carefully before implementing
