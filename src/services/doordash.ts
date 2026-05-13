@@ -29,6 +29,16 @@ export class DoorDashApiCredentials implements ApiCredentials {
     return Promise.resolve([
       '-H',
       `Cookie: ddweb_token=${this.ddwebToken}; csrf_token=${this.csrfToken}`,
+      '-H',
+      `x-csrftoken: ${this.csrfToken}`,
+      '-H',
+      'x-channel-id: marketplace',
+      '-H',
+      'x-experience-id: doordash',
+      '-H',
+      'Origin: https://www.doordash.com',
+      '-H',
+      'Referer: https://www.doordash.com/',
       ...curlArguments,
     ]);
   }
@@ -101,8 +111,9 @@ class DoorDashServiceSession extends ServiceSession {
 export class Doordash extends Service {
   readonly name = 'doordash';
   readonly displayName = 'DoorDash';
-  readonly baseApiUrls = ['https://consumer-api-gateway.doordash.com/'] as const;
+  readonly baseApiUrls = ['https://www.doordash.com/graphql'] as const;
   readonly loginUrl = 'https://www.doordash.com/consumer/login/';
+  override readonly transport = 'cycletls' as const;
   readonly info =
     'DoorDash consumer API. ' +
     'Credentials are session cookies extracted from browser login.';
@@ -113,8 +124,8 @@ export class Doordash extends Service {
     '-H',
     'Content-Type: application/json',
     '-d',
-    '{"query":"{ currentUser { id } }"}',
-    'https://consumer-api-gateway.doordash.com/graphql',
+    '{"operationName":"getAvailableAddresses","query":"query getAvailableAddresses { getAvailableAddresses { id } }","variables":{}}',
+    'https://www.doordash.com/graphql/getAvailableAddresses?operation=getAvailableAddresses',
   ] as const;
 
   setCredentialsExample(serviceName: string): string {

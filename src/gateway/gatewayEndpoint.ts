@@ -333,9 +333,9 @@ export async function handleGatewayRequest(
     body !== null
   );
 
-  let allArguments: readonly string[];
+  let invocation: import('../curlInjection.js').CurlInvocationResult;
   try {
-    allArguments = await prepareCurlInvocation(curlArguments, apiCredentialStore, {
+    invocation = await prepareCurlInvocation(curlArguments, apiCredentialStore, {
       registry: deps.registry,
       checkPermission: deps.checkPermission,
       permissionsConfigPath,
@@ -366,7 +366,31 @@ export async function handleGatewayRequest(
     throw error;
   }
 
-  // Create temp directory for header dump
+  // CycleTLS transport — bypass curl entirely and use the Go-based HTTP client.
+  if (invocation.transport === 'cycletls') {
+    try {
+      const { parseCurlArgsToHttp, cycleTlsRequest } = await import(
+        '../cycleTlsTransport.js'
+      );
+      const parsed = parseCurlArgsToHttp(invocation.arguments, body ?? undefined);
+      const cycleTlsResp = await cycleTlsRequest(parsed);
+
+      for (const [name, value] of Object.entries(cycleTlsResp.headers)) {
+        if (!HOP_BY_HOP_HEADERS.has(name.toLowerCase())) {
+          response.setHeader(name, value);
+        }
+      }
+      response.writeHead(cycleTlsResp.status);
+      response.end(cycleTlsResp.body);
+      deps.log(`${method} ${targetUrl} -> ${String(cycleTlsResp.status)}`);
+    } catch (error) {
+      deps.log(`${method} ${targetUrl} -> 502`);
+      sendErrorResponse(response, 502, (error as Error).message);
+    }
+    return;
+  }
+
+  // Default curl transport.
   const tempDir = mkdtempSync(join(tmpdir(), 'latchkey-gw-'));
   const headerFile = join(tempDir, 'headers');
 
@@ -376,7 +400,7 @@ export async function handleGatewayRequest(
     // body) while still letting error messages reach stderr, so
     // `sendUpstreamCurlFailure` can surface the real failure reason to the
     // client instead of the generic fallback.
-    const curlArgs = ['-sS', '-D', headerFile, ...allArguments];
+    const curlArgs = ['-sS', '-D', headerFile, ...invocation.arguments];
 
     const result: AsyncCurlResult = await deps.runCurlAsync(curlArgs, {
       stdin: body ?? undefined,

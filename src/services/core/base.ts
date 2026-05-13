@@ -68,6 +68,13 @@ export abstract class Service {
   abstract readonly info: string;
 
   /**
+   * HTTP transport to use for this service. Services behind Cloudflare
+   * TLS fingerprinting (e.g. DoorDash) should set this to 'cycletls'.
+   * Defaults to 'curl'.
+   */
+  readonly transport?: 'curl' | 'cycletls';
+
+  /**
    * Return curl arguments for checking credentials (excluding auth headers).
    */
   abstract readonly credentialCheckCurlArguments: readonly string[];
@@ -91,6 +98,21 @@ export abstract class Service {
         return ApiCredentialStatus.Missing;
       }
       throw error;
+    }
+
+    if (this.transport === 'cycletls') {
+      try {
+        const { parseCurlArgsToHttp, cycleTlsRequest } = await import(
+          '../../cycleTlsTransport.js'
+        );
+        const parsed = parseCurlArgsToHttp(allCurlArgs);
+        const response = await cycleTlsRequest(parsed);
+        return response.status === 200
+          ? ApiCredentialStatus.Valid
+          : ApiCredentialStatus.Invalid;
+      } catch {
+        return ApiCredentialStatus.Invalid;
+      }
     }
 
     const result = runCaptured(allCurlArgs, 10);

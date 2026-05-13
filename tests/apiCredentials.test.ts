@@ -53,19 +53,39 @@ describe('DoorDashApiCredentials', () => {
     await expect(credentials.injectIntoCurlCall([])).resolves.toEqual([
       '-H',
       'Cookie: ddweb_token=ddweb-value; csrf_token=csrf-value',
+      '-H',
+      'x-csrftoken: csrf-value',
+      '-H',
+      'x-channel-id: marketplace',
+      '-H',
+      'x-experience-id: doordash',
+      '-H',
+      'Origin: https://www.doordash.com',
+      '-H',
+      'Referer: https://www.doordash.com/',
     ]);
   });
 
   it('should prepend cookie header before existing curl arguments', async () => {
     const credentials = new DoorDashApiCredentials('ddweb-value', 'csrf-value');
     await expect(
-      credentials.injectIntoCurlCall(['-X', 'POST', 'https://consumer-api-gateway.doordash.com/graphql'])
+      credentials.injectIntoCurlCall(['-X', 'POST', 'https://www.doordash.com/graphql/test'])
     ).resolves.toEqual([
       '-H',
       'Cookie: ddweb_token=ddweb-value; csrf_token=csrf-value',
+      '-H',
+      'x-csrftoken: csrf-value',
+      '-H',
+      'x-channel-id: marketplace',
+      '-H',
+      'x-experience-id: doordash',
+      '-H',
+      'Origin: https://www.doordash.com',
+      '-H',
+      'Referer: https://www.doordash.com/',
       '-X',
       'POST',
-      'https://consumer-api-gateway.doordash.com/graphql',
+      'https://www.doordash.com/graphql/test',
     ]);
   });
 });

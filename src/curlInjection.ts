@@ -78,17 +78,22 @@ export interface CurlInjectionDependencies {
   readonly passthroughUnknown: boolean;
 }
 
+export interface CurlInvocationResult {
+  readonly arguments: readonly string[];
+  readonly transport: 'curl' | 'cycletls';
+}
+
 /**
  * Run the credential-injection pipeline for a curl invocation and return the
- * final argument list to pass to curl. On problems, throws one of the error
- * classes exported from this module (or a `PermissionCheckError` from the
- * underlying permission check).
+ * final argument list plus the transport to use. On problems, throws one of
+ * the error classes exported from this module (or a `PermissionCheckError`
+ * from the underlying permission check).
  */
 export async function prepareCurlInvocation(
   curlArguments: readonly string[],
   apiCredentialStore: ApiCredentialStore,
   dependencies: CurlInjectionDependencies
-): Promise<readonly string[]> {
+): Promise<CurlInvocationResult> {
   // Parse the curl arguments once for the permission check. A parse failure
   // here means the user's curl invocation is malformed, which is treated as
   // a URL-extraction failure (the same category as the second parse below),
@@ -127,7 +132,7 @@ export async function prepareCurlInvocation(
   const service = dependencies.registry.getByUrl(url);
   if (service === null) {
     if (dependencies.passthroughUnknown) {
-      return [...curlArguments];
+      return { arguments: [...curlArguments], transport: 'curl' };
     }
     throw new NoServiceForUrlError(url);
   }
@@ -135,7 +140,7 @@ export async function prepareCurlInvocation(
   let apiCredentials: ApiCredentials | null = apiCredentialStore.get(service.name);
   if (apiCredentials === null) {
     if (dependencies.passthroughUnknown) {
-      return [...curlArguments];
+      return { arguments: [...curlArguments], transport: 'curl' };
     }
     throw new NoCredentialsForServiceError(service.name);
   }
@@ -147,5 +152,8 @@ export async function prepareCurlInvocation(
     }
   }
 
-  return await apiCredentials.injectIntoCurlCall(curlArguments);
+  return {
+    arguments: await apiCredentials.injectIntoCurlCall(curlArguments),
+    transport: service.transport ?? 'curl',
+  };
 }
