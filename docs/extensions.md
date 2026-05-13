@@ -5,7 +5,7 @@ At startup, `latchkey gateway` scans `~/.latchkey/extensions/` (or the correspon
 files ending in `.mjs` (in alphabetical order) and dynamically
 imports each one. Every module's default export must be a
 function with the signature
-`(request, response) => boolean | Promise<boolean>`:
+`(request, response, context) => boolean | Promise<boolean>`:
 
 - Return `true` (or a promise resolving to `true`) when the
   extension has handled the request — i.e. it has written, or
@@ -33,6 +33,16 @@ export default (request, response) => {
   `http.ServerResponse`. Extensions cannot read stored
   credentials, the curl-injection pipeline, or the service
   registry.
+- The third argument is a frozen `ExtensionContext` object
+  carrying per-request state derived by the gateway. Handlers
+  that don't need it can omit the parameter. Currently it
+  exposes:
+  - `permissionsConfigPath: string` — absolute path to the
+    `permissions.json` file that applies to this request after
+    resolving any `X-Latchkey-Gateway-Permissions-Override` JWT.
+    Equals the gateway's default permissions path when no
+    override header was sent (rejected overrides never reach
+    the handler).
 
 Extension requests are gated by `permissions.json` like every
 other gateway request. The check happens before any extension

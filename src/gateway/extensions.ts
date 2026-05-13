@@ -3,13 +3,18 @@
  *
  * The gateway scans `extensionsDirectory` for `*.mjs` files at startup
  * and dynamically imports each one. Each module's default export must be
- * a function `(request, response) => boolean | Promise<boolean>`:
+ * a function `(request, response, context) => boolean | Promise<boolean>`:
  *
  *   - return `true` when the extension has handled the request (i.e. it
  *     has written / will write the response). The gateway will not consult
  *     any further extensions.
  *   - return `false` to defer to the next extension. The handler must not
  *     touch the response in this case.
+ *
+ * `context` is a frozen `ExtensionContext` object carrying per-request
+ * state derived by the gateway (currently just the resolved
+ * `permissions.json` path). Handlers that don't need it can omit the
+ * parameter.
  *
  * Extensions may additionally export optional named `start` and `stop`
  * functions (`() => void | Promise<void>`). The gateway invokes `start`
@@ -49,9 +54,28 @@ export const EXTENSION_PLACEHOLDER_PORT = 1;
 
 const EXTENSION_FILE_SUFFIX = '.mjs';
 
+/**
+ * Per-request, read-only state exposed to extension handlers in addition
+ * to the raw Node request/response. Frozen before being passed to the
+ * handler so misbehaving extensions cannot mutate it; new fields can be
+ * added over time without breaking handlers that ignore them.
+ */
+export interface ExtensionContext {
+  /**
+   * Absolute path to the `permissions.json` file that applies to this
+   * request after resolving any `X-Latchkey-Gateway-Permissions-Override`
+   * JWT against the gateway's signing key. Equals
+   * `config.permissionsConfigPath` when no override header was sent (or
+   * when the override was rejected, in which case the handler is never
+   * called).
+   */
+  readonly permissionsConfigPath: string;
+}
+
 export type ExtensionHandler = (
   request: http.IncomingMessage,
-  response: http.ServerResponse
+  response: http.ServerResponse,
+  context: ExtensionContext
 ) => boolean | Promise<boolean>;
 
 export type ExtensionLifecycleHook = () => void | Promise<void>;
@@ -280,10 +304,12 @@ export async function dispatchExtensionRequest(
     return true;
   }
 
+  const context: ExtensionContext = Object.freeze({ permissionsConfigPath });
+
   for (const extension of extensions) {
     let handled: boolean;
     try {
-      handled = await extension.handler(request, response);
+      handled = await extension.handler(request, response, context);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       deps.errorLog(
