@@ -13,6 +13,7 @@ import { SlackApiCredentials } from '../src/services/slack.js';
 import { TelegramBotCredentials } from '../src/services/telegram.js';
 import { AwsCredentials } from '../src/services/aws.js';
 import { GoogleApiKeyCredentials } from '../src/services/google/base.js';
+import { DoorDashApiCredentials } from '../src/services/doordash.js';
 
 describe('AuthorizationBearer', () => {
   it('should inject Bearer token header', async () => {
@@ -42,6 +43,29 @@ describe('SlackApiCredentials', () => {
       'Authorization: Bearer xoxc-token',
       '-H',
       'Cookie: d=d-cookie-value',
+    ]);
+  });
+});
+
+describe('DoorDashApiCredentials', () => {
+  it('should inject cookie header with both tokens', async () => {
+    const credentials = new DoorDashApiCredentials('ddweb-value', 'csrf-value');
+    await expect(credentials.injectIntoCurlCall([])).resolves.toEqual([
+      '-H',
+      'Cookie: ddweb_token=ddweb-value; csrf_token=csrf-value',
+    ]);
+  });
+
+  it('should prepend cookie header before existing curl arguments', async () => {
+    const credentials = new DoorDashApiCredentials('ddweb-value', 'csrf-value');
+    await expect(
+      credentials.injectIntoCurlCall(['-X', 'POST', 'https://consumer-api-gateway.doordash.com/graphql'])
+    ).resolves.toEqual([
+      '-H',
+      'Cookie: ddweb_token=ddweb-value; csrf_token=csrf-value',
+      '-X',
+      'POST',
+      'https://consumer-api-gateway.doordash.com/graphql',
     ]);
   });
 });
@@ -203,6 +227,10 @@ describe('serialization roundtrip', () => {
     {
       name: 'GoogleApiKeyCredentials',
       credentials: () => new GoogleApiKeyCredentials('AIzaSyTestKey123'),
+    },
+    {
+      name: 'DoorDashApiCredentials',
+      credentials: () => new DoorDashApiCredentials('ddweb-token-value', 'csrf-token-value'),
     },
   ];
 

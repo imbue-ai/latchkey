@@ -2,10 +2,10 @@
  * DoorDash service implementation.
  */
 
-import type { Response } from 'playwright';
+import type { Browser, BrowserContext, Response } from 'playwright';
 import { z } from 'zod';
 import type { ApiCredentials } from '../apiCredentials/base.js';
-import { Service, SimpleServiceSession } from './core/base.js';
+import { Service, ServiceSession } from './core/base.js';
 
 export const DoorDashApiCredentialsSchema = z.object({
   objectType: z.literal('doordash'),
@@ -50,34 +50,51 @@ export class DoorDashApiCredentials implements ApiCredentials {
   }
 }
 
-class DoorDashServiceSession extends SimpleServiceSession {
-  // eslint-disable-next-line @typescript-eslint/require-await
-  protected async getApiCredentialsFromResponse(
-    response: Response
-  ): Promise<ApiCredentials | null> {
+class DoorDashServiceSession extends ServiceSession {
+  private loginComplete = false;
+
+  onResponse(response: Response): void {
+    if (this.loginComplete) return;
     const url = response.url();
+    // After login, /post-login/ fires a postLoginQuery GraphQL mutation whose response
+    // sets the ddweb_token cookie. Detect that Set-Cookie as the login completion signal.
+    // Note: response.headers() does not reliably return multi-value set-cookie headers
+    // in Playwright — must use headersArray().
+    if (url.startsWith('https://www.doordash.com/graphql')) {
+      response
+        .headersArray()
+        .then((headers) => {
+          for (const h of headers) {
+            if (h.name.toLowerCase() === 'set-cookie' && h.value.includes('ddweb_token')) {
+              this.loginComplete = true;
+              break;
+            }
+          }
+        })
+        .catch(() => {
+          // Ignore errors reading headers
+        });
+    }
+  }
 
-    if (!/^https:\/\/([a-z0-9-]+\.)?doordash\.com\//.test(url)) {
+  protected isLoginComplete(): boolean {
+    return this.loginComplete;
+  }
+
+  protected async finalizeCredentials(
+    _browser: Browser,
+    context: BrowserContext
+  ): Promise<ApiCredentials | null> {
+    // Cookies are on .doordash.com — fetch all cookies (no URL filter)
+    const cookies = await context.cookies();
+    const ddweb = cookies.find((c) => c.name === 'ddweb_token');
+    const csrf = cookies.find((c) => c.name === 'csrf_token');
+
+    if (!ddweb?.value || !csrf?.value) {
       return null;
     }
 
-    const headers = response.headers();
-    const setCookie = headers['set-cookie'] ?? '';
-    if (!setCookie.includes('ddweb_token')) {
-      return null;
-    }
-
-    const ddwebMatch = /\bddweb_token=([^;]+)/.exec(setCookie);
-    if (!ddwebMatch?.[1]) {
-      return null;
-    }
-
-    const csrfMatch = /\bcsrf_token=([^;]+)/.exec(setCookie);
-    if (!csrfMatch?.[1]) {
-      return null;
-    }
-
-    return new DoorDashApiCredentials(ddwebMatch[1], csrfMatch[1]);
+    return new DoorDashApiCredentials(ddweb.value, csrf.value);
   }
 }
 
