@@ -5,6 +5,7 @@
  * `latchkey curl` has its target URL rewritten to route through `/gateway/`.
  */
 
+import { EXTENSION_PLACEHOLDER_HOST } from './extensions.js';
 import type { LatchkeyRequest } from './latchkeyEndpoint.js';
 import { GATEWAY_PASSWORD_HEADER } from './password.js';
 import { PERMISSIONS_OVERRIDE_HEADER } from './permissionsOverride.js';
@@ -100,10 +101,36 @@ export async function callLatchkeyEndpoint(
 }
 
 /**
+ * Parse `targetUrl` and return it when its hostname is the gateway
+ * self-reference host (`latchkey-self.invalid`); return `null` otherwise
+ * (including when the input is not a valid absolute URL). Such URLs are
+ * rewritten directly onto the gateway's own URL (so they hit the
+ * extension dispatch path) instead of being routed through the
+ * `/gateway/<target>` outbound-proxy endpoint.
+ */
+function parseGatewaySelfUrl(targetUrl: string): URL | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(targetUrl);
+  } catch {
+    return null;
+  }
+  if (parsed.hostname.toLowerCase() !== EXTENSION_PLACEHOLDER_HOST) return null;
+  return parsed;
+}
+
+/**
  * Build the URL used to proxy a `latchkey curl` invocation through the
- * gateway's `/gateway/` endpoint.
+ * gateway. URLs targeting the gateway self-reference host
+ * (`latchkey-self.invalid`) are rewritten directly onto the gateway's base
+ * URL so they reach the extension dispatch path; every other URL is
+ * routed through the `/gateway/<target>` outbound-proxy endpoint.
  */
 export function buildGatewayProxyUrl(gatewayUrl: string, targetUrl: string): string {
+  const gatewaySelfUrl = parseGatewaySelfUrl(targetUrl);
+  if (gatewaySelfUrl !== null) {
+    return `${buildEndpointUrl(gatewayUrl, gatewaySelfUrl.pathname)}${gatewaySelfUrl.search}${gatewaySelfUrl.hash}`;
+  }
   return `${buildEndpointUrl(gatewayUrl, '/gateway/')}${targetUrl}`;
 }
 

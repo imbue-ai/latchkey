@@ -2285,6 +2285,26 @@ describe('CLI commands with dependency injection', () => {
       ]);
     });
 
+    it('rewrites latchkey-self.invalid curl targets directly onto the gateway base URL', async () => {
+      const fetchMock = vi.fn();
+      globalThis.fetch = fetchMock as unknown as typeof fetch;
+      const deps = createMockDependencies({
+        config: createMockConfig({ gatewayUrl: GATEWAY_URL }),
+      });
+
+      await runCommand(
+        ['curl', '-X', 'GET', 'https://latchkey-self.invalid/extensions/myorg/hello'],
+        deps
+      );
+
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(capturedArgs).toEqual([
+        '-X',
+        'GET',
+        `${GATEWAY_URL}/extensions/myorg/hello`,
+      ]);
+    });
+
     it('errors when `latchkey curl` has no URL to rewrite', async () => {
       const deps = createMockDependencies({
         config: createMockConfig({ gatewayUrl: GATEWAY_URL }),

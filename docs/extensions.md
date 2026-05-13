@@ -49,6 +49,21 @@ that match on `domain: "latchkey-self.invalid"`. Detent
 normalizes `domain` and `method` field values before matching,
 so the schema must use lowercase domains and uppercase methods.
 
+When `LATCHKEY_GATEWAY` is set, `latchkey curl` also rewrites URLs
+whose host is `latchkey-self.invalid` directly onto the configured
+gateway URL, so agents can invoke extensions with the same
+placeholder host that appears in `permissions.json`:
+
+```bash
+LATCHKEY_GATEWAY=http://127.0.0.1:5555 \
+  latchkey curl https://latchkey-self.invalid/extensions/myorg/hello
+# actually calls: http://127.0.0.1:5555/extensions/myorg/hello
+```
+
+Unlike outbound URLs, these requests are not routed through the
+gateway's `/gateway/<target>` proxy endpoint - they hit the gateway
+directly and are dispatched to the matching extension.
+
 Here's an example `permissions.json` that allows only
 `GET /extensions/myorg/hello` on the gateway and rejects every
 other extension call:
