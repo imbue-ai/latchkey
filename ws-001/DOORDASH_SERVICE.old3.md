@@ -1,3 +1,8 @@
+what do you plan to do if the playwright login fails on first try?
+
+you might want to debug using cdp, or if that still fails, screenshot, and then if you still get stuck there you may have to escalate to manual help as a last resort.
+--
+
 # DoorDash Service for Latchkey
 
 ## Goal
@@ -23,12 +28,7 @@
 - Write unit tests for credential serialization/injection
 - Test `latchkey auth status doordash` shows "missing" (confirms wiring)
 
-**Phase 2: Debug escalation if Playwright login fails**
-1. **CDP inspection** — connect to browser via CDP, check console errors, network failures, DOM state
-2. **Screenshots** — capture page state at each step (page load, post-submit, redirect) to identify where flow breaks
-3. **Manual human pass** (last resort) — human runs login, reports what they see
-
-**Phase 3: Single human pass (~20 min)**
+**Phase 2: Single human pass (~20 min)**
 - Human runs `latchkey auth login doordash`, logs in once
 - Confirm cookies captured, `auth status` shows valid
 - Try `latchkey curl` against DoorDash GraphQL — if blocked by TLS fingerprinting, that's acceptable (cookies still usable by external tools like doordash-mcp)
@@ -37,9 +37,9 @@
 
 | Risk | Severity | Mitigation |
 |------|----------|------------|
-| TLS fingerprinting blocks `latchkey curl` | High | Phase 3 tests this. Cookies still valuable for doordash-mcp even if curl blocked. |
-| Playwright automation detection on login | Medium | `headless: false` + stealth. Debug escalation: CDP → screenshots → human. |
-| Cookie names change | Low | Two string constants to update. |
+| TLS fingerprinting blocks `latchkey curl` | High | Phase 2 tests this. Cookies still valuable for doordash-mcp even if curl blocked. Login (Playwright = real browser) unaffected. |
+| Playwright automation detection on login | Medium | `headless: false` + Playwright stealth. Phase 1 automated test catches this early. |
+| Cookie names change | Low | Thin surface area — two string constants to update. |
 | Session expiry unknown | Low | `isExpired()` returns `undefined`; user re-logins when needed. |
 
 ## Not Needed
