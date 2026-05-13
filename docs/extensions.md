@@ -5,7 +5,7 @@ At startup, `latchkey gateway` scans `~/.latchkey/extensions/` (or the correspon
 files ending in `.mjs` (in alphabetical order) and dynamically
 imports each one. Every module's default export must be a
 function with the signature
-`(request, response) => boolean | Promise<boolean>`:
+`(request, response, context) => boolean | Promise<boolean>`:
 
 - Return `true` (or a promise resolving to `true`) when the
   extension has handled the request — i.e. it has written, or
@@ -33,6 +33,16 @@ export default (request, response) => {
   `http.ServerResponse`. Extensions cannot read stored
   credentials, the curl-injection pipeline, or the service
   registry.
+- The third argument is a frozen `ExtensionContext` object
+  carrying per-request state derived by the gateway. Handlers
+  that don't need it can omit the parameter. Currently it
+  exposes:
+  - `permissionsConfigPath: string` — absolute path to the
+    `permissions.json` file that applies to this request after
+    resolving any `X-Latchkey-Gateway-Permissions-Override` JWT.
+    Equals the gateway's default permissions path when no
+    override header was sent (rejected overrides never reach
+    the handler).
 
 Extension requests are gated by `permissions.json` like every
 other gateway request. The check happens before any extension
@@ -48,6 +58,21 @@ schemas](https://github.com/imbue-ai/detent#request-schemas)
 that match on `domain: "latchkey-self.invalid"`. Detent
 normalizes `domain` and `method` field values before matching,
 so the schema must use lowercase domains and uppercase methods.
+
+When `LATCHKEY_GATEWAY` is set, `latchkey curl` also rewrites URLs
+whose host is `latchkey-self.invalid` directly onto the configured
+gateway URL, so agents can invoke extensions with the same
+placeholder host that appears in `permissions.json`:
+
+```bash
+LATCHKEY_GATEWAY=http://127.0.0.1:5555 \
+  latchkey curl https://latchkey-self.invalid/extensions/myorg/hello
+# actually calls: http://127.0.0.1:5555/extensions/myorg/hello
+```
+
+Unlike outbound URLs, these requests are not routed through the
+gateway's `/gateway/<target>` proxy endpoint - they hit the gateway
+directly and are dispatched to the matching extension.
 
 Here's an example `permissions.json` that allows only
 `GET /extensions/myorg/hello` on the gateway and rejects every

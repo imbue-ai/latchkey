@@ -685,6 +685,52 @@ describe('gateway extensions integration', () => {
     expect(lastPermissionCheckPath).toBe(overridePath);
   });
 
+  it('passes a frozen ExtensionContext carrying the default permissions path when no JWT is sent', async () => {
+    writeExtension(
+      extensionsDir,
+      'ctx.mjs',
+      `export default (req, res, context) => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          permissionsConfigPath: context.permissionsConfigPath,
+          frozen: Object.isFrozen(context),
+        }));
+        return true;
+      };`
+    );
+
+    gateway = await createTestGateway();
+    const response = await fetch('/extensions/ctx');
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { permissionsConfigPath: string; frozen: boolean };
+    expect(body.permissionsConfigPath).toBe(createMockConfig().permissionsConfigPath);
+    expect(body.frozen).toBe(true);
+  });
+
+  it('passes the override path in ExtensionContext.permissionsConfigPath when a valid JWT is sent', async () => {
+    writeExtension(
+      extensionsDir,
+      'ctx-override.mjs',
+      `export default (req, res, context) => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ permissionsConfigPath: context.permissionsConfigPath }));
+        return true;
+      };`
+    );
+    const overridePath = join(tempDir, 'override-permissions.json');
+    writeFileSync(overridePath, '{"rules":[]}', 'utf-8');
+    const signingKey = derivePermissionsOverrideSigningKey(TEST_ENCRYPTION_KEY);
+    const jwt = createPermissionsOverrideJwt(overridePath, signingKey);
+
+    gateway = await createTestGateway();
+    const response = await fetch('/extensions/ctx-override', {
+      headers: { [PERMISSIONS_OVERRIDE_HEADER]: jwt },
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { permissionsConfigPath: string };
+    expect(body.permissionsConfigPath).toBe(overridePath);
+  });
+
   it('returns 401 for an invalid permissions-override JWT', async () => {
     writeExtension(
       extensionsDir,

@@ -21,6 +21,27 @@ describe('buildGatewayProxyUrl', () => {
       'http://localhost:8000/gateway/https://api.example.com/bar'
     );
   });
+
+  it('rewrites latchkey-self.invalid URLs directly onto the gateway base URL', () => {
+    expect(
+      buildGatewayProxyUrl(GATEWAY_URL, 'https://latchkey-self.invalid/extensions/myorg/hello')
+    ).toBe('http://localhost:8000/extensions/myorg/hello');
+  });
+
+  it('preserves query strings and fragments when rewriting latchkey-self.invalid URLs', () => {
+    expect(
+      buildGatewayProxyUrl(
+        GATEWAY_URL,
+        'https://latchkey-self.invalid:1/extensions/myorg/hello?foo=bar&baz=1#section'
+      )
+    ).toBe('http://localhost:8000/extensions/myorg/hello?foo=bar&baz=1#section');
+  });
+
+  it('does not rewrite hosts that merely contain `latchkey-self.invalid` as a substring', () => {
+    expect(
+      buildGatewayProxyUrl(GATEWAY_URL, 'https://not-latchkey-self.invalid.example.com/path')
+    ).toBe('http://localhost:8000/gateway/https://not-latchkey-self.invalid.example.com/path');
+  });
 });
 
 describe('rewriteCurlArgumentsForGateway', () => {
@@ -108,6 +129,15 @@ describe('rewriteCurlArgumentsForGateway', () => {
       'x-latchkey-gateway-permissions-override: jwt.value.here',
       'http://localhost:8000/gateway/https://api.example.com',
     ]);
+  });
+
+  it('rewrites latchkey-self.invalid URLs directly onto the gateway base URL', () => {
+    const rewritten = rewriteCurlArgumentsForGateway(
+      ['-X', 'GET', 'https://latchkey-self.invalid/extensions/myorg/hello'],
+      'https://latchkey-self.invalid/extensions/myorg/hello',
+      GATEWAY_URL
+    );
+    expect(rewritten).toEqual(['-X', 'GET', 'http://localhost:8000/extensions/myorg/hello']);
   });
 
   it('prepends both the password and permissions-override headers when both are provided', () => {
