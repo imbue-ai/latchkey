@@ -137,11 +137,7 @@ describe('rewriteCurlArgumentsForGateway', () => {
       'https://latchkey-self.invalid/extensions/myorg/hello',
       GATEWAY_URL
     );
-    expect(rewritten).toEqual([
-      '-X',
-      'GET',
-      'http://localhost:8000/extensions/myorg/hello',
-    ]);
+    expect(rewritten).toEqual(['-X', 'GET', 'http://localhost:8000/extensions/myorg/hello']);
   });
 
   it('prepends both the password and permissions-override headers when both are provided', () => {

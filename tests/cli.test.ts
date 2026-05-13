@@ -2298,11 +2298,7 @@ describe('CLI commands with dependency injection', () => {
       );
 
       expect(fetchMock).not.toHaveBeenCalled();
-      expect(capturedArgs).toEqual([
-        '-X',
-        'GET',
-        `${GATEWAY_URL}/extensions/myorg/hello`,
-      ]);
+      expect(capturedArgs).toEqual(['-X', 'GET', `${GATEWAY_URL}/extensions/myorg/hello`]);
     });
 
     it('errors when `latchkey curl` has no URL to rewrite', async () => {
