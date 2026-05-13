@@ -4,7 +4,12 @@
 
 import type { Browser, BrowserContext, Response } from 'playwright';
 import { z } from 'zod';
-import type { ApiCredentials } from '../apiCredentials/base.js';
+import {
+  ApiCredentialStatus,
+  ApiCredentialsUsageError,
+  type ApiCredentials,
+} from '../apiCredentials/base.js';
+import { runCaptured } from '../curl.js';
 import { Service, ServiceSession } from './core/base.js';
 
 export const DoorDashApiCredentialsSchema = z.object({
@@ -123,10 +128,43 @@ export class Doordash extends Service {
     'POST',
     '-H',
     'Content-Type: application/json',
+    '-H',
+    'Accept: application/json',
     '-d',
-    '{"operationName":"getAvailableAddresses","query":"query getAvailableAddresses { getAvailableAddresses { id } }","variables":{}}',
-    'https://www.doordash.com/graphql/getAvailableAddresses?operation=getAvailableAddresses',
+    '{"query":"{ consumer { id email } }"}',
+    'https://www.doordash.com/graphql/consumer?operation=consumer',
   ] as const;
+
+  override async checkApiCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentialStatus> {
+    let allCurlArgs: readonly string[];
+    try {
+      allCurlArgs = await apiCredentials.injectIntoCurlCall([
+        '-s',
+        ...this.credentialCheckCurlArguments,
+      ]);
+    } catch (error) {
+      if (error instanceof ApiCredentialsUsageError) {
+        return ApiCredentialStatus.Missing;
+      }
+      throw error;
+    }
+
+    const result = runCaptured(allCurlArgs, 10);
+    if (result.returncode !== 0) {
+      return ApiCredentialStatus.Invalid;
+    }
+
+    try {
+      const data = JSON.parse(result.stdout);
+      const consumer = data?.data?.consumer;
+      if (consumer?.id !== null && consumer?.id !== undefined) {
+        return ApiCredentialStatus.Valid;
+      }
+      return ApiCredentialStatus.Invalid;
+    } catch {
+      return ApiCredentialStatus.Invalid;
+    }
+  }
 
   setCredentialsExample(serviceName: string): string {
     return `latchkey auth set ${serviceName} -H "Cookie: ddweb_token=YOUR_TOKEN; csrf_token=YOUR_CSRF"`;
