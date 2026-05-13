@@ -51,7 +51,8 @@ export class DoorDashApiCredentials implements ApiCredentials {
 }
 
 class DoorDashServiceSession extends SimpleServiceSession {
-  protected getApiCredentialsFromResponse(
+  // eslint-disable-next-line @typescript-eslint/require-await
+  protected async getApiCredentialsFromResponse(
     response: Response
   ): Promise<ApiCredentials | null> {
     const url = response.url();
