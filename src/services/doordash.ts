@@ -68,13 +68,19 @@ export class DoorDashApiCredentials implements ApiCredentials {
 class DoorDashServiceSession extends ServiceSession {
   private loginComplete = false;
 
+  protected override async prepareContext(context: BrowserContext): Promise<void> {
+    // Clear any existing DoorDash cookies from stored browser state so
+    // the user always gets a fresh login flow. Without this, on repeat
+    // logins the old ddweb_token would be detected immediately and the
+    // stale cookie returned instead of prompting a real login.
+    await context.clearCookies({ domain: /doordash\.com/ });
+  }
+
   onResponse(response: Response): void {
     if (this.loginComplete) return;
     const url = response.url();
-    // After login, /post-login/ fires a postLoginQuery GraphQL mutation whose response
-    // sets the ddweb_token cookie. Detect that Set-Cookie as the login completion signal.
-    // Note: response.headers() does not reliably return multi-value set-cookie headers
-    // in Playwright — must use headersArray().
+
+    // Primary: watch for postLoginQuery Set-Cookie with ddweb_token
     if (url.startsWith('https://www.doordash.com/graphql')) {
       response
         .headersArray()
@@ -90,6 +96,22 @@ class DoorDashServiceSession extends ServiceSession {
           // Ignore errors reading headers
         });
     }
+
+    // Fallback: for any doordash.com response, poll cookies via the context.
+    // Handles already-logged-in redirects where postLoginQuery never fires.
+    if (url.includes('doordash.com')) {
+      const context = response.frame().page().context();
+      context
+        .cookies()
+        .then((cookies) => {
+          if (cookies.some((c) => c.name === 'ddweb_token' && c.value.length > 0)) {
+            this.loginComplete = true;
+          }
+        })
+        .catch(() => {
+          // Ignore errors reading cookies
+        });
+    }
   }
 
   protected isLoginComplete(): boolean {
@@ -100,7 +122,6 @@ class DoorDashServiceSession extends ServiceSession {
     _browser: Browser,
     context: BrowserContext
   ): Promise<ApiCredentials | null> {
-    // Cookies are on .doordash.com — fetch all cookies (no URL filter)
     const cookies = await context.cookies();
     const ddweb = cookies.find((c) => c.name === 'ddweb_token');
     const csrf = cookies.find((c) => c.name === 'csrf_token');
@@ -118,7 +139,7 @@ export class Doordash extends Service {
   readonly displayName = 'DoorDash';
   readonly baseApiUrls = ['https://www.doordash.com/graphql'] as const;
   readonly loginUrl = 'https://www.doordash.com/consumer/login/';
-  override readonly transport = 'cycletls' as const;
+  // TODO: set transport = 'cycletls' once cycletls npm package is installed
   readonly info =
     'DoorDash consumer API. ' +
     'Credentials are session cookies extracted from browser login.';
@@ -155,7 +176,9 @@ export class Doordash extends Service {
     }
 
     try {
-      const data = JSON.parse(result.stdout);
+      const data = JSON.parse(result.stdout) as
+        | { data?: { consumer?: { id?: unknown } } }
+        | undefined;
       const consumer = data?.data?.consumer;
       if (consumer?.id !== null && consumer?.id !== undefined) {
         return ApiCredentialStatus.Valid;
