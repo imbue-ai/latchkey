@@ -316,7 +316,7 @@ LATCHKEY_CURL=.../curl_chrome136 npx latchkey curl -s -X POST \
 - `defaultAddressId` must be an ID from `getAvailableAddresses` (can't create new addresses this way)
 - Returns `Consumer` type with updated `defaultAddress`
 - Change is immediate and account-level — affects all carts
-- **Tested live**: swapped 292 Ivy St → 333 Fulton St → back to 292 Ivy St, verified each step
+- **Tested live**: swapped default → alternate → back to default, verified each step
 - Related mutations discovered: `editConsumerAddress`, `addConsumerAddress`, `removeConsumerAddress`, `editConsumerAddressV2`, `editConsumerAddressV3`
 
 ## Test Reference Data

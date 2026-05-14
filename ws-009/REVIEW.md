@@ -4,12 +4,12 @@
 
 | Phase | Description | Status | Evidence |
 |-------|-------------|--------|----------|
-| Phase 1: Read addresses | Query `getAvailableAddresses` + `consumer.defaultAddress` | COMPLETE | `address-baseline.json` records 33 addresses, default = `2644612759` (292 Ivy St) |
+| Phase 1: Read addresses | Query `getAvailableAddresses` + `consumer.defaultAddress` | COMPLETE | `address-baseline.json` records 33 addresses, default = `<REDACTED_ID>` (<REDACTED_ADDR>) |
 | Phase 1b: Verify stability | Re-read to confirm no drift | COMPLETE | `address-test-results.json` phase1_read.stable = `true` |
 | Phase 2: Discover mutation | Probe mutation name candidates | COMPLETE | Found `updateConsumerDefaultAddress(defaultAddressId: ID!)`, plus 5 related mutations |
-| Phase 3: Change address | Swap default to `2814290466` (333 Fulton St) | COMPLETE | phase3_change.verified = `true` |
+| Phase 3: Change address | Swap default to `<REDACTED_ID>` (<REDACTED_ADDR>) | COMPLETE | phase3_change.verified = `true` |
 | Phase 4: Verify change | Confirm new default took effect | COMPLETE | Embedded in phase3 verification |
-| Phase 5: Revert | Change back to `2644612759` (292 Ivy St) | COMPLETE | phase4_revert.revertedTo.id = `2644612759` |
+| Phase 5: Revert | Change back to `<REDACTED_ID>` (<REDACTED_ADDR>) | COMPLETE | phase4_revert.revertedTo.id = `<REDACTED_ID>` |
 | Phase 6: Verify revert | Confirm baseline restored | COMPLETE | phase4_revert.matchesBaseline = `true` |
 
 **All 7 phases completed successfully.** Task list confirms tasks #1-#5 all marked `completed`.
@@ -18,12 +18,12 @@
 
 | Field | Baseline | Final (post-revert) | Match? |
 |-------|----------|---------------------|--------|
-| Address ID | `2644612759` | `2644612759` | YES |
-| Street | 292 Ivy St | 292 Ivy St | YES |
-| City | San Francisco | San Francisco | YES |
-| State | CA | CA | YES |
-| Zip | 94102 | 94102 | YES |
-| Subpremise | IMBUE Suite F 3rd Floor | IMBUE Suite F 3rd Floor | YES |
+| Address ID | `<REDACTED_ID>` | `<REDACTED_ID>` | YES |
+| Street | <REDACTED> | <REDACTED> | YES |
+| City | <REDACTED> | <REDACTED> | YES |
+| State | <REDACTED> | <REDACTED> | YES |
+| Zip | <REDACTED> | <REDACTED> | YES |
+| Subpremise | <REDACTED> | <REDACTED> | YES |
 
 **Baseline and final state match exactly.** The account was returned to its original configuration.
 
@@ -31,11 +31,11 @@
 
 **No anomalies detected.** Specific risk areas checked:
 
-- **Swap target selection was sound.** The test used `2814290466` (333 Fulton St, SF 94102) -- same zip code as the original address (292 Ivy St, SF 94102). This minimized delivery radius disruption. The baseline file explicitly notes: "Same zip as default, nearby -- safe swap candidate."
+- **Swap target selection was sound.** The test used a nearby address in the same zip code as the original. This minimized delivery radius disruption. The baseline file explicitly notes: "Same zip as default, nearby -- safe swap candidate."
 
 - **Mutation is a simple ID swap, not a create.** `updateConsumerDefaultAddress` only accepts IDs already in `getAvailableAddresses`. No new addresses were created. No addresses were deleted.
 
-- **The `subpremise` field survived the round-trip.** The baseline records `subpremise: "IMBUE Suite F 3rd Floor"` on the default address, and the revert restored this. This was a potential risk (could subpremise get lost during a default-address swap?) -- it did not.
+- **The `subpremise` field survived the round-trip.** The baseline records a subpremise on the default address, and the revert restored it. This was a potential risk (could subpremise get lost during a default-address swap?) -- it did not.
 
 - **Minor HICCUP #21 (`subPremise` vs `subpremise` casing)** was a schema discovery issue during Phase 1, not a data integrity issue. Resolved by using lowercase `subpremise`.
 

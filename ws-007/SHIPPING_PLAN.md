@@ -153,7 +153,7 @@ For deeper GraphQL schema exploration, see the doordash-mcp clone at `src/api/*.
 
 Before publishing, verify:
 - [ ] No real cookies, tokens, or session data in any committed file
-- [ ] No email addresses (e.g. ops@imbue.com, bowei@imbue.com) in committed files
+- [ ] No email addresses in committed files
 - [ ] No DoorDash user IDs or consumer IDs
 - [ ] Example commands use placeholder values (`/path/to/curl_chrome136`, `CART-UUID`, etc.)
 - [ ] DATA.md and ws-* dirs are NOT included

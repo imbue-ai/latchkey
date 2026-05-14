@@ -161,7 +161,7 @@ This causes some endpoints to return HTML instead of JSON.
 ```graphql
 { consumer { defaultAddress { id street city state zipCode } } }
 ```
-Returns `292 Ivy St, San Francisco, CA 94102`. All carts deliver to this address.
+Returns `<REDACTED>`. All carts deliver to this address.
 
 ---
 

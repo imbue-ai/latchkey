@@ -9,7 +9,7 @@ How do we know these docs actually help an agent accomplish things?
 ### 1. Entry Point
 
 An AI agent (e.g. Claude Code) is given a task like:
-> "Set up DoorDash ordering capability by following the docs at latchkey-doordash-agent-proto-skill"
+> "Set up DoorDash ordering capability by following the docs at https://github.com/imbue-ai/latchkey-doordash-agent-proto-skill"
 
 The agent reads README.md and executes steps 1-3.
 

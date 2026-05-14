@@ -16,7 +16,7 @@ let's be more explicit with the phases.
 Discover and test how to change the delivery address via the DoorDash GraphQL API.
 
 ## Current state
-- Default address is `292 Ivy St, San Francisco, CA 94102` (from `consumer { defaultAddress }`)
+- Default address is `<REDACTED>` (from `consumer { defaultAddress }`)
 - Delivery address is account-level, not per-cart (see HICCUPS.md #10)
 - `getAvailableAddresses` endpoint returns 200 but response data never inspected
 
