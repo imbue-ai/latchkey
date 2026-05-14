@@ -1,0 +1,168 @@
+# DoorDash API Hiccups & Pitfalls
+
+Every mistake, dead end, and surprise encountered during testing — so you don't repeat them.
+
+---
+
+## 1. operationName + variables = 400 Bad Request
+
+**What happened**: Standard GraphQL request format with `operationName`, `variables`, and parameterized `query` returns 400 on every endpoint.
+
+```json
+// THIS DOES NOT WORK
+{"operationName":"listCarts","variables":{"input":{...}},"query":"query listCarts($input: ListCartsInput!) { ... }"}
+```
+
+**What works**: Fully inline queries with no `operationName` or `variables` fields.
+```json
+{"query":"{ listCarts(input: {cartContextFilter: ...}) { ... } }"}
+```
+
+**Attempts that didn't help**:
+- Adding `apollographql-client-name: @doordash/app-consumer-production-ssr-client` header
+- Adding `apollographql-client-version: 3.0` header
+- Removing `operationName` but keeping `variables`
+- Keeping `operationName` but removing `variables`
+
+**Mystery**: CycleTLS (in doordash-mcp/ws-005/test.mjs) uses operationName+variables and it works fine. Root cause unknown — could be a header diff, TLS fingerprint diff, or request encoding diff.
+
+---
+
+## 2. `/graphql/itemPage` returns 403 (Cloudflare)
+
+**What happened**: Any request to `https://www.doordash.com/graphql/itemPage` returns a 403 HTML page from Cloudflare, regardless of payload.
+
+**What we tried**:
+- curl_chrome136, curl_chrome142, curl_chrome146 — all 403
+- Sending a dummy `{"query":"{ consumer { id } }"}` payload — still 403
+- Removing `?operation=itemPage` query param — still 403
+
+**What works**: Send the itemPage query through a different URL path:
+```
+https://www.doordash.com/graphql/consumer?operation=itemPage
+```
+DoorDash's GraphQL resolver doesn't care about the URL path — it routes based on the query content. Only Cloudflare uses the path for blocking.
+
+**Other blocked endpoints**: Unknown. Only `/graphql/itemPage` was found blocked out of 9 tested. See WORKLOG.md for full table.
+
+---
+
+## 3. Enum values quoted as strings = validation error
+
+**What happened**: In inline GraphQL, writing `substitutionPreference: "contact"` or `fulfillmentType: "Delivery"` causes:
+```
+Enum "SubstitutionPreference" cannot represent non-enum value: "contact". Did you mean the enum value "contact"?
+Enum "FulfillmentType" cannot represent non-enum value: "Delivery". Did you mean the enum value "Delivery"?
+```
+
+**Why**: In GraphQL, enum values are unquoted. Quotes make them strings. With the variables format you pass strings that get coerced, but in inline mode the parser is strict.
+
+**Fix**: `substitutionPreference: contact` (no quotes), `fulfillmentType: Delivery` (no quotes).
+
+---
+
+## 4. nestedOptions: wrong format = silent internal-server-error
+
+**What happened**: Tried adding item with options using simple format:
+```json
+[{"id":"51342150685","quantity":1}]
+```
+Got `internal-server-error` (gRPC code 13) with empty message. No hint about what's wrong.
+
+**What works**: The full `itemExtraOption` wrapper format:
+```json
+[{
+  "itemExtraOption": {"id": "OPTION_ID", "name": "Name", "price": 75},
+  "id": "OPTION_ID",
+  "quantity": 1,
+  "options": []
+}]
+```
+
+**How we figured it out**: Queried existing cart items via `listCarts` with the `nestedOptions` field to see the format DoorDash stores and returns.
+
+**Minimum required fields**: `itemExtraOption.id`, `itemExtraOption.name`, `itemExtraOption.price`, top-level `id`, `quantity`, `options`. Other fields like `itemExtraId`, `merchantSuppliedItemId`, `itemExtraMerchantSuppliedId` are optional.
+
+---
+
+## 5. Required option groups must ALL be satisfied
+
+**What happened**: Adding a Starbucks Grande Latte with just the Size option selected. Got past size validation but then:
+```
+Please select at least 1 options for Espresso Roast Options (Add Espresso Shot Above)
+```
+
+**Why**: Starbucks Caffe Latte has 4 required nested option groups under each size: Espresso Shots, Espresso Roast, Milk Temperature, Milk Options. Providing just one required group is not enough.
+
+**Lesson**: Always check `isOptional` on every `optionList` (and nested `nestedExtrasList`). All groups with `isOptional: false` must have selections. Some items (Starbucks drinks) have deeply nested required options making them impractical to add via API without mapping the full option tree.
+
+---
+
+## 6. `restaurant.name` is always null
+
+**What happened**: `listCarts` query returning `restaurant { name }` gives null for every cart.
+
+**Fix**: Use `restaurant { business { name } }` instead. The `name` field on `restaurant` appears to be deprecated or unpopulated; the actual name lives on the nested `business` object.
+
+---
+
+## 7. GraphQL introspection is disabled
+
+**What happened**: Tried `__type(name: "OrderCart")` introspection to discover field names:
+```
+GraphQL introspection is not allowed by Apollo Server, but the query contained __schema or __type.
+```
+
+**Implication**: Can't discover schema dynamically. Must rely on:
+- Error messages (which suggest valid field names like "Did you mean...")
+- The doordash-mcp query files as reference
+- Trial and error
+
+---
+
+## 8. Item not found — storeId/itemId mismatch
+
+**What happened**: Used itemId from `autocompleteFacetFeed` search for one Starbucks location against a different Starbucks storeId:
+```
+9 FAILED_PRECONDITION: [fetchItemData] Item not found. itemId:48001744862, storeId:36737969
+```
+
+**Why**: Item IDs are store-specific. Same menu item (e.g. "Caffe Latte") has different IDs at different locations. Must get item IDs from `storepageFeed` for the specific storeId you're working with.
+
+---
+
+## 9. curl_chrome136 sends browser-default headers
+
+**What happened**: Without explicit `-H 'Accept: application/json'`, curl_chrome136 sends:
+```
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,...
+```
+This causes some endpoints to return HTML instead of JSON.
+
+**Fix**: Always include both:
+```
+-H 'Content-Type: application/json' -H 'Accept: application/json'
+```
+
+---
+
+## 10. `deliveries.address` doesn't exist on OrderCart
+
+**What happened**: Tried to find delivery address for a specific cart:
+```graphql
+{ orderCart(id: "...") { deliveries { address { printableAddress } } } }
+```
+Got: `Cannot query field "address" on type "Delivery".`
+
+The `deliveries` type on OrderCart only has `id` and `quotedDeliveryTime`. The delivery address appears to be session/context-based, not a queryable field per cart. The `address` field in the doordash-mcp queries only appears on `restaurant.address` (the store's address) and `budgetAddress` (a checkout concept).
+
+---
+
+## 11. `latchkey curl` service name is URL-based, not positional
+
+**What happened**: Tried `npx latchkey curl -s doordash -X POST ...` — got "No service matches URL: doordash".
+
+**Fix**: Don't pass a service name. Latchkey matches by URL pattern automatically. Just pass the DoorDash URL directly:
+```
+npx latchkey curl -s -X POST ... 'https://www.doordash.com/graphql/...'
+```
