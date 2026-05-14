@@ -4,6 +4,8 @@ instal/readme plans make sense, there's only 1 logical entry point.
 maybe we should think about ways the install could fail and how to recover.
 
 cheathset plans - it makes more sense to tailor the rubric based on the specific task.
+also 10 cases is a lot - let's plan for 2-3 of them that cover a mix of readonly/write, and then more as needed.
+worth thinking about recovery as well here -- especially some flows around getting confused about edge caess or accidentally deleting carts.
 
 we haven't decided on how exactly to implement the tests yet - we'll do that thinking separately. 
 
