@@ -16,6 +16,7 @@ export const DoorDashApiCredentialsSchema = z.object({
   objectType: z.literal('doordash'),
   ddwebToken: z.string(),
   csrfToken: z.string(),
+  ddwebSessionId: z.string(),
 });
 
 export type DoorDashApiCredentialsData = z.infer<typeof DoorDashApiCredentialsSchema>;
@@ -24,16 +25,18 @@ export class DoorDashApiCredentials implements ApiCredentials {
   readonly objectType = 'doordash' as const;
   readonly ddwebToken: string;
   readonly csrfToken: string;
+  readonly ddwebSessionId: string;
 
-  constructor(ddwebToken: string, csrfToken: string) {
+  constructor(ddwebToken: string, csrfToken: string, ddwebSessionId: string) {
     this.ddwebToken = ddwebToken;
     this.csrfToken = csrfToken;
+    this.ddwebSessionId = ddwebSessionId;
   }
 
   injectIntoCurlCall(curlArguments: readonly string[]): Promise<readonly string[]> {
     return Promise.resolve([
       '-H',
-      `Cookie: ddweb_token=${this.ddwebToken}; csrf_token=${this.csrfToken}`,
+      `Cookie: ddweb_token=${this.ddwebToken}; csrf_token=${this.csrfToken}; ddweb_session_id=${this.ddwebSessionId}`,
       '-H',
       `x-csrftoken: ${this.csrfToken}`,
       '-H',
@@ -57,11 +60,12 @@ export class DoorDashApiCredentials implements ApiCredentials {
       objectType: this.objectType,
       ddwebToken: this.ddwebToken,
       csrfToken: this.csrfToken,
+      ddwebSessionId: this.ddwebSessionId,
     };
   }
 
   static fromJSON(data: DoorDashApiCredentialsData): DoorDashApiCredentials {
-    return new DoorDashApiCredentials(data.ddwebToken, data.csrfToken);
+    return new DoorDashApiCredentials(data.ddwebToken, data.csrfToken, data.ddwebSessionId);
   }
 }
 
@@ -125,12 +129,13 @@ class DoorDashServiceSession extends ServiceSession {
     const cookies = await context.cookies();
     const ddweb = cookies.find((c) => c.name === 'ddweb_token');
     const csrf = cookies.find((c) => c.name === 'csrf_token');
+    const sessionId = cookies.find((c) => c.name === 'ddweb_session_id');
 
-    if (!ddweb?.value || !csrf?.value) {
+    if (!ddweb?.value || !csrf?.value || !sessionId?.value) {
       return null;
     }
 
-    return new DoorDashApiCredentials(ddweb.value, csrf.value);
+    return new DoorDashApiCredentials(ddweb.value, csrf.value, sessionId.value);
   }
 }
 

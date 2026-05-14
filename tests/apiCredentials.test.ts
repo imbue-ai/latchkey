@@ -48,11 +48,11 @@ describe('SlackApiCredentials', () => {
 });
 
 describe('DoorDashApiCredentials', () => {
-  it('should inject cookie header with both tokens', async () => {
-    const credentials = new DoorDashApiCredentials('ddweb-value', 'csrf-value');
+  it('should inject cookie header with all tokens', async () => {
+    const credentials = new DoorDashApiCredentials('ddweb-value', 'csrf-value', 'session-value');
     await expect(credentials.injectIntoCurlCall([])).resolves.toEqual([
       '-H',
-      'Cookie: ddweb_token=ddweb-value; csrf_token=csrf-value',
+      'Cookie: ddweb_token=ddweb-value; csrf_token=csrf-value; ddweb_session_id=session-value',
       '-H',
       'x-csrftoken: csrf-value',
       '-H',
@@ -67,12 +67,12 @@ describe('DoorDashApiCredentials', () => {
   });
 
   it('should prepend cookie header before existing curl arguments', async () => {
-    const credentials = new DoorDashApiCredentials('ddweb-value', 'csrf-value');
+    const credentials = new DoorDashApiCredentials('ddweb-value', 'csrf-value', 'session-value');
     await expect(
       credentials.injectIntoCurlCall(['-X', 'POST', 'https://www.doordash.com/graphql/test'])
     ).resolves.toEqual([
       '-H',
-      'Cookie: ddweb_token=ddweb-value; csrf_token=csrf-value',
+      'Cookie: ddweb_token=ddweb-value; csrf_token=csrf-value; ddweb_session_id=session-value',
       '-H',
       'x-csrftoken: csrf-value',
       '-H',
@@ -250,7 +250,7 @@ describe('serialization roundtrip', () => {
     },
     {
       name: 'DoorDashApiCredentials',
-      credentials: () => new DoorDashApiCredentials('ddweb-token-value', 'csrf-token-value'),
+      credentials: () => new DoorDashApiCredentials('ddweb-token-value', 'csrf-token-value', 'session-id-value'),
     },
   ];
 
