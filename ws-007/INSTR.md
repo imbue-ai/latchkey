@@ -8,6 +8,6 @@ we're almost ready to ship this, help me figuring out the shipping story. here's
 * step 4 - read the cheatsheet on common actions and then use it to do whatever is asked
 * cheatsheet doc (need to write this)
 
-Create a md doc to plan out how we can get this onto public github and share it with folks. Then pair with me on reviewing the doc.
+Create a md doc to plan out how we can get this onto a new public github space and share it with folks. Then pair with me on reviewing the doc.
 
 
