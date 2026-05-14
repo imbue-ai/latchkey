@@ -3,7 +3,7 @@
 ## Setup
 
 - **curl binary**: `LATCHKEY_CURL=/Users/bowei/code/latchkey/ws-002/tools/curl_chrome136`
-- **Auth status**: valid (consumer ID `895291629`, email `ops@imbue.com`)
+- **Auth status**: valid (consumer ID `<REDACTED>`, email `<REDACTED>`)
 - **Endpoint pattern**: `POST https://www.doordash.com/graphql/{operation}?operation={operation}`
 
 ## Critical Finding: Inline Queries Only

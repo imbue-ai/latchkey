@@ -169,7 +169,7 @@ Returns `292 Ivy St, San Francisco, CA 94102`. All carts deliver to this address
 
 **What happened**: Queried `orderCart(id: "83fce989-5765-...")` on an empty Starbucks cart:
 ```
-CART_NOT_FOUND: [createParticipantCart] Cart for cartUuid=83fce989-5765-... consumerId=895291629
+CART_NOT_FOUND: [createParticipantCart] Cart for cartUuid=83fce989-5765-... consumerId=<REDACTED>
 ```
 
 Also, the cart UUID had changed between `listCarts` calls (`83fce989-5765-...` → `83fce989-d014-...`) — DoorDash may recycle/regenerate cart IDs for empty carts.
