@@ -146,19 +146,49 @@ This causes some endpoints to return HTML instead of JSON.
 
 ---
 
-## 10. `deliveries.address` doesn't exist on OrderCart
+## 10. Delivery address is NOT per-cart — it's account-level
 
-**What happened**: Tried to find delivery address for a specific cart:
+**What happened**: Tried multiple approaches to find which address a cart delivers to:
+
+1. `orderCart { deliveries { address { printableAddress } } }` → `Cannot query field "address" on type "Delivery"`. Delivery type only has `id` and `quotedDeliveryTime`.
+2. `orderCart { deliveryAddress { ... } }` → `Cannot query field "deliveryAddress"`. Suggested: `deliveries`, `deliveryFee`, `deliveryOptions`.
+3. `orderCart { budgetAddress { ... } }` → `Cannot query field "budgetAddress"`. That field lives on `ExpenseOrderBudget`, a corporate expense fragment, not OrderCart.
+4. `orderCart { expandAddressDetails }` → returns `false` (a boolean flag, not an address).
+5. `orderCart { deliveryOptions { ... } }` → empty array `[]`.
+6. `orderCart { deliveryFee deliveryFeeDetails { ... } deliveries selectedDeliveryOption }` → all null.
+
+**Resolution**: Delivery address lives on the consumer, not the cart:
 ```graphql
-{ orderCart(id: "...") { deliveries { address { printableAddress } } } }
+{ consumer { defaultAddress { id street city state zipCode } } }
 ```
-Got: `Cannot query field "address" on type "Delivery".`
-
-The `deliveries` type on OrderCart only has `id` and `quotedDeliveryTime`. The delivery address appears to be session/context-based, not a queryable field per cart. The `address` field in the doordash-mcp queries only appears on `restaurant.address` (the store's address) and `budgetAddress` (a checkout concept).
+Returns `292 Ivy St, San Francisco, CA 94102`. All carts deliver to this address.
 
 ---
 
-## 11. `latchkey curl` service name is URL-based, not positional
+## 11. Empty carts return CART_NOT_FOUND on orderCart
+
+**What happened**: Queried `orderCart(id: "83fce989-5765-...")` on an empty Starbucks cart:
+```
+CART_NOT_FOUND: [createParticipantCart] Cart for cartUuid=83fce989-5765-... consumerId=895291629
+```
+
+Also, the cart UUID had changed between `listCarts` calls (`83fce989-5765-...` → `83fce989-d014-...`) — DoorDash may recycle/regenerate cart IDs for empty carts.
+
+**Fix**: Add an item first, then query. Empty carts can't be previewed via orderCart.
+
+---
+
+## 12. `consumerOrderCart` returns "current" cart, not a specific one
+
+**What happened**: Tried `consumerOrderCart` (no ID param) hoping to get cart details:
+```graphql
+{ consumerOrderCart { id restaurant { business { name } } deliveries { ... } } }
+```
+Returns the most recent/active cart (Komeya no Bento), not the one you want. No way to pass a cart ID to this query — it's always the "current" cart. Use `orderCart(id: "...")` for specific carts.
+
+---
+
+## 13. `latchkey curl` service name is URL-based, not positional
 
 **What happened**: Tried `npx latchkey curl -s doordash -X POST ...` — got "No service matches URL: doordash".
 

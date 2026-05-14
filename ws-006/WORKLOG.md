@@ -46,13 +46,26 @@ LATCHKEY_CURL=.../curl_chrome136 npx latchkey curl -s -X POST \
 - Store ID in click.data JSON: `{"uri":"store/65695/?pickup=false"}` -> storeId=65695
 - First result is best match, rest are suggested queries
 
-### 3. Consumer Identity — WORKS
+### 3. Consumer Identity + Default Address — WORKS
 ```bash
 LATCHKEY_CURL=.../curl_chrome136 npx latchkey curl -s -X POST \
   -H 'Content-Type: application/json' -H 'Accept: application/json' \
-  -d '{"query":"{ consumer { id email } }"}' \
+  -d '{"query":"{ consumer { id email defaultAddress { id street city state zipCode } } }"}' \
   'https://www.doordash.com/graphql/consumer'
 ```
+- `defaultAddress` = where all carts will deliver to (account-level, not per-cart)
+
+### 3b. Checkout / Order Preview (orderCart) — WORKS
+```bash
+LATCHKEY_CURL=.../curl_chrome136 npx latchkey curl -s -X POST \
+  -H 'Content-Type: application/json' -H 'Accept: application/json' \
+  -d '{"query":"{ orderCart(id: \"CART-UUID\", isCardPayment: true) { id subtotal total fulfillmentType asapMinutesRange isOutsideDeliveryRegion restaurant { name address { printableAddress street city state } business { name } } creator { id firstName lastName } } }"}' \
+  'https://www.doordash.com/graphql/consumer?operation=orderCart'
+```
+- Shows total (with fees/tax), delivery ETA, store address, fulfillment type
+- `deliveryFee`, `deliveryFeeDetails`, `deliveries`, `selectedDeliveryOption` all return null — not populated until deeper in checkout flow
+- **Cart must have items** — empty carts return CART_NOT_FOUND
+- Delivery address is NOT on the cart — it's on `consumer.defaultAddress`
 
 ### 4. Store Menu (storepageFeed) — WORKS
 ```bash
