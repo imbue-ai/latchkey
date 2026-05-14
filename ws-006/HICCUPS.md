@@ -196,3 +196,45 @@ Returns the most recent/active cart (Komeya no Bento), not the one you want. No 
 ```
 npx latchkey curl -s -X POST ... 'https://www.doordash.com/graphql/...'
 ```
+
+---
+
+## 14. `orderCancellation` statusCode meanings are non-obvious
+
+**What happened**: Called `orderCancellation(orderUuid: "fake")` — returned `statusCode: 0` with empty refund. No error. Called on real order — returned `statusCode: 1` with actual refund.
+
+**Resolution**: `statusCode: 0` = no-op (invalid/nonexistent UUID). `statusCode: 1` = real cancellation executed. There's no error on invalid UUIDs — must check statusCode to know if anything happened.
+
+**Refund surprise**: Real cancellation of $10.74 order refunded only $5.49. Likely only item cost refunded, not delivery/service fees.
+
+---
+
+## 15. `deliveryTime: ""` causes scheduled delivery error
+
+**What happened**: `createOrderFromCart` with `deliveryTime: ""` returns:
+```
+Scheduled delivery must set scheduled delivery time
+```
+
+**Fix**: Use `deliveryTime: "ASAP"` for immediate delivery. Don't pass empty string or omit.
+
+---
+
+## 16. Cart garbage collection is aggressive
+
+**What happened**: Created carts during testing, came back minutes later and cart UUIDs had changed or carts disappeared entirely. Empty carts especially unstable — UUIDs regenerated between `listCarts` calls.
+
+**Lesson**: Create cart and use immediately. Don't rely on cart UUIDs persisting across long gaps. Always re-fetch via `listCarts` if unsure.
+
+---
+
+## 17. Schema probing technique (since introspection is disabled)
+
+Since `__schema` / `__type` introspection is blocked, field/mutation names must be discovered by trial and error. Useful patterns:
+
+- **Wrong field name** → error suggests alternatives: `"Did you mean \"cancelEditOrder\"?"`
+- **Missing required args** → error lists them: `"argument \"editId\" of type \"String!\" is required"`
+- **Wrong arg name** → error suggests: `"Did you mean \"orderUuid\"?"`
+- **Valid field, needs subfields** → `"must have a selection of subfields"`
+- **`__typename`** → always works, confirms a field/mutation exists and returns its type name
+- **Batch probing** → loop over candidate names, check for "Cannot query field" vs other errors

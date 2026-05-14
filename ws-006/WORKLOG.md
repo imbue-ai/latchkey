@@ -156,6 +156,43 @@ LATCHKEY_CURL=.../curl_chrome136 npx latchkey curl -s -X POST \
 ```
 - Returns `{"data":{"deleteCart":true}}`
 
+### 10. Place Order (createOrderFromCart) — WORKS, TESTED LIVE
+```bash
+LATCHKEY_CURL=.../curl_chrome136 npx latchkey curl -s -X POST \
+  -H 'Content-Type: application/json' -H 'Accept: application/json' \
+  -d '{"query":"mutation { createOrderFromCart(cartId: \"CART-UUID\", total: 1074, sosDeliveryFee: 0, isPickupOrder: false, verifiedAgeRequirement: false, deliveryTime: \"ASAP\", isCardPayment: true) { orderUuid } }"}' \
+  'https://www.doordash.com/graphql/consumer?operation=createOrderFromCart'
+```
+- `total` = total in cents from `orderCart` response (includes fees/tax)
+- `deliveryTime: "ASAP"` — **must be "ASAP"**, empty string `""` causes "Scheduled delivery must set scheduled delivery time" error
+- Returns `orderUuid` — this is NOT the cart UUID, needed for cancellation
+- **Tested live**: Starbucks Iced Lemon Loaf ($5.25 item, $10.74 total) → orderUuid `820244b8-4eb1-485a-be13-806ca10392d7`
+- Cart gets consumed after order — cannot reuse same cartId
+
+### 11. Order Cancellation — TESTED LIVE
+
+**Preview** (read-only, shows refund amount):
+```bash
+LATCHKEY_CURL=.../curl_chrome136 npx latchkey curl -s -X POST \
+  -H 'Content-Type: application/json' -H 'Accept: application/json' \
+  -d '{"query":"{ previewOrderCancellation(orderUuid: \"ORDER-UUID\") { statusCode refund { currency displayString unitAmount } } }"}' \
+  'https://www.doordash.com/graphql/consumer?operation=previewOrderCancellation'
+```
+
+**Execute cancellation**:
+```bash
+LATCHKEY_CURL=.../curl_chrome136 npx latchkey curl -s -X POST \
+  -H 'Content-Type: application/json' -H 'Accept: application/json' \
+  -d '{"query":"mutation { orderCancellation(orderUuid: \"ORDER-UUID\") { statusCode refund { currency displayString unitAmount } } }"}' \
+  'https://www.doordash.com/graphql/consumer?operation=orderCancellation'
+```
+- Takes `orderUuid` (from `createOrderFromCart` response, NOT the cart UUID)
+- **statusCode meanings**: `0` = no-op (invalid/nonexistent UUID), `1` = real cancellation executed
+- **Tested live**: cancelled order `820244b8-...` → `statusCode: 1`, refund `unitAmount: -549` ($5.49 USD)
+- Refund was $5.49 on $10.74 total — partial refund (likely delivery fee + service fee not refunded)
+- `previewOrderCancellation` returns same result as `orderCancellation` — use preview to check before executing
+- Calling cancellation again on same UUID still returns `statusCode: 1` (idempotent)
+
 ## Endpoint Cloudflare Status
 
 Tested all with dummy `{"query":"{ consumer { id } }"}` payload:
@@ -187,6 +224,10 @@ All curl_chrome versions (136, 142, 146) get 403 on itemPage. Workaround: route 
 10. **Items with required options need ALL required groups** — partial selections fail silently or with internal-server-error. Check `isOptional` on each optionList.
 11. **`quickAddContext.isEligible`** — only these items can be added with `nestedOptions: "[]"`. Non-eligible items may need size/flavor selections.
 12. **`menuBook.id` from storepageFeed** — pass as `menuId` in addCartItem. Can also pass `""` but best to include it.
+13. **`deliveryTime` must be `"ASAP"`** — empty string `""` causes "Scheduled delivery must set scheduled delivery time" error. Don't omit it either.
+14. **Cart GC is aggressive** — DoorDash garbage-collects idle/empty carts quickly. Create cart and use immediately. UUIDs can change between calls.
+15. **`orderUuid` ≠ cart UUID** — `createOrderFromCart` returns an `orderUuid` which is different from the `cartId`. Use `orderUuid` for cancellation.
+16. **Cancellation refund may be partial** — $5.49 refund on $10.74 order. Fees likely not refunded.
 
 ## Test Reference Data
 
