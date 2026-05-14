@@ -30,7 +30,7 @@ The agent reads README.md and executes steps 1-3.
 | Build latchkey | `npm install` + `npm run build` | Exit 0, no error output |
 | Download curl_chrome136 | Fetches from lexiforest releases OR locates binary | Binary exists and is executable (`chmod +x` or already +x) |
 | Clone doordash-mcp | `git clone` + `git checkout 405e748` | Both commands exit 0 |
-| Browser auth | `latchkey auth browser doordash` invoked | Command completes (requires human in the loop for actual login) |
+| Browser auth | `latchkey auth browser doordash` invoked | Command completes (requires human in the loop — punting automation for now) |
 | Validate consumer | curl to `/graphql/consumer` | Response JSON has non-null `consumer.id` and `consumer.email` |
 | Validate listCarts | curl to `/graphql/listCarts` | Response JSON has `listCarts` key (array, possibly empty) |
 
@@ -80,122 +80,198 @@ Total: /10
   0-4  = Failed setup
 ```
 
+### 6. Installation Failure Modes & Recovery
+
+| Failure | Likely cause | How agent should recover |
+|---------|-------------|------------------------|
+| `npm install` fails | Node version too old, network issue | Check `node --version` >= 18, retry with `--legacy-peer-deps` |
+| `npm run build` TypeScript errors | Wrong hash checked out, partial clone | Verify `git log --oneline -1` matches `ad68247`, re-clone if needed |
+| curl_chrome136 download 404 | Wrong platform string, release moved | Browse the releases page for correct asset name; try `curl_chrome142` as fallback |
+| `chmod +x` permission denied | File on a noexec mount or wrong path | Move binary to home dir, retry chmod |
+| `latchkey auth browser` hangs | No display (headless env), Playwright missing | Check `npx playwright install chromium`; can't run headless — needs a real browser |
+| Consumer query returns all nulls | Session expired or auth didn't capture cookies | Re-run `latchkey auth browser doordash`, log in again |
+| Consumer query returns 403 | LATCHKEY_CURL not set or pointing to wrong binary | Verify env var: `echo $LATCHKEY_CURL`, `file $LATCHKEY_CURL` |
+| listCarts returns error | Auth valid but cookies partially captured | Re-auth; if persists, check `~/.latchkey` has 3 cookies (ddweb_token, csrf_token, ddweb_session_id) |
+
 ---
 
 ## Part 2: Actions (CHEATSHEET)
 
 ### 1. Entry Point
 
-Agent has completed installation (Part 1 passed). Given a task like:
-> "Order me a water from the nearest McDonald's"
+Agent has completed installation (Part 1 passed). Given a specific task. Agent reads CHEATSHEET.md and chains operations together.
 
-Agent reads CHEATSHEET.md and chains together the right operations.
+### 2. Handling Mutable DoorDash State
 
-### 2. Desired Outcome
+DoorDash state changes under you. Tests must account for this:
 
-Depends on the task. Example workflows:
+- **Cart GC**: Carts disappear if idle too long. Agent should re-list carts before acting on stale cart UUIDs. If a cart UUID returns CART_NOT_FOUND, create a new one.
+- **Store hours**: Stores close. McDonald's is 24h in most metros — use McDonald's as the stable test store. If closed, agent should try a different store rather than fail.
+- **Menu changes**: Items get removed or prices change. Agent should not hardcode item IDs — always search + browse menu to get current IDs.
+- **Price drift**: `unitPrice` in addCartItem should match current menu price. If mismatch, re-fetch from storepageFeed.
 
-**Browse workflow**: Search -> menu -> item details -> report back
-- Agent finds the store, gets menu, answers the user's question
+### 3. Test Scenarios
 
-**Order workflow**: Search -> menu -> create cart -> (add items) -> preview checkout -> place order
-- Agent creates a cart, adds items, confirms total, places order
+Three scenarios covering read-only, cart write, and full order flow. Each has a task-specific rubric.
 
-**Cancel workflow**: Place order -> cancel order
-- Agent uses orderUuid (not cartId) to cancel
+---
 
-### 3. Transcript Signals (from JSONL)
+#### Scenario A: "What's on the Sweetgreen menu near me, and what options does the Harvest Bowl have?"
 
-| Signal | What to look for | Pass criteria |
-|--------|-----------------|---------------|
-| Correct endpoint used | URL matches operation (e.g. `storepageFeed` for menu) | Agent doesn't use wrong endpoints |
-| Inline query format | No `operationName` or `variables` keys in payload | All queries are inline |
-| Enums unquoted | `Delivery` not `"Delivery"`, `contact` not `"contact"` | No quoted enums |
-| itemPage routed correctly | Uses `/graphql/consumer?operation=itemPage` | Does NOT use `/graphql/itemPage` |
-| business.name not restaurant.name | Reads store name from `business.name` | Never relies on null `restaurant.name` |
-| Cart creation | `cartId: ""` for new cart | Agent knows empty string = new cart |
-| nestedOptions format | Correct triple-escaped JSON string structure | Not malformed JSON |
-| orderUuid vs cartId | Uses `orderUuid` from createOrderFromCart for cancellation | Never passes cartId to cancel/preview |
-| LATCHKEY_CURL prefix | Every curl command uses the env var | No bare curl to doordash.com |
-| Headers present | `Content-Type` and `Accept` headers on every request | Never missing |
+**Type**: Read-only, no cost, no side effects
 
-### 4. System / DoorDash Ground Truth Signals
+**Expected operation sequence**:
+1. `autocompleteFacetFeed` — search "Sweetgreen", extract storeId
+2. `storepageFeed` — get menu categories and items
+3. `itemPage` (via `/graphql/consumer?operation=itemPage`) — get Harvest Bowl options
 
-| Signal | How to check |
-|--------|-------------|
-| Search worked | Response has `autocompleteFacetFeed.body` with results |
-| Menu loaded | Response has `storepageFeed.storeHeader.name` and `itemLists` |
-| Cart created | Response has `addCartItemV2` with new cart `id` |
-| Cart has items | `listCarts` shows items in cart |
-| Checkout preview valid | `orderCart` returns `total` > 0 |
-| Order placed | `createOrderFromCart` returns `orderUuid` |
-| Order cancelled | `orderCancellation` returns `statusCode: 1` |
-| DoorDash confirms | Order appears in DoorDash order history (external check) |
+**Recovery situations**:
+- Sweetgreen not found in search → try alternate spelling, or report "not available"
+- Harvest Bowl not on menu → report what IS on menu
+- 403 on itemPage → agent should know to route through `/graphql/consumer`
 
-### 5. LLM-as-Judge Rubric
-
+**Rubric**:
 ```
-Grade the agent's task execution on these criteria (0-2 each):
+SEARCH_CORRECT (0-2):
+  0 = Didn't search or used wrong endpoint
+  1 = Searched but couldn't extract storeId from results
+  2 = Found Sweetgreen and extracted storeId
 
-OPERATION_SELECTION (0-2):
-  0 = Used wrong operations or random guessing
-  1 = Mostly right sequence but missed a step or did unnecessary steps
-  2 = Correct minimal sequence of operations for the task
+MENU_RETRIEVED (0-2):
+  0 = Didn't fetch menu or got error
+  1 = Got menu but missed categories or items
+  2 = Full menu with item names, prices, categories
 
-SHARP_EDGES_AVOIDED (0-2):
-  0 = Hit 2+ known sharp edges (403, null name, wrong UUID, quoted enums)
-  1 = Hit 1 sharp edge but recovered
-  2 = Avoided all sharp edges on first attempt
+ITEM_DETAILS (0-2):
+  0 = Didn't fetch Harvest Bowl options
+  1 = Fetched but used wrong endpoint (/graphql/itemPage) or wrong item
+  2 = Correct item details with option groups via consumer?operation=itemPage
 
-QUERY_CORRECTNESS (0-2):
-  0 = Queries malformed or returned errors
-  1 = Some queries worked, some needed retry/fix
-  2 = All queries well-formed and returned valid data
+ANSWER_QUALITY (0-2):
+  0 = No useful answer to user
+  1 = Partial answer (menu OR options, not both)
+  2 = Complete answer covering menu overview + Harvest Bowl options
 
-TASK_COMPLETED (0-2):
-  0 = Task goal not achieved
-  1 = Partially achieved (e.g. found restaurant but couldn't order)
-  2 = Fully achieved (e.g. order placed, or info reported back correctly)
-
-EFFICIENCY (0-2):
-  0 = Excessive retries, dead ends, or unnecessary operations
-  1 = Some wasted calls but got there
-  2 = Clean execution with minimal unnecessary calls
+SHARP_EDGES (0-2):
+  0 = Hit 2+ sharp edges (403, null restaurant.name, quoted enums)
+  1 = Hit 1 but recovered
+  2 = Clean — no sharp edges hit
 
 Total: /10
-  8-10 = Docs are working well
-  5-7  = Docs are usable but have gaps
-  0-4  = Docs need significant revision
 ```
 
 ---
 
-## Test Scenarios
+#### Scenario B: "Add a water and an apple juice from McDonald's to a new cart, then tell me the total"
 
-Concrete tasks to run, ordered by complexity:
+**Type**: Cart write, no cost, reversible (cart can be deleted)
 
-### Tier 1: Read-only (safe, no cost)
-1. **"What's on the Sweetgreen menu near me?"** — search + storepageFeed
-2. **"What customization options does the Harvest Bowl have?"** — search + storepageFeed + itemPage
-3. **"Do I have any active carts?"** — listCarts
-4. **"What's my delivery address?"** — consumer query
+**Expected operation sequence**:
+1. `autocompleteFacetFeed` — search "McDonald's", extract storeId
+2. `storepageFeed` — find quickAdd-eligible water and apple juice items, get menuBookId
+3. `addCartItemV2` with `cartId: ""` — create cart with first item (water)
+4. `addCartItemV2` with `cartId: "NEW_CART_UUID"` — add second item (apple juice)
+5. `orderCart` — preview checkout to get total
 
-### Tier 2: Cart manipulation (safe, no cost)
-5. **"Add a water from McDonald's to a new cart"** — search + storepageFeed + addCartItemV2 (cartId="")
-6. **"Add a Harvest Bowl with corn salsa to my cart"** — search + storepageFeed + itemPage + addCartItemV2 with nestedOptions
-7. **"How much would it cost to order what's in my cart?"** — listCarts + orderCart preview
-8. **"Remove the last item from my cart"** — listCarts + removeCartItemV2
-9. **"Delete my cart"** — listCarts + deleteCart
+**Recovery situations**:
+- Water/juice not on menu → find closest match or report unavailable
+- addCartItem returns error → check nestedOptions is `"[]"`, enums unquoted, unitPrice matches menu
+- Cart UUID from step 3 not working in step 4 → cart may have been GC'd; re-create
+- Accidentally used wrong cartId → listCarts to find actual cart, or start over
+- orderCart returns CART_NOT_FOUND → cart was GC'd between add and preview; re-create
 
-### Tier 3: Real orders (costs money)
-10. **"Order me a water from McDonald's"** — full flow through createOrderFromCart
-11. **"Order me a water from McDonald's, then cancel it"** — full flow + orderCancellation
+**Rubric**:
+```
+SEARCH_AND_MENU (0-2):
+  0 = Couldn't find McDonald's or menu
+  1 = Found store but picked wrong items (non-quickAdd, wrong IDs)
+  2 = Found store, identified quickAdd-eligible water + juice with correct IDs
+
+CART_CREATION (0-2):
+  0 = Failed to create cart or wrong mutation format
+  1 = Created cart with one item but couldn't add second
+  2 = Both items added to same cart, cart UUID tracked correctly
+
+QUERY_FORMAT (0-2):
+  0 = Multiple malformed queries (wrong enums, bad nestedOptions, missing headers)
+  1 = One format error but self-corrected
+  2 = All queries correctly formatted on first attempt
+
+TOTAL_RETRIEVED (0-2):
+  0 = Didn't get checkout preview
+  1 = Got subtotal from listCarts (not the real total with fees)
+  2 = Used orderCart to get total including fees/tax
+
+RECOVERY (0-2):
+  0 = Got stuck on error with no recovery attempt
+  1 = Recovered from error but messily (extra carts left behind, multiple retries)
+  2 = Clean recovery or no errors to recover from
+
+Total: /10
+```
 
 ---
 
-## Open Questions
+#### Scenario C: "Order me the cheapest item from McDonald's, then immediately cancel it"
 
-- **Browser auth is human-in-the-loop** — how do we handle this in automated test runs? Pre-auth and snapshot `~/.latchkey`?
-- **DoorDash state is mutable** — carts get GC'd, menus change, stores close. Tests need to be time-aware or use stable stores.
-- **Cost of Tier 3 tests** — real charges. Run sparingly. Cancellation refunds are partial.
-- **Transcript format** — what JSONL schema are we capturing? Tool calls + results? Full conversation?
+**HEADS UP: This costs real money. Cancellation refund is partial — expect to lose ~$5 in fees. Only run this test when intentionally validating the full order flow.**
+
+**Type**: Full order + cancel, real charges, partial refund
+
+**Expected operation sequence**:
+1. `autocompleteFacetFeed` — search "McDonald's"
+2. `storepageFeed` — find cheapest quickAdd item (likely a condiment or water)
+3. `addCartItemV2` with `cartId: ""` — create cart
+4. `orderCart` — preview total, confirm with user before proceeding
+5. `createOrderFromCart` — place order (returns `orderUuid`)
+6. `previewOrderCancellation` — check refund amount
+7. `orderCancellation` — cancel using `orderUuid` (NOT cartId)
+
+**Recovery situations**:
+- `createOrderFromCart` fails with total mismatch → re-fetch orderCart, use updated total
+- Agent uses `deliveryTime: ""` instead of `"ASAP"` → scheduled delivery error; fix and retry
+- Agent tries to cancel with cartId instead of orderUuid → statusCode 0 (no-op); must use orderUuid from step 5
+- Order already picked up by dasher → cancellation may fail or give $0 refund; report to user
+- Agent doesn't confirm with user before placing order → rubric penalizes this
+
+**Rubric**:
+```
+ORDER_FLOW (0-2):
+  0 = Failed to place order
+  1 = Placed order but with errors along the way (wrong total, retries)
+  2 = Clean order placement: search -> menu -> cart -> preview -> confirm -> order
+
+USER_CONFIRMATION (0-2):
+  0 = Placed order without telling user the total or asking to proceed
+  1 = Showed total but didn't wait for confirmation
+  2 = Showed total and confirmed before placing order
+
+CANCEL_FLOW (0-2):
+  0 = Failed to cancel or used wrong UUID
+  1 = Cancelled but used cartId first (wasted call), then found orderUuid
+  2 = Used orderUuid correctly on first attempt, verified statusCode: 1
+
+UUID_TRACKING (0-2):
+  0 = Confused cartId and orderUuid throughout
+  1 = Mixed up once but corrected
+  2 = Correctly distinguished cartId vs orderUuid at every step
+
+DELIVERY_TIME (0-2):
+  0 = Used empty string or omitted deliveryTime (caused error)
+  1 = Got error, then fixed to "ASAP"
+  2 = Used "ASAP" correctly on first attempt
+
+Total: /10
+```
+
+---
+
+## Summary
+
+| Scenario | Type | Cost | Key thing it tests |
+|----------|------|------|--------------------|
+| A | Read-only | Free | Search + menu + itemPage routing (sharp edge: 403) |
+| B | Cart writes | Free | Multi-item cart building + checkout preview + cart state tracking |
+| C | Full order | ~$5-15 | Order placement + cancellation + UUID tracking + user confirmation |
+
+Run A and B freely for iteration. Run C sparingly and only with explicit intent.
