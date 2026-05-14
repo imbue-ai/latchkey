@@ -205,6 +205,59 @@ LATCHKEY_CURL=.../curl_chrome136 npx latchkey curl -s -X POST \
 - Returns `OrderCart` type — can request same fields as `orderCart` query
 - **Tested live**: removed GREEN JUICE from Rad Radish cart. Subtotal dropped $51.00 → $42.00, item count 4 → 3.
 
+### 13. Update Item Quantity (updateCartItemV2) — BROKEN, USE WORKAROUND
+```bash
+# This mutation accepts input but silently returns null — no effect
+mutation { updateCartItemV2(updateCartItemInput: {cartId: "...", storeId: "...", itemId: "...", quantity: 3, nestedOptions: "[]", specialInstructions: "", substitutionPreference: contact}, fulfillmentContext: {shouldUpdateFulfillment: false, fulfillmentType: Delivery}) { id subtotal } }
+```
+- Returns `{"data":{"updateCartItemV2":null}}` regardless of input — no error, no effect
+- Tried both orderItem UUID and catalog item ID for `itemId` — both null
+- doordash-mcp confirms this is broken: `// Remove then re-add (updateCartItemV2 is broken)`
+- **Workaround**: `removeCartItemV2` + `addCartItemV2` with new quantity. If removing last item deletes cart, re-add with `cartId: ""`.
+
+### 14. Order History / Status (getConsumerOrdersWithDetails) — WORKS
+```bash
+LATCHKEY_CURL=.../curl_chrome136 npx latchkey curl -s -X POST \
+  -H 'Content-Type: application/json' -H 'Accept: application/json' \
+  -d '{"query":"{ getConsumerOrdersWithDetails(offset: 0, limit: 5) { id orderUuid store { name } grandTotal { displayString } submittedAt cancelledAt fulfillmentType isPickup paymentCard { id last4 } deliveryAddress { id formattedAddress } deliveryUuid orders { items { name quantity } } } }"}' \
+  'https://www.doordash.com/graphql/getConsumerOrdersWithDetails?operation=getConsumerOrdersWithDetails'
+```
+- `cancelledAt` — non-null if order was cancelled, null if active/completed
+- `paymentCard.last4` — last 4 digits of payment card
+- `deliveryAddress.formattedAddress` — returns null (field exists but unpopulated)
+- `deliveryUuid` — UUID for the delivery (different from orderUuid)
+- No explicit "status" field — infer from `cancelledAt` and `submittedAt`
+
+### 15. Order Tracking (orderTracker) — EXISTS, FIELDS UNDISCOVERABLE
+```bash
+LATCHKEY_CURL=.../curl_chrome136 npx latchkey curl -s -X POST \
+  -H 'Content-Type: application/json' -H 'Accept: application/json' \
+  -d '{"query":"{ orderTracker(orderUuid: \"ORDER-UUID\") { __typename } }"}' \
+  'https://www.doordash.com/graphql/consumer?operation=orderTracker'
+```
+- Takes `orderUuid` param — returns `OrderTrackerResponse` type
+- **Fields are completely undiscoverable** — ~50 field names probed, zero "Did you mean" suggestions
+- Backend calls `delivery_experience.v1.OrderTrackerService/GetOrderStatus` gRPC service
+- Without `orderUuid`, returns `INVALID_ARGUMENT` gRPC error
+- Likely uses server-driven UI pattern with unusual field names — needs network traffic capture from real DoorDash web client to discover fields
+- **Practical alternative**: Use `getConsumerOrdersWithDetails` with `cancelledAt` to check order status
+
+### 16. Tip — NOT A SEPARATE MUTATION, PART OF createOrderFromCart
+Tip is set at order creation time via the `tipAmounts` parameter:
+```graphql
+mutation { createOrderFromCart(
+  cartId: "...", total: 1074, ...,
+  tipAmounts: [{tipRecipient: DASHER, amount: 200}],
+  ...
+) { orderUuid } }
+```
+- `tipRecipient: DASHER` (enum, unquoted)
+- `amount` in cents (e.g. 200 = $2.00)
+- No standalone tip mutation found — probed `updateTip`, `setTip`, `addTip`, `changeTip`, `submitTip`, `postDeliveryTip`, `updateDasherTip` — none exist
+- Post-delivery tip adjustment likely not available via web GraphQL API (mobile app only?)
+- doordash-mcp reference: `tipAmounts: [{ tipRecipient: "DASHER", amount: tipCents }]`
+- When placing without tip, omit `tipAmounts` or pass empty array
+
 ## Endpoint Cloudflare Status
 
 Tested all with dummy `{"query":"{ consumer { id } }"}` payload:

@@ -25,6 +25,7 @@ All queries must be **fully inline** (no `operationName`/`variables`). Enum valu
 | Store menu | `storepageFeed` | #4 | Check `quickAddContext.isEligible` for simple adds |
 | Item details + options | `itemPage` | #5 | **Route through `/graphql/consumer`** — `/graphql/itemPage` is 403 |
 | Order history | `getConsumerOrdersWithDetails` | (tested inline) | Has `cancelledAt` field for cancelled orders |
+| Order history + status | `getConsumerOrdersWithDetails` | #14 | `cancelledAt` for status, `paymentCard.last4`, `deliveryUuid` |
 | Preview cancellation | `previewOrderCancellation` | #11 | Read-only, same response as actual cancellation |
 
 ## Mutations (modify state)
@@ -43,9 +44,9 @@ All queries must be **fully inline** (no `operationName`/`variables`). Enum valu
 
 | Action | Likely Mutation | Status |
 |---|---|---|
-| Update item quantity | `updateCartItemV2` | Pending |
-| Order tracking | unknown | Pending |
-| Tip adjustment | unknown | Pending |
+| Update item quantity | `updateCartItemV2` | **Broken** — returns null. Workaround: remove (#12) + re-add (#7) |
+| Order tracking | `orderTracker` | Fields undiscoverable — use `getConsumerOrdersWithDetails` (#14) instead |
+| Tip at order time | `createOrderFromCart` `tipAmounts` | Set at order creation (#16), no post-order tip mutation |
 | Change delivery address | unknown | Pending (tricky) |
 | Apply promo/coupon | unknown | Not started |
 | Reorder previous order | unknown | Not started |

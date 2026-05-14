@@ -1,28 +1,52 @@
-# Remaining Open Questions
+# Remaining Open Questions & Next Steps
 
 ## Solid / fully tested:
-- All 6 INSTR flows work end-to-end
-- Inline-only query constraint documented
-- Cloudflare endpoint blocking + workaround
-- Enum quoting pitfall
-- Basic nestedOptions format
+- All 6 original INSTR flows (fetch carts, search restaurants, item details, create cart, add item, add item with options)
 - `createOrderFromCart` — placed real order with `deliveryTime: "ASAP"`, got orderUuid back
-- `orderCancellation` — cancelled real order, got statusCode=1 and partial refund ($5.49 on $10.74)
-- `previewOrderCancellation` — read-only preview returns same data as actual cancellation
-- `deleteCart` — tested, returns true
+- `orderCancellation` — cancelled real order, statusCode=1, partial refund ($5.49 on $10.74)
+- `previewOrderCancellation` — read-only preview, same response shape as actual cancellation
+- `deleteCart` — returns true
 - `removeCartItemV2` — uses orderItem UUID, returns updated OrderCart
-- `getConsumerOrdersWithDetails` — works, has `cancelledAt` field
+- `getConsumerOrdersWithDetails` — `cancelledAt`, `paymentCard`, `deliveryUuid`, `fulfillmentType`
+- Inline-only query constraint, Cloudflare endpoint blocking + workaround, enum quoting, nestedOptions format
 
-## Still unclear:
+## Actionable next steps (ready to test):
 
-1. **Why operationName+variables gives 400** — CycleTLS uses that format fine. Is it a missing header? A request body encoding difference? Content-Length? Haven't root-caused this, just worked around it.
+### 1. Change delivery address
+- **Risk**: Tricky — could break active orders or affect account state
+- **Approach**: Probe for `updateDefaultAddress`, `setDeliveryAddress`, `updateConsumerAddress` mutations. Check `getAvailableAddresses` query first to see stored addresses.
+- **Status**: Held pending user go-ahead
 
-2. **nestedOptions for complex items** — minimal `{itemExtraOption: {id, name, price}}` worked for Sweetgreen's optional toppings. But Starbucks (4+ required nested option groups with nested-inside-nested) failed with internal-server-error. Don't know if the format needs more fields (`itemExtraId`, `categoryId`, etc.) or if it's a nesting depth issue.
+### 2. Test `getAvailableAddresses` and `getPaymentMethodList` end-to-end
+- Both returned 200 status but response data never inspected
+- Low risk, read-only queries
 
-3. **Which other endpoints are Cloudflare-blocked** — only tested ~9 paths. Could be more 403s hiding (e.g. `removeCartItemV2`, `updateCartItemV2`, checkout-related ones).
+### 3. Apply promo/coupon code
+- Unknown mutation name — need to probe (`applyPromo`, `addPromoCode`, `applyCoupon`, etc.)
+- May be part of checkout flow rather than standalone
 
-4. **Account queries** — `getAvailableAddresses`, `getPaymentMethodList` not tested beyond 200 status codes.
+### 4. Reorder a previous order
+- Unknown mutation — could be `reorder`, `reorderFromOrder`, etc.
+- May just be a convenience wrapper that adds items from a past order to a new cart
 
-5. **`updateCartItemV2`** (change quantity) — untested.
+### 5. Switch pickup vs delivery on existing cart
+- `fulfillmentType` exists as enum (Delivery/Pickup)
+- May be part of `updateCart` or a separate mutation
 
-6. **Partial refund on cancellation** — $5.49 refund on $10.74 order. Is the missing $5.25 the delivery fee + service fee? Or does `unitAmount: -549` mean something else (negative = credit)? Need more data points to understand refund calculation.
+## Open questions (not easily actionable):
+
+1. **Why operationName+variables gives 400** — CycleTLS uses that format fine. Missing header? Request body encoding? Content-Length? Root cause unknown, just worked around.
+
+2. **nestedOptions for complex items** — minimal `{itemExtraOption: {id, name, price}}` works for simple options but Starbucks (4+ required nested groups) failed. Unknown if more fields needed or if it's a nesting depth issue.
+
+3. **Which other endpoints are Cloudflare-blocked** — only ~9 paths tested. Could be more 403s.
+
+4. **`updateCartItemV2` is broken** — returns null, no effect. Confirmed by doordash-mcp. Workaround: remove + re-add.
+
+5. **Partial refund on cancellation** — $5.49 refund on $10.74 order. Fees likely not refunded but exact breakdown unclear.
+
+6. **`orderTracker` fields undiscoverable** — query exists, returns `OrderTrackerResponse`, but ~50 field names probed with zero suggestions. Likely server-driven UI. Need network traffic capture from DoorDash web client.
+
+7. **`deliveryAddress.formattedAddress` always null** — on `getConsumerOrdersWithDetails`. `ConsumerOrderDeliveryAddress` only has `id` reliably.
+
+8. **No post-delivery tip adjustment** — tip set at order creation via `tipAmounts` in `createOrderFromCart`. No standalone mutation. Post-delivery tipping likely mobile-app only.

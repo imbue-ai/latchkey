@@ -238,3 +238,31 @@ Since `__schema` / `__type` introspection is blocked, field/mutation names must 
 - **Valid field, needs subfields** → `"must have a selection of subfields"`
 - **`__typename`** → always works, confirms a field/mutation exists and returns its type name
 - **Batch probing** → loop over candidate names, check for "Cannot query field" vs other errors
+
+---
+
+## 18. `updateCartItemV2` silently returns null — broken mutation
+
+**What happened**: Called `updateCartItemV2` with valid cart, store, and item IDs + new quantity. Response: `{"data":{"updateCartItemV2":null}}`. No error, no effect. Tried both orderItem UUID and catalog item ID — same result.
+
+**Confirmation**: doordash-mcp source code comments: `// Remove then re-add (updateCartItemV2 is broken)`.
+
+**Workaround**: Use `removeCartItemV2` to remove the item, then `addCartItemV2` with the desired quantity. If removing the last item deletes the cart, re-add with `cartId: ""`.
+
+---
+
+## 19. `orderTracker` response fields undiscoverable
+
+**What happened**: `orderTracker(orderUuid: "...")` returns `OrderTrackerResponse` type successfully. But ~50 field names probed (status, eta, dasher, delivery, tracker, map, timeline, progress, body, feed, sections, etc.) — all get "Cannot query field" with zero "Did you mean" suggestions.
+
+**Why**: GraphQL "Did you mean" only triggers for close Levenshtein-distance matches. `OrderTrackerResponse` likely uses server-driven UI pattern with unusual field names (e.g. `componentModules`, `layoutPayload`). Without introspection or network capture, these are unguessable.
+
+**Practical workaround**: Use `getConsumerOrdersWithDetails` — has `cancelledAt` (null if not cancelled), `submittedAt`, `paymentCard`, `deliveryUuid`. No real-time tracking status though.
+
+---
+
+## 20. `deliveryAddress.formattedAddress` returns null on order history
+
+**What happened**: `getConsumerOrdersWithDetails` has `deliveryAddress { id formattedAddress }` — the `id` works but `formattedAddress` always returns null.
+
+**Why**: The `ConsumerOrderDeliveryAddress` type is different from the `consumer.defaultAddress` type. It doesn't have `street`, `city`, `state` fields either (those fail validation). Only `id` is reliably populated.
