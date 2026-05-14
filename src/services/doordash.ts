@@ -146,7 +146,8 @@ export class Doordash extends Service {
   readonly displayName = 'DoorDash';
   readonly baseApiUrls = ['https://www.doordash.com/graphql'] as const;
   readonly loginUrl = 'https://www.doordash.com/consumer/login/';
-  // TODO: set transport = 'cycletls' once cycletls npm package is installed
+  // CycleTLS doesn't work for DoorDash — Cloudflare blocks its JA3 fingerprint (403).
+  // Use curl-impersonate via LATCHKEY_CURL env var instead.
   readonly info =
     'DoorDash consumer API. ' +
     'Credentials are session cookies extracted from browser login.';
