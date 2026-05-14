@@ -22,6 +22,7 @@ import { AwsCredentials, AwsCredentialsSchema } from '../services/aws.js';
 import { GoogleApiKeyCredentials, GoogleApiKeyCredentialsSchema } from '../services/google/base.js';
 import { SlackApiCredentials, SlackApiCredentialsSchema } from '../services/slack.js';
 import { TelegramBotCredentials, TelegramBotCredentialsSchema } from '../services/telegram.js';
+import { DoorDashApiCredentials, DoorDashApiCredentialsSchema } from '../services/doordash.js';
 
 /**
  * Union schema for all credential types.
@@ -35,6 +36,7 @@ export const ApiCredentialsSchema = z.discriminatedUnion('objectType', [
   TelegramBotCredentialsSchema,
   AwsCredentialsSchema,
   GoogleApiKeyCredentialsSchema,
+  DoorDashApiCredentialsSchema,
 ]);
 
 export type ApiCredentialsData = z.infer<typeof ApiCredentialsSchema>;
@@ -60,6 +62,8 @@ export function deserializeCredentials(data: ApiCredentialsData): ApiCredentials
       return AwsCredentials.fromJSON(data);
     case 'googleApiKey':
       return GoogleApiKeyCredentials.fromJSON(data);
+    case 'doordash':
+      return DoorDashApiCredentials.fromJSON(data);
     default: {
       const exhaustiveCheck: never = data;
       throw new ApiCredentialsSerializationError(
@@ -95,6 +99,9 @@ export function serializeCredentials(credentials: ApiCredentials): ApiCredential
     return credentials.toJSON();
   }
   if (credentials instanceof GoogleApiKeyCredentials) {
+    return credentials.toJSON();
+  }
+  if (credentials instanceof DoorDashApiCredentials) {
     return credentials.toJSON();
   }
   throw new ApiCredentialsSerializationError(`Unknown credential type: ${credentials.objectType}`);

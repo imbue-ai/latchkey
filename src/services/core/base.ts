@@ -148,6 +148,14 @@ export abstract class ServiceSession {
   abstract onResponse(response: Response): void;
 
   /**
+   * Prepare the browser context before navigating to the login page.
+   * Services can override this to clear stale cookies or other state.
+   */
+  protected async prepareContext(_context: BrowserContext): Promise<void> {
+    // Default: no-op
+  }
+
+  /**
    * Check if the login phase is complete.
    */
   protected abstract isLoginComplete(): boolean;
@@ -217,6 +225,7 @@ export abstract class ServiceSession {
       });
 
       try {
+        await this.prepareContext(context);
         await page.goto(this.service.loginUrl);
         await this.waitForLoginComplete(page);
       } catch (error: unknown) {

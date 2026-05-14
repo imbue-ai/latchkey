@@ -13,6 +13,7 @@ import { SlackApiCredentials } from '../src/services/slack.js';
 import { TelegramBotCredentials } from '../src/services/telegram.js';
 import { AwsCredentials } from '../src/services/aws.js';
 import { GoogleApiKeyCredentials } from '../src/services/google/base.js';
+import { DoorDashApiCredentials } from '../src/services/doordash.js';
 
 describe('AuthorizationBearer', () => {
   it('should inject Bearer token header', async () => {
@@ -42,6 +43,49 @@ describe('SlackApiCredentials', () => {
       'Authorization: Bearer xoxc-token',
       '-H',
       'Cookie: d=d-cookie-value',
+    ]);
+  });
+});
+
+describe('DoorDashApiCredentials', () => {
+  it('should inject cookie header with all tokens', async () => {
+    const credentials = new DoorDashApiCredentials('ddweb-value', 'csrf-value', 'session-value');
+    await expect(credentials.injectIntoCurlCall([])).resolves.toEqual([
+      '-H',
+      'Cookie: ddweb_token=ddweb-value; csrf_token=csrf-value; ddweb_session_id=session-value',
+      '-H',
+      'x-csrftoken: csrf-value',
+      '-H',
+      'x-channel-id: marketplace',
+      '-H',
+      'x-experience-id: doordash',
+      '-H',
+      'Origin: https://www.doordash.com',
+      '-H',
+      'Referer: https://www.doordash.com/',
+    ]);
+  });
+
+  it('should prepend cookie header before existing curl arguments', async () => {
+    const credentials = new DoorDashApiCredentials('ddweb-value', 'csrf-value', 'session-value');
+    await expect(
+      credentials.injectIntoCurlCall(['-X', 'POST', 'https://www.doordash.com/graphql/test'])
+    ).resolves.toEqual([
+      '-H',
+      'Cookie: ddweb_token=ddweb-value; csrf_token=csrf-value; ddweb_session_id=session-value',
+      '-H',
+      'x-csrftoken: csrf-value',
+      '-H',
+      'x-channel-id: marketplace',
+      '-H',
+      'x-experience-id: doordash',
+      '-H',
+      'Origin: https://www.doordash.com',
+      '-H',
+      'Referer: https://www.doordash.com/',
+      '-X',
+      'POST',
+      'https://www.doordash.com/graphql/test',
     ]);
   });
 });
@@ -203,6 +247,10 @@ describe('serialization roundtrip', () => {
     {
       name: 'GoogleApiKeyCredentials',
       credentials: () => new GoogleApiKeyCredentials('AIzaSyTestKey123'),
+    },
+    {
+      name: 'DoorDashApiCredentials',
+      credentials: () => new DoorDashApiCredentials('ddweb-token-value', 'csrf-token-value', 'session-id-value'),
     },
   ];
 
