@@ -150,7 +150,7 @@ async function createProject(page: Page, appName: string): Promise<string> {
   await createButton.click();
 
   await page.waitForURL('https://console.cloud.google.com/home/dashboard?project=**', {
-    timeout: 16000,
+    timeout: 32000,
   });
   const urlObj = new URL(page.url());
   const projectId = urlObj.searchParams.get('project');
