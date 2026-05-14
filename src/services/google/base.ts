@@ -150,7 +150,7 @@ async function createProject(page: Page, appName: string): Promise<string> {
   await createButton.click();
 
   await page.waitForURL('https://console.cloud.google.com/home/dashboard?project=**', {
-    timeout: 16000,
+    timeout: 32000,
   });
   const urlObj = new URL(page.url());
   const projectId = urlObj.searchParams.get('project');
@@ -347,11 +347,23 @@ function checkGoogleLoginResponse(
   const request = response.request();
   if (request.url().startsWith('https://console.cloud.google.com/')) {
     if (response.status() === 200) {
-      void response.text().then((text) => {
-        if (!text.includes('accounts.google.com/signin')) {
-          loginDetector.isLoggedIn = true;
-        }
-      });
+      void response
+        .text()
+        .then((text) => {
+          if (!text.includes('accounts.google.com/signin')) {
+            loginDetector.isLoggedIn = true;
+          }
+        })
+        .catch((error: unknown) => {
+          // The response body can become unreadable if the page/context
+          // closes while it's still being read (e.g. the automation
+          // navigates onward, or the user closes the browser). Treat that
+          // specific race as inconclusive; let any other error propagate.
+          if (error instanceof Error && isBrowserClosedError(error)) {
+            return;
+          }
+          throw error;
+        });
     }
   }
 }
