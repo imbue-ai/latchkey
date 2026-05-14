@@ -10,6 +10,8 @@
 - `orderCancellation` — cancelled real order, got statusCode=1 and partial refund ($5.49 on $10.74)
 - `previewOrderCancellation` — read-only preview returns same data as actual cancellation
 - `deleteCart` — tested, returns true
+- `removeCartItemV2` — uses orderItem UUID, returns updated OrderCart
+- `getConsumerOrdersWithDetails` — works, has `cancelledAt` field
 
 ## Still unclear:
 
@@ -19,8 +21,8 @@
 
 3. **Which other endpoints are Cloudflare-blocked** — only tested ~9 paths. Could be more 403s hiding (e.g. `removeCartItemV2`, `updateCartItemV2`, checkout-related ones).
 
-4. **Order history / account queries** — never actually tested `getConsumerOrdersWithDetails`, `getAvailableAddresses`, `getPaymentMethodList` end-to-end (just confirmed 200 status codes, didn't check response data).
+4. **Account queries** — `getAvailableAddresses`, `getPaymentMethodList` not tested beyond 200 status codes.
 
-5. **Mutations beyond add/delete** — `updateCartItemV2` (change quantity), `removeCartItemV2` (remove single item) untested.
+5. **`updateCartItemV2`** (change quantity) — untested.
 
 6. **Partial refund on cancellation** — $5.49 refund on $10.74 order. Is the missing $5.25 the delivery fee + service fee? Or does `unitAmount: -549` mean something else (negative = credit)? Need more data points to understand refund calculation.

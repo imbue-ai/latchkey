@@ -193,6 +193,18 @@ LATCHKEY_CURL=.../curl_chrome136 npx latchkey curl -s -X POST \
 - `previewOrderCancellation` returns same result as `orderCancellation` — use preview to check before executing
 - Calling cancellation again on same UUID still returns `statusCode: 1` (idempotent)
 
+### 12. Remove Single Item from Cart (removeCartItemV2) — WORKS
+```bash
+LATCHKEY_CURL=.../curl_chrome136 npx latchkey curl -s -X POST \
+  -H 'Content-Type: application/json' -H 'Accept: application/json' \
+  -d '{"query":"mutation { removeCartItemV2(cartId: \"CART-UUID\", itemId: \"ORDER-ITEM-UUID\") { id subtotal orders { orderItems { id quantity item { id name } } } } }"}' \
+  'https://www.doordash.com/graphql/consumer?operation=removeCartItemV2'
+```
+- `cartId` = cart UUID from `listCarts`
+- `itemId` = the **orderItem UUID** (e.g. `8c733f80-...`), NOT the catalog item ID (e.g. `27405467235`)
+- Returns `OrderCart` type — can request same fields as `orderCart` query
+- **Tested live**: removed GREEN JUICE from Rad Radish cart. Subtotal dropped $51.00 → $42.00, item count 4 → 3.
+
 ## Endpoint Cloudflare Status
 
 Tested all with dummy `{"query":"{ consumer { id } }"}` payload:

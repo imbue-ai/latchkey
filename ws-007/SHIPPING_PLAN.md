@@ -1,109 +1,113 @@
+approved
+
+start with embedding a gitignored git repo here and use ghub to create the new public repo under imbue-ai. then start writing the docs into it.
+
+-bowei
+
+--
+
 # Shipping Plan: DoorDash + Latchkey
 
 ## What We're Shipping
 
 Documentation ("docs suitable for a human or agent to read") that lets someone go from zero to ordering food on DoorDash via CLI/agent. Two deliverables:
 
-1. **Getting Started guide** — clone, build, auth, validate
+1. **Getting Started guide** — clone deps, build, auth, validate
 2. **Cheatsheet** — common DoorDash GraphQL operations with copy-paste examples
 
-## Key Decision: Where Does This Live?
+## Where It Lives
 
-Options:
+New standalone repo: **`latchkey-doordash-agent-proto-skill`**
 
-### A. New standalone repo (e.g. `imbue-ai/doordash-agent-guide`)
-- Clean, focused, easy to share a single link
-- Can include the cheatsheet + getting started as README or separate docs
-- No noise from latchkey internals or work session logs
-- Easy to pin dependency versions
+Clean, focused, single link to share. No latchkey internals or work session noise.
 
-### B. Subfolder in latchkey repo (e.g. `docs/guides/doordash/`)
-- Stays close to source code
-- But latchkey is a general tool — doordash-specific guide feels out of place
-- Work session dirs (ws-001 through ws-008) would be visible
+```
+latchkey-doordash-agent-proto-skill/
+├── README.md                  # Getting Started (steps 1-5)
+├── CHEATSHEET.md              # All GraphQL operations + sharp edges
+└── LICENSE                    # MIT
+```
 
-### C. Part of doordash-mcp repo
-- Already has DoorDash context
-- But that repo uses CycleTLS, not latchkey+curl_chrome136
-- Mixing two approaches would confuse readers
-
-**Recommendation: Option A** — new standalone repo. Clean, shareable, single-purpose.
+No scripts, no examples dir. Just docs. Human or agent reads them and follows along.
 
 ---
 
 ## Dependencies & Pinned Versions
 
-Three repos users need:
+| Dependency | Source | Pin |
+|-----------|--------|-----|
+| **latchkey** | `imbue-ai/latchkey` | Clone at hash `ad68247` (branch `bowei/doordash-clean`) |
+| **curl_chrome136** | `lexiforest/curl-impersonate` releases | v1.5.6 — reader/agent figures out the right platform binary |
+| **doordash-mcp** | `ashah360/doordash-mcp` | Clone at hash `405e748` — **reference material only** (GraphQL schema/queries), not intended for use |
 
-| Dependency | Source | Pin Strategy |
-|-----------|--------|-------------|
-| **latchkey** | `imbue-ai/latchkey` (npm: `latchkey`) | Pin npm version (e.g. `latchkey@2.11.0`) or git hash |
-| **curl_chrome136** | `lexiforest/curl-impersonate` releases | Pin release tag (v1.5.6) + provide direct download URLs per platform |
-| **doordash-mcp** | `ashah360/doordash-mcp` | Pin git hash — this repo may evolve independently |
+### Why clone latchkey (not npm install)?
 
-### curl_chrome136 Distribution Question
+The DoorDash service lives on `bowei/doordash-clean`, not yet on npm. Cloning at a pinned hash ensures reproducibility.
 
-The binary is ~5MB. Options:
-- **A. Direct users to lexiforest/curl-impersonate releases** — cleanest, no hosting burden
-- **B. Include in guide repo as a release asset** — more control, but maintenance burden
-- **C. Script that downloads it** — best UX, but URL may break
+### Why doordash-mcp?
 
-**Recommendation: A + C** — provide download URLs to lexiforest releases + a setup script that fetches the right binary for the platform.
+Not for running. The repo contains comprehensive GraphQL query definitions across `src/api/*.ts` — serves as a reference for the full DoorDash GraphQL schema. Latchkey's auth story (browser login + cookie injection) is the actual interface.
 
 ---
 
 ## Getting Started Guide — Outline
 
 ### Prerequisites
-- macOS (arm64 or x64) or Linux
+- macOS or Linux
 - Node.js 18+
 - A DoorDash account with saved address + payment method
 
-### Step 1: Install latchkey + curl_chrome136
+### Step 1: Clone Dependencies
 
 ```bash
-# Install latchkey
-npm install -g latchkey@2.11.0
+# Clone latchkey at pinned hash
+git clone https://github.com/imbue-ai/latchkey.git
+cd latchkey
+git checkout ad68247
+npm install && npm run build
 
-# Download curl_chrome136 for your platform
-# macOS arm64:
-curl -L -o curl_chrome136 "https://github.com/lexiforest/curl-impersonate/releases/download/v1.5.6/curl_chrome136-macos-arm64"
-chmod +x curl_chrome136
+# Download curl_chrome136 from lexiforest/curl-impersonate v1.5.6
+# (get the right binary for your platform from the GitHub releases page)
+
+# Clone doordash-mcp at pinned hash (reference material only)
+git clone https://github.com/ashah360/doordash-mcp.git
+cd doordash-mcp
+git checkout 405e748
 ```
 
 ### Step 2: Browser Auth into DoorDash
 
 ```bash
-LATCHKEY_CURL=$(pwd)/curl_chrome136 npx latchkey auth browser doordash
+LATCHKEY_CURL=/path/to/curl_chrome136 npx latchkey auth browser doordash
 ```
 
-- Opens browser window → log into DoorDash
+- Opens browser window -> log into DoorDash
 - Captures session cookies (ddweb_token, csrf_token, ddweb_session_id)
 - Stored encrypted in `~/.latchkey`
 
-### Step 3: Validate Auth
+### Step 3: Validate Auth + listCarts
 
 ```bash
-LATCHKEY_CURL=$(pwd)/curl_chrome136 npx latchkey curl -s -X POST \
+LATCHKEY_CURL=/path/to/curl_chrome136 npx latchkey curl -s -X POST \
   -H 'Content-Type: application/json' -H 'Accept: application/json' \
   -d '{"query":"{ consumer { id email firstName } }"}' \
   'https://www.doordash.com/graphql/consumer'
 ```
 
-Should return your name/email. If null fields → re-auth.
+Should return your name/email. If null fields -> re-auth.
 
-### Step 4: Test listCarts
+Then test listCarts:
 
 ```bash
-LATCHKEY_CURL=$(pwd)/curl_chrome136 npx latchkey curl -s -X POST \
+LATCHKEY_CURL=/path/to/curl_chrome136 npx latchkey curl -s -X POST \
   -H 'Content-Type: application/json' -H 'Accept: application/json' \
   -d '{"query":"{ listCarts(input: {cartContextFilter: {experienceCase: MULTI_CART_EXPERIENCE_CONTEXT, multiCartExperienceContext: {}}, cartFilter: {shouldIncludeSubmitted: true}}) { id subtotal restaurant { business { name } } orders { orderItems { quantity item { name } } } } }"}' \
   'https://www.doordash.com/graphql/listCarts?operation=listCarts'
 ```
 
-### Step 5: Read the Cheatsheet
+### Step 4: Read the Cheatsheet
 
-Link to cheatsheet doc for all common operations.
+See CHEATSHEET.md for common operations and how to do whatever is asked.
 
 ---
 
@@ -139,47 +143,37 @@ Based on ws-006 tested flows. Each entry: what it does, the curl command, gotcha
 - `orderUuid` != `cartId` for cancellation
 - Partial refunds on cancellation
 
----
+### Reference Material
 
-## Optional: doordash-mcp Integration
-
-For agent use via MCP (Claude Desktop / Cursor), also document:
-
-```bash
-git clone https://github.com/ashah360/doordash-mcp.git
-cd doordash-mcp && npm install && npm run build
-```
-
-Add to MCP config with email/password env vars. Note: uses CycleTLS (no curl_chrome136 needed), automated login (no browser).
-
-**Question**: Do we want to ship both approaches (latchkey+curl vs doordash-mcp) or just one?
+For deeper GraphQL schema exploration, see the doordash-mcp clone at `src/api/*.ts` — contains query definitions for all 21 DoorDash operations (search, menu, cart, checkout, account, group orders).
 
 ---
 
-## Repo Structure (if Option A)
+## Privacy Checklist
 
-```
-doordash-agent-guide/          (or whatever name)
-├── README.md                  # Getting Started (steps 1-5)
-├── CHEATSHEET.md              # All GraphQL operations
-├── setup.sh                   # Downloads curl_chrome136 + installs latchkey
-├── examples/
-│   ├── search-and-order.sh    # End-to-end scripted example
-│   └── browse-menu.sh         # Browse a store's menu
-└── TROUBLESHOOTING.md         # Common issues (403s, null fields, expired sessions)
-```
+Before publishing, verify:
+- [ ] No real cookies, tokens, or session data in any committed file
+- [ ] No email addresses (e.g. ops@imbue.com, bowei@imbue.com) in committed files
+- [ ] No DoorDash user IDs or consumer IDs
+- [ ] Example commands use placeholder values (`/path/to/curl_chrome136`, `CART-UUID`, etc.)
+- [ ] DATA.md and ws-* dirs are NOT included
 
 ---
 
-## Open Questions
+## Status of Dependencies
 
-1. **Repo name?** `doordash-agent-guide`, `doordash-cli`, `doordash-agent-toolkit`?
-2. **Ship both latchkey+curl AND doordash-mcp?** Or just one path?
-3. **License?** MIT? Apache 2.0? Match latchkey's license?
-4. **Audience?** Developers? Agent builders? Both?
-5. **curl_chrome136 platforms** — currently only tested on macOS arm64. Do we support Linux? x64 mac?
-6. **Session expiry** — how long do DoorDash sessions last? Should docs cover re-auth?
-7. **doordash-mcp pin hash** — which commit? Is `ashah360/doordash-mcp` stable?
-8. **latchkey branch** — ship from `main` or does the doordash service need to be merged first?
-9. **Privacy** — DATA.md has real cookies/tokens/emails. Ensure nothing leaks into public repo.
-10. **Is `imbue-ai/latchkey` already public?** If not, that's a blocker.
+| Item | Status |
+|------|--------|
+| latchkey repo is public | Yes (`imbue-ai/latchkey`, confirmed) |
+| DoorDash service on latchkey | On `bowei/doordash-clean` branch, hash `ad68247` (not merged to main yet) |
+| doordash-mcp accessible | Yes (`ashah360/doordash-mcp`, hash `405e748`) |
+| curl_chrome136 available | Yes (lexiforest/curl-impersonate v1.5.6 releases) |
+
+---
+
+## Next Steps
+
+1. Review this plan
+2. Write README.md (getting started guide)
+3. Write CHEATSHEET.md (all 12 operations with full curl examples from ws-006)
+4. Create the repo, push, share

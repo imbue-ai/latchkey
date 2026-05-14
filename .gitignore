@@ -15,3 +15,6 @@ dist/
 
 __pycache__/
 *.egg-info/
+
+# nested repo in ws-007
+ws-007/latchkey-doordash-agent-proto-skill/

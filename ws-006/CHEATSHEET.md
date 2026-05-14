@@ -37,12 +37,12 @@ All queries must be **fully inline** (no `operationName`/`variables`). Enum valu
 | Delete entire cart | `deleteCart` | #9 | Returns `true` on success |
 | Place order | `createOrderFromCart` | #10 | `deliveryTime: "ASAP"` required; returns `orderUuid` |
 | Cancel order | `orderCancellation` | #11 | Uses `orderUuid` not `cartId`; statusCode 1 = real cancel |
+| Remove single item | `removeCartItemV2` | #12 | Uses orderItem UUID (not catalog item ID) |
 
 ## Not Yet Tested
 
 | Action | Likely Mutation | Status |
 |---|---|---|
-| Remove single item from cart | `removeCartItemV2` | Pending |
 | Update item quantity | `updateCartItemV2` | Pending |
 | Order tracking | unknown | Pending |
 | Tip adjustment | unknown | Pending |
