@@ -103,18 +103,20 @@ class DoorDashServiceSession extends ServiceSession {
 
     // Fallback: for any doordash.com response, poll cookies via the context.
     // Handles already-logged-in redirects where postLoginQuery never fires.
-    if (url.includes('doordash.com')) {
-      const context = response.frame().page().context();
-      context
-        .cookies()
-        .then((cookies) => {
-          if (cookies.some((c) => c.name === 'ddweb_token' && c.value.length > 0)) {
-            this.loginComplete = true;
-          }
-        })
-        .catch(() => {
-          // Ignore errors reading cookies
-        });
+    if (!this.loginComplete && url.includes('doordash.com')) {
+      try {
+        const context = response.frame().page().context();
+        context
+          .cookies()
+          .then((cookies) => {
+            if (cookies.some((c) => c.name === 'ddweb_token' && c.value.length > 0)) {
+              this.loginComplete = true;
+            }
+          })
+          .catch(() => {});
+      } catch {
+        // Service Worker requests have no frame — ignore
+      }
     }
   }
 
