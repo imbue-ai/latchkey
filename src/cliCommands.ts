@@ -771,9 +771,9 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         encryptedStorage
       );
 
-      let finalArguments: readonly string[];
+      let invocation: import('./curlInjection.js').CurlInvocationResult;
       try {
-        finalArguments = await prepareCurlInvocation(curlArguments, apiCredentialStore, {
+        invocation = await prepareCurlInvocation(curlArguments, apiCredentialStore, {
           registry: deps.registry,
           checkPermission: deps.checkPermission,
           permissionsConfigPath: deps.config.permissionsConfigPath,
@@ -801,7 +801,23 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         throw error;
       }
 
-      const result = deps.runCurl(finalArguments);
+      if (invocation.transport === 'cycletls') {
+        try {
+          const { parseCurlArgsToHttp, cycleTlsRequest, closeCycleTls } = await import(
+            './cycleTlsTransport.js'
+          );
+          const parsed = parseCurlArgsToHttp(invocation.arguments);
+          const response = await cycleTlsRequest(parsed);
+          process.stdout.write(response.body);
+          await closeCycleTls();
+          deps.exit(0);
+        } catch (error) {
+          deps.errorLog(`CycleTLS error: ${(error as Error).message}`);
+          deps.exit(1);
+        }
+      }
+
+      const result = deps.runCurl(invocation.arguments);
       deps.exit(result.returncode);
     });
 
