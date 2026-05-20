@@ -101,7 +101,7 @@ class SlackServiceSession extends SimpleServiceSession {
 export class Slack extends Service {
   readonly name = 'slack';
   readonly displayName = 'Slack';
-  readonly baseApiUrls = ['https://slack.com/api/'] as const;
+  readonly baseApiUrls = ['https://slack.com/api/', 'https://files.slack.com/'] as const;
   readonly loginUrl = 'https://slack.com/signin';
   readonly info =
     'https://docs.slack.dev/apis/web-api/. ' +
