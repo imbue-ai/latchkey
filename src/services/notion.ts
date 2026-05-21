@@ -1,103 +1,14 @@
 /**
  * Notion service implementation.
  *
- * This has some severe limitations:
- *
- * - It requires the UI to be in English.
- * - It only grants access to the private pages that existed at the time of login.
+ * Browser-based login is not supported. Credentials must be set manually
+ * (e.g. by creating an internal integration at the loginUrl below).
  */
 
-import type { Response, BrowserContext } from 'playwright';
-import { ApiCredentials, AuthorizationBearer } from '../apiCredentials/base.js';
-import { generateLatchkeyAppName } from '../playwrightUtils.js';
-import { Service, BrowserFollowupServiceSession, LoginFailedError } from './core/base.js';
-
-const DEFAULT_TIMEOUT_MS = 8000;
+import { Service } from './core/base.js';
 
 const NOTION_INTEGRATIONS_URL =
   'https://www.notion.so/profile/integrations/internal/form/new-integration';
-
-class NotionServiceSession extends BrowserFollowupServiceSession {
-  private isLoggedIn = false;
-
-  onResponse(response: Response): void {
-    if (this.isLoggedIn) {
-      return;
-    }
-    if (response.request().headers()['x-notion-active-user-header']) {
-      this.isLoggedIn = true;
-    }
-  }
-
-  protected isLoginComplete(): boolean {
-    return this.isLoggedIn;
-  }
-
-  protected async performBrowserFollowup(context: BrowserContext): Promise<ApiCredentials | null> {
-    const page = context.pages()[0];
-    if (!page) {
-      throw new LoginFailedError('No page available in browser context.');
-    }
-
-    await page.goto(NOTION_INTEGRATIONS_URL);
-
-    // Annoyingly, Notion's DOM is devoid of IDs,
-    // so we have to use broad locators with nth.
-
-    // Integration name
-    await page.getByRole('textbox').click();
-    await page.getByRole('textbox').fill(generateLatchkeyAppName());
-    // Workspace - initially empty
-    await page.locator('form').getByRole('button').filter({ hasText: /^$/ }).click();
-    // Just pick the first workspace
-    await page.getByRole('menuitem').click();
-    // Create integration
-    await page.getByRole('button').last().click();
-    // Configure integration settings
-    await page
-      .getByRole('dialog')
-      .getByRole('button')
-      .nth(0)
-      .click({ timeout: DEFAULT_TIMEOUT_MS });
-    // Token input
-    const tokenTextbox = page.locator('input[type="password"]');
-    // We have to save the element handle because the same element's type changes to text after clicking "Show".
-    const tokenTextboxElement = (await tokenTextbox.elementHandle())!;
-    // Show
-    await tokenTextbox
-      .locator('..')
-      .getByRole('button')
-      .nth(1)
-      .click({ timeout: DEFAULT_TIMEOUT_MS });
-
-    let token = '';
-    // Poll for up to 2 seconds for the token to be revealed
-    for (let i = 0; i < 20; i++) {
-      token = (await tokenTextboxElement.inputValue()).trim();
-      if (token !== '') {
-        break;
-      }
-      await page.waitForTimeout(100);
-    }
-
-    if (token === '') {
-      throw new LoginFailedError('Failed to extract token from Notion.');
-    }
-
-    // Grant access.
-    // This part of the flow is too annoying to automate without using the labels...
-    await page.getByRole('tab', { name: 'Access' }).click();
-    await page.getByRole('button', { name: 'Edit access' }).click();
-    await page.getByRole('button', { name: 'Private' }).click();
-    await page.getByRole('button', { name: 'Select all' }).click();
-    await page.getByRole('button', { name: 'Save' }).click();
-    await page.getByRole('dialog').waitFor({ state: 'hidden' });
-
-    await page.close();
-
-    return new AuthorizationBearer(token);
-  }
-}
 
 export class Notion extends Service {
   readonly name = 'notion';
@@ -105,10 +16,9 @@ export class Notion extends Service {
   readonly baseApiUrls = ['https://api.notion.com/'] as const;
   readonly loginUrl = NOTION_INTEGRATIONS_URL;
   readonly info =
-    'https://developers.notion.com/reference for API reference. ' +
-    'The initial login will not work if the locale is not English. ' +
-    'Access is limited to pages that existed when the login happened for the first time, and pages that the current user owns. ' +
-    'For that reason, when connecting to organization notions (which is the majority of use cases), we recommmend instead using the notion-mcp service to connect to mcp.notion. com. For personal notion spaces, or for exclusively editing private notion pages, this integration can still be used.';
+    'If valid credentials are already set for this service, use it with https://developers.notion.com/reference for API reference. ' +
+    'Otherwise, prefer the notion-mcp service, which connects to mcp.notion.com and works for both organization and personal Notion spaces. ' +
+    'This service has no automated login flow; credentials must be set manually by the user via an internal integration token.';
 
   readonly credentialCheckCurlArguments = [
     '-H',
@@ -118,10 +28,6 @@ export class Notion extends Service {
 
   setCredentialsExample(serviceName: string): string {
     return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
-  }
-
-  override getSession(): NotionServiceSession {
-    return new NotionServiceSession(this);
   }
 }
 
