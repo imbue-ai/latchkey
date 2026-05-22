@@ -16,9 +16,8 @@ export class Notion extends Service {
   readonly baseApiUrls = ['https://api.notion.com/'] as const;
   readonly loginUrl = NOTION_INTEGRATIONS_URL;
   readonly info =
-    'If valid credentials are already set for this service, use it with https://developers.notion.com/reference for API reference. ' +
-    'Otherwise, prefer the notion-mcp service, which connects to mcp.notion.com and works for both organization and personal Notion spaces. ' +
-    'This service has no automated login flow; credentials must be set manually by the user via an internal integration token.';
+    'Only use this service if you already have valid credentials. https://developers.notion.com/reference ' +
+    'Otherwise, use the alternative notion-mcp service (see `latchkey services info notion-mcp`), which works for both organization and personal Notion spaces.';
 
   readonly credentialCheckCurlArguments = [
     '-H',
