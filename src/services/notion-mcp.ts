@@ -180,6 +180,7 @@ export class NotionMcp extends Service {
   readonly baseApiUrls = ['https://mcp.notion.com/'] as const;
   readonly loginUrl = AUTHORIZATION_ENDPOINT;
   readonly info =
+    'Use Notion\'s MCP endpoints as a "normal" JSON API. ' +
     'https://developers.notion.com/guides/mcp/build-mcp-client (integration guide: server URL, transport, OAuth, worked client code). ' +
     'https://developers.notion.com/guides/mcp/mcp-supported-tools (tool catalog: names, descriptions, example prompts). ' +
     'https://spec.modelcontextprotocol.io (MCP protocol spec for JSON-RPC framing). ' +
