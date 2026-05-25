@@ -868,34 +868,65 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         'instead of the default one for that single request.'
     )
     .argument('<permissions_config_path>', 'Absolute path to a permissions.json file')
+    .argument(
+      '[additional_claims]',
+      'Optional JSON object whose fields are merged into the JWT payload alongside the default ' +
+        'claims. Must be a JSON-encoded object whose keys do not collide with the claims this ' +
+        'command adds itself.'
+    )
     .option(
       '--no-validate',
       'Skip checking that the path exists; only validate that it is absolute'
     )
-    .action(async (permissionsConfigPath: string, options: { validate: boolean }) => {
-      refuseInGatewayMode(deps, 'gateway create-jwt');
-      if (options.validate) {
-        if (!existsSync(permissionsConfigPath)) {
-          deps.errorLog(`Error: File does not exist: ${permissionsConfigPath}`);
-          deps.errorLog('Pass --no-validate to skip this check.');
-          deps.exit(1);
+    .action(
+      async (
+        permissionsConfigPath: string,
+        additionalClaimsJson: string | undefined,
+        options: { validate: boolean }
+      ) => {
+        refuseInGatewayMode(deps, 'gateway create-jwt');
+        if (options.validate) {
+          if (!existsSync(permissionsConfigPath)) {
+            deps.errorLog(`Error: File does not exist: ${permissionsConfigPath}`);
+            deps.errorLog('Pass --no-validate to skip this check.');
+            deps.exit(1);
+          }
+        }
+        let additionalClaims: Record<string, unknown> = {};
+        if (additionalClaimsJson !== undefined) {
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(additionalClaimsJson);
+          } catch (error) {
+            const detail = error instanceof Error ? error.message : String(error);
+            deps.errorLog(`Error: Additional claims must be valid JSON: ${detail}`);
+            deps.exit(1);
+            return;
+          }
+          if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+            deps.errorLog('Error: Additional claims must be a JSON object.');
+            deps.exit(1);
+            return;
+          }
+          additionalClaims = parsed as Record<string, unknown>;
+        }
+        const encryptionKey = await resolveEncryptionKeyFromConfig(deps.config);
+        try {
+          const jwt = createPermissionsOverrideJwt(
+            permissionsConfigPath,
+            derivePermissionsOverrideSigningKey(encryptionKey),
+            additionalClaims
+          );
+          deps.log(jwt);
+        } catch (error) {
+          if (error instanceof InvalidPermissionsOverrideError) {
+            deps.errorLog(`Error: ${error.message}`);
+            deps.exit(1);
+          }
+          throw error;
         }
       }
-      const encryptionKey = await resolveEncryptionKeyFromConfig(deps.config);
-      try {
-        const jwt = createPermissionsOverrideJwt(
-          permissionsConfigPath,
-          derivePermissionsOverrideSigningKey(encryptionKey)
-        );
-        deps.log(jwt);
-      } catch (error) {
-        if (error instanceof InvalidPermissionsOverrideError) {
-          deps.errorLog(`Error: ${error.message}`);
-          deps.exit(1);
-        }
-        throw error;
-      }
-    });
+    );
 
   program
     .command('skill-md')
