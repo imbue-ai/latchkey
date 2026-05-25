@@ -2145,10 +2145,7 @@ describe('CLI commands with dependency injection', () => {
       const deps = createMockDependencies();
       const additionalClaims = JSON.stringify({ issuer: 'tester', scopes: ['a', 'b'] });
 
-      await runCommand(
-        ['gateway', 'create-jwt', permissionsPath, additionalClaims],
-        deps
-      );
+      await runCommand(['gateway', 'create-jwt', permissionsPath, additionalClaims], deps);
 
       expect(exitCode).toBeNull();
       expect(logs).toHaveLength(1);
@@ -2163,9 +2160,7 @@ describe('CLI commands with dependency injection', () => {
         permissionsConfig: permissionsPath,
       });
       const signingKey = derivePermissionsOverrideSigningKey(TEST_ENCRYPTION_KEY);
-      expect(verifyPermissionsOverrideJwt(jwt, signingKey).permissionsConfig).toBe(
-        permissionsPath
-      );
+      expect(verifyPermissionsOverrideJwt(jwt, signingKey).permissionsConfig).toBe(permissionsPath);
     });
 
     it('rejects additional claims that are not valid JSON', async () => {
@@ -2173,10 +2168,7 @@ describe('CLI commands with dependency injection', () => {
       writeFileSync(permissionsPath, '{}');
       const deps = createMockDependencies();
 
-      await runCommand(
-        ['gateway', 'create-jwt', permissionsPath, 'not-json'],
-        deps
-      );
+      await runCommand(['gateway', 'create-jwt', permissionsPath, 'not-json'], deps);
 
       expect(exitCode).toBe(1);
       expect(errorLogs.some((message) => message.includes('valid JSON'))).toBe(true);
@@ -2187,10 +2179,7 @@ describe('CLI commands with dependency injection', () => {
       writeFileSync(permissionsPath, '{}');
       const deps = createMockDependencies();
 
-      await runCommand(
-        ['gateway', 'create-jwt', permissionsPath, '[1, 2, 3]'],
-        deps
-      );
+      await runCommand(['gateway', 'create-jwt', permissionsPath, '[1, 2, 3]'], deps);
 
       expect(exitCode).toBe(1);
       expect(errorLogs.some((message) => message.includes('JSON object'))).toBe(true);
@@ -2202,10 +2191,7 @@ describe('CLI commands with dependency injection', () => {
       const deps = createMockDependencies();
       const additionalClaims = JSON.stringify({ permissionsConfig: '/elsewhere.json' });
 
-      await runCommand(
-        ['gateway', 'create-jwt', permissionsPath, additionalClaims],
-        deps
-      );
+      await runCommand(['gateway', 'create-jwt', permissionsPath, additionalClaims], deps);
 
       expect(exitCode).toBe(1);
       expect(errorLogs.some((message) => message.includes('reserved key'))).toBe(true);
