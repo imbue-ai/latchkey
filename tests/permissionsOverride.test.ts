@@ -64,11 +64,37 @@ describe('createPermissionsOverrideJwt / verifyPermissionsOverrideJwt', () => {
     expect(JSON.parse(json)).toEqual({ alg: 'HS256', typ: 'JWT' });
   });
 
-  it('payload contains only the permissionsConfig field', () => {
+  it('payload contains only the permissionsConfig field when no additional claims are given', () => {
     const token = createPermissionsOverrideJwt('/x.json', signingKey);
     const payload = token.split('.')[1]!;
     const json = Buffer.from(payload, 'base64url').toString('utf-8');
     expect(JSON.parse(json)).toEqual({ permissionsConfig: '/x.json' });
+  });
+
+  it('merges additional claims into the JWT payload', () => {
+    const token = createPermissionsOverrideJwt('/x.json', signingKey, {
+      issuer: 'tester',
+      scopes: ['a', 'b'],
+    });
+    const payload = token.split('.')[1]!;
+    const json = Buffer.from(payload, 'base64url').toString('utf-8');
+    expect(JSON.parse(json)).toEqual({
+      issuer: 'tester',
+      scopes: ['a', 'b'],
+      permissionsConfig: '/x.json',
+    });
+  });
+
+  it('still verifies successfully when additional claims are present', () => {
+    const token = createPermissionsOverrideJwt('/x.json', signingKey, { issuer: 'tester' });
+    const payload = verifyPermissionsOverrideJwt(token, signingKey);
+    expect(payload.permissionsConfig).toBe('/x.json');
+  });
+
+  it('rejects additional claims that use a reserved key', () => {
+    expect(() =>
+      createPermissionsOverrideJwt('/x.json', signingKey, { permissionsConfig: '/y.json' })
+    ).toThrow(InvalidPermissionsOverrideError);
   });
 
   it('rejects creation for non-absolute paths', () => {

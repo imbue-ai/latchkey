@@ -2138,6 +2138,64 @@ describe('CLI commands with dependency injection', () => {
       expect(exitCode).toBe(1);
       expect(errorLogs.some((message) => message.includes('absolute'))).toBe(true);
     });
+
+    it('includes additional JSON-encoded claims in the minted JWT', async () => {
+      const permissionsPath = join(tempDir, 'permissions.json');
+      writeFileSync(permissionsPath, '{}');
+      const deps = createMockDependencies();
+      const additionalClaims = JSON.stringify({ issuer: 'tester', scopes: ['a', 'b'] });
+
+      await runCommand(['gateway', 'create-jwt', permissionsPath, additionalClaims], deps);
+
+      expect(exitCode).toBeNull();
+      expect(logs).toHaveLength(1);
+      const jwt = logs[0]!;
+      const payloadSegment = jwt.split('.')[1]!;
+      const payload: unknown = JSON.parse(
+        Buffer.from(payloadSegment, 'base64url').toString('utf-8')
+      );
+      expect(payload).toEqual({
+        issuer: 'tester',
+        scopes: ['a', 'b'],
+        permissionsConfig: permissionsPath,
+      });
+      const signingKey = derivePermissionsOverrideSigningKey(TEST_ENCRYPTION_KEY);
+      expect(verifyPermissionsOverrideJwt(jwt, signingKey).permissionsConfig).toBe(permissionsPath);
+    });
+
+    it('rejects additional claims that are not valid JSON', async () => {
+      const permissionsPath = join(tempDir, 'permissions.json');
+      writeFileSync(permissionsPath, '{}');
+      const deps = createMockDependencies();
+
+      await runCommand(['gateway', 'create-jwt', permissionsPath, 'not-json'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs.some((message) => message.includes('valid JSON'))).toBe(true);
+    });
+
+    it('rejects additional claims that are not a JSON object', async () => {
+      const permissionsPath = join(tempDir, 'permissions.json');
+      writeFileSync(permissionsPath, '{}');
+      const deps = createMockDependencies();
+
+      await runCommand(['gateway', 'create-jwt', permissionsPath, '[1, 2, 3]'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs.some((message) => message.includes('JSON object'))).toBe(true);
+    });
+
+    it('rejects additional claims whose keys collide with default claims', async () => {
+      const permissionsPath = join(tempDir, 'permissions.json');
+      writeFileSync(permissionsPath, '{}');
+      const deps = createMockDependencies();
+      const additionalClaims = JSON.stringify({ permissionsConfig: '/elsewhere.json' });
+
+      await runCommand(['gateway', 'create-jwt', permissionsPath, additionalClaims], deps);
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs.some((message) => message.includes('reserved key'))).toBe(true);
+    });
   });
 
   describe('gateway mode (LATCHKEY_GATEWAY)', () => {

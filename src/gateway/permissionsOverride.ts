@@ -58,20 +58,40 @@ export function derivePermissionsOverrideSigningKey(encryptionKeyBase64: string)
 }
 
 /**
+ * Set of payload keys that `createPermissionsOverrideJwt` always adds itself.
+ * Any caller-supplied additional claims must not collide with these.
+ */
+export const RESERVED_PERMISSIONS_OVERRIDE_CLAIM_KEYS: readonly string[] = ['permissionsConfig'];
+
+/**
  * Build a permissions-override JWT for the given absolute path. The path is
  * not validated here; callers that want to ensure the file exists must do
  * so before calling this function.
+ *
+ * Optional `additionalClaims` are merged into the JWT payload alongside the
+ * mandatory `permissionsConfig` field. Their keys must not collide with any
+ * key that this function adds itself (see
+ * `RESERVED_PERMISSIONS_OVERRIDE_CLAIM_KEYS`).
  */
 export function createPermissionsOverrideJwt(
   permissionsConfigPath: string,
-  signingKey: Buffer
+  signingKey: Buffer,
+  additionalClaims: Readonly<Record<string, unknown>> = {}
 ): string {
   if (!isAbsolute(permissionsConfigPath)) {
     throw new InvalidPermissionsOverrideError(
       `permissionsConfig path must be absolute: ${permissionsConfigPath}`
     );
   }
-  const payload = { permissionsConfig: permissionsConfigPath };
+  const conflictingKeys = Object.keys(additionalClaims).filter((key) =>
+    RESERVED_PERMISSIONS_OVERRIDE_CLAIM_KEYS.includes(key)
+  );
+  if (conflictingKeys.length > 0) {
+    throw new InvalidPermissionsOverrideError(
+      `Additional claims must not use reserved key(s): ${conflictingKeys.join(', ')}`
+    );
+  }
+  const payload = { ...additionalClaims, permissionsConfig: permissionsConfigPath };
   const payloadEncoded = Buffer.from(JSON.stringify(payload), 'utf-8').toString('base64url');
   const signingInput = `${JWT_HEADER_ENCODED}.${payloadEncoded}`;
   const signature = createHmac('sha256', signingKey).update(signingInput).digest('base64url');
