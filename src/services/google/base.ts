@@ -578,11 +578,7 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
         for (const api of this.config.apis) {
           await enableApi(page, projectSlug, api);
         }
-        const { isExternalApp, supportEmail } = await configureBranding(
-          page,
-          projectSlug,
-          appName
-        );
+        const { isExternalApp, supportEmail } = await configureBranding(page, projectSlug, appName);
         if (isExternalApp && supportEmail) {
           await addTestUser(page, projectSlug, supportEmail);
         }
