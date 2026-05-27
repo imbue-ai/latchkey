@@ -174,7 +174,7 @@ async function findExistingLatchkeyProject(
   // before deciding whether a card matching this service's suffix is among
   // them.
   const suffixPattern = new RegExp(
-    `^\\s*${escapeRegExp(LATCHKEY_APP_NAME_PREFIX)}-.+-${escapeRegExp(serviceSuffix)}\\s*$`
+    `^\\s*${escapeRegExp(LATCHKEY_APP_NAME_PREFIX)}-.+${escapeRegExp(serviceSuffix)}\\s*$`
   );
   const latchkeyTitle = page
     .locator('.cfc-resource-card-header-title')
