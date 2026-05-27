@@ -7,12 +7,14 @@
  */
 
 import fs from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { Browser, BrowserContext, Page, Response } from 'playwright';
 import { type ApiCredentials, OAuthCredentials } from '../../apiCredentials/base.js';
 import { extractUrlFromCurlArguments } from '../../curl.js';
 import {
   generateLatchkeyAppName,
+  LATCHKEY_APP_NAME_PREFIX,
   showSpinnerPage,
   withTempBrowserContext,
   typeLikeHuman,
@@ -121,6 +123,83 @@ function parseClientSecretJson(content: string): { clientId: string; clientSecre
       `Failed to parse client_secret.json: ${error instanceof Error ? error.message : String(error)}`
     );
   }
+}
+
+/**
+ * Escape a string for safe inclusion inside a `RegExp` literal.
+ */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Look for an existing Latchkey project for this service on the project
+ * selector page and open it if one is found.
+ *
+ * Google caps the number of projects per account, so we reuse a previously
+ * created Latchkey project whenever possible instead of allocating a new one
+ * just to host another OAuth client. Each service (gmail, docs, sheets, ...)
+ * has its own per-service projects (named `Latchkey-...-<serviceSuffix>`),
+ * so we only reuse projects that match this service's suffix; the consent
+ * screen, enabled APIs, and test users are already configured the right way
+ * for the current service in that case.
+ *
+ * Returns the project slug from the URL after navigating into the project, or
+ * `null` if the recent-projects grid has no matching entry.
+ */
+async function findExistingLatchkeyProject(
+  page: Page,
+  serviceSuffix: string
+): Promise<string | null> {
+  await page.goto('https://console.cloud.google.com/projectselector2/home/dashboard', {
+    timeout: DEFAULT_TIMEOUT_MS,
+  });
+
+  // The create-project button is always present, so use it as the page-ready
+  // signal before we look for recent-project cards.
+  const createProjectButton = page.locator('.projectselector-project-create');
+  await createProjectButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+
+  // Wait up to 3 s for *any* recent-project card to render. If the account
+  // has no projects at all, this times out fast and we don't waste time
+  // hunting for a per-service match that can't possibly exist.
+  const anyProjectTitle = page.locator('.cfc-resource-card-header-title').first();
+  try {
+    await anyProjectTitle.waitFor({ state: 'visible', timeout: 2000 });
+  } catch {
+    return null;
+  }
+
+  // Once the grid is populated, give Angular only a short window to settle
+  // before deciding whether a card matching this service's suffix is among
+  // them.
+  const suffixPattern = new RegExp(
+    `^\\s*${escapeRegExp(LATCHKEY_APP_NAME_PREFIX)}-.+${escapeRegExp(serviceSuffix)}\\s*$`
+  );
+  const latchkeyTitle = page
+    .locator('.cfc-resource-card-header-title')
+    .filter({ hasText: suffixPattern })
+    .first();
+  try {
+    await latchkeyTitle.waitFor({ state: 'visible', timeout: 500 });
+  } catch {
+    return null;
+  }
+
+  const card = latchkeyTitle.locator('xpath=ancestor::mat-card').first();
+  await card.click();
+
+  await page.waitForURL('https://console.cloud.google.com/home/dashboard?project=**', {
+    timeout: 32000,
+  });
+  const urlObj = new URL(page.url());
+  const projectId = urlObj.searchParams.get('project');
+  if (!projectId) {
+    throw new LoginFailedError(
+      'Failed to retrieve project ID after selecting an existing Latchkey project.'
+    );
+  }
+  return projectId;
 }
 
 async function createProject(page: Page, appName: string): Promise<string> {
@@ -292,10 +371,25 @@ async function addTestUser(page: Page, projectSlug: string, email: string): Prom
   }
 }
 
+/**
+ * Build a short, unique OAuth client display name.
+ *
+ * A single project can host many OAuth clients, so each client needs its own
+ * distinct name. Keep it short (Google's OAuth client name field is tight) and
+ * include a random tag to avoid collisions when reusing an existing project.
+ */
+function generateOAuthClientName(serviceSuffix: string): string {
+  const randomTag = randomUUID().slice(0, 8);
+  const suffix = serviceSuffix.replace(/^-+/, '');
+  return `${LATCHKEY_APP_NAME_PREFIX}-${suffix}-${randomTag}`;
+}
+
 async function createOAuthClient(
   page: Page,
-  appName: string
+  serviceSuffix: string
 ): Promise<{ clientId: string; clientSecret: string }> {
+  const clientName = generateOAuthClientName(serviceSuffix);
+
   await page.goto('https://console.cloud.google.com/apis/credentials', {
     timeout: DEFAULT_TIMEOUT_MS,
   });
@@ -318,7 +412,7 @@ async function createOAuthClient(
 
   const clientNameInput = page.locator('input[formcontrolname="displayName"]');
   await clientNameInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-  await clientNameInput.fill(appName);
+  await clientNameInput.fill(clientName);
 
   const createButton = page.locator('cfc-progress-button button');
   await createButton.click();
@@ -462,27 +556,35 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
       await waitForGoogleLogin(page);
 
       const serviceSuffix = this.service.name.replace(/^google/, '');
-      const appName = generateLatchkeyAppName(serviceSuffix);
-      // Now assert that appName is max 30 characters as requested by Google:
-      if (appName.length > 30) {
-        throw new LoginFailedError(
-          `Generated app name "${appName}" exceeds Google OAuth project name limit of 30 characters.`
-        );
-      }
 
       await showSpinnerPage(
         context,
         `Finalizing ${this.service.displayName} login...\nThis can take a few minutes.`
       );
-      const projectSlug = await createProject(page, appName);
-      for (const api of this.config.apis) {
-        await enableApi(page, projectSlug, api);
+
+      // Google caps the number of projects per account, so try to reuse a
+      // previously created Latchkey project for this service before
+      // allocating a new one.
+      const existingProjectSlug = await findExistingLatchkeyProject(page, serviceSuffix);
+      if (existingProjectSlug === null) {
+        const appName = generateLatchkeyAppName(serviceSuffix);
+        // Google limits the OAuth project name to 30 characters.
+        if (appName.length > 30) {
+          throw new LoginFailedError(
+            `Generated app name "${appName}" exceeds Google OAuth project name limit of 30 characters.`
+          );
+        }
+        const projectSlug = await createProject(page, appName);
+        for (const api of this.config.apis) {
+          await enableApi(page, projectSlug, api);
+        }
+        const { isExternalApp, supportEmail } = await configureBranding(page, projectSlug, appName);
+        if (isExternalApp && supportEmail) {
+          await addTestUser(page, projectSlug, supportEmail);
+        }
       }
-      const { isExternalApp, supportEmail } = await configureBranding(page, projectSlug, appName);
-      if (isExternalApp && supportEmail) {
-        await addTestUser(page, projectSlug, supportEmail);
-      }
-      const { clientId, clientSecret } = await createOAuthClient(page, appName);
+
+      const { clientId, clientSecret } = await createOAuthClient(page, serviceSuffix);
       await page.close();
       return new OAuthCredentials(clientId, clientSecret);
     });
