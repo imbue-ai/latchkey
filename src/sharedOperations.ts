@@ -19,6 +19,7 @@ import {
   hasGraphicalEnvironment,
 } from './playwrightUtils.js';
 import type { ServiceRegistry } from './serviceRegistry.js';
+import { isBrowserClosedError, LoginCancelledError } from './services/core/base.js';
 import { RegisteredService } from './services/core/registered.js';
 import type { Service } from './services/index.js';
 
@@ -222,7 +223,19 @@ export async function authBrowserPrepare(
 
   const launchOptions = getBrowserLaunchOptions(config);
 
-  const apiCredentials = await session.prepare(encryptedStorage, launchOptions);
+  let apiCredentials;
+  try {
+    apiCredentials = await session.prepare(encryptedStorage, launchOptions);
+  } catch (error: unknown) {
+    // Closing the browser window during preparation should be reported to
+    // the user as a clean cancellation rather than a stack trace. Doing
+    // this here means every service's prepare() gets the same treatment
+    // without having to repeat the wrapping in each implementation.
+    if (error instanceof Error && isBrowserClosedError(error)) {
+      throw new LoginCancelledError();
+    }
+    throw error;
+  }
   apiCredentialStore.save(service.name, apiCredentials);
   return { alreadyPrepared: false };
 }
