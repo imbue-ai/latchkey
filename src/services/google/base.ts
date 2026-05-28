@@ -9,7 +9,7 @@
 import fs from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import type { Browser, BrowserContext, Page, Response } from 'playwright';
+import type { Browser, BrowserContext, Locator, Page, Response } from 'playwright';
 import { type ApiCredentials, OAuthCredentials } from '../../apiCredentials/base.js';
 import { extractUrlFromCurlArguments } from '../../curl.js';
 import {
@@ -81,6 +81,19 @@ const DEFAULT_TIMEOUT_MS = 12000;
 const LOGIN_TIMEOUT_MS = 120000;
 const GOOGLE_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 
+/**
+ * Timeout for the readiness race on the project selector page: how long we
+ * give either a recent-project card or the Terms of Service dialog to appear
+ * before deciding that neither will.
+ */
+const PROJECT_SELECTOR_READINESS_TIMEOUT_MS = 3000;
+
+/**
+ * How long to give the user to read the Terms of Service and click
+ * "Agree and continue" before timing out.
+ */
+const TERMS_OF_SERVICE_USER_INTERACTION_TIMEOUT_MS = 10 * 60 * 1000;
+
 /** Scopes always requested alongside service-specific scopes (for credential validation). */
 const COMMON_SCOPES = [
   'https://www.googleapis.com/auth/userinfo.profile',
@@ -149,7 +162,8 @@ function escapeRegExp(value: string): string {
  */
 async function findExistingLatchkeyProject(
   page: Page,
-  serviceSuffix: string
+  serviceSuffix: string,
+  spinnerPage: Page | null
 ): Promise<string | null> {
   await page.goto('https://console.cloud.google.com/projectselector2/home/dashboard', {
     timeout: DEFAULT_TIMEOUT_MS,
@@ -160,13 +174,40 @@ async function findExistingLatchkeyProject(
   const createProjectButton = page.locator('.projectselector-project-create');
   await createProjectButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
 
-  // Wait up to 3 s for *any* recent-project card to render. If the account
-  // has no projects at all, this times out fast and we don't waste time
-  // hunting for a per-service match that can't possibly exist.
+  // Race two mutually exclusive signals so we don't pay a fixed delay in
+  // the common case:
+  //   * a recent-project card shows up (the original readiness signal), or
+  //   * the first-time-user Terms of Service dialog appears.
+  // `cfc-tos-checkboxes` is a custom element name used by the Cloud Console
+  // and is locale-independent, unlike the visible "Terms of Service" text.
   const anyProjectTitle = page.locator('.cfc-resource-card-header-title').first();
+  const termsOfServiceDialog = page.locator('cfc-tos-checkboxes');
+  // `Promise.any` resolves with the first signal that fires and only rejects
+  // when both time out — which is exactly the "either one ends the wait"
+  // semantics we want here.
+  let firstSignal: 'projectCard' | 'termsOfService' | 'neither';
   try {
-    await anyProjectTitle.waitFor({ state: 'visible', timeout: 2000 });
+    firstSignal = await Promise.any([
+      anyProjectTitle
+        .waitFor({ state: 'visible', timeout: PROJECT_SELECTOR_READINESS_TIMEOUT_MS })
+        .then(() => 'projectCard' as const),
+      termsOfServiceDialog
+        .waitFor({ state: 'visible', timeout: PROJECT_SELECTOR_READINESS_TIMEOUT_MS })
+        .then(() => 'termsOfService' as const),
+    ]);
   } catch {
+    firstSignal = 'neither';
+  }
+
+  if (firstSignal === 'termsOfService') {
+    // If Google is asking for TOS acceptance, this is the user's first time
+    // on Google Cloud and they can't possibly have any existing projects to
+    // reuse — wait for acceptance and then go straight to creating one.
+    await waitForTermsOfServiceAcceptance(page, termsOfServiceDialog, spinnerPage);
+    return null;
+  }
+  if (firstSignal === 'neither') {
+    // No projects and no TOS dialog: account simply has nothing to reuse.
     return null;
   }
 
@@ -215,6 +256,8 @@ async function createProject(page: Page, appName: string): Promise<string> {
   await projectNameInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS * 100 });
   await projectNameInput.clear();
   await typeLikeHuman(page, projectNameInput, appName);
+
+  await new Promise((resolve) => setTimeout(resolve, 300));
 
   // Angular form sometimes fails to commit the typed value to its internal
   // state, causing submit to report "fields not correct" even though the
@@ -462,6 +505,37 @@ function checkGoogleLoginResponse(
   }
 }
 
+/**
+ * When a Google account signs in to the Cloud Console for the first time,
+ * Google displays a Terms of Service dialog on top of the page that blocks
+ * every subsequent interaction with the console.
+ *
+ * Surface the login page so the user can read and accept the terms, then
+ * restore the spinner page once the dialog is dismissed.
+ */
+async function waitForTermsOfServiceAcceptance(
+  loginPage: Page,
+  dialog: Locator,
+  spinnerPage: Page | null
+): Promise<void> {
+  await loginPage.bringToFront();
+  try {
+    await dialog.waitFor({
+      state: 'detached',
+      timeout: TERMS_OF_SERVICE_USER_INTERACTION_TIMEOUT_MS,
+    });
+  } catch (error: unknown) {
+    if (error instanceof Error && isBrowserClosedError(error)) {
+      throw new LoginCancelledError();
+    }
+    throw error;
+  }
+
+  if (spinnerPage !== null) {
+    await spinnerPage.bringToFront();
+  }
+}
+
 async function waitForGoogleLogin(page: Page): Promise<void> {
   const loginDetector = { isLoggedIn: false };
 
@@ -557,15 +631,20 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
 
       const serviceSuffix = this.service.name.replace(/^google/, '');
 
-      await showSpinnerPage(
+      const spinnerPage = await showSpinnerPage(
         context,
         `Finalizing ${this.service.displayName} login...\nThis can take a few minutes.`
       );
 
       // Google caps the number of projects per account, so try to reuse a
       // previously created Latchkey project for this service before
-      // allocating a new one.
-      const existingProjectSlug = await findExistingLatchkeyProject(page, serviceSuffix);
+      // allocating a new one. This also detects the first-time-user Terms of
+      // Service dialog and surfaces it to the user when needed.
+      const existingProjectSlug = await findExistingLatchkeyProject(
+        page,
+        serviceSuffix,
+        spinnerPage
+      );
       if (existingProjectSlug === null) {
         const appName = generateLatchkeyAppName(serviceSuffix);
         // Google limits the OAuth project name to 30 characters.

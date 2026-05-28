@@ -281,12 +281,20 @@ function createSpinnerOverlayScript(message: string): string {
  * The overlay persists across page navigations within the browser context.
  *
  * Can be disabled by setting LATCHKEY_DISABLE_SPINNER=1 environment variable.
+ *
+ * Returns the spinner page so callers can later bring it back to the
+ * foreground (e.g. after temporarily surfacing another page to the user),
+ * or `null` when the spinner is disabled.
  */
-export async function showSpinnerPage(context: BrowserContext, message: string): Promise<void> {
+export async function showSpinnerPage(
+  context: BrowserContext,
+  message: string
+): Promise<Page | null> {
   if (process.env.LATCHKEY_DISABLE_SPINNER === '1') {
-    return;
+    return null;
   }
   const spinnerPage = await context.newPage();
   await spinnerPage.evaluate(createSpinnerOverlayScript(message));
   await spinnerPage.bringToFront();
+  return spinnerPage;
 }

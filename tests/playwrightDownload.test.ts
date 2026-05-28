@@ -35,7 +35,8 @@ describe('playwrightDownload', () => {
       rmSync(tempDir, { recursive: true, force: true });
     });
 
-    it('should download a file from HTTPS URL', async () => {
+    // Skipped for now because httpbin.org refuses the requests sometimes.
+    it.skip('should download a file from HTTPS URL', async () => {
       const destinationPath = join(tempDir, 'test-file.txt');
 
       // Use a small, reliable test URL
