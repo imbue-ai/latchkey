@@ -12,6 +12,82 @@ const DEFAULT_TIMEOUT_MS = 8000;
 // URL for creating a new personal access token (also used as login URL to trigger sudo)
 const GITHUB_NEW_TOKEN_URL = 'https://github.com/settings/tokens/new';
 
+// First path segments under github.com that are website routes rather than
+// repository owners. Used to avoid treating those URLs as repository URLs.
+const GITHUB_RESERVED_PATH_SEGMENTS = [
+  'settings',
+  'login',
+  'logout',
+  'join',
+  'signup',
+  'sessions',
+  'notifications',
+  'organizations',
+  'orgs',
+  'users',
+  'user',
+  'apps',
+  'marketplace',
+  'explore',
+  'topics',
+  'collections',
+  'trending',
+  'events',
+  'sponsors',
+  'about',
+  'pricing',
+  'features',
+  'contact',
+  'search',
+  'new',
+  'dashboard',
+  'codespaces',
+  'copilot',
+] as const;
+
+/**
+ * Matches URLs that point at a GitHub repository (e.g. for git over HTTPS), as
+ * opposed to the REST API or a regular website page. A repository URL lives on
+ * github.com and has at least two path segments where the first segment (the
+ * owner) is not a reserved website route.
+ */
+const GITHUB_REPOSITORY_URL_PATTERN = new RegExp(
+  `^https://github\\.com/(?!(?:${GITHUB_RESERVED_PATH_SEGMENTS.join('|')})(?:/|$))[^/]+/[^/]+`,
+  'i'
+);
+
+export class UnexpectedGithubCredentialsError extends Error {
+  constructor() {
+    super(
+      'Expected GitHub credentials of the "Authorization: Bearer" form for repository access.'
+    );
+    this.name = 'UnexpectedGithubCredentialsError';
+  }
+}
+
+/**
+ * GitHub token credentials injected via curl's `-u` flag, suitable for git
+ * operations over HTTPS (the smart HTTP protocol uses HTTP basic auth). This
+ * credential form is produced on the fly from a stored bearer token and is
+ * never persisted.
+ */
+export class GithubTokenBasicAuth implements ApiCredentials {
+  readonly objectType = 'githubTokenBasicAuth' as const;
+  readonly token: string;
+
+  constructor(token: string) {
+    this.token = token;
+  }
+
+  injectIntoCurlCall(curlArguments: readonly string[]): Promise<readonly string[]> {
+    return Promise.resolve(['-u', `x-access-token:${this.token}`, ...curlArguments]);
+  }
+
+  isExpired(): boolean | undefined {
+    return undefined;
+  }
+}
+
 // GitHub personal access token scopes to enable
 const GITHUB_TOKEN_SCOPES = [
   'repo',
@@ -110,7 +186,11 @@ class GithubServiceSession extends BrowserFollowupServiceSession {
 export class Github extends Service {
   readonly name = 'github';
   readonly displayName = 'GitHub';
-  readonly baseApiUrls = ['https://api.github.com/', 'https://uploads.github.com/'] as const;
+  readonly baseApiUrls = [
+    'https://api.github.com/',
+    'https://uploads.github.com/',
+    GITHUB_REPOSITORY_URL_PATTERN,
+  ] as const;
   readonly loginUrl = GITHUB_NEW_TOKEN_URL;
   readonly info =
     'https://docs.github.com/en/rest. ' +
@@ -120,6 +200,16 @@ export class Github extends Service {
 
   setCredentialsExample(serviceName: string): string {
     return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
+  }
+
+  override adjustCredentials(apiCredentials: ApiCredentials, url: string): ApiCredentials {
+    if (!GITHUB_REPOSITORY_URL_PATTERN.test(url)) {
+      return apiCredentials;
+    }
+    if (!(apiCredentials instanceof AuthorizationBearer)) {
+      throw new UnexpectedGithubCredentialsError();
+    }
+    return new GithubTokenBasicAuth(apiCredentials.token);
   }
 
   override getSession(): GithubServiceSession {

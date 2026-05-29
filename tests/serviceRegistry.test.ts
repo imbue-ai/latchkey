@@ -94,6 +94,21 @@ describe('ServiceRegistry', () => {
     it('should not match partial URLs', () => {
       expect(SERVICE_REGISTRY.getByUrl('https://slack.com/')).toBeNull();
     });
+
+    it('should match GitHub repository URLs', () => {
+      expect(SERVICE_REGISTRY.getByUrl('https://github.com/owner/repo')).toBe(GITHUB);
+      expect(
+        SERVICE_REGISTRY.getByUrl(
+          'https://github.com/owner/repo.git/info/refs?service=git-upload-pack'
+        )
+      ).toBe(GITHUB);
+    });
+
+    it('should not match GitHub website routes as repositories', () => {
+      expect(SERVICE_REGISTRY.getByUrl('https://github.com/settings/tokens')).toBeNull();
+      expect(SERVICE_REGISTRY.getByUrl('https://github.com/orgs/some-org')).toBeNull();
+      expect(SERVICE_REGISTRY.getByUrl('https://github.com/owner')).toBeNull();
+    });
   });
 
   describe('services', () => {

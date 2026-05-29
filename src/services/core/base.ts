@@ -73,6 +73,15 @@ export abstract class Service {
   abstract readonly credentialCheckCurlArguments: readonly string[];
 
   /**
+   * Optionally transform the stored credentials before they are injected into a
+   * curl call, based on the request URL. Services can override this to use a
+   * different credential form for different kinds of URLs (e.g. API access vs.
+   * repository access). Implementations should throw if the stored credentials
+   * are not of the expected type.
+   */
+  adjustCredentials?(apiCredentials: ApiCredentials, url: string): ApiCredentials;
+
+  /**
    * Check if the given API credentials are valid for this service.
    */
   async checkApiCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentialStatus> {

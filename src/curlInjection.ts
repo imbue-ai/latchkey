@@ -147,5 +147,9 @@ export async function prepareCurlInvocation(
     }
   }
 
+  if (service.adjustCredentials !== undefined) {
+    apiCredentials = service.adjustCredentials(apiCredentials, url);
+  }
+
   return await apiCredentials.injectIntoCurlCall(curlArguments);
 }
