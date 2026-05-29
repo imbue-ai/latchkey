@@ -13,20 +13,29 @@ describe('Github URL matching', () => {
     expect(SERVICE_REGISTRY.getByUrl('https://uploads.github.com/anything')).toBe(GITHUB);
   });
 
-  it('matches repository URLs', () => {
-    expect(SERVICE_REGISTRY.getByUrl('https://github.com/owner/repo')).toBe(GITHUB);
+  it('matches git smart-HTTP operation URLs', () => {
     expect(
       SERVICE_REGISTRY.getByUrl(
         'https://github.com/owner/repo.git/info/refs?service=git-upload-pack'
       )
     ).toBe(GITHUB);
+    expect(SERVICE_REGISTRY.getByUrl('https://github.com/owner/repo/info/refs')).toBe(GITHUB);
+    expect(SERVICE_REGISTRY.getByUrl('https://github.com/owner/repo.git/git-upload-pack')).toBe(
+      GITHUB
+    );
+    expect(SERVICE_REGISTRY.getByUrl('https://github.com/owner/repo/git-receive-pack')).toBe(
+      GITHUB
+    );
   });
 
-  it('does not match website routes or single-segment paths', () => {
+  it('does not match repository web pages or website routes', () => {
+    expect(SERVICE_REGISTRY.getByUrl('https://github.com/owner/repo')).toBeNull();
+    expect(SERVICE_REGISTRY.getByUrl('https://github.com/owner/repo/issues/1')).toBeNull();
     expect(SERVICE_REGISTRY.getByUrl('https://github.com/settings/tokens')).toBeNull();
-    expect(SERVICE_REGISTRY.getByUrl('https://github.com/orgs/some-org')).toBeNull();
     expect(SERVICE_REGISTRY.getByUrl('https://github.com/owner')).toBeNull();
-    expect(SERVICE_REGISTRY.getByUrl('https://example.com/owner/repo')).toBeNull();
+    expect(
+      SERVICE_REGISTRY.getByUrl('https://example.com/owner/repo.git/info/refs')
+    ).toBeNull();
   });
 });
 
@@ -37,7 +46,13 @@ describe('Github.adjustCredentials', () => {
     expect(adjusted).toBe(bearer);
   });
 
-  it('converts bearer credentials to basic auth for repository URLs', async () => {
+  it('leaves credentials untouched for repository web pages', () => {
+    const bearer = new AuthorizationBearer('token-123');
+    const adjusted = GITHUB.adjustCredentials(bearer, 'https://github.com/owner/repo');
+    expect(adjusted).toBe(bearer);
+  });
+
+  it('converts bearer credentials to basic auth for git operation URLs', async () => {
     const bearer = new AuthorizationBearer('token-123');
     const adjusted = GITHUB.adjustCredentials(bearer, 'https://github.com/owner/repo.git/info/refs');
     expect(adjusted).toBeInstanceOf(GithubTokenBasicAuth);
@@ -46,10 +61,10 @@ describe('Github.adjustCredentials', () => {
     expect(args).toEqual(['-u', 'x-access-token:token-123', 'https://github.com/owner/repo.git']);
   });
 
-  it('throws when repository credentials are not bearer credentials', () => {
+  it('throws when git operation credentials are not bearer credentials', () => {
     const raw = new RawCurlCredentials(['-H', 'X-Custom: 1']);
-    expect(() => GITHUB.adjustCredentials(raw, 'https://github.com/owner/repo')).toThrow(
-      UnexpectedGithubCredentialsError
-    );
+    expect(() =>
+      GITHUB.adjustCredentials(raw, 'https://github.com/owner/repo.git/git-upload-pack')
+    ).toThrow(UnexpectedGithubCredentialsError);
   });
 });

@@ -12,49 +12,16 @@ const DEFAULT_TIMEOUT_MS = 8000;
 // URL for creating a new personal access token (also used as login URL to trigger sudo)
 const GITHUB_NEW_TOKEN_URL = 'https://github.com/settings/tokens/new';
 
-// First path segments under github.com that are website routes rather than
-// repository owners. Used to avoid treating those URLs as repository URLs.
-const GITHUB_RESERVED_PATH_SEGMENTS = [
-  'settings',
-  'login',
-  'logout',
-  'join',
-  'signup',
-  'sessions',
-  'notifications',
-  'organizations',
-  'orgs',
-  'users',
-  'user',
-  'apps',
-  'marketplace',
-  'explore',
-  'topics',
-  'collections',
-  'trending',
-  'events',
-  'sponsors',
-  'about',
-  'pricing',
-  'features',
-  'contact',
-  'search',
-  'new',
-  'dashboard',
-  'codespaces',
-  'copilot',
-] as const;
-
 /**
- * Matches URLs that point at a GitHub repository (e.g. for git over HTTPS), as
- * opposed to the REST API or a regular website page. A repository URL lives on
- * github.com and has at least two path segments where the first segment (the
- * owner) is not a reserved website route.
+ * Matches the GitHub smart-HTTP endpoints used by git over HTTPS, as opposed to
+ * the REST API or a regular website page. The git client only ever talks to
+ * `<owner>/<repo>[.git]/info/refs`, `.../git-upload-pack` and
+ * `.../git-receive-pack`, so matching those endpoints reliably distinguishes
+ * actual git operations from ordinary repository web pages (which should not be
+ * authenticated as git).
  */
-const GITHUB_REPOSITORY_URL_PATTERN = new RegExp(
-  `^https://github\\.com/(?!(?:${GITHUB_RESERVED_PATH_SEGMENTS.join('|')})(?:/|$))[^/]+/[^/]+`,
-  'i'
-);
+const GITHUB_GIT_OPERATION_URL_PATTERN =
+  /^https:\/\/github\.com\/[^/]+\/[^/]+\/(?:info\/refs|git-upload-pack|git-receive-pack)(?:[/?]|$)/;
 
 export class UnexpectedGithubCredentialsError extends Error {
   constructor() {
@@ -189,7 +156,7 @@ export class Github extends Service {
   readonly baseApiUrls = [
     'https://api.github.com/',
     'https://uploads.github.com/',
-    GITHUB_REPOSITORY_URL_PATTERN,
+    GITHUB_GIT_OPERATION_URL_PATTERN,
   ] as const;
   readonly loginUrl = GITHUB_NEW_TOKEN_URL;
   readonly info =
@@ -203,7 +170,7 @@ export class Github extends Service {
   }
 
   override adjustCredentials(apiCredentials: ApiCredentials, url: string): ApiCredentials {
-    if (!GITHUB_REPOSITORY_URL_PATTERN.test(url)) {
+    if (!GITHUB_GIT_OPERATION_URL_PATTERN.test(url)) {
       return apiCredentials;
     }
     if (!(apiCredentials instanceof AuthorizationBearer)) {

@@ -95,19 +95,20 @@ describe('ServiceRegistry', () => {
       expect(SERVICE_REGISTRY.getByUrl('https://slack.com/')).toBeNull();
     });
 
-    it('should match GitHub repository URLs', () => {
-      expect(SERVICE_REGISTRY.getByUrl('https://github.com/owner/repo')).toBe(GITHUB);
+    it('should match GitHub git smart-HTTP operation URLs', () => {
       expect(
         SERVICE_REGISTRY.getByUrl(
           'https://github.com/owner/repo.git/info/refs?service=git-upload-pack'
         )
       ).toBe(GITHUB);
+      expect(SERVICE_REGISTRY.getByUrl('https://github.com/owner/repo/git-upload-pack')).toBe(
+        GITHUB
+      );
     });
 
-    it('should not match GitHub website routes as repositories', () => {
+    it('should not match GitHub web pages as git operations', () => {
+      expect(SERVICE_REGISTRY.getByUrl('https://github.com/owner/repo')).toBeNull();
       expect(SERVICE_REGISTRY.getByUrl('https://github.com/settings/tokens')).toBeNull();
-      expect(SERVICE_REGISTRY.getByUrl('https://github.com/orgs/some-org')).toBeNull();
-      expect(SERVICE_REGISTRY.getByUrl('https://github.com/owner')).toBeNull();
     });
   });
 
