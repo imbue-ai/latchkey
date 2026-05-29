@@ -33,9 +33,7 @@ describe('Github URL matching', () => {
     expect(SERVICE_REGISTRY.getByUrl('https://github.com/owner/repo/issues/1')).toBeNull();
     expect(SERVICE_REGISTRY.getByUrl('https://github.com/settings/tokens')).toBeNull();
     expect(SERVICE_REGISTRY.getByUrl('https://github.com/owner')).toBeNull();
-    expect(
-      SERVICE_REGISTRY.getByUrl('https://example.com/owner/repo.git/info/refs')
-    ).toBeNull();
+    expect(SERVICE_REGISTRY.getByUrl('https://example.com/owner/repo.git/info/refs')).toBeNull();
   });
 });
 
@@ -54,7 +52,10 @@ describe('Github.adjustCredentials', () => {
 
   it('converts bearer credentials to basic auth for git operation URLs', async () => {
     const bearer = new AuthorizationBearer('token-123');
-    const adjusted = GITHUB.adjustCredentials(bearer, 'https://github.com/owner/repo.git/info/refs');
+    const adjusted = GITHUB.adjustCredentials(
+      bearer,
+      'https://github.com/owner/repo.git/info/refs'
+    );
     expect(adjusted).toBeInstanceOf(GithubTokenBasicAuth);
 
     const args = await adjusted.injectIntoCurlCall(['https://github.com/owner/repo.git']);

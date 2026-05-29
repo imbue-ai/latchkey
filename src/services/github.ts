@@ -25,9 +25,7 @@ const GITHUB_GIT_OPERATION_URL_PATTERN =
 
 export class UnexpectedGithubCredentialsError extends Error {
   constructor() {
-    super(
-      'Expected GitHub credentials of the "Authorization: Bearer" form for repository access.'
-    );
+    super('Expected GitHub credentials of the "Authorization: Bearer" form for repository access.');
     this.name = 'UnexpectedGithubCredentialsError';
   }
 }
