@@ -636,7 +636,7 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
 
       const spinnerPage = await showSpinnerPage(
         context,
-        `Finalizing ${this.service.displayName} login...\nThis can take a few minutes.`
+        `Finalizing ${this.service.displayName} login by using Google Console to set up the project for custom authentication...\nThis can take a few minutes.`
       );
 
       // Google caps the number of projects per account, so try to reuse a
