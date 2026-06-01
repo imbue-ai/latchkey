@@ -212,9 +212,10 @@ async function findExistingLatchkeyProject(
 
   // Once the grid is populated, give Angular only a short window to settle
   // before deciding whether a card matching this service's suffix is among
-  // them.
+  // them. The `.*` keeps matching legacy projects whose names still embed a
+  // date/random segment between the prefix and the service suffix.
   const suffixPattern = new RegExp(
-    `^\\s*${escapeRegExp(appNamePrefix)}-.+${escapeRegExp(serviceSuffix)}\\s*$`
+    `^\\s*${escapeRegExp(appNamePrefix)}-.*${escapeRegExp(serviceSuffix)}\\s*$`
   );
   const latchkeyTitle = page
     .locator('.cfc-resource-card-header-title')
@@ -647,7 +648,11 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
         spinnerPage
       );
       if (existingProjectSlug === null) {
-        const appName = this.generateAppName(serviceSuffix);
+        // Use a deterministic project name (e.g. "Latchkey-gmail") rather than
+        // one with date/random bits: projects are now reused per service, so a
+        // stable name keeps the reuse lookup predictable. Google still derives
+        // a globally-unique project ID from this display name on its own.
+        const appName = `${this.appNamePrefix}-${serviceSuffix}`;
         // Google limits the OAuth project name to 30 characters.
         if (appName.length > 30) {
           throw new LoginFailedError(
