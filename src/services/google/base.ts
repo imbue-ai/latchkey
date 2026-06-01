@@ -647,6 +647,7 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
         this.appNamePrefix,
         spinnerPage
       );
+      let projectSlug: string;
       if (existingProjectSlug === null) {
         // Use a deterministic project name (e.g. "Latchkey-gmail") rather than
         // one with date/random bits: projects are now reused per service, so a
@@ -659,14 +660,22 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
             `Generated app name "${appName}" exceeds Google OAuth project name limit of 30 characters.`
           );
         }
-        const projectSlug = await createProject(page, appName);
-        for (const api of this.config.apis) {
-          await enableApi(page, projectSlug, api);
-        }
+        projectSlug = await createProject(page, appName);
         const { isExternalApp, supportEmail } = await configureBranding(page, projectSlug, appName);
         if (isExternalApp && supportEmail) {
           await addTestUser(page, projectSlug, supportEmail);
         }
+      } else {
+        projectSlug = existingProjectSlug;
+      }
+
+      // Always make sure every required API is enabled, whether the project was
+      // just created or reused. A reused project might be a half-configured
+      // leftover from a previous run that crashed before all APIs were turned
+      // on; enableApi is idempotent and returns immediately when an API is
+      // already enabled, so re-running it is cheap and self-healing.
+      for (const api of this.config.apis) {
+        await enableApi(page, projectSlug, api);
       }
 
       const { clientId, clientSecret } = await createOAuthClient(
