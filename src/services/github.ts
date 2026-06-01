@@ -4,7 +4,7 @@
 
 import type { Response, BrowserContext } from 'playwright';
 import { ApiCredentials, AuthorizationBearer } from '../apiCredentials/base.js';
-import { generateLatchkeyAppName, typeLikeHuman } from '../playwrightUtils.js';
+import { typeLikeHuman } from '../playwrightUtils.js';
 import { Service, BrowserFollowupServiceSession, LoginFailedError } from './core/base.js';
 
 const DEFAULT_TIMEOUT_MS = 8000;
@@ -117,7 +117,7 @@ class GithubServiceSession extends BrowserFollowupServiceSession {
     // Add a note for the token
     const noteInput = page.locator('//*[@id="oauth_access_description"]');
     await noteInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-    await typeLikeHuman(page, noteInput, generateLatchkeyAppName());
+    await typeLikeHuman(page, noteInput, this.generateAppName());
 
     // Enable all necessary scopes
     for (const scope of GITHUB_TOKEN_SCOPES) {
@@ -177,8 +177,8 @@ export class Github extends Service {
     return new GithubTokenBasicAuth(apiCredentials.token);
   }
 
-  override getSession(): GithubServiceSession {
-    return new GithubServiceSession(this);
+  override getSession(appNamePrefix: string): GithubServiceSession {
+    return new GithubServiceSession(this, appNamePrefix);
   }
 }
 

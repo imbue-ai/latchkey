@@ -41,6 +41,7 @@ const SettingsSchema = z.object({
   gateway: z.string().optional(),
   gatewayListenHost: z.string().optional(),
   gatewayListenPort: z.number().int().min(0).max(65535).optional(),
+  appNamePrefix: z.string().optional(),
 });
 
 export type Settings = z.infer<typeof SettingsSchema>;

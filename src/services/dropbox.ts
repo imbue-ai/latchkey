@@ -4,7 +4,7 @@
 
 import type { Response, BrowserContext } from 'playwright';
 import { ApiCredentials, AuthorizationBearer } from '../apiCredentials/base.js';
-import { generateLatchkeyAppName, typeLikeHuman } from '../playwrightUtils.js';
+import { typeLikeHuman } from '../playwrightUtils.js';
 import { Service, BrowserFollowupServiceSession, LoginFailedError } from './core/base.js';
 
 const DEFAULT_TIMEOUT_MS = 8000;
@@ -61,7 +61,7 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
     await fullPermissionsInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await fullPermissionsInput.click();
 
-    const appName = generateLatchkeyAppName();
+    const appName = this.generateAppName();
     const appNameInput = page.locator('input#app-name');
     await appNameInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await typeLikeHuman(page, appNameInput, appName);
@@ -154,8 +154,8 @@ export class Dropbox extends Service {
     return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
   }
 
-  override getSession(): DropboxServiceSession {
-    return new DropboxServiceSession(this);
+  override getSession(appNamePrefix: string): DropboxServiceSession {
+    return new DropboxServiceSession(this, appNamePrefix);
   }
 }
 

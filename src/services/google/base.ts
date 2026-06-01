@@ -13,8 +13,6 @@ import type { Browser, BrowserContext, Locator, Page, Response } from 'playwrigh
 import { type ApiCredentials, OAuthCredentials } from '../../apiCredentials/base.js';
 import { extractUrlFromCurlArguments } from '../../curl.js';
 import {
-  generateLatchkeyAppName,
-  LATCHKEY_APP_NAME_PREFIX,
   showSpinnerPage,
   withTempBrowserContext,
   typeLikeHuman,
@@ -163,6 +161,7 @@ function escapeRegExp(value: string): string {
 async function findExistingLatchkeyProject(
   page: Page,
   serviceSuffix: string,
+  appNamePrefix: string,
   spinnerPage: Page | null
 ): Promise<string | null> {
   await page.goto('https://console.cloud.google.com/projectselector2/home/dashboard', {
@@ -215,7 +214,7 @@ async function findExistingLatchkeyProject(
   // before deciding whether a card matching this service's suffix is among
   // them.
   const suffixPattern = new RegExp(
-    `^\\s*${escapeRegExp(LATCHKEY_APP_NAME_PREFIX)}-.+${escapeRegExp(serviceSuffix)}\\s*$`
+    `^\\s*${escapeRegExp(appNamePrefix)}-.+${escapeRegExp(serviceSuffix)}\\s*$`
   );
   const latchkeyTitle = page
     .locator('.cfc-resource-card-header-title')
@@ -421,17 +420,18 @@ async function addTestUser(page: Page, projectSlug: string, email: string): Prom
  * distinct name. Keep it short (Google's OAuth client name field is tight) and
  * include a random tag to avoid collisions when reusing an existing project.
  */
-function generateOAuthClientName(serviceSuffix: string): string {
+function generateOAuthClientName(serviceSuffix: string, appNamePrefix: string): string {
   const randomTag = randomUUID().slice(0, 8);
   const suffix = serviceSuffix.replace(/^-+/, '');
-  return `${LATCHKEY_APP_NAME_PREFIX}-${suffix}-${randomTag}`;
+  return `${appNamePrefix}-${suffix}-${randomTag}`;
 }
 
 async function createOAuthClient(
   page: Page,
-  serviceSuffix: string
+  serviceSuffix: string,
+  appNamePrefix: string
 ): Promise<{ clientId: string; clientSecret: string }> {
-  const clientName = generateOAuthClientName(serviceSuffix);
+  const clientName = generateOAuthClientName(serviceSuffix, appNamePrefix);
 
   await page.goto('https://console.cloud.google.com/apis/credentials', {
     timeout: DEFAULT_TIMEOUT_MS,
@@ -566,8 +566,8 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
   private readonly loginDetector = { isLoggedIn: false };
   private readonly config: GoogleServiceConfig;
 
-  constructor(service: GoogleService, config: GoogleServiceConfig) {
-    super(service);
+  constructor(service: GoogleService, config: GoogleServiceConfig, appNamePrefix: string) {
+    super(service, appNamePrefix);
     this.config = config;
   }
 
@@ -643,10 +643,11 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
       const existingProjectSlug = await findExistingLatchkeyProject(
         page,
         serviceSuffix,
+        this.appNamePrefix,
         spinnerPage
       );
       if (existingProjectSlug === null) {
-        const appName = generateLatchkeyAppName(serviceSuffix);
+        const appName = this.generateAppName(serviceSuffix);
         // Google limits the OAuth project name to 30 characters.
         if (appName.length > 30) {
           throw new LoginFailedError(
@@ -663,7 +664,11 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
         }
       }
 
-      const { clientId, clientSecret } = await createOAuthClient(page, serviceSuffix);
+      const { clientId, clientSecret } = await createOAuthClient(
+        page,
+        serviceSuffix,
+        this.appNamePrefix
+      );
       await page.close();
       return new OAuthCredentials(clientId, clientSecret);
     });
@@ -749,8 +754,8 @@ export abstract class GoogleService extends Service {
     return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
   }
 
-  override getSession(): GoogleServiceSession {
-    return new GoogleServiceSession(this, this.config);
+  override getSession(appNamePrefix: string): GoogleServiceSession {
+    return new GoogleServiceSession(this, this.config, appNamePrefix);
   }
 
   override refreshCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentials | null> {

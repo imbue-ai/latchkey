@@ -385,6 +385,7 @@ defaults:
 - `LATCHKEY_GATEWAY_PASSWORD`: optional shared secret used by the client side. When set together with `LATCHKEY_GATEWAY`, the CLI sends the value in the `X-Latchkey-Gateway-Password` header on every outgoing gateway request.
 - `LATCHKEY_GATEWAY_LISTEN_PASSWORD`: optional shared secret used by the server side. When set, `latchkey gateway` rejects (with `401`) any request that does not present the same value in the `X-Latchkey-Gateway-Password` header. The header is stripped before requests are forwarded upstream.
 - `LATCHKEY_GATEWAY_PERMISSIONS_OVERRIDE`: optional permissions-override JWT (see `latchkey gateway create-jwt`) used by the client side. When set together with `LATCHKEY_GATEWAY`, the CLI sends the value in the `X-Latchkey-Gateway-Permissions-Override` header on every outgoing gateway request, causing the remote gateway to enforce the permissions.json file referenced by the JWT instead of its default one.
+- `LATCHKEY_APP_NAME_PREFIX`: prefix used for the app, project, and OAuth client names that Latchkey creates on your behalf inside third-party consoles (defaults to `Latchkey`).
 
 All of the above settings, except for `LATCHKEY_DIRECTORY`,
 `LATCHKEY_ENCRYPTION_KEY`, `LATCHKEY_GATEWAY_PASSWORD`,
@@ -407,7 +408,8 @@ override `config.json` values.
     "passthroughUnknown": false,
     "gateway": "http://localhost:1989",
     "gatewayListenHost": "localhost",
-    "gatewayListenPort": 1989
+    "gatewayListenPort": 1989,
+    "appNamePrefix": "Latchkey"
   }
 }
 ```

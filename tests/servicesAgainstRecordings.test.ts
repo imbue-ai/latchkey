@@ -137,7 +137,7 @@ async function testServiceWithRecording(
     );
   }
 
-  const session = service.getSession();
+  const session = service.getSession('Latchkey');
 
   if (!(session instanceof SimpleServiceSession)) {
     throw new InvalidRecordingError(

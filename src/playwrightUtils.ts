@@ -66,22 +66,13 @@ export interface BrowserLaunchOptions {
 }
 
 /**
- * Prefix used for app, project, and OAuth client names that Latchkey creates
- * on behalf of the user inside third-party consoles.
- *
- * Kept as a single constant so it can later be made user-configurable in one
- * place instead of chasing string literals across the codebase.
- */
-export const LATCHKEY_APP_NAME_PREFIX = 'Latchkey';
-
-/**
- * Generate a random Latchkey-prefixed app name.
+ * Generate a random app name using the given prefix.
  * Used for creating unique names when registering API keys, apps, or tokens.
  */
-export function generateLatchkeyAppName(suffix?: string): string {
+export function generateLatchkeyAppName(appNamePrefix: string, suffix?: string): string {
   const date = new Date().toISOString().slice(5, 10);
   const randomSuffix = randomUUID().slice(0, 2);
-  return `${LATCHKEY_APP_NAME_PREFIX}-${date}-${randomSuffix}${suffix ?? ''}`;
+  return `${appNamePrefix}-${date}-${randomSuffix}${suffix ?? ''}`;
 }
 
 /**

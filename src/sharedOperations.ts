@@ -178,7 +178,7 @@ export async function authBrowser(
 ): Promise<void> {
   const service = lookupService(registry, serviceName);
 
-  const session = service.getSession?.();
+  const session = service.getSession?.(config.appNamePrefix);
   if (!session) {
     throw new BrowserFlowsNotSupportedError(serviceName);
   }
@@ -211,7 +211,7 @@ export async function authBrowserPrepare(
 ): Promise<AuthBrowserPrepareResult> {
   const service = lookupService(registry, serviceName);
 
-  const session = service.getSession?.();
+  const session = service.getSession?.(config.appNamePrefix);
   if (!session?.prepare) {
     return { alreadyPrepared: true };
   }

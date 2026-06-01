@@ -370,6 +370,7 @@ describe('CLI commands with dependency injection', () => {
       gatewayPassword: overrides.gatewayPassword ?? null,
       gatewayListenPassword: overrides.gatewayListenPassword ?? null,
       gatewayPermissionsOverride: overrides.gatewayPermissionsOverride ?? null,
+      appNamePrefix: overrides.appNamePrefix ?? defaultConfig.appNamePrefix,
       checkSensitiveFilePermissions: () => undefined,
       checkSystemPrerequisites: () => undefined,
     };

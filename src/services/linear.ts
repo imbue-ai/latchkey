@@ -4,7 +4,7 @@
 
 import type { Response, BrowserContext } from 'playwright';
 import { ApiCredentials, AuthorizationBare } from '../apiCredentials/base.js';
-import { generateLatchkeyAppName, typeLikeHuman } from '../playwrightUtils.js';
+import { typeLikeHuman } from '../playwrightUtils.js';
 import { Service, BrowserFollowupServiceSession, LoginFailedError } from './core/base.js';
 
 const DEFAULT_TIMEOUT_MS = 8000;
@@ -65,7 +65,7 @@ class LinearServiceSession extends BrowserFollowupServiceSession {
     await page.goto(LINEAR_NEW_API_KEY_URL);
 
     // Fill in the key name
-    const keyName = generateLatchkeyAppName();
+    const keyName = this.generateAppName();
     const keyNameInput = page.locator('//*[@id="label"]');
     await keyNameInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await typeLikeHuman(page, keyNameInput, keyName);
@@ -111,8 +111,8 @@ export class Linear extends Service {
     return `latchkey auth set ${serviceName} -H "Authorization: <token>"`;
   }
 
-  override getSession(): LinearServiceSession {
-    return new LinearServiceSession(this);
+  override getSession(appNamePrefix: string): LinearServiceSession {
+    return new LinearServiceSession(this, appNamePrefix);
   }
 }
 
