@@ -253,7 +253,7 @@ async function createProject(page: Page, appName: string): Promise<string> {
   await createProjectButton.click();
 
   const projectNameInput = page.locator('proj-name-id-input input');
-  await projectNameInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS * 100 });
+  await projectNameInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
   await projectNameInput.clear();
   await typeLikeHuman(page, projectNameInput, appName);
 
