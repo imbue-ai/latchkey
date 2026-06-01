@@ -50,11 +50,13 @@ const LATCHKEY_GATEWAY_LISTEN_PORT_ENV_VAR = 'LATCHKEY_GATEWAY_LISTEN_PORT';
 const LATCHKEY_GATEWAY_PASSWORD_ENV_VAR = 'LATCHKEY_GATEWAY_PASSWORD';
 const LATCHKEY_GATEWAY_LISTEN_PASSWORD_ENV_VAR = 'LATCHKEY_GATEWAY_LISTEN_PASSWORD';
 const LATCHKEY_GATEWAY_PERMISSIONS_OVERRIDE_ENV_VAR = 'LATCHKEY_GATEWAY_PERMISSIONS_OVERRIDE';
+const LATCHKEY_APP_NAME_PREFIX_ENV_VAR = 'LATCHKEY_APP_NAME_PREFIX';
 
 export const DEFAULT_KEYRING_SERVICE_NAME = 'latchkey';
 export const DEFAULT_KEYRING_ACCOUNT_NAME = 'encryption-key';
 export const DEFAULT_GATEWAY_LISTEN_HOST = 'localhost';
 export const DEFAULT_GATEWAY_LISTEN_PORT = 1989;
+export const DEFAULT_APP_NAME_PREFIX = 'Latchkey';
 
 const DEFAULT_DIRECTORY = join(homedir(), '.latchkey');
 
@@ -241,6 +243,11 @@ export class Config {
    * persisted in config.json).
    */
   readonly gatewayPermissionsOverride: string | null;
+  /**
+   * Prefix used for app, project, and OAuth client names that Latchkey creates
+   * on behalf of the user inside third-party consoles.
+   */
+  readonly appNamePrefix: string;
 
   constructor(
     getEnv: (name: string) => string | undefined = (name) => process.env[name],
@@ -317,6 +324,12 @@ export class Config {
       gatewayPermissionsOverride !== undefined && gatewayPermissionsOverride !== ''
         ? gatewayPermissionsOverride
         : null;
+
+    this.appNamePrefix = resolveString(
+      getEnv(LATCHKEY_APP_NAME_PREFIX_ENV_VAR),
+      settings.appNamePrefix,
+      DEFAULT_APP_NAME_PREFIX
+    );
   }
 
   get credentialStorePath(): string {

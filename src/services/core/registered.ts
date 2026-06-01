@@ -36,11 +36,11 @@ export class RegisteredService extends Service {
     }
 
     if (loginUrl !== undefined && familyService?.getSession !== undefined) {
-      this.getSession = () => familyService.getSession!();
+      this.getSession = (appNamePrefix: string) => familyService.getSession!(appNamePrefix);
     }
   }
 
-  override getSession?(): ServiceSession;
+  override getSession?(appNamePrefix: string): ServiceSession;
 
   override checkApiCredentials(): Promise<ApiCredentialStatus> {
     return Promise.resolve(ApiCredentialStatus.Unknown);

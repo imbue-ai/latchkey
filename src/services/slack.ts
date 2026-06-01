@@ -113,8 +113,8 @@ export class Slack extends Service {
     return `latchkey auth set ${serviceName} -H "Authorization: Bearer xoxb-your-token"`;
   }
 
-  override getSession(): SlackServiceSession {
-    return new SlackServiceSession(this);
+  override getSession(appNamePrefix: string): SlackServiceSession {
+    return new SlackServiceSession(this, appNamePrefix);
   }
 
   override async checkApiCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentialStatus> {

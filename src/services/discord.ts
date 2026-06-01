@@ -48,8 +48,8 @@ export class Discord extends Service {
     return `latchkey auth set ${serviceName} -H "Authorization: Bot <token>"`;
   }
 
-  override getSession(): DiscordServiceSession {
-    return new DiscordServiceSession(this);
+  override getSession(appNamePrefix: string): DiscordServiceSession {
+    return new DiscordServiceSession(this, appNamePrefix);
   }
 }
 

@@ -13,8 +13,6 @@ import type { Browser, BrowserContext, Locator, Page, Response } from 'playwrigh
 import { type ApiCredentials, OAuthCredentials } from '../../apiCredentials/base.js';
 import { extractUrlFromCurlArguments } from '../../curl.js';
 import {
-  generateLatchkeyAppName,
-  LATCHKEY_APP_NAME_PREFIX,
   showSpinnerPage,
   withTempBrowserContext,
   typeLikeHuman,
@@ -163,6 +161,7 @@ function escapeRegExp(value: string): string {
 async function findExistingLatchkeyProject(
   page: Page,
   serviceSuffix: string,
+  appNamePrefix: string,
   spinnerPage: Page | null
 ): Promise<string | null> {
   await page.goto('https://console.cloud.google.com/projectselector2/home/dashboard', {
@@ -213,9 +212,12 @@ async function findExistingLatchkeyProject(
 
   // Once the grid is populated, give Angular only a short window to settle
   // before deciding whether a card matching this service's suffix is among
-  // them.
+  // them. The `.*` keeps matching legacy projects whose names still embed a
+  // date/random segment between the prefix and the service suffix, so both the
+  // new ("Latchkey-calendar") and legacy ("Latchkey-06-01-ab-calendar") naming
+  // schemes match.
   const suffixPattern = new RegExp(
-    `^\\s*${escapeRegExp(LATCHKEY_APP_NAME_PREFIX)}-.+${escapeRegExp(serviceSuffix)}\\s*$`
+    `^\\s*${escapeRegExp(appNamePrefix)}.*${escapeRegExp(serviceSuffix)}\\s*$`
   );
   const latchkeyTitle = page
     .locator('.cfc-resource-card-header-title')
@@ -253,7 +255,7 @@ async function createProject(page: Page, appName: string): Promise<string> {
   await createProjectButton.click();
 
   const projectNameInput = page.locator('proj-name-id-input input');
-  await projectNameInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS * 100 });
+  await projectNameInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
   await projectNameInput.clear();
   await typeLikeHuman(page, projectNameInput, appName);
 
@@ -421,17 +423,18 @@ async function addTestUser(page: Page, projectSlug: string, email: string): Prom
  * distinct name. Keep it short (Google's OAuth client name field is tight) and
  * include a random tag to avoid collisions when reusing an existing project.
  */
-function generateOAuthClientName(serviceSuffix: string): string {
+function generateOAuthClientName(serviceSuffix: string, appNamePrefix: string): string {
   const randomTag = randomUUID().slice(0, 8);
   const suffix = serviceSuffix.replace(/^-+/, '');
-  return `${LATCHKEY_APP_NAME_PREFIX}-${suffix}-${randomTag}`;
+  return `${appNamePrefix}-${suffix}-${randomTag}`;
 }
 
 async function createOAuthClient(
   page: Page,
-  serviceSuffix: string
+  serviceSuffix: string,
+  appNamePrefix: string
 ): Promise<{ clientId: string; clientSecret: string }> {
-  const clientName = generateOAuthClientName(serviceSuffix);
+  const clientName = generateOAuthClientName(serviceSuffix, appNamePrefix);
 
   await page.goto('https://console.cloud.google.com/apis/credentials', {
     timeout: DEFAULT_TIMEOUT_MS,
@@ -566,8 +569,8 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
   private readonly loginDetector = { isLoggedIn: false };
   private readonly config: GoogleServiceConfig;
 
-  constructor(service: GoogleService, config: GoogleServiceConfig) {
-    super(service);
+  constructor(service: GoogleService, config: GoogleServiceConfig, appNamePrefix: string) {
+    super(service, appNamePrefix);
     this.config = config;
   }
 
@@ -633,7 +636,7 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
 
       const spinnerPage = await showSpinnerPage(
         context,
-        `Finalizing ${this.service.displayName} login...\nThis can take a few minutes.`
+        `Finalizing ${this.service.displayName} login by using Google Console to set up the project for custom authentication...\nThis can take a few minutes.`
       );
 
       // Google caps the number of projects per account, so try to reuse a
@@ -643,27 +646,45 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
       const existingProjectSlug = await findExistingLatchkeyProject(
         page,
         serviceSuffix,
+        this.appNamePrefix,
         spinnerPage
       );
+      let projectSlug: string;
       if (existingProjectSlug === null) {
-        const appName = generateLatchkeyAppName(serviceSuffix);
+        // Use a deterministic project name (e.g. "Latchkey-gmail") rather than
+        // one with date/random bits: projects are now reused per service, so a
+        // stable name keeps the reuse lookup predictable. Google still derives
+        // a globally-unique project ID from this display name on its own.
+        const appName = `${this.appNamePrefix}${serviceSuffix}`;
         // Google limits the OAuth project name to 30 characters.
         if (appName.length > 30) {
           throw new LoginFailedError(
             `Generated app name "${appName}" exceeds Google OAuth project name limit of 30 characters.`
           );
         }
-        const projectSlug = await createProject(page, appName);
-        for (const api of this.config.apis) {
-          await enableApi(page, projectSlug, api);
-        }
+        projectSlug = await createProject(page, appName);
         const { isExternalApp, supportEmail } = await configureBranding(page, projectSlug, appName);
         if (isExternalApp && supportEmail) {
           await addTestUser(page, projectSlug, supportEmail);
         }
+      } else {
+        projectSlug = existingProjectSlug;
       }
 
-      const { clientId, clientSecret } = await createOAuthClient(page, serviceSuffix);
+      // Always make sure every required API is enabled, whether the project was
+      // just created or reused. A reused project might be a half-configured
+      // leftover from a previous run that crashed before all APIs were turned
+      // on; enableApi is idempotent and returns immediately when an API is
+      // already enabled, so re-running it is cheap and self-healing.
+      for (const api of this.config.apis) {
+        await enableApi(page, projectSlug, api);
+      }
+
+      const { clientId, clientSecret } = await createOAuthClient(
+        page,
+        serviceSuffix,
+        this.appNamePrefix
+      );
       await page.close();
       return new OAuthCredentials(clientId, clientSecret);
     });
@@ -749,8 +770,8 @@ export abstract class GoogleService extends Service {
     return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
   }
 
-  override getSession(): GoogleServiceSession {
-    return new GoogleServiceSession(this, this.config);
+  override getSession(appNamePrefix: string): GoogleServiceSession {
+    return new GoogleServiceSession(this, this.config, appNamePrefix);
   }
 
   override refreshCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentials | null> {

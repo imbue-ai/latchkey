@@ -8,7 +8,6 @@
 import type { Browser, BrowserContext, Response } from 'playwright';
 import { type ApiCredentials, OAuthCredentials } from '../apiCredentials/base.js';
 import { runCaptured } from '../curl.js';
-import { generateLatchkeyAppName } from '../playwrightUtils.js';
 import {
   exchangeCodeForTokens,
   generateCodeChallenge,
@@ -34,9 +33,9 @@ interface RegistrationResponse {
   client_name?: string;
 }
 
-function registerClient(redirectUri: string): RegistrationResponse {
+function registerClient(redirectUri: string, clientName: string): RegistrationResponse {
   const body = JSON.stringify({
-    client_name: generateLatchkeyAppName('-mcp'),
+    client_name: clientName,
     redirect_uris: [redirectUri],
     grant_types: ['authorization_code', 'refresh_token'],
     response_types: ['code'],
@@ -119,7 +118,7 @@ class NotionMcpSession extends ServiceSession {
         if (oldCredentials instanceof OAuthCredentials && oldCredentials.clientId) {
           clientId = oldCredentials.clientId;
         } else {
-          const registration = registerClient(redirectUri);
+          const registration = registerClient(redirectUri, this.generateAppName('-mcp'));
           clientId = registration.client_id;
         }
 
@@ -205,8 +204,8 @@ export class NotionMcp extends Service {
     return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
   }
 
-  override getSession(): NotionMcpSession {
-    return new NotionMcpSession(this);
+  override getSession(appNamePrefix: string): NotionMcpSession {
+    return new NotionMcpSession(this, appNamePrefix);
   }
 
   override refreshCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentials | null> {

@@ -11,6 +11,7 @@ import {
 import { runCaptured } from '../../curl.js';
 import { EncryptedStorage } from '../../encryptedStorage.js';
 import {
+  generateLatchkeyAppName,
   showSpinnerPage,
   withTempBrowserContext,
   type BrowserLaunchOptions,
@@ -128,8 +129,9 @@ export abstract class Service {
   /**
    * Get a new session for the login flow.
    * Services that don't support browser login should not implement this method.
+   * @param appNamePrefix - Prefix to use for app/project/token names created during login.
    */
-  getSession?(): ServiceSession;
+  getSession?(appNamePrefix: string): ServiceSession;
 
   /**
    * Optional method to refresh expired credentials.
@@ -146,9 +148,18 @@ export abstract class Service {
  */
 export abstract class ServiceSession {
   readonly service: Service;
+  protected readonly appNamePrefix: string;
 
-  constructor(service: Service) {
+  constructor(service: Service, appNamePrefix: string) {
     this.service = service;
+    this.appNamePrefix = appNamePrefix;
+  }
+
+  /**
+   * Generate a random, unique app name using the session's configured prefix.
+   */
+  protected generateAppName(suffix?: string): string {
+    return generateLatchkeyAppName(this.appNamePrefix, suffix);
   }
 
   /**
