@@ -7,6 +7,21 @@
  * which surface a clear, actionable error when the modules cannot be
  * resolved at runtime (i.e. when a user is running the standalone binary
  * instead of the `npm install -g latchkey` distribution).
+ *
+ * Playwright-core 1.60 restructured its internals: the symbols we used
+ * to import from ``lib/server/registry/index`` (the ``registry``
+ * instance) and ``lib/zipBundle`` (the ``extract`` function) now live
+ * inside ``lib/coreBundle`` as ``coreBundle.default.registry.registry``
+ * and ``coreBundle.default.utils.extractZip``. The old subpaths are no
+ * longer in playwright-core's ``package.json#exports`` map, so any
+ * import that names them throws ``ERR_PACKAGE_PATH_NOT_EXPORTED`` —
+ * which our caller surfaces as ``BrowserFeaturesUnavailableError`` and
+ * the user sees as "Browser-based features are not available in the
+ * standalone latchkey binary" even though both ``playwright`` and
+ * ``playwright-core`` resolve fine. Loading via ``lib/coreBundle``
+ * (which IS in the exports map) and adapting the returned namespace
+ * keeps the original ``{ registry }`` / ``{ extract }`` shape that
+ * playwrightDownload.ts destructures.
  */
 
 export class BrowserFeaturesUnavailableError extends Error {
@@ -32,22 +47,35 @@ export async function loadPlaywright(): Promise<typeof import('playwright')> {
   }
 }
 
-export async function loadPlaywrightRegistry(): Promise<
-  typeof import('playwright-core/lib/server/registry/index')
-> {
+interface PlaywrightCoreBundle {
+  default: {
+    registry: {
+      registry: unknown;
+    };
+    utils: {
+      extractZip: (zipPath: string, options: { dir: string }) => Promise<void>;
+    };
+  };
+}
+
+async function loadPlaywrightCoreBundle(): Promise<PlaywrightCoreBundle> {
   try {
-    return await import('playwright-core/lib/server/registry/index');
+    return (await import('playwright-core/lib/coreBundle')) as unknown as PlaywrightCoreBundle;
   } catch (error) {
     throw new BrowserFeaturesUnavailableError(error);
   }
 }
 
-export async function loadPlaywrightZipBundle(): Promise<
-  typeof import('playwright-core/lib/zipBundle')
-> {
-  try {
-    return await import('playwright-core/lib/zipBundle');
-  } catch (error) {
-    throw new BrowserFeaturesUnavailableError(error);
-  }
+export async function loadPlaywrightRegistry(): Promise<{ registry: unknown }> {
+  const cb = await loadPlaywrightCoreBundle();
+  return { registry: cb.default.registry.registry };
 }
+
+export async function loadPlaywrightZipBundle(): Promise<{
+  extract: (zipPath: string, options: { dir: string }) => Promise<void>;
+}> {
+  const cb = await loadPlaywrightCoreBundle();
+  return { extract: cb.default.utils.extractZip };
+}
+</content>
+</invoke>
