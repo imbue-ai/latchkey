@@ -61,7 +61,7 @@
     "@imbue-ai/detent": "^1.4.0",
     "@napi-rs/keyring": "^1.2.0",
     "commander": "^12.0.0",
-    "playwright": "^1.60.0",
+    "playwright": "~1.60.0",
     "zod": "^3.22.0"
   },
   "devDependencies": {
