@@ -47,14 +47,14 @@ export async function loadPlaywright(): Promise<typeof import('playwright')> {
   }
 }
 
-interface PlaywrightExecutable {
+export interface PlaywrightExecutable {
   name: string;
   directory?: string;
   executablePath(sdkLanguage: string): string | undefined;
   downloadURLs?: string[];
 }
 
-interface PlaywrightRegistry {
+export interface PlaywrightRegistry {
   findExecutable(name: string): PlaywrightExecutable | undefined;
 }
 
