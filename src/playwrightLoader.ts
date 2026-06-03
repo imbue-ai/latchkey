@@ -8,10 +8,9 @@
  * resolved at runtime (i.e. when a user is running the standalone binary
  * instead of the `npm install -g latchkey` distribution).
  *
- * The registry instance and zip `extract` function live inside
- * `lib/coreBundle`; the more specific subpaths that expose them
- * directly are absent from playwright-core's `package.json#exports`
- * map, so importing them throws `ERR_PACKAGE_PATH_NOT_EXPORTED`.
+ * The registry instance and zip `extract` function are read from
+ * `lib/coreBundle`, the only subpath in playwright-core's
+ * `package.json#exports` that still reaches them.
  */
 
 export class BrowserFeaturesUnavailableError extends Error {
