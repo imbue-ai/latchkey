@@ -77,5 +77,3 @@ export async function loadPlaywrightZipBundle(): Promise<{
   const cb = await loadPlaywrightCoreBundle();
   return { extract: cb.default.utils.extractZip };
 }
-</content>
-</invoke>
