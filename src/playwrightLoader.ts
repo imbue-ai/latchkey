@@ -47,10 +47,21 @@ export async function loadPlaywright(): Promise<typeof import('playwright')> {
   }
 }
 
+interface PlaywrightExecutable {
+  name: string;
+  directory?: string;
+  executablePath(sdkLanguage: string): string | undefined;
+  downloadURLs?: string[];
+}
+
+interface PlaywrightRegistry {
+  findExecutable(name: string): PlaywrightExecutable | undefined;
+}
+
 interface PlaywrightCoreBundle {
   default: {
     registry: {
-      registry: unknown;
+      registry: PlaywrightRegistry;
     };
     utils: {
       extractZip: (zipPath: string, options: { dir: string }) => Promise<void>;
@@ -66,7 +77,7 @@ async function loadPlaywrightCoreBundle(): Promise<PlaywrightCoreBundle> {
   }
 }
 
-export async function loadPlaywrightRegistry(): Promise<{ registry: unknown }> {
+export async function loadPlaywrightRegistry(): Promise<{ registry: PlaywrightRegistry }> {
   const cb = await loadPlaywrightCoreBundle();
   return { registry: cb.default.registry.registry };
 }
