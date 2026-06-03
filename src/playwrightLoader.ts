@@ -8,20 +8,10 @@
  * resolved at runtime (i.e. when a user is running the standalone binary
  * instead of the `npm install -g latchkey` distribution).
  *
- * Playwright-core 1.60 restructured its internals: the symbols we used
- * to import from ``lib/server/registry/index`` (the ``registry``
- * instance) and ``lib/zipBundle`` (the ``extract`` function) now live
- * inside ``lib/coreBundle`` as ``coreBundle.default.registry.registry``
- * and ``coreBundle.default.utils.extractZip``. The old subpaths are no
- * longer in playwright-core's ``package.json#exports`` map, so any
- * import that names them throws ``ERR_PACKAGE_PATH_NOT_EXPORTED`` —
- * which our caller surfaces as ``BrowserFeaturesUnavailableError`` and
- * the user sees as "Browser-based features are not available in the
- * standalone latchkey binary" even though both ``playwright`` and
- * ``playwright-core`` resolve fine. Loading via ``lib/coreBundle``
- * (which IS in the exports map) and adapting the returned namespace
- * keeps the original ``{ registry }`` / ``{ extract }`` shape that
- * playwrightDownload.ts destructures.
+ * The registry instance and zip ``extract`` function live inside
+ * ``lib/coreBundle``; the more specific subpaths that expose them
+ * directly are absent from playwright-core's ``package.json#exports``
+ * map, so importing them throws ``ERR_PACKAGE_PATH_NOT_EXPORTED``.
  */
 
 export class BrowserFeaturesUnavailableError extends Error {
@@ -47,45 +37,22 @@ export async function loadPlaywright(): Promise<typeof import('playwright')> {
   }
 }
 
-export interface PlaywrightExecutable {
-  name: string;
-  directory?: string;
-  executablePath(sdkLanguage: string): string | undefined;
-  downloadURLs?: string[];
-}
-
-export interface PlaywrightRegistry {
-  findExecutable(name: string): PlaywrightExecutable | undefined;
-}
-
-interface PlaywrightCoreBundle {
-  default: {
-    registry: {
-      registry: PlaywrightRegistry;
-    };
-    utils: {
-      extractZip: (zipPath: string, options: { dir: string }) => Promise<void>;
-    };
-  };
-}
-
-async function loadPlaywrightCoreBundle(): Promise<PlaywrightCoreBundle> {
+async function loadPlaywrightCoreBundle(): Promise<
+  typeof import('playwright-core/lib/coreBundle').default
+> {
   try {
-    // @ts-expect-error - playwright-core ships no type declarations for this internal subpath
-    return (await import('playwright-core/lib/coreBundle')) as unknown as PlaywrightCoreBundle;
+    return (await import('playwright-core/lib/coreBundle')).default;
   } catch (error) {
     throw new BrowserFeaturesUnavailableError(error);
   }
 }
 
-export async function loadPlaywrightRegistry(): Promise<{ registry: PlaywrightRegistry }> {
-  const cb = await loadPlaywrightCoreBundle();
-  return { registry: cb.default.registry.registry };
+export async function loadPlaywrightRegistry() {
+  const coreBundle = await loadPlaywrightCoreBundle();
+  return { registry: coreBundle.registry.registry };
 }
 
-export async function loadPlaywrightZipBundle(): Promise<{
-  extract: (zipPath: string, options: { dir: string }) => Promise<void>;
-}> {
-  const cb = await loadPlaywrightCoreBundle();
-  return { extract: cb.default.utils.extractZip };
+export async function loadPlaywrightZipBundle() {
+  const coreBundle = await loadPlaywrightCoreBundle();
+  return { extract: coreBundle.utils.extractZip };
 }

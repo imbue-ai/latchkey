@@ -1,7 +1,7 @@
 /**
  * Type declarations for internal playwright-core modules.
  */
-declare module 'playwright-core/lib/server/registry/index' {
+declare module 'playwright-core/lib/coreBundle' {
   export interface Executable {
     name: string;
     directory: string | undefined;
@@ -13,11 +13,15 @@ declare module 'playwright-core/lib/server/registry/index' {
     findExecutable(name: string): Executable | undefined;
   }
 
-  export const registry: Registry;
+  export interface CoreBundle {
+    registry: {
+      registry: Registry;
+    };
+    utils: {
+      extractZip: (zipPath: string, options: { dir: string }) => Promise<void>;
+    };
+  }
 
-  export function installBrowsersForNpmInstall(browsers: string[]): Promise<void>;
-}
-
-declare module 'playwright-core/lib/zipBundle' {
-  export function extract(zipPath: string, options: { dir: string }): Promise<void>;
+  const coreBundle: CoreBundle;
+  export default coreBundle;
 }
