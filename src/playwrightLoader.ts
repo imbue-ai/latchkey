@@ -71,6 +71,7 @@ interface PlaywrightCoreBundle {
 
 async function loadPlaywrightCoreBundle(): Promise<PlaywrightCoreBundle> {
   try {
+    // @ts-expect-error - playwright-core ships no type declarations for this internal subpath
     return (await import('playwright-core/lib/coreBundle')) as unknown as PlaywrightCoreBundle;
   } catch (error) {
     throw new BrowserFeaturesUnavailableError(error);
