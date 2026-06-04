@@ -70,7 +70,7 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
     await createButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await createButton.click();
 
-    await page.waitForURL(/https:\/\/www\.dropbox\.com\/developers\/apps\/info\//, {
+    await page.waitForURL(/https:\/\/www\.dropbox\.com\/developers\/apps\/info\b/, {
       timeout: DEFAULT_TIMEOUT_MS,
     });
 
