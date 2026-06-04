@@ -31,6 +31,7 @@ import {
   isBrowserClosedError,
 } from '../core/base.js';
 import type { EncryptedStorage } from '../../encryptedStorage.js';
+import { DEFAULT_APP_NAME_PREFIX } from '../../config.js';
 
 /**
  * Google API key credentials.
@@ -216,8 +217,15 @@ async function findExistingLatchkeyProject(
   // date/random segment between the prefix and the service suffix, so both the
   // new ("Latchkey-calendar") and legacy ("Latchkey-06-01-ab-calendar") naming
   // schemes match.
+  //
+  // We accept either the configured (possibly overridden) prefix or the
+  // literal default "Latchkey" prefix: a project may have been created before
+  // the override was configured, and reusing it is still preferable to
+  // allocating a new one against Google's per-account project cap.
+  const prefixes = [...new Set([appNamePrefix, DEFAULT_APP_NAME_PREFIX])];
+  const prefixAlternation = prefixes.map(escapeRegExp).join('|');
   const suffixPattern = new RegExp(
-    `^\\s*${escapeRegExp(appNamePrefix)}.*${escapeRegExp(serviceSuffix)}\\s*$`
+    `^\\s*(?:${prefixAlternation}).*${escapeRegExp(serviceSuffix)}\\s*$`
   );
   const latchkeyTitle = page
     .locator('.cfc-resource-card-header-title')

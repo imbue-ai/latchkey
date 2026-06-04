@@ -7,6 +7,10 @@
  * which surface a clear, actionable error when the modules cannot be
  * resolved at runtime (i.e. when a user is running the standalone binary
  * instead of the `npm install -g latchkey` distribution).
+ *
+ * The registry instance and zip `extract` function are read from
+ * `lib/coreBundle`, the only subpath in playwright-core's
+ * `package.json#exports` that still reaches them.
  */
 
 export class BrowserFeaturesUnavailableError extends Error {
@@ -32,22 +36,22 @@ export async function loadPlaywright(): Promise<typeof import('playwright')> {
   }
 }
 
-export async function loadPlaywrightRegistry(): Promise<
-  typeof import('playwright-core/lib/server/registry/index')
+async function loadPlaywrightCoreBundle(): Promise<
+  typeof import('playwright-core/lib/coreBundle').default
 > {
   try {
-    return await import('playwright-core/lib/server/registry/index');
+    return (await import('playwright-core/lib/coreBundle')).default;
   } catch (error) {
     throw new BrowserFeaturesUnavailableError(error);
   }
 }
 
-export async function loadPlaywrightZipBundle(): Promise<
-  typeof import('playwright-core/lib/zipBundle')
-> {
-  try {
-    return await import('playwright-core/lib/zipBundle');
-  } catch (error) {
-    throw new BrowserFeaturesUnavailableError(error);
-  }
+export async function loadPlaywrightRegistry() {
+  const coreBundle = await loadPlaywrightCoreBundle();
+  return { registry: coreBundle.registry.registry };
+}
+
+export async function loadPlaywrightZipBundle() {
+  const coreBundle = await loadPlaywrightCoreBundle();
+  return { extract: coreBundle.utils.extractZip };
 }
