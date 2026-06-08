@@ -300,7 +300,7 @@ async function enableApi(page: Page, projectSlug: string, apiName: string): Prom
     }
   );
 
-  const successIcon = page.locator('.cfc-icon-status-success');
+  const successIcon = page.locator('.cfc-product-header-content .cfc-icon-status-success');
   const enableButton = page
     .locator('.mp-details-cta-button-primary button .mdc-button__label')
     .filter({ visible: true });
