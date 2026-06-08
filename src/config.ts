@@ -40,6 +40,7 @@ const LATCHKEY_KEYRING_SERVICE_NAME_ENV_VAR = 'LATCHKEY_KEYRING_SERVICE_NAME';
 const LATCHKEY_KEYRING_ACCOUNT_NAME_ENV_VAR = 'LATCHKEY_KEYRING_ACCOUNT_NAME';
 const LATCHKEY_DISABLE_BROWSER_ENV_VAR = 'LATCHKEY_DISABLE_BROWSER';
 const LATCHKEY_DISABLE_COUNTING_ENV_VAR = 'LATCHKEY_DISABLE_COUNTING';
+const LATCHKEY_DISABLE_CREDENTIALS_REFRESH_ENV_VAR = 'LATCHKEY_DISABLE_CREDENTIALS_REFRESH';
 const LATCHKEY_PERMISSIONS_CONFIG_ENV_VAR = 'LATCHKEY_PERMISSIONS_CONFIG';
 const LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS_ENV_VAR =
   'LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS';
@@ -184,6 +185,12 @@ export class Config {
    */
   readonly countingDisabled: boolean;
   /**
+   * When true, expired credentials are never refreshed. This is useful when the
+   * credentials are shared with another machine and refreshing here would risk
+   * exhausting the refresh token.
+   */
+  readonly credentialsRefreshDisabled: boolean;
+  /**
    * Override for the permissions config file path.
    * When set, this path is used instead of the default LATCHKEY_DIRECTORY/permissions.json.
    */
@@ -280,6 +287,10 @@ export class Config {
     this.countingDisabled = resolveBoolean(
       getEnv(LATCHKEY_DISABLE_COUNTING_ENV_VAR),
       settings.countingDisabled
+    );
+    this.credentialsRefreshDisabled = resolveBoolean(
+      getEnv(LATCHKEY_DISABLE_CREDENTIALS_REFRESH_ENV_VAR),
+      settings.credentialsRefreshDisabled
     );
     this.permissionsDoNotUseBuiltinSchemas = resolveBoolean(
       getEnv(LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS_ENV_VAR),

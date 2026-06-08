@@ -341,6 +341,7 @@ export async function handleGatewayRequest(
       permissionsConfigPath,
       permissionsDoNotUseBuiltinSchemas: deps.config.permissionsDoNotUseBuiltinSchemas,
       passthroughUnknown: deps.config.passthroughUnknown,
+      credentialsRefreshDisabled: deps.config.credentialsRefreshDisabled,
     });
   } catch (error) {
     if (error instanceof RequestNotPermittedError) {

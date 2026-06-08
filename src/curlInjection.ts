@@ -76,6 +76,7 @@ export interface CurlInjectionDependencies {
   readonly permissionsConfigPath: string;
   readonly permissionsDoNotUseBuiltinSchemas: boolean;
   readonly passthroughUnknown: boolean;
+  readonly credentialsRefreshDisabled: boolean;
 }
 
 /**
@@ -141,7 +142,12 @@ export async function prepareCurlInvocation(
   }
 
   if (apiCredentials.isExpired() === true) {
-    apiCredentials = await maybeRefreshCredentials(service, apiCredentials, apiCredentialStore);
+    apiCredentials = await maybeRefreshCredentials(
+      service,
+      apiCredentials,
+      apiCredentialStore,
+      dependencies.credentialsRefreshDisabled
+    );
     if (apiCredentials.isExpired() === true) {
       throw new CredentialsExpiredError(service.name);
     }

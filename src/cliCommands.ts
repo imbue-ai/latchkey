@@ -482,7 +482,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         deps.config.credentialStorePath,
         encryptedStorage
       );
-      const entries = await authList(deps.registry, apiCredentialStore);
+      const entries = await authList(deps.registry, apiCredentialStore, deps.config);
       deps.log(JSON.stringify(entries, null, 2));
     });
 
@@ -779,6 +779,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           permissionsConfigPath: deps.config.permissionsConfigPath,
           permissionsDoNotUseBuiltinSchemas: deps.config.permissionsDoNotUseBuiltinSchemas,
           passthroughUnknown: deps.config.passthroughUnknown,
+          credentialsRefreshDisabled: deps.config.credentialsRefreshDisabled,
         });
       } catch (error) {
         if (error instanceof RequestNotPermittedError) {

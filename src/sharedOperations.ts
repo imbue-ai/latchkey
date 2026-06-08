@@ -131,7 +131,12 @@ export async function servicesInfo(
   const authOptions = supportsBrowser ? ['browser', 'set'] : ['set'];
 
   const apiCredentials = apiCredentialStore.get(serviceName);
-  const credentialStatus = await getCredentialStatus(service, apiCredentials, apiCredentialStore);
+  const credentialStatus = await getCredentialStatus(
+    service,
+    apiCredentials,
+    apiCredentialStore,
+    config.credentialsRefreshDisabled
+  );
 
   const serviceType = service instanceof RegisteredService ? 'user-registered' : 'built-in';
 
@@ -147,7 +152,8 @@ export async function servicesInfo(
 
 export async function authList(
   registry: ServiceRegistry,
-  apiCredentialStore: ApiCredentialStore
+  apiCredentialStore: ApiCredentialStore,
+  config: Config
 ): Promise<Record<string, { credentialType: string; credentialStatus: ApiCredentialStatus }>> {
   const allCredentials = apiCredentialStore.getAll();
 
@@ -159,7 +165,12 @@ export async function authList(
       const service = registry.getByName(serviceName);
       const credentialStatus =
         service !== null
-          ? await getCredentialStatus(service, credentials, apiCredentialStore)
+          ? await getCredentialStatus(
+              service,
+              credentials,
+              apiCredentialStore,
+              config.credentialsRefreshDisabled
+            )
           : ApiCredentialStatus.Valid;
 
       return [serviceName, { credentialType: credentials.objectType, credentialStatus }];

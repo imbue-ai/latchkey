@@ -377,6 +377,7 @@ defaults:
 - `LATCHKEY_ENCRYPTION_KEY`: override the encryption key, e.g. when a keyring is not available. Example: `export LATCHKEY_ENCRYPTION_KEY="$(openssl rand -base64 32)"`
 - `LATCHKEY_DISABLE_BROWSER`: when set to a non-empty value, disables the browser login flow; commands that would trigger a browser login (`auth browser`, `auth browser-prepare`) will fail with an error instead
 - `LATCHKEY_DISABLE_COUNTING`: when set to a non-empty value, disables daily usage counting.
+- `LATCHKEY_DISABLE_CREDENTIALS_REFRESH`: when set to a non-empty value, expired credentials are never refreshed. (Useful when the credentials are shared and refreshing in one place would risk exhausting the refresh token for the other one.)
 - `LATCHKEY_PERMISSIONS_CONFIG`: override the `permissions.json` location.
 - `LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS`: do not use the built-in permission definitions.
 - `LATCHKEY_PASSTHROUGH_UNKNOWN`: if set, Latchkey will forward requests (via `latchkey curl` or gateway) even if no credentials are injected.
