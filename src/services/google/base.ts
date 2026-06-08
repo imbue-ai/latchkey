@@ -267,7 +267,6 @@ async function createProject(page: Page, appName: string): Promise<string> {
   await projectNameInput.clear();
   await typeLikeHuman(page, projectNameInput, appName);
 
-
   // Angular form sometimes fails to commit the typed value to its internal
   // state, causing submit to report "fields not correct" even though the
   // input is visibly populated. Deleting and retyping the last character
