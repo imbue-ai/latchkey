@@ -41,6 +41,7 @@ describe('Config with config.json settings', () => {
     expect(config.accountName).toBe(DEFAULT_KEYRING_ACCOUNT_NAME);
     expect(config.browserDisabled).toBe(false);
     expect(config.countingDisabled).toBe(false);
+    expect(config.credentialsRefreshDisabled).toBe(false);
     expect(config.permissionsConfigOverride).toBeNull();
     expect(config.permissionsDoNotUseBuiltinSchemas).toBe(false);
     expect(config.passthroughUnknown).toBe(false);
@@ -57,6 +58,7 @@ describe('Config with config.json settings', () => {
       keyringAccountName: 'file-account',
       browserDisabled: true,
       countingDisabled: true,
+      credentialsRefreshDisabled: true,
       permissionsConfig: '/etc/latchkey/perm.json',
       permissionsDoNotUseBuiltinSchemas: true,
       passthroughUnknown: true,
@@ -72,6 +74,7 @@ describe('Config with config.json settings', () => {
     expect(config.accountName).toBe('file-account');
     expect(config.browserDisabled).toBe(true);
     expect(config.countingDisabled).toBe(true);
+    expect(config.credentialsRefreshDisabled).toBe(true);
     expect(config.permissionsConfigOverride).toBe('/etc/latchkey/perm.json');
     expect(config.permissionsDoNotUseBuiltinSchemas).toBe(true);
     expect(config.passthroughUnknown).toBe(true);
@@ -108,6 +111,7 @@ describe('Config with config.json settings', () => {
       LATCHKEY_KEYRING_ACCOUNT_NAME: 'env-account',
       LATCHKEY_DISABLE_BROWSER: '1',
       LATCHKEY_DISABLE_COUNTING: '1',
+      LATCHKEY_DISABLE_CREDENTIALS_REFRESH: '1',
       LATCHKEY_PERMISSIONS_CONFIG: '/env/perm.json',
       LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS: '1',
       LATCHKEY_PASSTHROUGH_UNKNOWN: '1',
@@ -121,6 +125,7 @@ describe('Config with config.json settings', () => {
     expect(config.accountName).toBe('env-account');
     expect(config.browserDisabled).toBe(true);
     expect(config.countingDisabled).toBe(true);
+    expect(config.credentialsRefreshDisabled).toBe(true);
     expect(config.permissionsConfigOverride).toBe('/env/perm.json');
     expect(config.permissionsDoNotUseBuiltinSchemas).toBe(true);
     expect(config.passthroughUnknown).toBe(true);

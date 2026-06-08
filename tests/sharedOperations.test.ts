@@ -192,7 +192,7 @@ describe('operations', () => {
         slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
       });
 
-      const result = await authList(registry, store);
+      const result = await authList(registry, store, createMockConfig());
 
       expect(result.slack).toEqual({
         credentialType: 'slack',
@@ -204,7 +204,7 @@ describe('operations', () => {
       const registry = new ServiceRegistry([]);
       const store = createApiCredentialStore({});
 
-      const result = await authList(registry, store);
+      const result = await authList(registry, store, createMockConfig());
 
       expect(Object.keys(result)).toHaveLength(0);
     });
@@ -215,7 +215,7 @@ describe('operations', () => {
         unknown: { objectType: 'rawCurl', curlArguments: ['-H', 'X-Token: secret'] },
       });
 
-      const result = await authList(registry, store);
+      const result = await authList(registry, store, createMockConfig());
 
       expect(result.unknown).toEqual({
         credentialType: 'rawCurl',

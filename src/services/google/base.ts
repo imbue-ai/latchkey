@@ -267,23 +267,44 @@ async function createProject(page: Page, appName: string): Promise<string> {
   await projectNameInput.clear();
   await typeLikeHuman(page, projectNameInput, appName);
 
-  await new Promise((resolve) => setTimeout(resolve, 300));
-
   // Angular form sometimes fails to commit the typed value to its internal
   // state, causing submit to report "fields not correct" even though the
   // input is visibly populated. Deleting and retyping the last character
   // forces the form state to update.
+  // (Sprinkle small delays between actions to try to battle emprically observed flakiness.)
   const lastChar = appName.slice(-1);
+  await new Promise((resolve) => setTimeout(resolve, 192));
   await projectNameInput.press('End');
+  await new Promise((resolve) => setTimeout(resolve, 256));
   await projectNameInput.press('Backspace');
+  await new Promise((resolve) => setTimeout(resolve, 128));
   await projectNameInput.pressSequentially(lastChar);
 
+  await new Promise((resolve) => setTimeout(resolve, 256));
   const createButton = page.locator('button[type="submit"]');
   await createButton.click();
 
-  await page.waitForURL('https://console.cloud.google.com/home/dashboard?project=**', {
-    timeout: 32000,
-  });
+  const dashboardUrl = 'https://console.cloud.google.com/home/dashboard?project=**';
+  const submissionError = page.locator('.cfc-form-submission-error');
+
+  // Submitting the form occasionally surfaces a transient submission error
+  // instead of navigating. When that happens, wait a moment and click again.
+  const navigation = page
+    .waitForURL(dashboardUrl, { timeout: 32000 })
+    .then(() => 'navigated' as const);
+  const errorAppeared = submissionError
+    .waitFor({ state: 'visible', timeout: 32000 })
+    .then(() => 'error' as const)
+    .catch(() => 'navigated' as const);
+  const outcome = await Promise.race([navigation, errorAppeared]);
+
+  if (outcome === 'error') {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await createButton.click();
+    await page.waitForURL(dashboardUrl, {
+      timeout: 32000,
+    });
+  }
   const urlObj = new URL(page.url());
   const projectId = urlObj.searchParams.get('project');
   if (!projectId) {
@@ -300,7 +321,7 @@ async function enableApi(page: Page, projectSlug: string, apiName: string): Prom
     }
   );
 
-  const successIcon = page.locator('.cfc-icon-status-success');
+  const successIcon = page.locator('.cfc-product-header-content .cfc-icon-status-success');
   const enableButton = page
     .locator('.mp-details-cta-button-primary button .mdc-button__label')
     .filter({ visible: true });

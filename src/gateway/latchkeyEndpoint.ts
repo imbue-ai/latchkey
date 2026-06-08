@@ -135,7 +135,7 @@ async function dispatch(
       );
 
     case 'auth list':
-      return authList(deps.registry, apiCredentialStore);
+      return authList(deps.registry, apiCredentialStore, deps.config);
 
     case 'auth browser':
       await authBrowser(
