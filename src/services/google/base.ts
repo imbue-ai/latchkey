@@ -285,9 +285,27 @@ async function createProject(page: Page, appName: string): Promise<string> {
   const createButton = page.locator('button[type="submit"]');
   await createButton.click();
 
-  await page.waitForURL('https://console.cloud.google.com/home/dashboard?project=**', {
-    timeout: 32000,
-  });
+  const dashboardUrl = 'https://console.cloud.google.com/home/dashboard?project=**';
+  const submissionError = page.locator('.cfc-form-submission-error');
+
+  // Submitting the form occasionally surfaces a transient submission error
+  // instead of navigating. When that happens, wait a moment and click again.
+  const navigation = page
+    .waitForURL(dashboardUrl, { timeout: 32000 })
+    .then(() => 'navigated' as const);
+  const errorAppeared = submissionError
+    .waitFor({ state: 'visible', timeout: 32000 })
+    .then(() => 'error' as const)
+    .catch(() => 'navigated' as const);
+  const outcome = await Promise.race([navigation, errorAppeared]);
+
+  if (outcome === 'error') {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await createButton.click();
+    await page.waitForURL(dashboardUrl, {
+      timeout: 32000,
+    });
+  }
   const urlObj = new URL(page.url());
   const projectId = urlObj.searchParams.get('project');
   if (!projectId) {
