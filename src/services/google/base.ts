@@ -267,17 +267,21 @@ async function createProject(page: Page, appName: string): Promise<string> {
   await projectNameInput.clear();
   await typeLikeHuman(page, projectNameInput, appName);
 
-  await new Promise((resolve) => setTimeout(resolve, 300));
 
   // Angular form sometimes fails to commit the typed value to its internal
   // state, causing submit to report "fields not correct" even though the
   // input is visibly populated. Deleting and retyping the last character
   // forces the form state to update.
+  // (Sprinkle small delays between actions to try to battle emprically observed flakiness.)
   const lastChar = appName.slice(-1);
+  await new Promise((resolve) => setTimeout(resolve, 192));
   await projectNameInput.press('End');
+  await new Promise((resolve) => setTimeout(resolve, 256));
   await projectNameInput.press('Backspace');
+  await new Promise((resolve) => setTimeout(resolve, 128));
   await projectNameInput.pressSequentially(lastChar);
 
+  await new Promise((resolve) => setTimeout(resolve, 256));
   const createButton = page.locator('button[type="submit"]');
   await createButton.click();
 
