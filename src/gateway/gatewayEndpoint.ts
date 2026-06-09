@@ -335,14 +335,23 @@ export async function handleGatewayRequest(
 
   let allArguments: readonly string[];
   try {
-    allArguments = await prepareCurlInvocation(curlArguments, apiCredentialStore, {
-      registry: deps.registry,
-      checkPermission: deps.checkPermission,
-      permissionsConfigPath,
-      permissionsDoNotUseBuiltinSchemas: deps.config.permissionsDoNotUseBuiltinSchemas,
-      passthroughUnknown: deps.config.passthroughUnknown,
-      credentialsRefreshDisabled: deps.config.credentialsRefreshDisabled,
-    });
+    allArguments = await prepareCurlInvocation(
+      curlArguments,
+      apiCredentialStore,
+      {
+        registry: deps.registry,
+        checkPermission: deps.checkPermission,
+        permissionsConfigPath,
+        permissionsDoNotUseBuiltinSchemas: deps.config.permissionsDoNotUseBuiltinSchemas,
+        passthroughUnknown: deps.config.passthroughUnknown,
+        credentialsRefreshDisabled: deps.config.credentialsRefreshDisabled,
+      },
+      // The gateway forwards the body to curl out-of-band via
+      // `--data-binary @-` on stdin, so the parsed curl arguments only carry
+      // the `@-` placeholder. Hand the real body to the permission check so it
+      // inspects the actual payload.
+      body
+    );
   } catch (error) {
     if (error instanceof RequestNotPermittedError) {
       deps.log(`${method} ${targetUrl} -> 403`);

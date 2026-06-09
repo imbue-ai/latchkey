@@ -88,7 +88,16 @@ export interface CurlInjectionDependencies {
 export async function prepareCurlInvocation(
   curlArguments: readonly string[],
   apiCredentialStore: ApiCredentialStore,
-  dependencies: CurlInjectionDependencies
+  dependencies: CurlInjectionDependencies,
+  /**
+   * The actual request body, when the caller has it available in memory but
+   * passes it to curl out-of-band (e.g. the gateway streams it via
+   * `--data-binary @-` on stdin). In that case the parsed curl arguments only
+   * contain the placeholder `@-`, so the permission check would otherwise see
+   * `"@-"` as the body. Supplying it here lets the permission check inspect
+   * the real body without changing how curl is actually invoked.
+   */
+  requestBodyForPermissionCheck?: Buffer | null
 ): Promise<readonly string[]> {
   // Parse the curl arguments once for the permission check. A parse failure
   // here means the user's curl invocation is malformed, which is treated as
@@ -102,6 +111,15 @@ export async function prepareCurlInvocation(
       throw new UrlExtractionFailedError(error.message);
     }
     throw error;
+  }
+  // When the real body was supplied out-of-band, rebuild the request so the
+  // permission check sees the actual payload instead of the `@-` placeholder.
+  if (requestBodyForPermissionCheck !== undefined && requestBodyForPermissionCheck !== null) {
+    parsedRequest = new Request(parsedRequest.url, {
+      method: parsedRequest.method,
+      headers: parsedRequest.headers,
+      body: requestBodyForPermissionCheck,
+    });
   }
   const allowed = await dependencies.checkPermission(
     parsedRequest,
