@@ -189,6 +189,7 @@ describe('gateway server', () => {
   let errorLogs: string[];
   let capturedCurlArgs: readonly string[];
   let capturedCurlStdin: Buffer | undefined;
+  let capturedPermissionCheckBody: string | undefined;
   let mockCurlResponse: AsyncCurlResult;
   let mockCurlHeaderDump: string;
   let mockPermissionResult: boolean;
@@ -260,7 +261,10 @@ describe('gateway server', () => {
 
         return mockCurlResponse;
       },
-      checkPermission: () => Promise.resolve(mockPermissionResult),
+      checkPermission: async (request: Request): Promise<boolean> => {
+        capturedPermissionCheckBody = await request.clone().text();
+        return mockPermissionResult;
+      },
       confirm: () => Promise.resolve(true),
       exit: (code: number): never => {
         throw new Error(`process.exit(${String(code)})`);
@@ -310,6 +314,7 @@ describe('gateway server', () => {
     errorLogs = [];
     capturedCurlArgs = [];
     capturedCurlStdin = undefined;
+    capturedPermissionCheckBody = undefined;
     mockPermissionResult = true;
     mockCurlResponse = {
       returncode: 0,
@@ -381,6 +386,22 @@ describe('gateway server', () => {
       expect(capturedCurlArgs).toContain('--data-binary');
       expect(capturedCurlArgs).toContain('@-');
       expect(capturedCurlStdin?.toString()).toBe(requestBody);
+    });
+
+    it('should expose the real body (not the @- placeholder) to the permission check', async () => {
+      gateway = await createTestGateway();
+      const requestBody = '{"channel":"C01","text":"hello"}';
+
+      await fetch('/gateway/https://slack.com/api/chat.postMessage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: requestBody,
+      });
+
+      // The body is streamed to curl via `--data-binary @-`, but the
+      // permission check must still see the actual payload.
+      expect(capturedPermissionCheckBody).toBe(requestBody);
+      expect(capturedPermissionCheckBody).not.toBe('@-');
     });
 
     it('should forward query parameters in the target URL', async () => {
