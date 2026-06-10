@@ -965,7 +965,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .addHelpText(
       'after',
       `\nExamples:\n  $ openssl rand -base64 32 | latchkey auth re-encrypt ~/latchkey-export` +
-      `\n  $ echo "" | latchkey auth re-encrypt ~/latchkey-export --services gitlab slack`
+        `\n  $ echo "" | latchkey auth re-encrypt ~/latchkey-export --services gitlab slack`
     )
     .action(async (destinationDirectory: string, options: { services?: string[] }) => {
       refuseInGatewayMode(deps, 'auth re-encrypt');
@@ -975,10 +975,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         deps.exit(1);
       }
 
-      const destination = join(
-        destinationDirectory,
-        basename(deps.config.credentialStorePath)
-      );
+      const destination = join(destinationDirectory, basename(deps.config.credentialStorePath));
       if (existsSync(destination)) {
         deps.errorLog(`Error: Destination file already exists: ${destination}`);
         deps.errorLog('Remove it first or choose a different destination directory.');

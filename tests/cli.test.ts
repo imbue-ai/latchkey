@@ -995,10 +995,7 @@ describe('CLI commands with dependency injection', () => {
       return JSON.parse(storage.readFile(path) ?? '{}') as Record<string, unknown>;
     }
 
-    function withStdinKey(
-      key: string,
-      overrides: Partial<CliDependencies> = {}
-    ): CliDependencies {
+    function withStdinKey(key: string, overrides: Partial<CliDependencies> = {}): CliDependencies {
       return createMockDependencies({ readStdin: () => Promise.resolve(key), ...overrides });
     }
 
@@ -1061,7 +1058,10 @@ describe('CLI commands with dependency injection', () => {
       await runCommand(['auth', 're-encrypt', destinationDirectory, '--services', 'slack'], deps);
 
       expect(exitCode).toBeNull();
-      const reEncrypted = readWithKey(join(destinationDirectory, STORE_FILENAME), NEW_ENCRYPTION_KEY);
+      const reEncrypted = readWithKey(
+        join(destinationDirectory, STORE_FILENAME),
+        NEW_ENCRYPTION_KEY
+      );
       expect(Object.keys(reEncrypted)).toEqual(['slack']);
     });
 
