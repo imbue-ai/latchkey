@@ -275,6 +275,14 @@ latchkey auth clear
 ```
 
 
+### Re-encrypting credentials
+
+If you want to export your stored credentials encrypted with
+a different key or containing only some of the credentials (for
+example to move them to another machine) , use the `auth re-encrypt`
+subcommand.
+
+
 ### Permissions
 
 Optionally, you can specify rules for approving / rejecting
@@ -381,7 +389,7 @@ defaults:
 - `LATCHKEY_PERMISSIONS_CONFIG`: override the `permissions.json` location.
 - `LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS`: do not use the built-in permission definitions.
 - `LATCHKEY_PASSTHROUGH_UNKNOWN`: if set, Latchkey will forward requests (via `latchkey curl` or gateway) even if no credentials are injected.
-- `LATCHKEY_GATEWAY`: when set to a base URL (e.g. `http://localhost:1989`), the CLI delegates commands to a remote Latchkey gateway instead of running them locally. Commands that change local state (`auth set`, `auth clear`, `services register`, `ensure-browser`, `gateway`) cannot run in this mode.
+- `LATCHKEY_GATEWAY`: when set to a base URL (e.g. `http://localhost:1989`), the CLI delegates commands to a remote Latchkey gateway instead of running them locally. Commands that change local state (`auth set`, `auth clear`, `auth re-encrypt`, `services register`, `ensure-browser`, `gateway`) cannot run in this mode.
 - `LATCHKEY_GATEWAY_LISTEN_HOST`, `LATCHKEY_GATEWAY_LISTEN_PORT`: default address and port the local `latchkey gateway` command binds to when `--host` / `--port` are not supplied (defaults: `localhost`, `1989`). Distinct from `LATCHKEY_GATEWAY`, which configures a *remote* gateway URL.
 - `LATCHKEY_GATEWAY_PASSWORD`: optional shared secret used by the client side. When set together with `LATCHKEY_GATEWAY`, the CLI sends the value in the `X-Latchkey-Gateway-Password` header on every outgoing gateway request.
 - `LATCHKEY_GATEWAY_LISTEN_PASSWORD`: optional shared secret used by the server side. When set, `latchkey gateway` rejects (with `401`) any request that does not present the same value in the `X-Latchkey-Gateway-Password` header. The header is stripped before requests are forwarded upstream.

@@ -3,9 +3,10 @@
  */
 
 import type { Command } from 'commander';
-import { existsSync, unlinkSync } from 'node:fs';
+import { existsSync, statSync, unlinkSync } from 'node:fs';
+import { basename, join } from 'node:path';
 import { createInterface } from 'node:readline';
-import { ApiCredentialStore } from './apiCredentials/store.js';
+import { ApiCredentialStore, ApiCredentialStoreError } from './apiCredentials/store.js';
 import { ApiCredentials, RawCurlCredentials } from './apiCredentials/base.js';
 import {
   CredentialsExpiredError,
@@ -31,8 +32,8 @@ import {
 } from './playwrightUtils.js';
 import { BrowserFeaturesUnavailableError, loadPlaywright } from './playwrightLoader.js';
 import type { CurlResult } from './curl.js';
-import { EncryptedStorage } from './encryptedStorage.js';
-import { resolveEncryptionKey } from './encryption.js';
+import { EncryptedStorage, EncryptedStorageError } from './encryptedStorage.js';
+import { encrypt, EncryptionError, resolveEncryptionKey } from './encryption.js';
 import {
   DuplicateServiceNameError,
   InvalidServiceNameError,
@@ -103,6 +104,7 @@ export interface CliDependencies {
     doNotUseBuiltinSchemas: boolean
   ) => Promise<boolean>;
   readonly confirm: (message: string) => Promise<boolean>;
+  readonly readStdin: () => Promise<string>;
   readonly exit: (code: number) => never;
   readonly log: (message: string) => void;
   readonly errorLog: (message: string) => void;
@@ -120,6 +122,7 @@ export function createDefaultDependencies(): CliDependencies {
     runCurlAsync: curlRunAsync,
     checkPermission: checkPermission,
     confirm: defaultConfirm,
+    readStdin: defaultReadStdin,
     exit: (code: number) => process.exit(code),
     log: (message: string) => {
       console.log(message);
@@ -166,6 +169,14 @@ function refuseInGatewayMode(deps: CliDependencies, commandName: string): void {
     deps.errorLog(`Error: ${error.message}`);
     deps.exit(1);
   }
+}
+
+async function defaultReadStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+  }
+  return Buffer.concat(chunks).toString('utf-8');
 }
 
 async function defaultConfirm(message: string): Promise<boolean> {
@@ -928,6 +939,106 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         }
       }
     );
+
+  authCommand
+    .command('re-encrypt')
+    .description(
+      'Re-encrypt stored credentials with a new key and write them into a ' +
+        'destination directory, using the same filename Latchkey itself expects. ' +
+        'The new key is read from stdin so that it does not appear in the process ' +
+        'arguments or shell history. When stdin is empty, the existing encryption ' +
+        'key is reused.'
+    )
+    .argument(
+      '<destination_directory>',
+      'Directory to write the re-encrypted credential store into'
+    )
+    .option(
+      '--services <services...>',
+      'Only include these services in the new encrypted store (default: all stored services)'
+    )
+    .addHelpText(
+      'after',
+      `\nExamples:\n  $ openssl rand -base64 32 | latchkey auth re-encrypt ~/latchkey-export` +
+      `\n  $ echo "" | latchkey auth re-encrypt ~/latchkey-export --services gitlab slack`
+    )
+    .action(async (destinationDirectory: string, options: { services?: string[] }) => {
+      refuseInGatewayMode(deps, 'auth re-encrypt');
+
+      if (existsSync(destinationDirectory) && !statSync(destinationDirectory).isDirectory()) {
+        deps.errorLog(`Error: Destination is not a directory: ${destinationDirectory}`);
+        deps.exit(1);
+      }
+
+      const destination = join(
+        destinationDirectory,
+        basename(deps.config.credentialStorePath)
+      );
+      if (existsSync(destination)) {
+        deps.errorLog(`Error: Destination file already exists: ${destination}`);
+        deps.errorLog('Remove it first or choose a different destination directory.');
+        deps.exit(1);
+      }
+
+      const sourceKey = await resolveEncryptionKeyFromConfig(deps.config);
+
+      // An empty stdin means "reuse the existing encryption key".
+      const stdinKey = (await deps.readStdin()).trim();
+      const destinationKey = stdinKey === '' ? sourceKey : stdinKey;
+      // Validate the key up front using the encryption routine itself, rather
+      // than duplicating its key-format checks.
+      try {
+        encrypt('', destinationKey);
+      } catch (error) {
+        if (error instanceof EncryptionError) {
+          deps.errorLog(`Error: ${error.message}. Generate a key with: openssl rand -base64 32`);
+          deps.exit(1);
+        }
+        throw error;
+      }
+
+      const sourceStorage = new EncryptedStorage(sourceKey);
+      const sourceStore = new ApiCredentialStore(deps.config.credentialStorePath, sourceStorage);
+
+      let allCredentials: ReadonlyMap<string, ApiCredentials>;
+      try {
+        allCredentials = sourceStore.getAll();
+      } catch (error) {
+        if (error instanceof ApiCredentialStoreError || error instanceof EncryptedStorageError) {
+          deps.errorLog(`Error: ${error.message}`);
+          deps.exit(1);
+        }
+        throw error;
+      }
+
+      let selectedServiceNames: string[];
+      if (options.services !== undefined) {
+        const missing = options.services.filter((name) => !allCredentials.has(name));
+        if (missing.length > 0) {
+          deps.errorLog(`Error: No stored credentials for: ${missing.join(', ')}`);
+          deps.exit(1);
+        }
+        selectedServiceNames = options.services;
+      } else {
+        selectedServiceNames = [...allCredentials.keys()];
+      }
+
+      if (selectedServiceNames.length === 0) {
+        deps.errorLog('Error: No stored credentials found to re-encrypt.');
+        deps.exit(1);
+      }
+
+      const destinationStorage = new EncryptedStorage(destinationKey);
+      const destinationStore = new ApiCredentialStore(destination, destinationStorage);
+      for (const serviceName of selectedServiceNames) {
+        const credentials = allCredentials.get(serviceName);
+        if (credentials !== undefined) {
+          destinationStore.save(serviceName, credentials);
+        }
+      }
+
+      deps.log(`Re-encrypted ${String(selectedServiceNames.length)} service(s) to ${destination}.`);
+    });
 
   program
     .command('skill-md')
