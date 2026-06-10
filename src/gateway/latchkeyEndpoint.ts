@@ -48,7 +48,9 @@ const ServicesListRequestSchema = z.object({
 
 const ServicesInfoRequestSchema = z.object({
   command: z.literal('services info'),
-  params: serviceNameParams,
+  params: serviceNameParams.extend({
+    offline: z.boolean().optional(),
+  }),
 });
 
 const AuthListRequestSchema = z.object({
@@ -131,7 +133,8 @@ async function dispatch(
         deps.registry,
         apiCredentialStore,
         deps.config,
-        parsed.params.serviceName
+        parsed.params.serviceName,
+        parsed.params.offline ?? false
       );
 
     case 'auth list':

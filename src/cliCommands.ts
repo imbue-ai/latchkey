@@ -309,11 +309,15 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .command('info')
     .description('Show information about a service.')
     .argument('<service_name>', 'Name of the service to get info for')
-    .action(async (serviceName: string) => {
+    .option(
+      '--offline',
+      'Do not send a request to validate credentials; report them as only "missing" or "unknown".'
+    )
+    .action(async (serviceName: string, options: { offline?: boolean }) => {
       if (deps.config.gatewayUrl !== null) {
         const info = await forwardToGateway(deps, {
           command: 'services info',
-          params: { serviceName },
+          params: { serviceName, offline: options.offline },
         });
         deps.log(JSON.stringify(info, null, 2));
         return;
@@ -328,7 +332,8 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           deps.registry,
           apiCredentialStore,
           deps.config,
-          serviceName
+          serviceName,
+          options.offline ?? false
         );
         deps.log(JSON.stringify(info, null, 2));
       } catch (error) {
