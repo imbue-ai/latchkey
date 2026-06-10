@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execSync, ExecSyncOptionsWithStringEncoding } from 'node:child_process';
@@ -409,6 +409,7 @@ describe('CLI commands with dependency injection', () => {
       runCurlAsync: () => Promise.resolve({ returncode: 0, stdout: Buffer.from(''), stderr: '' }),
       checkPermission: () => Promise.resolve(true),
       confirm: () => Promise.resolve(true),
+      readStdin: () => Promise.resolve(''),
       exit: (code: number): never => {
         exitCode = code;
         throw new Error(`process.exit(${String(code)})`);
@@ -982,6 +983,157 @@ describe('CLI commands with dependency injection', () => {
         objectType: 'rawCurl',
         curlArguments: ['-H', 'X-Token: new-secret'],
       });
+    });
+  });
+
+  describe('auth re-encrypt command', () => {
+    // A second valid 32-byte base64 key, distinct from TEST_ENCRYPTION_KEY.
+    const NEW_ENCRYPTION_KEY = 'Cc3mOUF63KFLOU3oJwFdfCBaMWlvjlbgxkcLlX+bEzM=';
+
+    function readWithKey(path: string, key: string): Record<string, unknown> {
+      const storage = new EncryptedStorage(key);
+      return JSON.parse(storage.readFile(path) ?? '{}') as Record<string, unknown>;
+    }
+
+    function withStdinKey(key: string, overrides: Partial<CliDependencies> = {}): CliDependencies {
+      return createMockDependencies({ readStdin: () => Promise.resolve(key), ...overrides });
+    }
+
+    // The credential store filename used by the mock config.
+    const STORE_FILENAME = 'credentials.json';
+
+    function writeStore(contents: Record<string, unknown>): void {
+      writeSecureFile(join(tempDir, STORE_FILENAME), JSON.stringify(contents));
+    }
+
+    it('re-encrypts all stored credentials with the new key', async () => {
+      writeStore({
+        slack: { objectType: 'slack', token: 'tok', dCookie: 'cookie' },
+        discord: { objectType: 'authorizationBearer', token: 'discord-token' },
+      });
+      const destinationDirectory = join(tempDir, 'export');
+
+      const deps = withStdinKey(NEW_ENCRYPTION_KEY);
+      await runCommand(['auth', 're-encrypt', destinationDirectory], deps);
+
+      expect(exitCode).toBeNull();
+      const destination = join(destinationDirectory, STORE_FILENAME);
+      expect(existsSync(destination)).toBe(true);
+      const reEncrypted = readWithKey(destination, NEW_ENCRYPTION_KEY);
+      expect(Object.keys(reEncrypted).sort()).toEqual(['discord', 'slack']);
+      expect(reEncrypted.slack).toEqual({
+        objectType: 'slack',
+        token: 'tok',
+        dCookie: 'cookie',
+      });
+    });
+
+    it('reuses the existing encryption key when stdin is empty', async () => {
+      writeStore({ slack: { objectType: 'slack', token: 'tok', dCookie: 'cookie' } });
+      const destinationDirectory = join(tempDir, 'export');
+
+      const deps = withStdinKey('   \n');
+      await runCommand(['auth', 're-encrypt', destinationDirectory], deps);
+
+      expect(exitCode).toBeNull();
+      const destination = join(destinationDirectory, STORE_FILENAME);
+      expect(existsSync(destination)).toBe(true);
+      // The destination is readable with the original (unchanged) key.
+      const reEncrypted = readWithKey(destination, TEST_ENCRYPTION_KEY);
+      expect(reEncrypted.slack).toEqual({
+        objectType: 'slack',
+        token: 'tok',
+        dCookie: 'cookie',
+      });
+    });
+
+    it('only includes the selected services when using --services', async () => {
+      writeStore({
+        slack: { objectType: 'slack', token: 'tok', dCookie: 'cookie' },
+        discord: { objectType: 'authorizationBearer', token: 'discord-token' },
+      });
+      const destinationDirectory = join(tempDir, 'export');
+
+      const deps = withStdinKey(NEW_ENCRYPTION_KEY);
+      await runCommand(['auth', 're-encrypt', destinationDirectory, '--services', 'slack'], deps);
+
+      expect(exitCode).toBeNull();
+      const reEncrypted = readWithKey(
+        join(destinationDirectory, STORE_FILENAME),
+        NEW_ENCRYPTION_KEY
+      );
+      expect(Object.keys(reEncrypted)).toEqual(['slack']);
+    });
+
+    it('errors when a requested service has no stored credentials', async () => {
+      writeStore({ slack: { objectType: 'slack', token: 'tok', dCookie: 'cookie' } });
+      const destinationDirectory = join(tempDir, 'export');
+
+      const deps = withStdinKey(NEW_ENCRYPTION_KEY);
+      await runCommand(['auth', 're-encrypt', destinationDirectory, '--services', 'discord'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(existsSync(join(destinationDirectory, STORE_FILENAME))).toBe(false);
+    });
+
+    it('errors for an invalid encryption key read from stdin', async () => {
+      writeStore({});
+      const destinationDirectory = join(tempDir, 'export');
+
+      const deps = withStdinKey('TOEkRVeMnCY=');
+      await runCommand(['auth', 're-encrypt', destinationDirectory], deps);
+
+      expect(exitCode).toBe(1);
+      expect(existsSync(join(destinationDirectory, STORE_FILENAME))).toBe(false);
+    });
+
+    it('trims surrounding whitespace from the key read from stdin', async () => {
+      writeStore({ slack: { objectType: 'slack', token: 'tok', dCookie: 'cookie' } });
+      const destinationDirectory = join(tempDir, 'export');
+
+      const deps = withStdinKey(`  ${NEW_ENCRYPTION_KEY}\n`);
+      await runCommand(['auth', 're-encrypt', destinationDirectory], deps);
+
+      expect(exitCode).toBeNull();
+      expect(
+        Object.keys(readWithKey(join(destinationDirectory, STORE_FILENAME), NEW_ENCRYPTION_KEY))
+      ).toEqual(['slack']);
+    });
+
+    it('refuses to overwrite an existing credential store in the destination', async () => {
+      writeStore({ slack: { objectType: 'slack', token: 'tok', dCookie: 'cookie' } });
+      const destinationDirectory = join(tempDir, 'export');
+      mkdirSync(destinationDirectory);
+      const destination = join(destinationDirectory, STORE_FILENAME);
+      writeFileSync(destination, 'existing');
+
+      const deps = withStdinKey(NEW_ENCRYPTION_KEY);
+      await runCommand(['auth', 're-encrypt', destinationDirectory], deps);
+
+      expect(exitCode).toBe(1);
+      expect(readFileSync(destination, 'utf-8')).toBe('existing');
+    });
+
+    it('errors when the destination is an existing file, not a directory', async () => {
+      writeStore({ slack: { objectType: 'slack', token: 'tok', dCookie: 'cookie' } });
+      const destinationDirectory = join(tempDir, 'export');
+      writeFileSync(destinationDirectory, 'i am a file');
+
+      const deps = withStdinKey(NEW_ENCRYPTION_KEY);
+      await runCommand(['auth', 're-encrypt', destinationDirectory], deps);
+
+      expect(exitCode).toBe(1);
+    });
+
+    it('errors when there are no stored credentials to re-encrypt', async () => {
+      writeStore({});
+      const destinationDirectory = join(tempDir, 'export');
+
+      const deps = withStdinKey(NEW_ENCRYPTION_KEY);
+      await runCommand(['auth', 're-encrypt', destinationDirectory], deps);
+
+      expect(exitCode).toBe(1);
+      expect(existsSync(join(destinationDirectory, STORE_FILENAME))).toBe(false);
     });
   });
 
@@ -2383,6 +2535,7 @@ describe('CLI commands with dependency injection', () => {
       ['auth set-nocurl', ['auth', 'set-nocurl', 'slack', 'x']],
       ['gateway', ['gateway']],
       ['ensure-browser', ['ensure-browser']],
+      ['auth re-encrypt', ['auth', 're-encrypt', '/tmp/does-not-matter-dir']],
     ])('refuses to run `%s` in gateway mode', async (_name, argv) => {
       const deps = createMockDependencies({
         config: createMockConfig({ gatewayUrl: GATEWAY_URL }),

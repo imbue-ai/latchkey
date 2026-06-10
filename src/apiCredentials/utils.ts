@@ -35,10 +35,16 @@ export async function getCredentialStatus(
   service: Service,
   credentials: ApiCredentials | null,
   apiCredentialStore: ApiCredentialStore,
-  disableRefresh = false
+  disableRefresh = false,
+  offline = false
 ): Promise<ApiCredentialStatus> {
   if (credentials === null) {
     return ApiCredentialStatus.Missing;
+  }
+  // In offline mode we never send a validation request, so we can only report
+  // that credentials exist without knowing whether they are actually valid.
+  if (offline) {
+    return ApiCredentialStatus.Unknown;
   }
   const refreshed = await maybeRefreshCredentials(
     service,

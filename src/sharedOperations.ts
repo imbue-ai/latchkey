@@ -123,7 +123,8 @@ export async function servicesInfo(
   registry: ServiceRegistry,
   apiCredentialStore: ApiCredentialStore,
   config: Config,
-  serviceName: string
+  serviceName: string,
+  offline = false
 ): Promise<ServicesInfoResult> {
   const service = lookupService(registry, serviceName);
 
@@ -135,7 +136,8 @@ export async function servicesInfo(
     service,
     apiCredentials,
     apiCredentialStore,
-    config.credentialsRefreshDisabled
+    config.credentialsRefreshDisabled,
+    offline
   );
 
   const serviceType = service instanceof RegisteredService ? 'user-registered' : 'built-in';

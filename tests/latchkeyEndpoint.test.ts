@@ -146,6 +146,7 @@ describe('/latchkey/ endpoint', () => {
       runCurlAsync: () => Promise.resolve({ returncode: 0, stdout: Buffer.from(''), stderr: '' }),
       checkPermission: () => Promise.resolve(true),
       confirm: () => Promise.resolve(true),
+      readStdin: () => Promise.resolve(''),
       exit: (code: number): never => {
         throw new Error(`process.exit(${String(code)})`);
       },
