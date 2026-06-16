@@ -677,7 +677,7 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
         // surface an actionable message instead of a generic timeout.
         if (error instanceof Error && isTimeoutError(error) && isEnableMfaUrl(page.url())) {
           throw new LoginFailedError(
-            'Enable multi-factor authentication in your Google account first.'
+            'Error: Enable multi-factor authentication in your Google account first.'
           );
         }
         throw error;
