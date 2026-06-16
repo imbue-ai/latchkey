@@ -50,7 +50,7 @@ export function isBrowserClosedError(error: Error): boolean {
   );
 }
 
-function isTimeoutError(error: Error): boolean {
+export function isTimeoutError(error: Error): boolean {
   return error.name === 'TimeoutError';
 }
 

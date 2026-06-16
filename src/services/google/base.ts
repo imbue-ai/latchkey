@@ -29,6 +29,7 @@ import {
   LoginFailedError,
   LoginCancelledError,
   isBrowserClosedError,
+  isTimeoutError,
 } from '../core/base.js';
 import type { EncryptedStorage } from '../../encryptedStorage.js';
 import { DEFAULT_APP_NAME_PREFIX } from '../../config.js';
@@ -568,6 +569,15 @@ async function waitForTermsOfServiceAcceptance(
   }
 }
 
+/**
+ * Detects the MFA enforcement redirect that Google Cloud now issues for
+ * accounts without multi-factor authentication. The query string (e.g.
+ * `?redirectTo=`) is irrelevant, so only the path is matched.
+ */
+function isEnableMfaUrl(url: string): boolean {
+  return url.startsWith('https://console.cloud.google.com/enable-mfa');
+}
+
 async function waitForGoogleLogin(page: Page): Promise<void> {
   const loginDetector = { isLoggedIn: false };
 
@@ -658,65 +668,82 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
   ): Promise<ApiCredentials> {
     return withTempBrowserContext(encryptedStorage, launchOptions ?? {}, async ({ context }) => {
       const page = await context.newPage();
-      await page.goto(this.service.loginUrl);
-      await waitForGoogleLogin(page);
-
-      const serviceSuffix = this.service.name.replace(/^google/, '');
-
-      const spinnerPage = await showSpinnerPage(
-        context,
-        `Finalizing ${this.service.displayName} login by using Google Console to set up the project for custom authentication...\nThis can take a few minutes.`
-      );
-
-      // Google caps the number of projects per account, so try to reuse a
-      // previously created Latchkey project for this service before
-      // allocating a new one. This also detects the first-time-user Terms of
-      // Service dialog and surfaces it to the user when needed.
-      const existingProjectSlug = await findExistingLatchkeyProject(
-        page,
-        serviceSuffix,
-        this.appNamePrefix,
-        spinnerPage
-      );
-      let projectSlug: string;
-      if (existingProjectSlug === null) {
-        // Use a deterministic project name (e.g. "Latchkey-gmail") rather than
-        // one with date/random bits: projects are now reused per service, so a
-        // stable name keeps the reuse lookup predictable. Google still derives
-        // a globally-unique project ID from this display name on its own.
-        const appName = `${this.appNamePrefix}${serviceSuffix}`;
-        // Google limits the OAuth project name to 30 characters.
-        if (appName.length > 30) {
+      try {
+        return await this.runPrepareFlow(context, page);
+      } catch (error: unknown) {
+        // Google now enforces MFA for accounts that use Google Cloud. When the
+        // account lacks it, the console redirects to the enable-mfa page, which
+        // makes our project-setup steps time out. Detect that redirect and
+        // surface an actionable message instead of a generic timeout.
+        if (error instanceof Error && isTimeoutError(error) && isEnableMfaUrl(page.url())) {
           throw new LoginFailedError(
-            `Generated app name "${appName}" exceeds Google OAuth project name limit of 30 characters.`
+            'Error: Enable multi-factor authentication in your Google account first.'
           );
         }
-        projectSlug = await createProject(page, appName);
-        const { isExternalApp, supportEmail } = await configureBranding(page, projectSlug, appName);
-        if (isExternalApp && supportEmail) {
-          await addTestUser(page, projectSlug, supportEmail);
-        }
-      } else {
-        projectSlug = existingProjectSlug;
+        throw error;
       }
-
-      // Always make sure every required API is enabled, whether the project was
-      // just created or reused. A reused project might be a half-configured
-      // leftover from a previous run that crashed before all APIs were turned
-      // on; enableApi is idempotent and returns immediately when an API is
-      // already enabled, so re-running it is cheap and self-healing.
-      for (const api of this.config.apis) {
-        await enableApi(page, projectSlug, api);
-      }
-
-      const { clientId, clientSecret } = await createOAuthClient(
-        page,
-        serviceSuffix,
-        this.appNamePrefix
-      );
-      await page.close();
-      return new OAuthCredentials(clientId, clientSecret);
     });
+  }
+
+  private async runPrepareFlow(context: BrowserContext, page: Page): Promise<ApiCredentials> {
+    await page.goto(this.service.loginUrl);
+    await waitForGoogleLogin(page);
+
+    const serviceSuffix = this.service.name.replace(/^google/, '');
+
+    const spinnerPage = await showSpinnerPage(
+      context,
+      `Finalizing ${this.service.displayName} login by using Google Console to set up the project for custom authentication...\nThis can take a few minutes.`
+    );
+
+    // Google caps the number of projects per account, so try to reuse a
+    // previously created Latchkey project for this service before
+    // allocating a new one. This also detects the first-time-user Terms of
+    // Service dialog and surfaces it to the user when needed.
+    const existingProjectSlug = await findExistingLatchkeyProject(
+      page,
+      serviceSuffix,
+      this.appNamePrefix,
+      spinnerPage
+    );
+    let projectSlug: string;
+    if (existingProjectSlug === null) {
+      // Use a deterministic project name (e.g. "Latchkey-gmail") rather than
+      // one with date/random bits: projects are now reused per service, so a
+      // stable name keeps the reuse lookup predictable. Google still derives
+      // a globally-unique project ID from this display name on its own.
+      const appName = `${this.appNamePrefix}${serviceSuffix}`;
+      // Google limits the OAuth project name to 30 characters.
+      if (appName.length > 30) {
+        throw new LoginFailedError(
+          `Generated app name "${appName}" exceeds Google OAuth project name limit of 30 characters.`
+        );
+      }
+      projectSlug = await createProject(page, appName);
+      const { isExternalApp, supportEmail } = await configureBranding(page, projectSlug, appName);
+      if (isExternalApp && supportEmail) {
+        await addTestUser(page, projectSlug, supportEmail);
+      }
+    } else {
+      projectSlug = existingProjectSlug;
+    }
+
+    // Always make sure every required API is enabled, whether the project was
+    // just created or reused. A reused project might be a half-configured
+    // leftover from a previous run that crashed before all APIs were turned
+    // on; enableApi is idempotent and returns immediately when an API is
+    // already enabled, so re-running it is cheap and self-healing.
+    for (const api of this.config.apis) {
+      await enableApi(page, projectSlug, api);
+    }
+
+    const { clientId, clientSecret } = await createOAuthClient(
+      page,
+      serviceSuffix,
+      this.appNamePrefix
+    );
+    await page.close();
+    return new OAuthCredentials(clientId, clientSecret);
   }
 
   private async performOAuthFlow(
