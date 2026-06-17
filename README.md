@@ -440,4 +440,4 @@ override `config.json` values.
 Latchkey currently offers varying levels of support for the
 following services: AWS, Calendly, Discord, Dropbox, Figma, GitHub, GitLab,
 Gmail, Google Analytics, Google Calendar, Google Docs, Google Drive, Google Sheets,
-Linear, Mailchimp, Notion, Sentry, Slack, Stripe, Telegram, Yelp, Zoom, and more.
+Linear, Mailchimp, Notion, Sentry, Slack, Stripe, Telegram, Todoist, Yelp, Zoom, and more.
