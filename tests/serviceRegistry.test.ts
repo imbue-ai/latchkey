@@ -24,6 +24,7 @@ import {
   GITLAB,
   AWS,
   TELEGRAM,
+  TODOIST,
 } from '../src/services/index.js';
 
 describe('ServiceRegistry', () => {
@@ -44,6 +45,7 @@ describe('ServiceRegistry', () => {
       ['mailchimp', MAILCHIMP],
       ['aws', AWS],
       ['telegram', TELEGRAM],
+      ['todoist', TODOIST],
     ] as const;
 
     for (const [name, service] of namedServices) {
@@ -79,6 +81,7 @@ describe('ServiceRegistry', () => {
       ['https://us1.api.mailchimp.com/3.0/lists', MAILCHIMP],
       ['https://sts.amazonaws.com/?Action=GetCallerIdentity', AWS],
       ['https://s3.us-east-1.amazonaws.com/my-bucket', AWS],
+      ['https://api.todoist.com/api/v1/projects', TODOIST],
     ] as const;
 
     for (const [url, service] of urlMappings) {
