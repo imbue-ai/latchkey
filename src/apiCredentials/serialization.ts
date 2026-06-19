@@ -20,6 +20,8 @@ import {
 } from './base.js';
 import { AwsCredentials, AwsCredentialsSchema } from '../services/aws.js';
 import { GoogleApiKeyCredentials, GoogleApiKeyCredentialsSchema } from '../services/google/base.js';
+import { QuickBooksCredentials, QuickBooksCredentialsSchema } from '../services/quickbooks.js';
+import { RampCredentials, RampCredentialsSchema } from '../services/ramp.js';
 import { SlackApiCredentials, SlackApiCredentialsSchema } from '../services/slack.js';
 import { TelegramBotCredentials, TelegramBotCredentialsSchema } from '../services/telegram.js';
 
@@ -35,6 +37,8 @@ export const ApiCredentialsSchema = z.discriminatedUnion('objectType', [
   TelegramBotCredentialsSchema,
   AwsCredentialsSchema,
   GoogleApiKeyCredentialsSchema,
+  RampCredentialsSchema,
+  QuickBooksCredentialsSchema,
 ]);
 
 export type ApiCredentialsData = z.infer<typeof ApiCredentialsSchema>;
@@ -60,6 +64,10 @@ export function deserializeCredentials(data: ApiCredentialsData): ApiCredentials
       return AwsCredentials.fromJSON(data);
     case 'googleApiKey':
       return GoogleApiKeyCredentials.fromJSON(data);
+    case 'ramp':
+      return RampCredentials.fromJSON(data);
+    case 'quickbooks':
+      return QuickBooksCredentials.fromJSON(data);
     default: {
       const exhaustiveCheck: never = data;
       throw new ApiCredentialsSerializationError(
@@ -95,6 +103,12 @@ export function serializeCredentials(credentials: ApiCredentials): ApiCredential
     return credentials.toJSON();
   }
   if (credentials instanceof GoogleApiKeyCredentials) {
+    return credentials.toJSON();
+  }
+  if (credentials instanceof RampCredentials) {
+    return credentials.toJSON();
+  }
+  if (credentials instanceof QuickBooksCredentials) {
     return credentials.toJSON();
   }
   throw new ApiCredentialsSerializationError(`Unknown credential type: ${credentials.objectType}`);

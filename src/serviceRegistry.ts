@@ -33,6 +33,9 @@ import {
   GOOGLE_DIRECTIONS,
   COOLIFY,
   UMAMI,
+  GREENHOUSE,
+  RAMP,
+  QUICKBOOKS,
 } from './services/index.js';
 
 export class DuplicateServiceNameError extends Error {
@@ -160,4 +163,7 @@ export const SERVICE_REGISTRY = new ServiceRegistry([
   GOOGLE_DIRECTIONS,
   COOLIFY,
   UMAMI,
+  GREENHOUSE,
+  RAMP,
+  QUICKBOOKS,
 ]);
