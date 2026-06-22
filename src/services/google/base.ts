@@ -371,7 +371,18 @@ async function configureBranding(
   try {
     await getStartedButton.or(appNameInput).first().waitFor({ timeout: DEFAULT_TIMEOUT_MS });
   } catch {
-    // Neither state materialized in time; let the visibility check below decide.
+    // Neither state materialized in time. This commonly happens when the
+    // project was only just created and Google's branding backend isn't ready
+    // yet, which surfaces as a "Failed to load" message somewhere on the page.
+    const failedToLoad = page.getByText('Failed to load', { exact: false }).first();
+    if (await failedToLoad.isVisible().catch(() => false)) {
+      throw new LoginFailedError(
+        'Google failed to load the OAuth consent screen ("Failed to load"). This is a ' +
+          'transient error on Google\'s side, usually because the project was just created. ' +
+          'Please wait a few minutes and try again.'
+      );
+    }
+    // Otherwise let the visibility check below decide.
   }
   if (!(await getStartedButton.isVisible())) {
     // Consent screen already configured — nothing to do.
