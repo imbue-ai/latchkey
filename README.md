@@ -39,8 +39,7 @@ Latchkey is a command-line tool that injects credentials into curl commands.
     - Only some services support this option.
 - `latchkey prepare <service_name> <json>`
 	- Store a service's credentials directly from a validated JSON payload (e.g. an OAuth `{"clientId":"...","clientSecret":"..."}`).
-    - For Google services this is the recommended way to register the official Imbue OAuth client, skipping the browser-based client setup. Run `latchkey auth browser <service_name>` afterward to complete login.
-    - The older `latchkey auth browser-prepare <service_name>` (which creates your own OAuth client via the Google Cloud Console) remains available as a fallback.
+    - For Google services, `latchkey auth browser-prepare <service_name>` remains the default way to set up an OAuth client; `prepare` is an alternative for supplying an existing client's id/secret directly. Run `latchkey auth browser <service_name>` afterward to complete login.
 
 Latchkey is primarily designed for AI agents. By invoking
 Latchkey, agents can utilize user-provided credentials or prompt
