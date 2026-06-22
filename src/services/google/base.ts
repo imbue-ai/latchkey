@@ -378,7 +378,7 @@ async function configureBranding(
     if (await failedToLoad.isVisible().catch(() => false)) {
       throw new LoginFailedError(
         'Google failed to load the OAuth consent screen ("Failed to load"). This is a ' +
-          'transient error on Google\'s side, usually because the project was just created. ' +
+          "transient error on Google's side, usually because the project was just created. " +
           'Please wait a few minutes and try again.'
       );
     }
