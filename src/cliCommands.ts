@@ -739,7 +739,9 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
 
   program
     .command('prepare')
-    .description("Store a service's credentials from a JSON payload (e.g. an OAuth client id/secret).")
+    .description(
+      "Store a service's credentials from a JSON payload (e.g. an OAuth client id/secret)."
+    )
     .argument('<service_name>', 'Name of the service to prepare')
     .argument(
       '<json>',
