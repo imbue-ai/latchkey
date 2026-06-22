@@ -24,9 +24,7 @@ import {
   GITLAB,
   AWS,
   TELEGRAM,
-  GREENHOUSE,
   RAMP,
-  QUICKBOOKS,
 } from '../src/services/index.js';
 
 describe('ServiceRegistry', () => {
@@ -47,9 +45,7 @@ describe('ServiceRegistry', () => {
       ['mailchimp', MAILCHIMP],
       ['aws', AWS],
       ['telegram', TELEGRAM],
-      ['greenhouse', GREENHOUSE],
       ['ramp', RAMP],
-      ['quickbooks', QUICKBOOKS],
     ] as const;
 
     for (const [name, service] of namedServices) {
@@ -85,11 +81,8 @@ describe('ServiceRegistry', () => {
       ['https://us1.api.mailchimp.com/3.0/lists', MAILCHIMP],
       ['https://sts.amazonaws.com/?Action=GetCallerIdentity', AWS],
       ['https://s3.us-east-1.amazonaws.com/my-bucket', AWS],
-      ['https://harvest.greenhouse.io/v1/users', GREENHOUSE],
       ['https://api.ramp.com/developer/v1/transactions', RAMP],
       ['https://demo-api.ramp.com/developer/v1/transactions', RAMP],
-      ['https://quickbooks.api.intuit.com/v3/company/123/companyinfo/123', QUICKBOOKS],
-      ['https://sandbox-quickbooks.api.intuit.com/v3/company/123/query', QUICKBOOKS],
     ] as const;
 
     for (const [url, service] of urlMappings) {

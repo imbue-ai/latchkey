@@ -39,46 +39,27 @@ export interface OAuthCallbackServer {
   codePromise: Promise<string>;
 }
 
-export interface OAuthCallbackParamsServer {
-  /** The port the server is listening on */
-  port: number;
-  /**
-   * Promise that resolves with every query parameter from the callback once the
-   * authorization code is received (guaranteed to include `code`). Useful for
-   * flows that return extra parameters alongside the code, such as QuickBooks'
-   * `realmId`.
-   */
-  paramsPromise: Promise<Record<string, string>>;
-}
-
 /**
- * Start a temporary HTTP server to receive an OAuth callback, resolving with all
- * of the callback's query parameters.
- *
- * Most flows only need the authorization code (see {@link startOAuthCallbackServer},
- * which wraps this). Use this directly when the provider returns extra parameters
- * that must be captured, e.g. QuickBooks' `realmId`.
- *
+ * Start a temporary HTTP server to receive OAuth callback.
+ * Returns the assigned port and a promise that resolves with the authorization code.
+ * The server uses port 0 to get an auto-assigned available port.
  * @param timeoutMs - Timeout in milliseconds
  * @param signal - Optional AbortSignal to cancel the server early
  * @param callbackPath - Path to listen for OAuth callback (default: '/oauth2callback')
- * @param port - Port to bind (default 0 = auto-assign). Pass a fixed port when the
- *   provider requires the exact redirect URI (incl. port) to be pre-registered.
  */
-export function startOAuthCallbackServerForParams(
+export function startOAuthCallbackServer(
   timeoutMs: number,
   signal?: AbortSignal,
-  callbackPath = '/oauth2callback',
-  port = 0
-): Promise<OAuthCallbackParamsServer> {
+  callbackPath = '/oauth2callback'
+): Promise<OAuthCallbackServer> {
   const server = http.createServer();
 
-  return new Promise<OAuthCallbackParamsServer>((resolveServer, rejectServer) => {
+  return new Promise<OAuthCallbackServer>((resolveServer, rejectServer) => {
     server.on('error', (error) => {
       rejectServer(error);
     });
 
-    server.listen(port, 'localhost', () => {
+    server.listen(0, 'localhost', () => {
       const address = server.address();
       if (address === null || typeof address === 'string') {
         server.close();
@@ -86,10 +67,10 @@ export function startOAuthCallbackServerForParams(
         return;
       }
 
-      const boundPort = address.port;
+      const port = address.port;
       let timeout: NodeJS.Timeout | undefined;
 
-      const paramsPromise = new Promise<Record<string, string>>((resolve, reject) => {
+      const codePromise = new Promise<string>((resolve, reject) => {
         const cleanup = () => {
           if (timeout !== undefined) {
             clearTimeout(timeout);
@@ -113,7 +94,7 @@ export function startOAuthCallbackServerForParams(
         }
 
         server.on('request', (req, res) => {
-          const parsedUrl = new URL(req.url ?? '', `http://localhost:${boundPort.toString()}`);
+          const parsedUrl = new URL(req.url ?? '', `http://localhost:${port.toString()}`);
 
           if (parsedUrl.pathname === callbackPath) {
             const code = parsedUrl.searchParams.get('code') ?? undefined;
@@ -123,7 +104,7 @@ export function startOAuthCallbackServerForParams(
               res.end('OK');
               signal?.removeEventListener('abort', abortHandler);
               cleanup();
-              resolve(Object.fromEntries(parsedUrl.searchParams.entries()));
+              resolve(code);
             } else {
               res.writeHead(400, { 'Content-Type': 'text/plain' });
               res.end('ERROR');
@@ -150,38 +131,9 @@ export function startOAuthCallbackServerForParams(
         });
       });
 
-      resolveServer({ port: boundPort, paramsPromise });
+      resolveServer({ port, codePromise });
     });
   });
-}
-
-/**
- * Start a temporary HTTP server to receive OAuth callback.
- * Returns the assigned port and a promise that resolves with the authorization code.
- * The server uses port 0 to get an auto-assigned available port.
- * @param timeoutMs - Timeout in milliseconds
- * @param signal - Optional AbortSignal to cancel the server early
- * @param callbackPath - Path to listen for OAuth callback (default: '/oauth2callback')
- */
-export function startOAuthCallbackServer(
-  timeoutMs: number,
-  signal?: AbortSignal,
-  callbackPath = '/oauth2callback'
-): Promise<OAuthCallbackServer> {
-  return startOAuthCallbackServerForParams(timeoutMs, signal, callbackPath).then(
-    ({ port, paramsPromise }) => ({
-      port,
-      // paramsPromise only resolves once a code is present, but the index type is
-      // widened to `string | undefined`; fall back defensively.
-      codePromise: paramsPromise.then((params) => {
-        const code = params.code;
-        if (code === undefined) {
-          throw new LoginFailedError('No authorization code received from OAuth callback.');
-        }
-        return code;
-      }),
-    })
-  );
 }
 
 /**

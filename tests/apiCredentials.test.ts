@@ -15,8 +15,6 @@ import { TelegramBotCredentials } from '../src/services/telegram.js';
 import { AwsCredentials } from '../src/services/aws.js';
 import { GoogleApiKeyCredentials } from '../src/services/google/base.js';
 import { RampCredentials, RAMP } from '../src/services/ramp.js';
-import { QuickBooksCredentials } from '../src/services/quickbooks.js';
-import { GREENHOUSE } from '../src/services/greenhouse.js';
 import { NoCurlCredentialsNotSupportedError } from '../src/services/core/base.js';
 
 describe('AuthorizationBearer', () => {
@@ -233,50 +231,6 @@ describe('RampCredentials', () => {
   });
 });
 
-describe('QuickBooksCredentials', () => {
-  it('throws when injected before authorization (no access token)', () => {
-    const credentials = new QuickBooksCredentials('id', 'secret');
-    expect(() => credentials.injectIntoCurlCall([])).toThrow(ApiCredentialsUsageError);
-  });
-
-  it('does not report expired before authorization (needs browser login, not refresh)', () => {
-    const credentials = new QuickBooksCredentials('id', 'secret');
-    expect(credentials.isExpired()).toBeUndefined();
-  });
-
-  it('substitutes {realmId} in the URL and injects the bearer token', async () => {
-    const credentials = new QuickBooksCredentials(
-      'id',
-      'secret',
-      'qb_access',
-      'qb_refresh',
-      '9130350000000',
-      '2099-01-01T00:00:00.000Z'
-    );
-    await expect(
-      credentials.injectIntoCurlCall([
-        'https://quickbooks.api.intuit.com/v3/company/{realmId}/companyinfo/{realmId}',
-      ])
-    ).resolves.toEqual([
-      '-H',
-      'Authorization: Bearer qb_access',
-      'https://quickbooks.api.intuit.com/v3/company/9130350000000/companyinfo/9130350000000',
-    ]);
-  });
-
-  it('is expired once the access token lifetime has passed', () => {
-    const credentials = new QuickBooksCredentials(
-      'id',
-      'secret',
-      'qb_access',
-      'qb_refresh',
-      '9130350000000',
-      '2000-01-01T00:00:00.000Z'
-    );
-    expect(credentials.isExpired()).toBe(true);
-  });
-});
-
 describe('Ramp.getCredentialsNoCurl', () => {
   it('stores the client credentials and the exact scopes passed', () => {
     const credentials = RAMP.getCredentialsNoCurl([
@@ -308,21 +262,6 @@ describe('Ramp.getCredentialsNoCurl', () => {
     ]) as RampCredentials;
     expect(ramp.environment).toBe('sandbox');
     expect(ramp.scope).toBe('transactions:read');
-  });
-});
-
-describe('Greenhouse credentials', () => {
-  it('builds a Basic auth header from the API key with a blank password', async () => {
-    const credentials = GREENHOUSE.getCredentialsNoCurl(['my-harvest-key']);
-    const expected = Buffer.from('my-harvest-key:').toString('base64');
-    await expect(credentials.injectIntoCurlCall([])).resolves.toEqual([
-      '-H',
-      `Authorization: Basic ${expected}`,
-    ]);
-  });
-
-  it('rejects a missing API key', () => {
-    expect(() => GREENHOUSE.getCredentialsNoCurl([])).toThrow(NoCurlCredentialsNotSupportedError);
   });
 });
 
@@ -362,18 +301,6 @@ describe('serialization roundtrip', () => {
           'transactions:read',
           'production',
           'ramp_tok_test',
-          '2099-01-01T00:00:00.000Z'
-        ),
-    },
-    {
-      name: 'QuickBooksCredentials',
-      credentials: () =>
-        new QuickBooksCredentials(
-          'qb_id',
-          'qb_secret',
-          'qb_access',
-          'qb_refresh',
-          '9130350000000',
           '2099-01-01T00:00:00.000Z'
         ),
     },
