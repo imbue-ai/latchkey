@@ -200,45 +200,62 @@ const RAMP_OAUTH_CALLBACK_PATH = '/callback';
 const RAMP_LOGIN_TIMEOUT_MS = 300_000;
 
 /**
- * Scopes requested at login. The first block is ramp-cli's stable DEVAPI_SCOPES
- * (config/constants.py) verbatim; the second adds the high-traffic resources that
- * agents most commonly need (ramp-cli discovers these dynamically from its
- * agent-tool spec, which we can't fetch here). Ramp grants the subset the signed-in
- * user is entitled to and returns it in the token's `scope` field, so requesting a
- * superset is safe -- but see validation note #3 above if `invalid_scope` occurs.
+ * Scopes requested at login for the agent-key (auth_level=auto) flow.
+ *
+ * This MUST be the agentic scope catalog, not ramp-cli's standard DEVAPI_SCOPES.
+ * Ramp's agent-tool endpoints declare their required scope in the OpenAPI
+ * `security` block, and those are the agentic scopes. Two that bit us:
+ *   - POST /developer/v1/agent-tools/list-cards requires `limits:read`
+ *     (verified in the agent-tool OpenAPI spec), and
+ *   - the cards read scope is `cards:read_agentic`, NOT `cards:read`.
+ * Requesting a scope the signed-in user isn't entitled to is harmless -- Ramp
+ * grants only the subset the user has and returns it in the token's `scope`
+ * field. But OMITTING a scope an endpoint needs fails at call time with
+ *   DEVELOPER_7100: "These scopes are not allowed for this token: <scope>".
+ * So we request the full standard agentic catalog (the set Ramp grants agent
+ * keys; see `ramp auth status` -> production.scopes on an authed machine).
  */
 const RAMP_OAUTH_SCOPES = [
-  // --- ramp-cli DEVAPI_SCOPES (verbatim) ---
+  'accounting:read',
+  'approvals:write',
+  'bills:read',
   'business:read',
+  'cards:read_agentic',
+  'cards:write',
   'cashbacks:read',
+  'comments:write',
   'departments:read',
   'departments:write',
   'entities:read',
+  'funds:write',
   'item_receipts:read',
+  'limits:read',
   'limits:write',
   'locations:read',
   'locations:write',
+  'memos:read',
   'merchants:read',
   'purchase_orders:read',
   'purchase_orders:write',
   'receipts:read',
+  'receipts:write',
   'reimbursements:read',
   'reimbursements:write',
   'spend_programs:read',
   'spend_programs:write',
   'statements:read',
+  'tasks:read',
+  'transactions:read',
+  'transactions:write',
   'transfers:read',
+  'treasury:read',
+  'trips:read',
+  'trips:write',
+  'unified_requests:read',
   'users:read',
   'users:write',
   'vendors:read',
   'vendors:write',
-  // --- common agent resources beyond the bundled DevAPI list ---
-  'transactions:read',
-  'cards:read',
-  'cards:write',
-  'bills:read',
-  'bills:write',
-  'receipts:write',
 ].join(' ');
 
 /**
