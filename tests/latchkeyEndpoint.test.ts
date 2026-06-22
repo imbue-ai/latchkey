@@ -7,6 +7,7 @@ import { derivePermissionsOverrideSigningKey } from '../src/gateway/permissionsO
 import { ApiCredentialStore } from '../src/apiCredentials/store.js';
 import { ApiCredentialStatus } from '../src/apiCredentials/base.js';
 import { NoCurlCredentialsNotSupportedError, Service } from '../src/services/core/base.js';
+import { GOOGLE_GMAIL } from '../src/services/google/gmail.js';
 import { ServiceRegistry } from '../src/serviceRegistry.js';
 import { Config } from '../src/config.js';
 import type { CliDependencies } from '../src/cliCommands.js';
@@ -89,6 +90,30 @@ describe('LatchkeyRequestSchema', () => {
       params: { serviceName: 'slack' },
     });
     expect(result.success).toBe(true);
+  });
+
+  it('should validate prepare with serviceName and json', () => {
+    const result = LatchkeyRequestSchema.safeParse({
+      command: 'prepare',
+      params: { serviceName: 'google-gmail', json: '{"clientId":"a","clientSecret":"b"}' },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('should reject prepare without json', () => {
+    const result = LatchkeyRequestSchema.safeParse({
+      command: 'prepare',
+      params: { serviceName: 'google-gmail' },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('should reject prepare without serviceName', () => {
+    const result = LatchkeyRequestSchema.safeParse({
+      command: 'prepare',
+      params: { json: '{}' },
+    });
+    expect(result.success).toBe(false);
   });
 
   it('should reject unknown command', () => {
@@ -316,6 +341,49 @@ describe('/latchkey/ endpoint', () => {
       expect(response.status).toBe(400);
       const body = (await response.json()) as { error: string };
       expect(body.error).toContain('Unknown service');
+    });
+  });
+
+  describe('prepare', () => {
+    it('stores OAuth client credentials for a Google service', async () => {
+      gateway = await createTestGateway({}, { registry: new ServiceRegistry([GOOGLE_GMAIL]) });
+      const response = await postLatchkey({
+        command: 'prepare',
+        params: {
+          serviceName: 'google-gmail',
+          json: '{"clientId":"cid","clientSecret":"csecret"}',
+        },
+      });
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        result: { serviceName: string; credentialType: string };
+      };
+      expect(body.result).toEqual({ serviceName: 'google-gmail', credentialType: 'oauth' });
+    });
+
+    it('returns 400 when the service does not support prepare', async () => {
+      gateway = await createTestGateway();
+      const response = await postLatchkey({
+        command: 'prepare',
+        params: { serviceName: 'slack', json: '{"clientId":"a","clientSecret":"b"}' },
+      });
+
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as { error: string };
+      expect(body.error).toContain('does not support');
+    });
+
+    it('returns 400 for malformed prepare JSON', async () => {
+      gateway = await createTestGateway({}, { registry: new ServiceRegistry([GOOGLE_GMAIL]) });
+      const response = await postLatchkey({
+        command: 'prepare',
+        params: { serviceName: 'google-gmail', json: '{not valid' },
+      });
+
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as { error: string };
+      expect(body.error).toContain('Invalid prepare input');
     });
   });
 

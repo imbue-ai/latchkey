@@ -46,6 +46,8 @@ import {
   LoginCancelledError,
   LoginFailedError,
   NoCurlCredentialsNotSupportedError,
+  PrepareInputInvalidError,
+  PrepareNotSupportedError,
   Service,
 } from './services/index.js';
 import {
@@ -77,6 +79,7 @@ import {
   authList,
   authBrowser,
   authBrowserPrepare,
+  prepareService,
   UnknownServiceError,
   BrowserNotConfiguredError,
   PreparationRequiredError,
@@ -728,6 +731,48 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         }
         if (error instanceof BrowserFeaturesUnavailableError) {
           deps.errorLog(error.message);
+          deps.exit(1);
+        }
+        throw error;
+      }
+    });
+
+  program
+    .command('prepare')
+    .description("Store a service's credentials from a JSON payload (e.g. an OAuth client id/secret).")
+    .argument('<service_name>', 'Name of the service to prepare')
+    .argument(
+      '<json>',
+      'Service-specific credential JSON, e.g. \'{"clientId":"...","clientSecret":"..."}\''
+    )
+    .addHelpText(
+      'after',
+      `\nExample:\n  $ latchkey prepare google-gmail '{"clientId":"<id>","clientSecret":"<secret>"}'`
+    )
+    .action(async (serviceName: string, json: string) => {
+      if (deps.config.gatewayUrl !== null) {
+        await forwardToGateway(deps, {
+          command: 'prepare',
+          params: { serviceName, json },
+        });
+        deps.log(`Prepared ${serviceName}.`);
+        return;
+      }
+      try {
+        const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
+        const apiCredentialStore = new ApiCredentialStore(
+          deps.config.credentialStorePath,
+          encryptedStorage
+        );
+        const result = prepareService(deps.registry, apiCredentialStore, serviceName, json);
+        deps.log(`Prepared ${result.serviceName}.`);
+      } catch (error) {
+        if (
+          error instanceof UnknownServiceError ||
+          error instanceof PrepareNotSupportedError ||
+          error instanceof PrepareInputInvalidError
+        ) {
+          deps.errorLog(`Error: ${error.message}`);
           deps.exit(1);
         }
         throw error;

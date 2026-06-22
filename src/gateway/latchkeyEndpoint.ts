@@ -17,6 +17,7 @@ import {
   authList,
   authBrowser,
   authBrowserPrepare,
+  prepareService,
   UnknownServiceError,
   BrowserNotConfiguredError,
   PreparationRequiredError,
@@ -26,7 +27,12 @@ import {
   BrowserFlowsNotSupportedError,
   GraphicalEnvironmentNotFoundError,
 } from '../playwrightUtils.js';
-import { LoginCancelledError, LoginFailedError } from '../services/index.js';
+import {
+  LoginCancelledError,
+  LoginFailedError,
+  PrepareInputInvalidError,
+  PrepareNotSupportedError,
+} from '../services/index.js';
 
 const serviceNameParamsMessage = "missing required argument 'service_name'";
 const serviceNameParams = z.object(
@@ -68,12 +74,20 @@ const AuthBrowserPrepareRequestSchema = z.object({
   params: serviceNameParams,
 });
 
+const PrepareRequestSchema = z.object({
+  command: z.literal('prepare'),
+  params: serviceNameParams.extend({
+    json: z.string(),
+  }),
+});
+
 export const LatchkeyRequestSchema = z.discriminatedUnion('command', [
   ServicesListRequestSchema,
   ServicesInfoRequestSchema,
   AuthListRequestSchema,
   AuthBrowserRequestSchema,
   AuthBrowserPrepareRequestSchema,
+  PrepareRequestSchema,
 ]);
 
 export type LatchkeyRequest = z.infer<typeof LatchkeyRequestSchema>;
@@ -87,6 +101,8 @@ const KNOWN_ERROR_CLASSES: readonly (abstract new (...args: never[]) => Error)[]
   PreparationRequiredError,
   LoginCancelledError,
   LoginFailedError,
+  PrepareNotSupportedError,
+  PrepareInputInvalidError,
 ];
 
 function isKnownError(error: unknown): error is Error {
@@ -157,6 +173,14 @@ async function dispatch(
         encryptedStorage,
         deps.config,
         parsed.params.serviceName
+      );
+
+    case 'prepare':
+      return prepareService(
+        deps.registry,
+        apiCredentialStore,
+        parsed.params.serviceName,
+        parsed.params.json
       );
   }
 }

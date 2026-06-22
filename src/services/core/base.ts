@@ -3,6 +3,7 @@
  */
 
 import type { Browser, BrowserContext, Page, Response } from 'playwright';
+import type { z, ZodTypeAny } from 'zod';
 import {
   ApiCredentialStatus,
   ApiCredentials,
@@ -36,6 +37,58 @@ export class LoginFailedError extends Error {
     super(message);
     this.name = 'LoginFailedError';
   }
+}
+
+/**
+ * Thrown when `latchkey prepare` is run for a service that does not declare a
+ * prepare schema (the base default — services opt in by setting one).
+ */
+export class PrepareNotSupportedError extends Error {
+  constructor(serviceName: string) {
+    super(
+      `Service '${serviceName}' does not support 'latchkey prepare'. ` +
+        `Use 'latchkey services info ${serviceName}' to see how to authenticate.`
+    );
+    this.name = 'PrepareNotSupportedError';
+  }
+}
+
+/**
+ * Thrown when the JSON passed to `latchkey prepare` is malformed or does not
+ * match the service's prepare schema. The whole command is rejected and
+ * nothing is stored.
+ */
+export class PrepareInputInvalidError extends Error {
+  constructor(serviceName: string, detail: string) {
+    super(`Invalid prepare input for '${serviceName}': ${detail}`);
+    this.name = 'PrepareInputInvalidError';
+  }
+}
+
+/**
+ * Validate a parsed JSON value against a service's prepare schema and build the
+ * resulting credentials. Centralizes validation so each service's
+ * `prepareFromJson` only expresses its schema and build step. Throws
+ * `PrepareInputInvalidError` (with the failing fields) on any schema mismatch;
+ * nothing is built unless the input fully validates.
+ */
+export function buildPreparedCredentials<Schema extends ZodTypeAny>(
+  serviceName: string,
+  schema: Schema,
+  parsedJson: unknown,
+  build: (validatedInput: z.infer<Schema>) => ApiCredentials
+): ApiCredentials {
+  const result = schema.safeParse(parsedJson);
+  if (!result.success) {
+    const detail = result.error.issues
+      .map((issue) => {
+        const path = issue.path.join('.');
+        return path ? `${path}: ${issue.message}` : issue.message;
+      })
+      .join('; ');
+    throw new PrepareInputInvalidError(serviceName, detail);
+  }
+  return build(result.data as z.infer<Schema>);
 }
 
 export function isBrowserClosedError(error: Error): boolean {
@@ -125,6 +178,18 @@ export abstract class Service {
   getCredentialsNoCurl(_arguments: readonly string[]): ApiCredentials {
     throw new NoCurlCredentialsNotSupportedError(this.name);
   }
+
+  /**
+   * Build credentials from a parsed JSON payload for `latchkey prepare`.
+   *
+   * Optional, like `getSession`/`refreshCredentials`: services opt in by
+   * implementing it (typically via `buildPreparedCredentials` with a Zod
+   * schema). When a service does not implement it, prepare is "not supported"
+   * — the default that lets every service stay closed until it declares a
+   * schema. Implementations validate `parsedJson` and throw
+   * `PrepareInputInvalidError` on mismatch.
+   */
+  prepareFromJson?(parsedJson: unknown): ApiCredentials;
 
   /**
    * Get a new session for the login flow.

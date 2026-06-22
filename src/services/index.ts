@@ -12,6 +12,8 @@ export {
   LoginCancelledError,
   LoginFailedError,
   NoCurlCredentialsNotSupportedError,
+  PrepareNotSupportedError,
+  PrepareInputInvalidError,
 } from './core/base.js';
 export { RegisteredService } from './core/registered.js';
 

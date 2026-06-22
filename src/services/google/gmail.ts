@@ -16,7 +16,8 @@ export class GoogleGmail extends GoogleService {
   readonly baseApiUrls = ['https://gmail.googleapis.com/'] as const;
   readonly info =
     'https://developers.google.com/gmail/api/reference/rest. ' +
-    'If needed, run "latchkey auth browser-prepare google-gmail" to create an OAuth client first. ' +
+    'To authenticate, run "latchkey prepare google-gmail" with the official OAuth client id/secret (recommended), ' +
+    'or "latchkey auth browser-prepare google-gmail" to create your own client first. ' +
     'It may take a few minutes before the OAuth client is ready to use.';
 
   readonly credentialCheckCurlArguments = [

@@ -14,7 +14,8 @@ export class GoogleAnalytics extends GoogleService {
   ] as const;
   readonly info =
     'https://developers.google.com/analytics/devguides/reporting/data/v1. ' +
-    'If needed, run "latchkey auth browser-prepare google-analytics" to create an OAuth client first. ' +
+    'To authenticate, run "latchkey prepare google-analytics" with the official OAuth client id/secret (recommended), ' +
+    'or "latchkey auth browser-prepare google-analytics" to create your own client first. ' +
     'It may take a few minutes before the OAuth client is ready to use.';
 
   readonly credentialCheckCurlArguments = [

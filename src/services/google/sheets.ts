@@ -14,7 +14,8 @@ export class GoogleSheets extends GoogleService {
   readonly baseApiUrls = ['https://sheets.googleapis.com/'] as const;
   readonly info =
     'https://developers.google.com/sheets/api/reference/rest. ' +
-    'If needed, run "latchkey auth browser-prepare google-sheets" to create an OAuth client first. ' +
+    'To authenticate, run "latchkey prepare google-sheets" with the official OAuth client id/secret (recommended), ' +
+    'or "latchkey auth browser-prepare google-sheets" to create your own client first. ' +
     'It may take a few minutes before the OAuth client is ready to use.';
 
   readonly credentialCheckCurlArguments = [
