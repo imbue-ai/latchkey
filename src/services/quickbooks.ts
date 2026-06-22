@@ -1,12 +1,18 @@
 /**
  * QuickBooks Online service implementation.
  *
- * QuickBooks uses the OAuth 2.0 authorization-code grant. Because Intuit cannot
- * auto-provision an app the way Google Cloud can, the user registers an app on
- * the Intuit Developer portal, adds latchkey's fixed redirect URI to it, and
- * hands latchkey the client ID/secret via `auth set-nocurl`. `auth browser` then
- * runs the consent flow in a real browser and captures the resulting tokens plus
- * the `realmId` (company id) that Intuit returns on the callback.
+ * QuickBooks uses the OAuth 2.0 authorization-code grant. Intuit can't
+ * auto-provision an app from a single API call the way Google Cloud can, but the
+ * whole developer-portal dance is automated for the user with Playwright:
+ *   - `latchkey auth browser-prepare quickbooks` opens a browser, has the user
+ *     sign in to a (free) Intuit Developer account, then drives
+ *     developer.intuit.com to create a QuickBooks Online sandbox app, scrape its
+ *     Development client ID/secret, and register latchkey's fixed redirect URI.
+ *   - `latchkey auth browser quickbooks` then runs the consent flow in that same
+ *     real browser and captures the resulting tokens plus the `realmId` (company
+ *     id) that Intuit returns on the callback.
+ * (`auth set-nocurl quickbooks <client_id> <client_secret>` remains a manual
+ * fallback for users who would rather register the app themselves.)
  *
  * Two QuickBooks-specific wrinkles are handled so callers never have to think
  * about them:
@@ -19,11 +25,18 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import type { Browser, BrowserContext, Response } from 'playwright';
+import type { Browser, BrowserContext, Locator, Page, Response } from 'playwright';
 import { z } from 'zod';
 import { ApiCredentials, ApiCredentialsUsageError } from '../apiCredentials/base.js';
 import { runCaptured } from '../curl.js';
+import type { EncryptedStorage } from '../encryptedStorage.js';
 import { OAuthTokenExchangeError, startOAuthCallbackServerForParams } from '../oauthUtils.js';
+import {
+  showSpinnerPage,
+  typeLikeHuman,
+  withTempBrowserContext,
+  type BrowserLaunchOptions,
+} from '../playwrightUtils.js';
 import {
   Service,
   ServiceSession,
@@ -31,6 +44,7 @@ import {
   LoginCancelledError,
   NoCurlCredentialsNotSupportedError,
   isBrowserClosedError,
+  isTimeoutError,
 } from './core/base.js';
 
 const QUICKBOOKS_AUTHORIZE_URL = 'https://appcenter.intuit.com/connect/oauth2';
@@ -54,6 +68,16 @@ const REALM_PLACEHOLDER = '{realmId}';
 
 const LOGIN_TIMEOUT_MS = 300_000;
 const EXPIRY_BUFFER_MS = 60_000;
+
+// --- browser-prepare flow (Intuit Developer portal automation) ---
+// The signed-in "My Apps" dashboard; unauthenticated visitors are redirected to
+// Intuit's hosted sign-in page and bounced back here afterwards.
+const INTUIT_MY_APPS_URL = 'https://developer.intuit.com/app/developer/myapps';
+// Intuit's portal is heavier than most, so give navigations and actions room.
+const PREPARE_NAV_TIMEOUT_MS = 30_000;
+const PREPARE_ACTION_TIMEOUT_MS = 30_000;
+// Signing in (creating the free account, MFA, etc.) is human-paced.
+const PREPARE_SIGN_IN_TIMEOUT_MS = 10 * 60 * 1000;
 
 interface QuickBooksTokenResponse {
   access_token: string;
@@ -288,6 +312,234 @@ class QuickBooksCredentialError extends NoCurlCredentialsNotSupportedError {
   }
 }
 
+/*
+ * ===========================================================================
+ * BROWSER-PREPARE FLOW — Intuit Developer portal automation
+ * ===========================================================================
+ *
+ * !!! SELECTORS BELOW ARE BEST-EFFORT AND UNVERIFIED. !!!
+ *
+ * Unlike the Google flow (src/services/google/base.ts), which was authored and
+ * tuned against a live Google Cloud Console, the prepare() flow here was written
+ * WITHOUT access to a live Intuit Developer account. Every URL, selector, and
+ * step ordering below is a best-effort guess at the developer.intuit.com UI and
+ * MUST be recorded against the real portal and corrected before it can be relied
+ * on. To record the real flow and fix these selectors (see docs/development.md
+ * -> "Potentially useful helpers"):
+ *
+ *   npx tsx scripts/codegen.ts quickbooks https://developer.intuit.com/app/developer/myapps
+ *   npx tsx scripts/recordBrowserSession.ts quickbooks
+ *
+ * The flow is deliberately defensive — explicit waits, generous timeouts, and
+ * actionable LoginFailedError messages — so that a wrong selector fails loudly
+ * at a named step instead of hanging or silently returning empty credentials.
+ * Semantic locators (getByRole/getByText/getByPlaceholder) are preferred over
+ * brittle CSS/XPath because they are more likely to survive portal redesigns.
+ * ===========================================================================
+ */
+
+/** Escape a string for safe inclusion inside a `RegExp`. */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Locate the "Create an app" call-to-action, which the portal renders as either
+ * a link or a button depending on whether the developer already has apps.
+ */
+function createAppButtonLocator(page: Page): Locator {
+  return page
+    .getByRole('link', { name: /create an app/i })
+    .or(page.getByRole('button', { name: /create an app/i }))
+    .first();
+}
+
+/**
+ * Wait for the user to sign in to the Intuit Developer portal.
+ *
+ * The portal redirects unauthenticated visitors to Intuit's hosted sign-in
+ * page, so surface the browser and wait (human-paced) for the signed-in "My
+ * Apps" dashboard — detected via the "Create an app" CTA — to appear.
+ */
+async function waitForIntuitSignIn(page: Page): Promise<void> {
+  await page.goto(INTUIT_MY_APPS_URL, { timeout: PREPARE_NAV_TIMEOUT_MS });
+  await page.bringToFront();
+
+  const createAppButton = createAppButtonLocator(page);
+  try {
+    await createAppButton.waitFor({ state: 'visible', timeout: PREPARE_SIGN_IN_TIMEOUT_MS });
+  } catch (error: unknown) {
+    if (error instanceof Error && isTimeoutError(error)) {
+      throw new LoginFailedError(
+        'Error: Timed out waiting for sign-in to the Intuit Developer portal at ' +
+          `${INTUIT_MY_APPS_URL}. Sign in (a free developer account is enough) and try again.`
+      );
+    }
+    throw error;
+  }
+}
+
+/**
+ * Drive the create-app wizard to create a QuickBooks Online (sandbox) app.
+ */
+async function createQuickBooksApp(page: Page, appName: string): Promise<void> {
+  const createAppButton = createAppButtonLocator(page);
+  await createAppButton.waitFor({ state: 'visible', timeout: PREPARE_ACTION_TIMEOUT_MS });
+  await createAppButton.click();
+
+  // Choose the "QuickBooks Online and Payments" platform card.
+  const platformCard = page.getByText(/quickbooks online and payments/i).first();
+  try {
+    await platformCard.waitFor({ state: 'visible', timeout: PREPARE_ACTION_TIMEOUT_MS });
+  } catch (error: unknown) {
+    if (error instanceof Error && isTimeoutError(error)) {
+      throw new LoginFailedError(
+        'Error: Could not find the "QuickBooks Online and Payments" option on the Intuit ' +
+          'Developer create-app screen.'
+      );
+    }
+    throw error;
+  }
+  await platformCard.click();
+
+  // Name the app.
+  const appNameInput = page.getByRole('textbox', { name: /name/i }).first();
+  try {
+    await appNameInput.waitFor({ state: 'visible', timeout: PREPARE_ACTION_TIMEOUT_MS });
+  } catch (error: unknown) {
+    if (error instanceof Error && isTimeoutError(error)) {
+      throw new LoginFailedError(
+        'Error: Could not find the app-name field on the Intuit create-app screen.'
+      );
+    }
+    throw error;
+  }
+  await appNameInput.click();
+  await typeLikeHuman(page, appNameInput, appName);
+
+  // Select the accounting scope (the QuickBooks Online data API latchkey uses).
+  // Best-effort: not every layout requires an explicit scope selection here.
+  const accountingScope = page.getByText(/com\.intuit\.quickbooks\.accounting/i).first();
+  if (await accountingScope.isVisible().catch(() => false)) {
+    await accountingScope.click().catch(() => undefined);
+  }
+
+  // Accept any EULA/terms checkbox the wizard shows.
+  const termsCheckbox = page.getByRole('checkbox').first();
+  if (await termsCheckbox.isVisible().catch(() => false)) {
+    await termsCheckbox.check().catch(() => undefined);
+  }
+
+  // Submit the wizard.
+  const submitButton = page.getByRole('button', { name: /create app/i }).first();
+  await submitButton.waitFor({ state: 'visible', timeout: PREPARE_ACTION_TIMEOUT_MS });
+  await submitButton.click();
+}
+
+/**
+ * Open the new app's "Keys & credentials" -> "Development" (sandbox) section.
+ */
+async function openDevelopmentKeys(page: Page): Promise<void> {
+  const keysNav = page
+    .getByRole('link', { name: /keys & credentials/i })
+    .or(page.getByRole('button', { name: /keys & credentials/i }))
+    .first();
+  try {
+    await keysNav.waitFor({ state: 'visible', timeout: PREPARE_NAV_TIMEOUT_MS });
+  } catch (error: unknown) {
+    if (error instanceof Error && isTimeoutError(error)) {
+      throw new LoginFailedError(
+        'Error: Could not open "Keys & credentials" for the newly created QuickBooks app.'
+      );
+    }
+    throw error;
+  }
+  await keysNav.click();
+
+  // Make sure we read the Development (sandbox) keys, not Production.
+  const developmentTab = page
+    .getByRole('tab', { name: /development/i })
+    .or(page.getByRole('link', { name: /^\s*development\s*$/i }))
+    .first();
+  if (await developmentTab.isVisible().catch(() => false)) {
+    await developmentTab.click().catch(() => undefined);
+  }
+}
+
+/**
+ * Read a labeled credential value (Client ID / Client Secret) from the keys
+ * page. The portal renders these in read-only inputs; a masked secret may need
+ * a "reveal" toggle clicked first.
+ */
+async function scrapeCredential(page: Page, fieldName: string): Promise<string> {
+  const label = new RegExp(escapeRegExp(fieldName), 'i');
+  const field = page.getByRole('textbox', { name: label }).first();
+  try {
+    await field.waitFor({ state: 'visible', timeout: PREPARE_ACTION_TIMEOUT_MS });
+  } catch (error: unknown) {
+    if (error instanceof Error && isTimeoutError(error)) {
+      throw new LoginFailedError(
+        `Error: Could not find the QuickBooks ${fieldName} field on the developer portal.`
+      );
+    }
+    throw error;
+  }
+
+  let value = (await field.inputValue().catch(() => '')).trim();
+  if (value === '') {
+    // The secret may be hidden behind a reveal toggle; best-effort reveal + retry.
+    const revealButton = page.getByRole('button', { name: /show|reveal/i }).first();
+    if (await revealButton.isVisible().catch(() => false)) {
+      await revealButton.click().catch(() => undefined);
+      value = (await field.inputValue().catch(() => '')).trim();
+    }
+  }
+  if (value === '') {
+    throw new LoginFailedError(
+      `Error: Read an empty QuickBooks ${fieldName} from the developer portal.`
+    );
+  }
+  return value;
+}
+
+/**
+ * Register latchkey's fixed redirect URI on the app's Development keys.
+ */
+async function addRedirectUri(page: Page, redirectUri: string): Promise<void> {
+  // Some layouts hide the input behind an "Add URI" affordance.
+  const addUriButton = page
+    .getByRole('button', { name: /add uri/i })
+    .or(page.getByRole('link', { name: /add uri/i }))
+    .first();
+  if (await addUriButton.isVisible().catch(() => false)) {
+    await addUriButton.click().catch(() => undefined);
+  }
+
+  const redirectInput = page
+    .getByRole('textbox', { name: /redirect uri/i })
+    .or(page.getByPlaceholder(/redirect uri/i))
+    .first();
+  try {
+    await redirectInput.waitFor({ state: 'visible', timeout: PREPARE_ACTION_TIMEOUT_MS });
+  } catch (error: unknown) {
+    if (error instanceof Error && isTimeoutError(error)) {
+      throw new LoginFailedError(
+        'Error: Could not find the redirect-URI field for the new QuickBooks app.'
+      );
+    }
+    throw error;
+  }
+  await redirectInput.click();
+  await typeLikeHuman(page, redirectInput, redirectUri);
+
+  const saveButton = page.getByRole('button', { name: /save/i }).first();
+  await saveButton.waitFor({ state: 'visible', timeout: PREPARE_ACTION_TIMEOUT_MS });
+  await saveButton.click();
+
+  // Give the save a beat to persist before the context is torn down.
+  await page.waitForTimeout(2000);
+}
+
 class QuickBooksServiceSession extends ServiceSession {
   onResponse(_response: Response): void {
     // The OAuth callback is delivered to the local HTTP server, not observed as a
@@ -374,6 +626,48 @@ class QuickBooksServiceSession extends ServiceSession {
       context.off('close', closeHandler);
     }
   }
+
+  override async prepare(
+    encryptedStorage: EncryptedStorage,
+    launchOptions?: BrowserLaunchOptions
+  ): Promise<ApiCredentials> {
+    return withTempBrowserContext(encryptedStorage, launchOptions ?? {}, async ({ context }) => {
+      const page = await context.newPage();
+      return this.runPrepareFlow(context, page);
+    });
+  }
+
+  /**
+   * Sign in -> create a sandbox app -> scrape its Development client ID/secret ->
+   * register the redirect URI. Returns client credentials with no tokens; the
+   * OAuth consent flow (finalizeCredentials) mints the tokens and realmId later
+   * when the user runs `latchkey auth browser quickbooks`.
+   */
+  private async runPrepareFlow(
+    context: BrowserContext,
+    page: Page
+  ): Promise<QuickBooksCredentials> {
+    await waitForIntuitSignIn(page);
+
+    // Hide the rest of the automation from the user behind a spinner.
+    await showSpinnerPage(
+      context,
+      'Finalizing QuickBooks setup by creating a sandbox app on the Intuit ' +
+        'Developer portal...\nThis can take a minute.'
+    );
+
+    const appName = this.generateAppName('-quickbooks');
+    await createQuickBooksApp(page, appName);
+
+    await openDevelopmentKeys(page);
+    const clientId = await scrapeCredential(page, 'Client ID');
+    const clientSecret = await scrapeCredential(page, 'Client Secret');
+    await addRedirectUri(page, QUICKBOOKS_REDIRECT_URI);
+
+    await page.close();
+
+    return new QuickBooksCredentials(clientId, clientSecret);
+  }
 }
 
 export class Quickbooks extends Service {
@@ -386,14 +680,18 @@ export class Quickbooks extends Service {
   readonly loginUrl = 'https://quickbooks.intuit.com/';
   readonly info =
     'https://developer.intuit.com/app/developer/qbo/docs/api/accounting/all-entities/account. ' +
-    'OAuth 2.0 authorization-code flow. Create an app on the Intuit Developer portal, add the ' +
-    `redirect URI ${QUICKBOOKS_REDIRECT_URI} to it, then run ` +
-    '`latchkey auth set-nocurl quickbooks <client_id> <client_secret>` followed by ' +
-    '`latchkey auth browser quickbooks` to sign in. Every API URL must include the company id; ' +
-    'write "{realmId}" in the path (e.g. ' +
-    'https://quickbooks.api.intuit.com/v3/company/{realmId}/companyinfo/{realmId}) and latchkey ' +
-    'fills in the connected company automatically. Use the sandbox-quickbooks.api.intuit.com host ' +
-    'for sandbox companies. Pass `-H "Accept: application/json"` to get JSON instead of XML.';
+    'OAuth 2.0 authorization-code flow with automatic, browser-driven setup. First run ' +
+    '`latchkey auth browser-prepare quickbooks`: it opens a browser, has you sign in to a (free) ' +
+    'Intuit Developer account, then automatically creates a QuickBooks Online sandbox app, reads ' +
+    'its Development client ID/secret, and registers the redirect URI ' +
+    `${QUICKBOOKS_REDIRECT_URI} (note http://localhost, not https). Then run ` +
+    '`latchkey auth browser quickbooks` to sign in and grant consent. (Advanced: you can instead ' +
+    'register the app yourself and run `latchkey auth set-nocurl quickbooks <client_id> ' +
+    '<client_secret>`.) Every API URL must include the company id; write "{realmId}" in the path ' +
+    '(e.g. https://quickbooks.api.intuit.com/v3/company/{realmId}/companyinfo/{realmId}) and ' +
+    'latchkey fills in the connected company automatically. Use the ' +
+    'sandbox-quickbooks.api.intuit.com host for sandbox companies. Pass `-H "Accept: ' +
+    'application/json"` to get JSON instead of XML.';
 
   // The userinfo endpoint validates the token independently of scope, realm, and
   // environment (sandbox vs production), so it works for any authorized credential.
