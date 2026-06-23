@@ -757,7 +757,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           command: 'prepare',
           params: { serviceName, json },
         });
-        deps.log(`Prepared ${serviceName}.`);
+        deps.log(`Done`);
         return;
       }
       try {
@@ -767,7 +767,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           encryptedStorage
         );
         const result = prepareService(deps.registry, apiCredentialStore, serviceName, json);
-        deps.log(`Prepared ${result.serviceName}.`);
+        deps.log(`Done`);
       } catch (error) {
         if (
           error instanceof UnknownServiceError ||
