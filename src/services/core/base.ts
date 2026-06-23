@@ -3,6 +3,7 @@
  */
 
 import type { Browser, BrowserContext, Page, Response } from 'playwright';
+import type { z, ZodTypeAny } from 'zod';
 import {
   ApiCredentialStatus,
   ApiCredentials,
@@ -38,6 +39,58 @@ export class LoginFailedError extends Error {
   }
 }
 
+/**
+ * Thrown when `latchkey auth prepare` is run for a service that does not declare a
+ * prepare schema (the base default — services opt in by setting one).
+ */
+export class PrepareNotSupportedError extends Error {
+  constructor(serviceName: string) {
+    super(
+      `Service '${serviceName}' does not support 'latchkey auth prepare'. ` +
+        `Use 'latchkey services info ${serviceName}' to see how to authenticate.`
+    );
+    this.name = 'PrepareNotSupportedError';
+  }
+}
+
+/**
+ * Thrown when the JSON passed to `latchkey auth prepare` is malformed or does not
+ * match the service's prepare schema. The whole command is rejected and
+ * nothing is stored.
+ */
+export class PrepareInputInvalidError extends Error {
+  constructor(serviceName: string, detail: string) {
+    super(`Invalid prepare input for '${serviceName}': ${detail}`);
+    this.name = 'PrepareInputInvalidError';
+  }
+}
+
+/**
+ * Validate a parsed JSON value against a service's prepare schema and build the
+ * resulting credentials. Centralizes validation so each service's
+ * `prepareFromJson` only expresses its schema and build step. Throws
+ * `PrepareInputInvalidError` (with the failing fields) on any schema mismatch;
+ * nothing is built unless the input fully validates.
+ */
+export function buildPreparedCredentials<Schema extends ZodTypeAny>(
+  serviceName: string,
+  schema: Schema,
+  parsedJson: unknown,
+  build: (validatedInput: z.infer<Schema>) => ApiCredentials
+): ApiCredentials {
+  const result = schema.safeParse(parsedJson);
+  if (!result.success) {
+    const detail = result.error.issues
+      .map((issue) => {
+        const path = issue.path.join('.');
+        return path ? `${path}: ${issue.message}` : issue.message;
+      })
+      .join('; ');
+    throw new PrepareInputInvalidError(serviceName, detail);
+  }
+  return build(result.data as z.infer<Schema>);
+}
+
 export function isBrowserClosedError(error: Error): boolean {
   const message = error.message.toLowerCase();
   return (
@@ -47,6 +100,22 @@ export function isBrowserClosedError(error: Error): boolean {
     message.includes('context has been closed') ||
     message.includes('page has been closed') ||
     message.includes('net::err_aborted')
+  );
+}
+
+/**
+ * Detects the Playwright/CDP error raised when a response body can no longer be
+ * retrieved (`Network.getResponseBody` reports "No resource with given
+ * identifier found"). This happens for responses that retain no readable body —
+ * redirects, evicted or cached resources, or bodies fetched after the page has
+ * navigated onward. Callers that read response bodies opportunistically should
+ * treat this as inconclusive rather than fatal.
+ */
+export function isResponseBodyUnavailableError(error: Error): boolean {
+  const message = error.message.toLowerCase();
+  return (
+    message.includes('no resource with given identifier') ||
+    message.includes('network.getresponsebody')
   );
 }
 
@@ -125,6 +194,18 @@ export abstract class Service {
   getCredentialsNoCurl(_arguments: readonly string[]): ApiCredentials {
     throw new NoCurlCredentialsNotSupportedError(this.name);
   }
+
+  /**
+   * Build credentials from a parsed JSON payload for `latchkey auth prepare`.
+   *
+   * Optional, like `getSession`/`refreshCredentials`: services opt in by
+   * implementing it (typically via `buildPreparedCredentials` with a Zod
+   * schema). When a service does not implement it, prepare is "not supported"
+   * — the default that lets every service stay closed until it declares a
+   * schema. Implementations validate `parsedJson` and throw
+   * `PrepareInputInvalidError` on mismatch.
+   */
+  prepareFromJson?(parsedJson: unknown): ApiCredentials;
 
   /**
    * Get a new session for the login flow.

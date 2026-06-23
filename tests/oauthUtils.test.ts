@@ -23,14 +23,29 @@ describe('startOAuthCallbackServer', () => {
 });
 
 describe('generateCodeVerifier', () => {
-  it('just runs', () => {
-    generateCodeVerifier();
+  it('produces a URL-safe base64 verifier with no padding', () => {
+    // 32 random bytes base64url-encoded -> 43 chars, [A-Za-z0-9_-], no '='.
+    const verifier = generateCodeVerifier();
+    expect(verifier).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(verifier).toHaveLength(43);
+  });
+
+  it('returns a different value on each call', () => {
+    expect(generateCodeVerifier()).not.toBe(generateCodeVerifier());
   });
 });
 
 describe('generateCodeChallenge', () => {
-  it('just runs', () => {
-    generateCodeChallenge('dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk');
+  it('derives the S256 challenge from the RFC 7636 test vector', () => {
+    // RFC 7636 Appendix B known-answer pair.
+    expect(generateCodeChallenge('dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk')).toBe(
+      'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM'
+    );
+  });
+
+  it('produces a URL-safe base64 challenge with no padding', () => {
+    const challenge = generateCodeChallenge(generateCodeVerifier());
+    expect(challenge).toMatch(/^[A-Za-z0-9_-]+$/);
   });
 });
 

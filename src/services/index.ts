@@ -12,6 +12,8 @@ export {
   LoginCancelledError,
   LoginFailedError,
   NoCurlCredentialsNotSupportedError,
+  PrepareNotSupportedError,
+  PrepareInputInvalidError,
 } from './core/base.js';
 export { RegisteredService } from './core/registered.js';
 
@@ -44,3 +46,4 @@ export { Yelp, YELP } from './yelp.js';
 export { Coolify, COOLIFY } from './coolify.js';
 export { Umami, UMAMI } from './umami.js';
 export { Ramp, RAMP } from './ramp.js';
+export { Todoist, TODOIST } from './todoist.js';

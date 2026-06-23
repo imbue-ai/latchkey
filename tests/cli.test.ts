@@ -21,6 +21,7 @@ import {
   verifyPermissionsOverrideJwt,
 } from '../src/gateway/permissionsOverride.js';
 import { TELEGRAM } from '../src/services/telegram.js';
+import { GOOGLE_GMAIL } from '../src/services/google/gmail.js';
 import {
   deleteRegisteredService,
   loadRegisteredServices,
@@ -1194,6 +1195,76 @@ describe('CLI commands with dependency injection', () => {
     });
   });
 
+  describe('prepare command', () => {
+    it('stores an OAuth client for a Google service and reports success', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(storePath, '{}');
+
+      const deps = createMockDependencies({
+        registry: new ServiceRegistry([GOOGLE_GMAIL]),
+      });
+
+      await runCommand(
+        ['auth', 'prepare', 'google-gmail', '{"clientId":"cid","clientSecret":"csecret"}'],
+        deps
+      );
+
+      expect(logs).toContain('Done');
+      const storedData = JSON.parse(readSecureFile(storePath) ?? '{}') as Record<string, unknown>;
+      expect(storedData['google-gmail']).toEqual({
+        objectType: 'oauth',
+        clientId: 'cid',
+        clientSecret: 'csecret',
+      });
+    });
+
+    it('returns an error for an unknown service', async () => {
+      const deps = createMockDependencies();
+
+      await runCommand(['auth', 'prepare', 'unknown-service', '{}'], deps);
+
+      expect(exitCode).toBe(1);
+    });
+
+    it('returns an error for a service that does not support prepare', async () => {
+      const deps = createMockDependencies();
+
+      await runCommand(['auth', 'prepare', 'slack', '{"clientId":"a","clientSecret":"b"}'], deps);
+
+      expect(exitCode).toBe(1);
+    });
+
+    it('returns an error and stores nothing for malformed JSON', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(storePath, '{}');
+
+      const deps = createMockDependencies({
+        registry: new ServiceRegistry([GOOGLE_GMAIL]),
+      });
+
+      await runCommand(['auth', 'prepare', 'google-gmail', '{not valid'], deps);
+
+      expect(exitCode).toBe(1);
+      const storedData = JSON.parse(readSecureFile(storePath) ?? '{}') as Record<string, unknown>;
+      expect(storedData['google-gmail']).toBeUndefined();
+    });
+
+    it('returns an error for input that fails the schema', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(storePath, '{}');
+
+      const deps = createMockDependencies({
+        registry: new ServiceRegistry([GOOGLE_GMAIL]),
+      });
+
+      await runCommand(['auth', 'prepare', 'google-gmail', '{"clientId":"only-id"}'], deps);
+
+      expect(exitCode).toBe(1);
+      const storedData = JSON.parse(readSecureFile(storePath) ?? '{}') as Record<string, unknown>;
+      expect(storedData['google-gmail']).toBeUndefined();
+    });
+  });
+
   describe('curl command', () => {
     it('should pass arguments to subprocess', async () => {
       const storePath = join(tempDir, 'credentials.json');
@@ -1299,6 +1370,25 @@ describe('CLI commands with dependency injection', () => {
       await runCommand(['curl', 'https://unknown-api.example.com'], deps);
 
       expect(exitCode).toBe(1);
+    });
+
+    it('should return error when OAuth credentials lack an access token', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(
+        storePath,
+        JSON.stringify({
+          'google-gmail': { objectType: 'oauth', clientId: 'cid', clientSecret: 'csecret' },
+        })
+      );
+
+      const deps = createMockDependencies({
+        registry: new ServiceRegistry([GOOGLE_GMAIL]),
+      });
+
+      await runCommand(['curl', 'https://gmail.googleapis.com/gmail/v1/users/me/profile'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs.length).toBeGreaterThan(0);
     });
 
     it('should pass through unknown service when passthroughUnknown is enabled', async () => {
@@ -2456,12 +2546,42 @@ describe('CLI commands with dependency injection', () => {
       expect(logs).toContain('Already prepared.');
     });
 
+    it('forwards `prepare` to the gateway /latchkey endpoint', async () => {
+      const fetchMock = makeFetchMock(
+        new Response(
+          JSON.stringify({ result: { serviceName: 'google-gmail', credentialType: 'oauth' } }),
+          { status: 200 }
+        )
+      );
+      const deps = createMockDependencies({
+        config: createMockConfig({ gatewayUrl: GATEWAY_URL }),
+      });
+
+      await runCommand(
+        ['auth', 'prepare', 'google-gmail', '{"clientId":"cid","clientSecret":"csecret"}'],
+        deps
+      );
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe(`${GATEWAY_URL}/latchkey`);
+      expect(JSON.parse(init.body as string) as unknown).toEqual({
+        command: 'auth prepare',
+        params: {
+          serviceName: 'google-gmail',
+          json: '{"clientId":"cid","clientSecret":"csecret"}',
+        },
+      });
+      expect(logs).toContain('Done');
+    });
+
     it.each([
       ['services list', ['services', 'list']],
       ['services info', ['services', 'info', 'foo']],
       ['auth list', ['auth', 'list']],
       ['auth browser', ['auth', 'browser', 'slack']],
       ['auth browser-prepare', ['auth', 'browser-prepare', 'slack']],
+      ['auth prepare', ['auth', 'prepare', 'foo', '{}']],
     ])('reports gateway errors on stderr (not stdout) for `%s`', async (_name, argv) => {
       makeFetchMock(
         new Response(JSON.stringify({ error: 'Unknown service: foo.' }), { status: 400 })

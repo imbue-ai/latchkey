@@ -19,7 +19,12 @@ import {
   hasGraphicalEnvironment,
 } from './playwrightUtils.js';
 import type { ServiceRegistry } from './serviceRegistry.js';
-import { isBrowserClosedError, LoginCancelledError } from './services/core/base.js';
+import {
+  isBrowserClosedError,
+  LoginCancelledError,
+  PrepareInputInvalidError,
+  PrepareNotSupportedError,
+} from './services/core/base.js';
 import { RegisteredService } from './services/core/registered.js';
 import type { Service } from './services/index.js';
 
@@ -251,4 +256,47 @@ export async function authBrowserPrepare(
   }
   apiCredentialStore.save(service.name, apiCredentials);
   return { alreadyPrepared: false };
+}
+
+export interface PrepareServiceResult {
+  readonly serviceName: string;
+  readonly credentialType: string;
+}
+
+/**
+ * Store credentials for a service from a validated JSON payload
+ * (`latchkey auth prepare <service> <json>`). The whole operation is rejected — and
+ * nothing is stored — if the JSON is malformed, fails the service's schema, or
+ * the service does not support prepare.
+ */
+export function prepareService(
+  registry: ServiceRegistry,
+  apiCredentialStore: ApiCredentialStore,
+  serviceName: string,
+  json: string
+): PrepareServiceResult {
+  const service = lookupService(registry, serviceName);
+
+  // Services opt in to prepare by implementing prepareFromJson; absence is the
+  // default "not supported" state.
+  if (service.prepareFromJson === undefined) {
+    throw new PrepareNotSupportedError(serviceName);
+  }
+
+  let parsedJson: unknown;
+  try {
+    parsedJson = JSON.parse(json);
+  } catch (error: unknown) {
+    throw new PrepareInputInvalidError(
+      serviceName,
+      `not valid JSON: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+
+  // prepareFromJson validates against the service's schema and throws
+  // PrepareInputInvalidError on any mismatch, so a store only happens once the
+  // input is fully valid.
+  const credentials = service.prepareFromJson(parsedJson);
+  apiCredentialStore.save(service.name, credentials);
+  return { serviceName: service.name, credentialType: credentials.objectType };
 }

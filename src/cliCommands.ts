@@ -7,7 +7,11 @@ import { existsSync, statSync, unlinkSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { ApiCredentialStore, ApiCredentialStoreError } from './apiCredentials/store.js';
-import { ApiCredentials, RawCurlCredentials } from './apiCredentials/base.js';
+import {
+  ApiCredentials,
+  ApiCredentialsUsageError,
+  RawCurlCredentials,
+} from './apiCredentials/base.js';
 import {
   CredentialsExpiredError,
   NoCredentialsForServiceError,
@@ -46,6 +50,8 @@ import {
   LoginCancelledError,
   LoginFailedError,
   NoCurlCredentialsNotSupportedError,
+  PrepareInputInvalidError,
+  PrepareNotSupportedError,
   Service,
 } from './services/index.js';
 import {
@@ -77,6 +83,7 @@ import {
   authList,
   authBrowser,
   authBrowserPrepare,
+  prepareService,
   UnknownServiceError,
   BrowserNotConfiguredError,
   PreparationRequiredError,
@@ -734,6 +741,50 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       }
     });
 
+  authCommand
+    .command('prepare')
+    .description(
+      "Register a service's client details (e.g. an OAuth client id/secret) from a JSON payload, for use during login."
+    )
+    .argument('<service_name>', 'Name of the service to prepare')
+    .argument(
+      '<json>',
+      'Service-specific registration JSON, e.g. \'{"clientId":"...","clientSecret":"..."}\''
+    )
+    .addHelpText(
+      'after',
+      `\nExample:\n  $ latchkey auth prepare google-gmail '{"clientId":"<id>","clientSecret":"<secret>"}'`
+    )
+    .action(async (serviceName: string, json: string) => {
+      if (deps.config.gatewayUrl !== null) {
+        await forwardToGateway(deps, {
+          command: 'auth prepare',
+          params: { serviceName, json },
+        });
+        deps.log(`Done`);
+        return;
+      }
+      try {
+        const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
+        const apiCredentialStore = new ApiCredentialStore(
+          deps.config.credentialStorePath,
+          encryptedStorage
+        );
+        prepareService(deps.registry, apiCredentialStore, serviceName, json);
+        deps.log(`Done`);
+      } catch (error) {
+        if (
+          error instanceof UnknownServiceError ||
+          error instanceof PrepareNotSupportedError ||
+          error instanceof PrepareInputInvalidError
+        ) {
+          deps.errorLog(`Error: ${error.message}`);
+          deps.exit(1);
+        }
+        throw error;
+      }
+    });
+
   program
     .command('curl')
     .description('Run curl with API credential injection.')
@@ -810,7 +861,8 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           error instanceof UrlExtractionFailedError ||
           error instanceof NoServiceForUrlError ||
           error instanceof NoCredentialsForServiceError ||
-          error instanceof CredentialsExpiredError
+          error instanceof CredentialsExpiredError ||
+          error instanceof ApiCredentialsUsageError
         ) {
           deps.errorLog(error.message);
           deps.exit(1);

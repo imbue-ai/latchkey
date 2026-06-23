@@ -25,6 +25,7 @@ import {
   AWS,
   TELEGRAM,
   RAMP,
+  TODOIST,
 } from '../src/services/index.js';
 
 describe('ServiceRegistry', () => {
@@ -46,6 +47,7 @@ describe('ServiceRegistry', () => {
       ['aws', AWS],
       ['telegram', TELEGRAM],
       ['ramp', RAMP],
+      ['todoist', TODOIST],
     ] as const;
 
     for (const [name, service] of namedServices) {
@@ -83,6 +85,7 @@ describe('ServiceRegistry', () => {
       ['https://s3.us-east-1.amazonaws.com/my-bucket', AWS],
       ['https://api.ramp.com/developer/v1/transactions', RAMP],
       ['https://demo-api.ramp.com/developer/v1/transactions', RAMP],
+      ['https://api.todoist.com/api/v1/projects', TODOIST],
     ] as const;
 
     for (const [url, service] of urlMappings) {

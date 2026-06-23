@@ -34,6 +34,7 @@ import {
   COOLIFY,
   UMAMI,
   RAMP,
+  TODOIST,
 } from './services/index.js';
 
 export class DuplicateServiceNameError extends Error {
@@ -162,4 +163,5 @@ export const SERVICE_REGISTRY = new ServiceRegistry([
   COOLIFY,
   UMAMI,
   RAMP,
+  TODOIST,
 ]);

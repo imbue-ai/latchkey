@@ -4,9 +4,16 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { ApiCredentialStore } from '../src/apiCredentials/store.js';
-import { ApiCredentialStatus } from '../src/apiCredentials/base.js';
+import { ApiCredentialStatus, OAuthCredentials } from '../src/apiCredentials/base.js';
 import { SlackApiCredentials } from '../src/services/slack.js';
-import { NoCurlCredentialsNotSupportedError, Service } from '../src/services/core/base.js';
+import {
+  NoCurlCredentialsNotSupportedError,
+  PrepareInputInvalidError,
+  PrepareNotSupportedError,
+  Service,
+} from '../src/services/core/base.js';
+import { GOOGLE_GMAIL } from '../src/services/google/gmail.js';
+import { NOTION_MCP } from '../src/services/notion-mcp.js';
 import { RegisteredService } from '../src/services/core/registered.js';
 import { ServiceRegistry } from '../src/serviceRegistry.js';
 import { Config } from '../src/config.js';
@@ -16,6 +23,7 @@ import {
   authList,
   authBrowser,
   authBrowserPrepare,
+  prepareService,
   UnknownServiceError,
   PreparationRequiredError,
 } from '../src/sharedOperations.js';
@@ -324,6 +332,163 @@ describe('operations', () => {
       const result = await authBrowserPrepare(registry, store, encryptedStorage, config, 'slack');
 
       expect(result.alreadyPrepared).toBe(true);
+    });
+  });
+
+  describe('prepareService', () => {
+    it('stores token-less OAuth credentials for a Google service and returns the result', () => {
+      const registry = new ServiceRegistry([GOOGLE_GMAIL]);
+      const store = createApiCredentialStore();
+
+      const result = prepareService(
+        registry,
+        store,
+        'google-gmail',
+        JSON.stringify({ clientId: 'cid', clientSecret: 'csecret' })
+      );
+
+      expect(result).toEqual({ serviceName: 'google-gmail', credentialType: 'oauth' });
+      const stored = store.get('google-gmail');
+      expect(stored).toBeInstanceOf(OAuthCredentials);
+      const oauth = stored as OAuthCredentials;
+      expect(oauth.clientId).toBe('cid');
+      expect(oauth.clientSecret).toBe('csecret');
+      expect(oauth.accessToken).toBeUndefined();
+      expect(oauth.refreshToken).toBeUndefined();
+    });
+
+    it('overwrites existing credentials unconditionally', () => {
+      const registry = new ServiceRegistry([GOOGLE_GMAIL]);
+      const store = createApiCredentialStore({
+        'google-gmail': { objectType: 'oauth', clientId: 'old-id', clientSecret: 'old-secret' },
+      });
+
+      prepareService(
+        registry,
+        store,
+        'google-gmail',
+        JSON.stringify({ clientId: 'new-id', clientSecret: 'new-secret' })
+      );
+
+      expect((store.get('google-gmail') as OAuthCredentials).clientId).toBe('new-id');
+      expect((store.get('google-gmail') as OAuthCredentials).clientSecret).toBe('new-secret');
+    });
+
+    it('throws UnknownServiceError for an unknown service', () => {
+      const registry = new ServiceRegistry([GOOGLE_GMAIL]);
+      const store = createApiCredentialStore();
+
+      expect(() => prepareService(registry, store, 'nope', '{}')).toThrow(UnknownServiceError);
+    });
+
+    it('throws PrepareNotSupportedError for a service without a prepare schema, storing nothing', () => {
+      const registry = new ServiceRegistry([createMockService({ name: 'slack' })]);
+      const store = createApiCredentialStore();
+
+      expect(() =>
+        prepareService(
+          registry,
+          store,
+          'slack',
+          JSON.stringify({ clientId: 'a', clientSecret: 'b' })
+        )
+      ).toThrow(PrepareNotSupportedError);
+      expect(store.get('slack')).toBeNull();
+    });
+
+    it('rejects malformed JSON without storing anything', () => {
+      const registry = new ServiceRegistry([GOOGLE_GMAIL]);
+      const store = createApiCredentialStore();
+
+      expect(() => prepareService(registry, store, 'google-gmail', '{not valid')).toThrow(
+        PrepareInputInvalidError
+      );
+      expect(store.get('google-gmail')).toBeNull();
+    });
+
+    it('rejects input missing required fields without storing anything', () => {
+      const registry = new ServiceRegistry([GOOGLE_GMAIL]);
+      const store = createApiCredentialStore();
+
+      expect(() =>
+        prepareService(registry, store, 'google-gmail', JSON.stringify({ clientId: 'only-id' }))
+      ).toThrow(PrepareInputInvalidError);
+      expect(store.get('google-gmail')).toBeNull();
+    });
+
+    it('rejects unknown keys (strict schema)', () => {
+      const registry = new ServiceRegistry([GOOGLE_GMAIL]);
+      const store = createApiCredentialStore();
+
+      expect(() =>
+        prepareService(
+          registry,
+          store,
+          'google-gmail',
+          JSON.stringify({ clientId: 'a', clientSecret: 'b', extra: 'nope' })
+        )
+      ).toThrow(PrepareInputInvalidError);
+      expect(store.get('google-gmail')).toBeNull();
+    });
+
+    it('rejects empty string fields', () => {
+      const registry = new ServiceRegistry([GOOGLE_GMAIL]);
+      const store = createApiCredentialStore();
+
+      expect(() =>
+        prepareService(
+          registry,
+          store,
+          'google-gmail',
+          JSON.stringify({ clientId: '', clientSecret: 'b' })
+        )
+      ).toThrow(PrepareInputInvalidError);
+    });
+
+    it('stores a token-less OAuth client id for notion-mcp (public client, no secret)', () => {
+      const registry = new ServiceRegistry([NOTION_MCP]);
+      const store = createApiCredentialStore();
+
+      const result = prepareService(
+        registry,
+        store,
+        'notion-mcp',
+        JSON.stringify({ clientId: 'notion-client-id' })
+      );
+
+      expect(result).toEqual({ serviceName: 'notion-mcp', credentialType: 'oauth' });
+      const stored = store.get('notion-mcp');
+      expect(stored).toBeInstanceOf(OAuthCredentials);
+      const oauth = stored as OAuthCredentials;
+      expect(oauth.clientId).toBe('notion-client-id');
+      expect(oauth.clientSecret).toBe('');
+      expect(oauth.accessToken).toBeUndefined();
+      expect(oauth.refreshToken).toBeUndefined();
+    });
+
+    it('rejects a notion-mcp clientSecret (unknown key, strict schema)', () => {
+      const registry = new ServiceRegistry([NOTION_MCP]);
+      const store = createApiCredentialStore();
+
+      expect(() =>
+        prepareService(
+          registry,
+          store,
+          'notion-mcp',
+          JSON.stringify({ clientId: 'a', clientSecret: 'b' })
+        )
+      ).toThrow(PrepareInputInvalidError);
+      expect(store.get('notion-mcp')).toBeNull();
+    });
+
+    it('rejects notion-mcp input missing clientId', () => {
+      const registry = new ServiceRegistry([NOTION_MCP]);
+      const store = createApiCredentialStore();
+
+      expect(() => prepareService(registry, store, 'notion-mcp', '{}')).toThrow(
+        PrepareInputInvalidError
+      );
+      expect(store.get('notion-mcp')).toBeNull();
     });
   });
 });
