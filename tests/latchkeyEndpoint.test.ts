@@ -94,7 +94,7 @@ describe('LatchkeyRequestSchema', () => {
 
   it('should validate prepare with serviceName and json', () => {
     const result = LatchkeyRequestSchema.safeParse({
-      command: 'prepare',
+      command: 'auth prepare',
       params: { serviceName: 'google-gmail', json: '{"clientId":"a","clientSecret":"b"}' },
     });
     expect(result.success).toBe(true);
@@ -102,7 +102,7 @@ describe('LatchkeyRequestSchema', () => {
 
   it('should reject prepare without json', () => {
     const result = LatchkeyRequestSchema.safeParse({
-      command: 'prepare',
+      command: 'auth prepare',
       params: { serviceName: 'google-gmail' },
     });
     expect(result.success).toBe(false);
@@ -110,7 +110,7 @@ describe('LatchkeyRequestSchema', () => {
 
   it('should reject prepare without serviceName', () => {
     const result = LatchkeyRequestSchema.safeParse({
-      command: 'prepare',
+      command: 'auth prepare',
       params: { json: '{}' },
     });
     expect(result.success).toBe(false);
@@ -348,7 +348,7 @@ describe('/latchkey/ endpoint', () => {
     it('stores OAuth client credentials for a Google service', async () => {
       gateway = await createTestGateway({}, { registry: new ServiceRegistry([GOOGLE_GMAIL]) });
       const response = await postLatchkey({
-        command: 'prepare',
+        command: 'auth prepare',
         params: {
           serviceName: 'google-gmail',
           json: '{"clientId":"cid","clientSecret":"csecret"}',
@@ -365,7 +365,7 @@ describe('/latchkey/ endpoint', () => {
     it('returns 400 when the service does not support prepare', async () => {
       gateway = await createTestGateway();
       const response = await postLatchkey({
-        command: 'prepare',
+        command: 'auth prepare',
         params: { serviceName: 'slack', json: '{"clientId":"a","clientSecret":"b"}' },
       });
 
@@ -377,7 +377,7 @@ describe('/latchkey/ endpoint', () => {
     it('returns 400 for malformed prepare JSON', async () => {
       gateway = await createTestGateway({}, { registry: new ServiceRegistry([GOOGLE_GMAIL]) });
       const response = await postLatchkey({
-        command: 'prepare',
+        command: 'auth prepare',
         params: { serviceName: 'google-gmail', json: '{not valid' },
       });
 

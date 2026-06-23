@@ -737,7 +737,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       }
     });
 
-  program
+  authCommand
     .command('prepare')
     .description(
       "Store a service's credentials from a JSON payload (e.g. an OAuth client id/secret)."
@@ -749,12 +749,12 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     )
     .addHelpText(
       'after',
-      `\nExample:\n  $ latchkey prepare google-gmail '{"clientId":"<id>","clientSecret":"<secret>"}'`
+      `\nExample:\n  $ latchkey auth prepare google-gmail '{"clientId":"<id>","clientSecret":"<secret>"}'`
     )
     .action(async (serviceName: string, json: string) => {
       if (deps.config.gatewayUrl !== null) {
         await forwardToGateway(deps, {
-          command: 'prepare',
+          command: 'auth prepare',
           params: { serviceName, json },
         });
         deps.log(`Done`);
@@ -766,7 +766,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           deps.config.credentialStorePath,
           encryptedStorage
         );
-        const result = prepareService(deps.registry, apiCredentialStore, serviceName, json);
+        prepareService(deps.registry, apiCredentialStore, serviceName, json);
         deps.log(`Done`);
       } catch (error) {
         if (

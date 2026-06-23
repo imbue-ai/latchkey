@@ -1205,11 +1205,11 @@ describe('CLI commands with dependency injection', () => {
       });
 
       await runCommand(
-        ['prepare', 'google-gmail', '{"clientId":"cid","clientSecret":"csecret"}'],
+        ['auth', 'prepare', 'google-gmail', '{"clientId":"cid","clientSecret":"csecret"}'],
         deps
       );
 
-      expect(logs).toContain('Prepared google-gmail.');
+      expect(logs).toContain('Done');
       const storedData = JSON.parse(readSecureFile(storePath) ?? '{}') as Record<string, unknown>;
       expect(storedData['google-gmail']).toEqual({
         objectType: 'oauth',
@@ -1221,7 +1221,7 @@ describe('CLI commands with dependency injection', () => {
     it('returns an error for an unknown service', async () => {
       const deps = createMockDependencies();
 
-      await runCommand(['prepare', 'unknown-service', '{}'], deps);
+      await runCommand(['auth', 'prepare', 'unknown-service', '{}'], deps);
 
       expect(exitCode).toBe(1);
     });
@@ -1229,7 +1229,7 @@ describe('CLI commands with dependency injection', () => {
     it('returns an error for a service that does not support prepare', async () => {
       const deps = createMockDependencies();
 
-      await runCommand(['prepare', 'slack', '{"clientId":"a","clientSecret":"b"}'], deps);
+      await runCommand(['auth', 'prepare', 'slack', '{"clientId":"a","clientSecret":"b"}'], deps);
 
       expect(exitCode).toBe(1);
     });
@@ -1242,7 +1242,7 @@ describe('CLI commands with dependency injection', () => {
         registry: new ServiceRegistry([GOOGLE_GMAIL]),
       });
 
-      await runCommand(['prepare', 'google-gmail', '{not valid'], deps);
+      await runCommand(['auth', 'prepare', 'google-gmail', '{not valid'], deps);
 
       expect(exitCode).toBe(1);
       const storedData = JSON.parse(readSecureFile(storePath) ?? '{}') as Record<string, unknown>;
@@ -1257,7 +1257,7 @@ describe('CLI commands with dependency injection', () => {
         registry: new ServiceRegistry([GOOGLE_GMAIL]),
       });
 
-      await runCommand(['prepare', 'google-gmail', '{"clientId":"only-id"}'], deps);
+      await runCommand(['auth', 'prepare', 'google-gmail', '{"clientId":"only-id"}'], deps);
 
       expect(exitCode).toBe(1);
       const storedData = JSON.parse(readSecureFile(storePath) ?? '{}') as Record<string, unknown>;
@@ -2539,7 +2539,7 @@ describe('CLI commands with dependency injection', () => {
       });
 
       await runCommand(
-        ['prepare', 'google-gmail', '{"clientId":"cid","clientSecret":"csecret"}'],
+        ['auth', 'prepare', 'google-gmail', '{"clientId":"cid","clientSecret":"csecret"}'],
         deps
       );
 
@@ -2547,13 +2547,13 @@ describe('CLI commands with dependency injection', () => {
       const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
       expect(url).toBe(`${GATEWAY_URL}/latchkey`);
       expect(JSON.parse(init.body as string) as unknown).toEqual({
-        command: 'prepare',
+        command: 'auth prepare',
         params: {
           serviceName: 'google-gmail',
           json: '{"clientId":"cid","clientSecret":"csecret"}',
         },
       });
-      expect(logs).toContain('Prepared google-gmail.');
+      expect(logs).toContain('Done');
     });
 
     it.each([
@@ -2562,7 +2562,7 @@ describe('CLI commands with dependency injection', () => {
       ['auth list', ['auth', 'list']],
       ['auth browser', ['auth', 'browser', 'slack']],
       ['auth browser-prepare', ['auth', 'browser-prepare', 'slack']],
-      ['prepare', ['prepare', 'foo', '{}']],
+      ['auth prepare', ['auth', 'prepare', 'foo', '{}']],
     ])('reports gateway errors on stderr (not stdout) for `%s`', async (_name, argv) => {
       makeFetchMock(
         new Response(JSON.stringify({ error: 'Unknown service: foo.' }), { status: 400 })

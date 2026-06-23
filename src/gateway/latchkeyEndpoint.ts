@@ -75,7 +75,7 @@ const AuthBrowserPrepareRequestSchema = z.object({
 });
 
 const PrepareRequestSchema = z.object({
-  command: z.literal('prepare'),
+  command: z.literal('auth prepare'),
   params: serviceNameParams.extend({
     json: z.string(),
   }),
@@ -175,7 +175,7 @@ async function dispatch(
         parsed.params.serviceName
       );
 
-    case 'prepare':
+    case 'auth prepare':
       return prepareService(
         deps.registry,
         apiCredentialStore,

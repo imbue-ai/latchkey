@@ -824,7 +824,7 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
 }
 
 /**
- * JSON accepted by `latchkey prepare <google-service>`: the OAuth client
+ * JSON accepted by `latchkey auth prepare <google-service>`: the OAuth client
  * credentials to use for that service. `.strict()` rejects unknown keys so
  * typos are reported instead of silently ignored.
  */
@@ -851,7 +851,7 @@ export abstract class GoogleService extends Service {
 
   /**
    * Google services accept an official OAuth client's id/secret via
-   * `latchkey prepare`, stored as token-less OAuth credentials until login.
+   * `latchkey auth prepare`, stored as token-less OAuth credentials until login.
    */
   override prepareFromJson(parsedJson: unknown): ApiCredentials {
     return buildPreparedCredentials(

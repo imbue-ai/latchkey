@@ -265,7 +265,7 @@ export interface PrepareServiceResult {
 
 /**
  * Store credentials for a service from a validated JSON payload
- * (`latchkey prepare <service> <json>`). The whole operation is rejected — and
+ * (`latchkey auth prepare <service> <json>`). The whole operation is rejected — and
  * nothing is stored — if the JSON is malformed, fails the service's schema, or
  * the service does not support prepare.
  */

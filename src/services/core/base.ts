@@ -40,13 +40,13 @@ export class LoginFailedError extends Error {
 }
 
 /**
- * Thrown when `latchkey prepare` is run for a service that does not declare a
+ * Thrown when `latchkey auth prepare` is run for a service that does not declare a
  * prepare schema (the base default — services opt in by setting one).
  */
 export class PrepareNotSupportedError extends Error {
   constructor(serviceName: string) {
     super(
-      `Service '${serviceName}' does not support 'latchkey prepare'. ` +
+      `Service '${serviceName}' does not support 'latchkey auth prepare'. ` +
         `Use 'latchkey services info ${serviceName}' to see how to authenticate.`
     );
     this.name = 'PrepareNotSupportedError';
@@ -54,7 +54,7 @@ export class PrepareNotSupportedError extends Error {
 }
 
 /**
- * Thrown when the JSON passed to `latchkey prepare` is malformed or does not
+ * Thrown when the JSON passed to `latchkey auth prepare` is malformed or does not
  * match the service's prepare schema. The whole command is rejected and
  * nothing is stored.
  */
@@ -180,7 +180,7 @@ export abstract class Service {
   }
 
   /**
-   * Build credentials from a parsed JSON payload for `latchkey prepare`.
+   * Build credentials from a parsed JSON payload for `latchkey auth prepare`.
    *
    * Optional, like `getSession`/`refreshCredentials`: services opt in by
    * implementing it (typically via `buildPreparedCredentials` with a Zod
