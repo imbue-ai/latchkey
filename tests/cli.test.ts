@@ -1385,10 +1385,7 @@ describe('CLI commands with dependency injection', () => {
         registry: new ServiceRegistry([GOOGLE_GMAIL]),
       });
 
-      await runCommand(
-        ['curl', 'https://gmail.googleapis.com/gmail/v1/users/me/profile'],
-        deps
-      );
+      await runCommand(['curl', 'https://gmail.googleapis.com/gmail/v1/users/me/profile'], deps);
 
       expect(exitCode).toBe(1);
       expect(errorLogs.length).toBeGreaterThan(0);
