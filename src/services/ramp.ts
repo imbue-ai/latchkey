@@ -202,71 +202,52 @@ const RAMP_LOGIN_TIMEOUT_MS = 300_000;
 /**
  * Scopes requested at login for the agent-key (auth_level=auto) flow.
  *
- * We request the UNION of ramp-cli's standard DEVAPI_SCOPES and Ramp's agentic
- * scope catalog, so one token can serve BOTH Ramp API surfaces:
- *   - the standard REST endpoints (e.g. GET /developer/v1/cards) need standard
- *     scopes like `cards:read`, while
- *   - the agent-tool endpoints (e.g. POST /developer/v1/agent-tools/list-cards)
- *     need the agentic scopes like `cards:read_agentic` and `limits:read`.
- * Cards is the only resource whose read scope differs by surface (`cards:read`
- * vs `cards:read_agentic`), so both are listed; every other resource shares one
- * scope name across surfaces. Requesting a scope the signed-in user isn't
- * entitled to is harmless -- Ramp grants only the subset the user has and
- * returns it in the token's `scope` field. But OMITTING a scope an endpoint
- * needs fails at call time with
- *   DEVELOPER_7100: "These scopes are not allowed for this token: <scope>".
- * VERIFIED 2026-06-23: a browser/agent-key credential (auth_level=auto) is
- * auth-LEVEL barred from the standard REST endpoints -- GET /developer/v1/cards
- * returns HTTP 403 "Authorization level not allowed" (DEVELOPER_7077) no matter
- * what scopes the token carries -- while POST /developer/v1/agent-tools/list-cards
- * returns 200. So for the agent-key flow only the agentic scopes are ever
- * usable; the standard `cards:read`/`bills:write` here are inert for agent keys
- * and kept only so the requested set stays a superset (harmless -- Ramp grants
- * the entitled subset). Agents MUST use the agent-tools endpoints; see `info`.
+ * This is EXACTLY the set of scopes Ramp's agent-tools OpenAPI declares across
+ * its endpoints (the `security` block of each POST /developer/v1/agent-tools/<tool>,
+ * plus the few /applications, /banking, /bank-accounts REST paths it ships).
+ * A browser/agent-key credential can only use the agent-tools surface --
+ * VERIFIED 2026-06-23: such a token is auth-LEVEL barred from the standard REST
+ * endpoints (GET /developer/v1/cards -> HTTP 403 "Authorization level not
+ * allowed" / DEVELOPER_7077) no matter what scopes it carries, while the
+ * agent-tools endpoints (POST .../agent-tools/<tool> with a rationale body, even
+ * for reads) return 200. The detent `ramp.json` permission schemas mirror this
+ * exact scope set (one ramp-<verb>-<resource> per scope). Requesting a scope the
+ * signed-in user isn't entitled to is harmless -- Ramp grants only the subset the
+ * user has and returns it in the token's `scope` field; OMITTING one an endpoint
+ * needs fails at call time with DEVELOPER_7100. Keep this in sync with the spec
+ * via detent's scripts/genRampFromAgentTools.py.
  */
 const RAMP_OAUTH_SCOPES = [
   'accounting:read',
+  'agent_account_numbers:read',
+  'ai_spend:read',
+  'applications:read',
+  'applications:write',
   'approvals:write',
+  'bank_accounts:read',
   'bills:read',
-  'bills:write',
-  'business:read',
-  'cards:read',
   'cards:read_agentic',
   'cards:write',
-  'cashbacks:read',
   'comments:write',
-  'departments:read',
-  'departments:write',
-  'entities:read',
   'funds:write',
-  'item_receipts:read',
   'limits:read',
   'limits:write',
-  'locations:read',
-  'locations:write',
   'memos:read',
-  'merchants:read',
   'purchase_orders:read',
-  'purchase_orders:write',
-  'receipts:read',
   'receipts:write',
   'reimbursements:read',
   'reimbursements:write',
-  'spend_programs:read',
-  'spend_programs:write',
-  'statements:read',
   'tasks:read',
   'transactions:read',
   'transactions:write',
-  'transfers:read',
   'treasury:read',
   'trips:read',
   'trips:write',
   'unified_requests:read',
   'users:read',
-  'users:write',
   'vendors:read',
   'vendors:write',
+  'x402:write',
 ].join(' ');
 
 /**
