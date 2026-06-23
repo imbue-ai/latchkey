@@ -778,8 +778,7 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
 
       // PKCE (RFC 7636): bind the authorization code to a one-time verifier so a
       // stolen code cannot be redeemed without it. We keep sending the client
-      // secret too — the official client is a Google "Desktop app" client, so
-      // this is confidential-client + PKCE, defense-in-depth.
+      // secret too so this is confidential-client + PKCE, defense-in-depth.
       const codeVerifier = generateCodeVerifier();
       const codeChallenge = generateCodeChallenge(codeVerifier);
 
@@ -850,8 +849,8 @@ export abstract class GoogleService extends Service {
   protected abstract readonly config: GoogleServiceConfig;
 
   /**
-   * Google services accept an official OAuth client's id/secret via
-   * `latchkey auth prepare`, stored as token-less OAuth credentials until login.
+   * Google services accept an OAuth client's id/secret prepared
+   * in advance via `latchkey auth prepare`, stored as token-less OAuth credentials until login.
    */
   override prepareFromJson(parsedJson: unknown): ApiCredentials {
     return buildPreparedCredentials(
