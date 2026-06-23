@@ -740,12 +740,12 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
   authCommand
     .command('prepare')
     .description(
-      "Store a service's credentials from a JSON payload (e.g. an OAuth client id/secret)."
+      "Register a service's client details (e.g. an OAuth client id/secret) from a JSON payload, for use during login."
     )
     .argument('<service_name>', 'Name of the service to prepare')
     .argument(
       '<json>',
-      'Service-specific credential JSON, e.g. \'{"clientId":"...","clientSecret":"..."}\''
+      'Service-specific registration JSON, e.g. \'{"clientId":"...","clientSecret":"..."}\''
     )
     .addHelpText(
       'after',
