@@ -103,6 +103,22 @@ export function isBrowserClosedError(error: Error): boolean {
   );
 }
 
+/**
+ * Detects the Playwright/CDP error raised when a response body can no longer be
+ * retrieved (`Network.getResponseBody` reports "No resource with given
+ * identifier found"). This happens for responses that retain no readable body —
+ * redirects, evicted or cached resources, or bodies fetched after the page has
+ * navigated onward. Callers that read response bodies opportunistically should
+ * treat this as inconclusive rather than fatal.
+ */
+export function isResponseBodyUnavailableError(error: Error): boolean {
+  const message = error.message.toLowerCase();
+  return (
+    message.includes('no resource with given identifier') ||
+    message.includes('network.getresponsebody')
+  );
+}
+
 export function isTimeoutError(error: Error): boolean {
   return error.name === 'TimeoutError';
 }

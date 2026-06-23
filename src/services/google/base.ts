@@ -32,6 +32,7 @@ import {
   LoginFailedError,
   LoginCancelledError,
   isBrowserClosedError,
+  isResponseBodyUnavailableError,
   isTimeoutError,
 } from '../core/base.js';
 import type { EncryptedStorage } from '../../encryptedStorage.js';
@@ -530,9 +531,14 @@ function checkGoogleLoginResponse(
         .catch((error: unknown) => {
           // The response body can become unreadable if the page/context
           // closes while it's still being read (e.g. the automation
-          // navigates onward, or the user closes the browser). Treat that
-          // specific race as inconclusive; let any other error propagate.
-          if (error instanceof Error && isBrowserClosedError(error)) {
+          // navigates onward, or the user closes the browser), or if the
+          // response simply retains no readable body (redirects, cached or
+          // evicted resources). Login detection here is best-effort, so treat
+          // those cases as inconclusive; let any other error propagate.
+          if (
+            error instanceof Error &&
+            (isBrowserClosedError(error) || isResponseBodyUnavailableError(error))
+          ) {
             return;
           }
           throw error;
