@@ -5,6 +5,7 @@
  * This is separate from the existing Notion service which uses internal integration tokens.
  */
 
+import { z } from 'zod';
 import type { Browser, BrowserContext, Response } from 'playwright';
 import { type ApiCredentials, OAuthCredentials } from '../apiCredentials/base.js';
 import { runCaptured } from '../curl.js';
@@ -20,8 +21,23 @@ import {
   ServiceSession,
   LoginFailedError,
   LoginCancelledError,
+  buildPreparedCredentials,
   isBrowserClosedError,
 } from './core/base.js';
+
+/**
+ * JSON accepted by `latchkey auth prepare notion-mcp`: the OAuth client id to
+ * reuse instead of registering a new client dynamically at mcp.notion.com.
+ * Notion MCP is a public client, so no secret is needed. `.strict()` rejects
+ * unknown keys so typos are reported instead of silently ignored.
+ */
+export const NotionMcpPrepareInputSchema = z
+  .object({
+    clientId: z.string().min(1),
+  })
+  .strict();
+
+export type NotionMcpPrepareInput = z.infer<typeof NotionMcpPrepareInputSchema>;
 
 const TOKEN_ENDPOINT = 'https://mcp.notion.com/token';
 const REGISTRATION_ENDPOINT = 'https://mcp.notion.com/register';
@@ -202,6 +218,20 @@ export class NotionMcp extends Service {
 
   setCredentialsExample(serviceName: string): string {
     return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
+  }
+
+  /**
+   * Notion MCP accepts an OAuth client id prepared in advance via
+   * `latchkey auth prepare`, stored as token-less OAuth credentials until login.
+   * The login flow reuses this client id instead of registering a new client.
+   */
+  override prepareFromJson(parsedJson: unknown): ApiCredentials {
+    return buildPreparedCredentials(
+      this.name,
+      NotionMcpPrepareInputSchema,
+      parsedJson,
+      ({ clientId }) => new OAuthCredentials(clientId, '')
+    );
   }
 
   override getSession(appNamePrefix: string): NotionMcpSession {

@@ -13,6 +13,7 @@ import {
   Service,
 } from '../src/services/core/base.js';
 import { GOOGLE_GMAIL } from '../src/services/google/gmail.js';
+import { NOTION_MCP } from '../src/services/notion-mcp.js';
 import { RegisteredService } from '../src/services/core/registered.js';
 import { ServiceRegistry } from '../src/serviceRegistry.js';
 import { Config } from '../src/config.js';
@@ -442,6 +443,52 @@ describe('operations', () => {
           JSON.stringify({ clientId: '', clientSecret: 'b' })
         )
       ).toThrow(PrepareInputInvalidError);
+    });
+
+    it('stores a token-less OAuth client id for notion-mcp (public client, no secret)', () => {
+      const registry = new ServiceRegistry([NOTION_MCP]);
+      const store = createApiCredentialStore();
+
+      const result = prepareService(
+        registry,
+        store,
+        'notion-mcp',
+        JSON.stringify({ clientId: 'notion-client-id' })
+      );
+
+      expect(result).toEqual({ serviceName: 'notion-mcp', credentialType: 'oauth' });
+      const stored = store.get('notion-mcp');
+      expect(stored).toBeInstanceOf(OAuthCredentials);
+      const oauth = stored as OAuthCredentials;
+      expect(oauth.clientId).toBe('notion-client-id');
+      expect(oauth.clientSecret).toBe('');
+      expect(oauth.accessToken).toBeUndefined();
+      expect(oauth.refreshToken).toBeUndefined();
+    });
+
+    it('rejects a notion-mcp clientSecret (unknown key, strict schema)', () => {
+      const registry = new ServiceRegistry([NOTION_MCP]);
+      const store = createApiCredentialStore();
+
+      expect(() =>
+        prepareService(
+          registry,
+          store,
+          'notion-mcp',
+          JSON.stringify({ clientId: 'a', clientSecret: 'b' })
+        )
+      ).toThrow(PrepareInputInvalidError);
+      expect(store.get('notion-mcp')).toBeNull();
+    });
+
+    it('rejects notion-mcp input missing clientId', () => {
+      const registry = new ServiceRegistry([NOTION_MCP]);
+      const store = createApiCredentialStore();
+
+      expect(() => prepareService(registry, store, 'notion-mcp', '{}')).toThrow(
+        PrepareInputInvalidError
+      );
+      expect(store.get('notion-mcp')).toBeNull();
     });
   });
 });
