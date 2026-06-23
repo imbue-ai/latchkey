@@ -20,15 +20,19 @@ import {
 } from '../../playwrightUtils.js';
 import {
   exchangeCodeForTokens,
+  generateCodeChallenge,
+  generateCodeVerifier,
   refreshAccessToken,
   startOAuthCallbackServer,
 } from '../../oauthUtils.js';
 import {
   Service,
   BrowserFollowupServiceSession,
+  buildPreparedCredentials,
   LoginFailedError,
   LoginCancelledError,
   isBrowserClosedError,
+  isResponseBodyUnavailableError,
   isTimeoutError,
 } from '../core/base.js';
 import type { EncryptedStorage } from '../../encryptedStorage.js';
@@ -573,9 +577,14 @@ function checkGoogleLoginResponse(
         .catch((error: unknown) => {
           // The response body can become unreadable if the page/context
           // closes while it's still being read (e.g. the automation
-          // navigates onward, or the user closes the browser). Treat that
-          // specific race as inconclusive; let any other error propagate.
-          if (error instanceof Error && isBrowserClosedError(error)) {
+          // navigates onward, or the user closes the browser), or if the
+          // response simply retains no readable body (redirects, cached or
+          // evicted resources). Login detection here is best-effort, so treat
+          // those cases as inconclusive; let any other error propagate.
+          if (
+            error instanceof Error &&
+            (isBrowserClosedError(error) || isResponseBodyUnavailableError(error))
+          ) {
             return;
           }
           throw error;
@@ -829,6 +838,12 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
       );
       const redirectUri = `http://localhost:${port.toString()}/oauth2callback`;
 
+      // PKCE (RFC 7636): bind the authorization code to a one-time verifier so a
+      // stolen code cannot be redeemed without it. We keep sending the client
+      // secret too so this is confidential-client + PKCE, defense-in-depth.
+      const codeVerifier = generateCodeVerifier();
+      const codeChallenge = generateCodeChallenge(codeVerifier);
+
       const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
       authUrl.searchParams.set('client_id', clientId);
       authUrl.searchParams.set('redirect_uri', redirectUri);
@@ -836,6 +851,8 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
       authUrl.searchParams.set('scope', allScopes.join(' '));
       authUrl.searchParams.set('access_type', 'offline');
       authUrl.searchParams.set('prompt', 'consent');
+      authUrl.searchParams.set('code_challenge', codeChallenge);
+      authUrl.searchParams.set('code_challenge_method', 'S256');
 
       await page.goto(authUrl.toString());
 
@@ -845,7 +862,8 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
         code,
         clientId,
         clientSecret,
-        redirectUri
+        redirectUri,
+        codeVerifier
       );
       const accessTokenExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
@@ -867,6 +885,20 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
 }
 
 /**
+ * JSON accepted by `latchkey auth prepare <google-service>`: the OAuth client
+ * credentials to use for that service. `.strict()` rejects unknown keys so
+ * typos are reported instead of silently ignored.
+ */
+export const GooglePrepareInputSchema = z
+  .object({
+    clientId: z.string().min(1),
+    clientSecret: z.string().min(1),
+  })
+  .strict();
+
+export type GooglePrepareInput = z.infer<typeof GooglePrepareInputSchema>;
+
+/**
  * Abstract base class for individual Google API services.
  *
  * Each subclass declares the specific API, scopes, and credential-check endpoint
@@ -877,6 +909,19 @@ export abstract class GoogleService extends Service {
   readonly loginUrl = 'https://console.cloud.google.com/';
 
   protected abstract readonly config: GoogleServiceConfig;
+
+  /**
+   * Google services accept an OAuth client's id/secret prepared
+   * in advance via `latchkey auth prepare`, stored as token-less OAuth credentials until login.
+   */
+  override prepareFromJson(parsedJson: unknown): ApiCredentials {
+    return buildPreparedCredentials(
+      this.name,
+      GooglePrepareInputSchema,
+      parsedJson,
+      ({ clientId, clientSecret }) => new OAuthCredentials(clientId, clientSecret)
+    );
+  }
 
   setCredentialsExample(serviceName: string): string {
     return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
