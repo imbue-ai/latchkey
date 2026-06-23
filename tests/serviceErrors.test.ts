@@ -1,8 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  isBrowserClosedError,
-  isResponseBodyUnavailableError,
-} from '../src/services/core/base.js';
+import { isBrowserClosedError, isResponseBodyUnavailableError } from '../src/services/core/base.js';
 
 describe('isResponseBodyUnavailableError', () => {
   it('recognizes the CDP "no resource with given identifier" error', () => {
