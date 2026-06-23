@@ -202,24 +202,35 @@ const RAMP_LOGIN_TIMEOUT_MS = 300_000;
 /**
  * Scopes requested at login for the agent-key (auth_level=auto) flow.
  *
- * This MUST be the agentic scope catalog, not ramp-cli's standard DEVAPI_SCOPES.
- * Ramp's agent-tool endpoints declare their required scope in the OpenAPI
- * `security` block, and those are the agentic scopes. Two that bit us:
- *   - POST /developer/v1/agent-tools/list-cards requires `limits:read`
- *     (verified in the agent-tool OpenAPI spec), and
- *   - the cards read scope is `cards:read_agentic`, NOT `cards:read`.
- * Requesting a scope the signed-in user isn't entitled to is harmless -- Ramp
- * grants only the subset the user has and returns it in the token's `scope`
- * field. But OMITTING a scope an endpoint needs fails at call time with
+ * We request the UNION of ramp-cli's standard DEVAPI_SCOPES and Ramp's agentic
+ * scope catalog, so one token can serve BOTH Ramp API surfaces:
+ *   - the standard REST endpoints (e.g. GET /developer/v1/cards) need standard
+ *     scopes like `cards:read`, while
+ *   - the agent-tool endpoints (e.g. POST /developer/v1/agent-tools/list-cards)
+ *     need the agentic scopes like `cards:read_agentic` and `limits:read`.
+ * Cards is the only resource whose read scope differs by surface (`cards:read`
+ * vs `cards:read_agentic`), so both are listed; every other resource shares one
+ * scope name across surfaces. Requesting a scope the signed-in user isn't
+ * entitled to is harmless -- Ramp grants only the subset the user has and
+ * returns it in the token's `scope` field. But OMITTING a scope an endpoint
+ * needs fails at call time with
  *   DEVELOPER_7100: "These scopes are not allowed for this token: <scope>".
- * So we request the full standard agentic catalog (the set Ramp grants agent
- * keys; see `ramp auth status` -> production.scopes on an authed machine).
+ * VERIFIED 2026-06-23: a browser/agent-key credential (auth_level=auto) is
+ * auth-LEVEL barred from the standard REST endpoints -- GET /developer/v1/cards
+ * returns HTTP 403 "Authorization level not allowed" (DEVELOPER_7077) no matter
+ * what scopes the token carries -- while POST /developer/v1/agent-tools/list-cards
+ * returns 200. So for the agent-key flow only the agentic scopes are ever
+ * usable; the standard `cards:read`/`bills:write` here are inert for agent keys
+ * and kept only so the requested set stays a superset (harmless -- Ramp grants
+ * the entitled subset). Agents MUST use the agent-tools endpoints; see `info`.
  */
 const RAMP_OAUTH_SCOPES = [
   'accounting:read',
   'approvals:write',
   'bills:read',
+  'bills:write',
   'business:read',
+  'cards:read',
   'cards:read_agentic',
   'cards:write',
   'cashbacks:read',
@@ -505,13 +516,23 @@ export class Ramp extends Service {
   readonly baseApiUrls = ['https://api.ramp.com/', 'https://demo-api.ramp.com/'] as const;
   readonly loginUrl = 'https://app.ramp.com/';
   readonly info =
-    'https://docs.ramp.com/developer-api/v1/overview. All calls target ' +
-    'https://api.ramp.com/developer/v1. Two ways to authenticate: ' +
+    'https://docs.ramp.com/developer-api/v1/overview. Base host https://api.ramp.com/developer/v1 ' +
+    '(demo-api.ramp.com for sandbox). IMPORTANT: Ramp has TWO API surfaces, and which one you may ' +
+    'use is determined by how the credential was created -- pick endpoints accordingly: ' +
+    '(A) Browser/agent-key login (the `latchkey auth browser ramp` flow, auth_level=auto): you can ' +
+    'ONLY use the AGENT-TOOLS endpoints -- POST https://api.ramp.com/developer/v1/agent-tools/<tool> ' +
+    'with a JSON body {"rationale":"<why you are making this call>"} (e.g. agent-tools/list-cards, ' +
+    'agent-tools/list-transactions). The standard REST endpoints (e.g. GET /developer/v1/cards) reject ' +
+    'agent keys with HTTP 403 "Authorization level not allowed" (DEVELOPER_7077) regardless of scopes, ' +
+    'so do NOT use them with a browser/agent-key credential. ' +
+    '(B) API client (client_credentials, stored via `latchkey auth set-nocurl`): use the STANDARD REST ' +
+    'endpoints (GET /developer/v1/cards, /transactions, ...) with the scopes you enabled on the app. ' +
+    'Two ways to authenticate: ' +
     '(1) Browser login (recommended): run `latchkey auth browser ramp`. This runs the same ' +
     "OAuth 2.0 authorization-code + PKCE flow as Ramp's official CLI (ramp-cli `ramp auth login`) " +
     "using Ramp's public client, opens Ramp's hosted sign-in/consent screen (which prompts you to " +
     'create/approve an AI agent key), and stores the resulting bearer + refresh token, refreshing ' +
-    'automatically. Targets production. ' +
+    'automatically. Targets production. Use the agent-tools endpoints (surface A) with this credential. ' +
     '(2) API client (client_credentials): in the Ramp dashboard, register an API client under ' +
     'Settings -> Developer and enable the scopes you want it to have, then store it with ' +
     '`latchkey auth set-nocurl ramp <client_id> <client_secret> <scope> [scope ...]`, passing ' +
