@@ -37,9 +37,6 @@ Latchkey is a command-line tool that injects credentials into curl commands.
 	- Open a browser login pop-up window and store the resulting API credentials.
     - This also allows agents to prompt users for credentials.
     - Only some services support this option.
-- `latchkey prepare <service_name> <json>`
-	- Store a service's credentials directly from a validated JSON payload (e.g. an OAuth `{"clientId":"...","clientSecret":"..."}`).
-    - For Google services, `latchkey auth browser-prepare <service_name>` remains the default way to set up an OAuth client; `prepare` is an alternative for supplying an existing client's id/secret directly. Run `latchkey auth browser <service_name>` afterward to complete login.
 
 Latchkey is primarily designed for AI agents. By invoking
 Latchkey, agents can utilize user-provided credentials or prompt
