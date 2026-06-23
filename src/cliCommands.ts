@@ -7,7 +7,11 @@ import { existsSync, statSync, unlinkSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { ApiCredentialStore, ApiCredentialStoreError } from './apiCredentials/store.js';
-import { ApiCredentials, RawCurlCredentials } from './apiCredentials/base.js';
+import {
+  ApiCredentials,
+  ApiCredentialsUsageError,
+  RawCurlCredentials,
+} from './apiCredentials/base.js';
 import {
   CredentialsExpiredError,
   NoCredentialsForServiceError,
@@ -857,7 +861,8 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           error instanceof UrlExtractionFailedError ||
           error instanceof NoServiceForUrlError ||
           error instanceof NoCredentialsForServiceError ||
-          error instanceof CredentialsExpiredError
+          error instanceof CredentialsExpiredError ||
+          error instanceof ApiCredentialsUsageError
         ) {
           deps.errorLog(error.message);
           deps.exit(1);

@@ -1372,6 +1372,28 @@ describe('CLI commands with dependency injection', () => {
       expect(exitCode).toBe(1);
     });
 
+    it('should return error when OAuth credentials lack an access token', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(
+        storePath,
+        JSON.stringify({
+          'google-gmail': { objectType: 'oauth', clientId: 'cid', clientSecret: 'csecret' },
+        })
+      );
+
+      const deps = createMockDependencies({
+        registry: new ServiceRegistry([GOOGLE_GMAIL]),
+      });
+
+      await runCommand(
+        ['curl', 'https://gmail.googleapis.com/gmail/v1/users/me/profile'],
+        deps
+      );
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs.length).toBeGreaterThan(0);
+    });
+
     it('should pass through unknown service when passthroughUnknown is enabled', async () => {
       const deps = createMockDependencies({
         config: createMockConfig({ passthroughUnknown: true }),
