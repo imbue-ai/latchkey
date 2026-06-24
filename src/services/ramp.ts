@@ -190,11 +190,8 @@ export class Ramp extends Service {
   readonly baseApiUrls = ['https://api.ramp.com/'] as const;
   readonly loginUrl = 'https://app.ramp.com/';
   readonly info =
-    'Ramp developer API for AI agents -- agent-tools only. The standard/regular Ramp REST API is NOT ' +
-    'supported (agent keys are auth-level barred from it). Sign in with `latchkey auth browser ramp` to ' +
-    'mint an AI agent key; calls go to https://api.ramp.com/developer/v1/agent-tools/<tool> with a ' +
-    '{"rationale":"..."} body (POST), or rationale as a query param for the few GET tools. ' +
-    'Agent-tools OpenAPI spec: https://api.ramp.com/v1/public/agent-tools/spec/.';
+    'Ramp agent-tools API; the REST API is not supported. ' +
+    'Docs: https://api.ramp.com/v1/public/agent-tools/spec/.';
 
   // Unused: browser-login credentials are validated by holding/refreshing a live
   // token (see checkApiCredentials), not by hitting a resource endpoint. Only present

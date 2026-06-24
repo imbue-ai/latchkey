@@ -32,9 +32,9 @@ describe('Ramp.getSession (browser login)', () => {
 });
 
 describe('Ramp.info', () => {
-  it('documents the browser-login pathway and the developer API base', () => {
-    expect(RAMP.info).toContain('auth browser ramp');
-    expect(RAMP.info).toContain('https://api.ramp.com/developer/v1');
+  it('points to the agent-tools spec and notes the regular REST API is unsupported', () => {
+    expect(RAMP.info).toContain('https://api.ramp.com/v1/public/agent-tools/spec/');
+    expect(RAMP.info).toContain('not supported');
   });
 });
 
