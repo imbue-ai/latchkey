@@ -118,6 +118,45 @@ const RAMP_OAUTH_CALLBACK_PATH = '/callback';
 const RAMP_LOGIN_TIMEOUT_MS = 300_000;
 
 /**
+ * Scopes requested on the authorize URL: the agent-tools scope set Ramp's OpenAPI
+ * declares. Ramp grants only the subset the signed-in user is entitled to (returned
+ * in the token's `scope`), so over-requesting is harmless, but omitting a scope an
+ * endpoint needs fails at call time with DEVELOPER_7100.
+ */
+const RAMP_OAUTH_SCOPES = [
+  'accounting:read',
+  'agent_account_numbers:read',
+  'ai_spend:read',
+  'applications:read',
+  'applications:write',
+  'approvals:write',
+  'bank_accounts:read',
+  'bills:read',
+  'cards:read_agentic',
+  'cards:write',
+  'comments:write',
+  'funds:write',
+  'limits:read',
+  'limits:write',
+  'memos:read',
+  'purchase_orders:read',
+  'receipts:write',
+  'reimbursements:read',
+  'reimbursements:write',
+  'tasks:read',
+  'transactions:read',
+  'transactions:write',
+  'treasury:read',
+  'trips:read',
+  'trips:write',
+  'unified_requests:read',
+  'users:read',
+  'vendors:read',
+  'vendors:write',
+  'x402:write',
+].join(' ');
+
+/**
  * Browser login session: runs the OAuth authorization-code + PKCE flow in a
  * Playwright browser and returns OAuthCredentials. login() is overridden wholesale
  * (the base template's static loginUrl + response-watching model doesn't fit a
@@ -181,6 +220,7 @@ class RampOAuthServiceSession extends ServiceSession {
         authUrl.searchParams.set('response_type', 'code');
         authUrl.searchParams.set('client_id', clientId);
         authUrl.searchParams.set('redirect_uri', redirectUri);
+        authUrl.searchParams.set('scope', RAMP_OAUTH_SCOPES);
         authUrl.searchParams.set('state', randomUUID());
         authUrl.searchParams.set('code_challenge', codeChallenge);
         authUrl.searchParams.set('code_challenge_method', 'S256');
