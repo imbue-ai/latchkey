@@ -182,12 +182,12 @@ describe('AwsCredentials', () => {
 
 describe('RampCredentials', () => {
   it('reports expired when no access token has been minted yet', () => {
-    const credentials = new RampCredentials('id', 'secret', 'transactions:read', 'production');
+    const credentials = new RampCredentials('id', 'secret', 'transactions:read');
     expect(credentials.isExpired()).toBe(true);
   });
 
   it('throws when injected without an access token', () => {
-    const credentials = new RampCredentials('id', 'secret', 'transactions:read', 'production');
+    const credentials = new RampCredentials('id', 'secret', 'transactions:read');
     expect(() => credentials.injectIntoCurlCall([])).toThrow(ApiCredentialsUsageError);
   });
 
@@ -196,7 +196,6 @@ describe('RampCredentials', () => {
       'id',
       'secret',
       'transactions:read',
-      'production',
       'ramp_tok_abc',
       '2099-01-01T00:00:00.000Z'
     );
@@ -211,7 +210,6 @@ describe('RampCredentials', () => {
       'id',
       'secret',
       'transactions:read',
-      'production',
       'ramp_tok_abc',
       '2099-01-01T00:00:00.000Z'
     );
@@ -223,7 +221,6 @@ describe('RampCredentials', () => {
       'id',
       'secret',
       'transactions:read',
-      'production',
       'ramp_tok_abc',
       '2000-01-01T00:00:00.000Z'
     );
@@ -244,24 +241,12 @@ describe('Ramp.getCredentialsNoCurl', () => {
     expect(ramp.clientId).toBe('id');
     expect(ramp.clientSecret).toBe('secret');
     expect(ramp.scope).toBe('transactions:read users:read');
-    expect(ramp.environment).toBe('production');
   });
 
   it('requires at least one scope', () => {
     expect(() => RAMP.getCredentialsNoCurl(['id', 'secret'])).toThrow(
       NoCurlCredentialsNotSupportedError
     );
-  });
-
-  it('selects the sandbox environment with --sandbox', () => {
-    const ramp = RAMP.getCredentialsNoCurl([
-      '--sandbox',
-      'id',
-      'secret',
-      'transactions:read',
-    ]) as RampCredentials;
-    expect(ramp.environment).toBe('sandbox');
-    expect(ramp.scope).toBe('transactions:read');
   });
 });
 
@@ -299,7 +284,6 @@ describe('serialization roundtrip', () => {
           'ramp_id_test',
           'ramp_secret_test',
           'transactions:read',
-          'production',
           'ramp_tok_test',
           '2099-01-01T00:00:00.000Z'
         ),

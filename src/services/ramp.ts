@@ -1,37 +1,20 @@
 /**
- * Ramp service implementation.
+ * Ramp service implementation. Two authentication pathways, both production:
  *
- * Two authentication pathways are supported:
- *
- * 1. Browser login (recommended, `latchkey auth browser ramp`). This replicates
- *    the OAuth 2.0 authorization-code + PKCE flow used by Ramp's own official CLI
- *    (ramp-public/ramp-cli, `ramp auth login`). It uses Ramp's PUBLIC OAuth client
- *    (a fixed client ID, no client secret) and opens the user's browser to Ramp's
- *    hosted sign-in/consent screen, which prompts them to create/approve an "AI
- *    agent key". latchkey catches the loopback callback, exchanges the code for a
- *    bearer access token + refresh token at `.../developer/v1/token/pkce`, and
- *    stores them as OAuthCredentials so the token is refreshed automatically. See
- *    the large block comment above RampOAuthServiceSession for what was learned
- *    from ramp-cli and what must be validated against the live flow.
+ * 1. Browser login (`latchkey auth browser ramp`): the OAuth 2.0
+ *    authorization-code + PKCE flow against Ramp's public client (a fixed client
+ *    ID, no secret). The hosted consent screen (auth_level=auto) mints an "AI
+ *    agent key"; latchkey catches the loopback callback, exchanges the code for a
+ *    bearer + refresh token at `.../developer/v1/token/pkce`, and stores them as
+ *    OAuthCredentials (auto-refreshed). Agent keys use the agent-tools endpoints.
  *
  * 2. API client (`latchkey auth set-nocurl ramp <client_id> <client_secret>
- *    <scope> ...`). This uses the OAuth 2.0 client_credentials grant for
- *    single-organization access. The user registers an API client in the Ramp
- *    dashboard (Settings -> Developer), enables a set of scopes on it, and gives
- *    latchkey the client ID, client secret, and that same set of scopes.
+ *    <scope> ...`): the OAuth 2.0 client_credentials grant for single-org access.
+ *    The user registers an API client in the Ramp dashboard, enables scopes, and
+ *    gives latchkey the client ID/secret and those scopes; latchkey mints/refreshes
+ *    a bearer token for exactly those scopes. No refresh token in this grant.
  *
- *    Scopes in Ramp are bound to the app at creation time: a token request may
- *    only ask for scopes the app already has, and asking for anything else fails
- *    with `invalid_scope`. So latchkey requests exactly the scopes the user passes
- *    in -- no more, no less -- which means the minted token can do everything the
- *    app is allowed to do and nothing it isn't. There is no refresh token in this
- *    grant; latchkey simply mints a new token with the stored client credentials
- *    whenever the current one is missing or expired.
- *
- * Both credential types reuse existing serializable credential classes
- * (OAuthCredentials and RampCredentials) so no new credential type has to be
- * registered. Every API call targets https://api.ramp.com/developer/v1 (or the
- * https://demo-api.ramp.com sandbox host).
+ * Every API call targets https://api.ramp.com/developer/v1.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -59,12 +42,8 @@ import {
   ServiceSession,
 } from './core/base.js';
 
-type RampEnvironment = 'production' | 'sandbox';
-
-const RAMP_TOKEN_ENDPOINTS: Record<RampEnvironment, string> = {
-  production: 'https://api.ramp.com/developer/v1/token',
-  sandbox: 'https://demo-api.ramp.com/developer/v1/token',
-};
+/** Client_credentials token endpoint. */
+const RAMP_TOKEN_ENDPOINT = 'https://api.ramp.com/developer/v1/token';
 
 /**
  * Treat a token as expired this long before its real expiry, so it is never
@@ -84,8 +63,7 @@ interface RampTokenResponse {
 function requestRampToken(
   clientId: string,
   clientSecret: string,
-  scope: string,
-  environment: RampEnvironment
+  scope: string
 ): RampTokenResponse | null {
   const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
   const body = new URLSearchParams({
@@ -104,7 +82,7 @@ function requestRampToken(
       'Content-Type: application/x-www-form-urlencoded',
       '-d',
       body,
-      RAMP_TOKEN_ENDPOINTS[environment],
+      RAMP_TOKEN_ENDPOINT,
     ],
     30
   );
@@ -124,74 +102,14 @@ function requestRampToken(
   }
 }
 
-// ===========================================================================
-// Browser login (OAuth 2.0 authorization-code + PKCE) -- mirrors ramp-cli.
-// ===========================================================================
-//
-// What ramp-cli does (learned from github.com/ramp-public/ramp-cli, the official
-// CLI; primarily src/ramp_cli/auth/oauth.py and src/ramp_cli/config/constants.py):
-//
-//   - `ramp auth login` runs a standard OAuth 2.0 authorization-code flow with
-//     PKCE (RFC 7636) against a *public* client (a fixed client ID baked into the
-//     CLI, NO client secret; token_endpoint_auth_method = "none").
-//   - It opens the system browser to Ramp's hosted authorize URL. With
-//     `auth_level=auto`, Ramp's consent screen prompts the user to create/approve
-//     an "AI agent key" tied to their login -- this is the agent-key pathway.
-//   - It runs a tiny localhost HTTP server to catch the `?code=...` redirect. It
-//     prefers a fixed port (19817) but falls back to a random port, which means
-//     Ramp's public client allows arbitrary loopback redirect URIs (RFC 8252), so
-//     latchkey can safely use a random port via startOAuthCallbackServer().
-//   - It exchanges the code at `.../developer/v1/token/pkce` (note the `/pkce`
-//     suffix; different from the client_credentials `/token` endpoint above),
-//     sending client_id + code + redirect_uri + code_verifier in the form body.
-//   - The response is a bearer access token (a JWT; agent-key sessions carry an
-//     `ak` claim) plus a refresh token. ramp-cli stores both and silently
-//     refreshes (src/ramp_cli/auth/refresh.py) using grant_type=refresh_token.
-//   - All Developer-API calls then use `Authorization: Bearer <access_token>`
-//     against https://api.ramp.com/developer/v1 (or the demo-api sandbox host).
-//
-// latchkey reproduces exactly this flow below, driving the browser step through
-// Playwright (withTempBrowserContext) instead of `open(url)`, and storing the
-// result as OAuthCredentials (which already holds access+refresh tokens and is
-// auto-refreshed by src/apiCredentials/utils.ts). Because the user drives Ramp's
-// own hosted login/consent UI, there are NO scraped selectors in the happy path
-// -- the only Ramp-specific contract is the set of URLs/IDs/scopes constants and
-// the loopback callback shape.
-//
-// !!! MUST BE VALIDATED AGAINST THE LIVE FLOW !!!
-// This was implemented from ramp-cli's source without a live Ramp account, so the
-// following have NOT been exercised end-to-end and must be confirmed by recording
-// a real login (see scripts/recordBrowserSession.ts / scripts/codegen.ts and the
-// "Adding a new service" section of docs/development.md):
-//   1. The public client IDs, authorize URLs, and `/token/pkce` endpoints below
-//      still match ramp-cli (re-check config/constants.py if login fails).
-//   2. Ramp accepts a random-port `http://localhost:<port>/callback` redirect URI
-//      for the public client (expected per RFC 8252, since ramp-cli falls back to
-//      a random port). If not, pin RAMP_OAUTH_CALLBACK_PORT to 19817.
-//   3. The requested scopes are all valid for the public client; if the authorize
-//      step fails with `invalid_scope`, trim RAMP_OAUTH_SCOPES to the subset Ramp
-//      accepts (the granted scopes come back in the token response's `scope`).
-//   4. `auth_level=auto` surfaces the "create AI agent key" prompt as expected.
+/** Ramp's public OAuth client (PKCE, no secret), from ramp-cli. */
+const RAMP_OAUTH_CLIENT_ID = 'ramp_id_6pKvd0IR3d8Kuzp82SV6YgpVCZOlz68Px6s3wVsr';
 
-type RampEnvironmentRecord = Record<RampEnvironment, string>;
+/** Hosted authorize endpoint (where the user signs in / approves the agent key). */
+const RAMP_AUTHORIZE_URL = 'https://app.ramp.com/v1/authorize';
 
-/** Ramp's public OAuth client IDs (PKCE, no secret), copied from ramp-cli. */
-const RAMP_OAUTH_CLIENT_IDS: RampEnvironmentRecord = {
-  production: 'ramp_id_6pKvd0IR3d8Kuzp82SV6YgpVCZOlz68Px6s3wVsr',
-  sandbox: 'ramp_id_Q0xnopBQxMjvXzmA04GkhA9LQqbT3XwYdrHoJRTI',
-};
-
-/** Hosted authorize endpoints (where the user signs in / approves the agent key). */
-const RAMP_AUTHORIZE_URLS: RampEnvironmentRecord = {
-  production: 'https://app.ramp.com/v1/authorize',
-  sandbox: 'https://demo.ramp.com/v1/authorize',
-};
-
-/** PKCE token endpoints (code exchange + refresh). Distinct from the `/token` one. */
-const RAMP_PKCE_TOKEN_ENDPOINTS: RampEnvironmentRecord = {
-  production: 'https://api.ramp.com/developer/v1/token/pkce',
-  sandbox: 'https://demo-api.ramp.com/developer/v1/token/pkce',
-};
+/** PKCE token endpoint (code exchange + refresh). Distinct from the `/token` one. */
+const RAMP_PKCE_TOKEN_ENDPOINT = 'https://api.ramp.com/developer/v1/token/pkce';
 
 /** Loopback callback path; matches ramp-cli's `/callback`. */
 const RAMP_OAUTH_CALLBACK_PATH = '/callback';
@@ -200,80 +118,12 @@ const RAMP_OAUTH_CALLBACK_PATH = '/callback';
 const RAMP_LOGIN_TIMEOUT_MS = 300_000;
 
 /**
- * Scopes requested at login for the agent-key (auth_level=auto) flow.
- *
- * This is EXACTLY the set of scopes Ramp's agent-tools OpenAPI declares across
- * its endpoints (the `security` block of each POST /developer/v1/agent-tools/<tool>,
- * plus the few /applications, /banking, /bank-accounts REST paths it ships).
- * A browser/agent-key credential can only use the agent-tools surface --
- * VERIFIED 2026-06-23: such a token is auth-LEVEL barred from the standard REST
- * endpoints (GET /developer/v1/cards -> HTTP 403 "Authorization level not
- * allowed" / DEVELOPER_7077) no matter what scopes it carries, while the
- * agent-tools endpoints (POST .../agent-tools/<tool> with a rationale body, even
- * for reads) return 200. The detent `ramp.json` permission schemas mirror this
- * exact scope set (one ramp-<verb>-<resource> per scope). Requesting a scope the
- * signed-in user isn't entitled to is harmless -- Ramp grants only the subset the
- * user has and returns it in the token's `scope` field; OMITTING one an endpoint
- * needs fails at call time with DEVELOPER_7100. Keep this in sync with the spec
- * via detent's scripts/genRampFromAgentTools.py.
- */
-const RAMP_OAUTH_SCOPES = [
-  'accounting:read',
-  'agent_account_numbers:read',
-  'ai_spend:read',
-  'applications:read',
-  'applications:write',
-  'approvals:write',
-  'bank_accounts:read',
-  'bills:read',
-  'cards:read_agentic',
-  'cards:write',
-  'comments:write',
-  'funds:write',
-  'limits:read',
-  'limits:write',
-  'memos:read',
-  'purchase_orders:read',
-  'receipts:write',
-  'reimbursements:read',
-  'reimbursements:write',
-  'tasks:read',
-  'transactions:read',
-  'transactions:write',
-  'treasury:read',
-  'trips:read',
-  'trips:write',
-  'unified_requests:read',
-  'users:read',
-  'vendors:read',
-  'vendors:write',
-  'x402:write',
-].join(' ');
-
-/**
- * Recover which environment a stored OAuthCredentials belongs to from its client
- * ID. OAuthCredentials carries no environment field, but the public client IDs are
- * environment-specific, so the ID alone is enough to pick the right token endpoint
- * when refreshing. Anything that isn't the sandbox client is treated as production.
- */
-function rampOAuthEnvironmentForClientId(clientId: string): RampEnvironment {
-  return clientId === RAMP_OAUTH_CLIENT_IDS.sandbox ? 'sandbox' : 'production';
-}
-
-/**
- * Browser login session: runs the ramp-cli OAuth authorization-code + PKCE flow in
- * a Playwright browser and returns OAuthCredentials. login() is overridden wholesale
+ * Browser login session: runs the OAuth authorization-code + PKCE flow in a
+ * Playwright browser and returns OAuthCredentials. login() is overridden wholesale
  * (the base template's static loginUrl + response-watching model doesn't fit a
  * per-session authorize URL with a localhost callback), mirroring NotionMcpSession.
  */
 class RampOAuthServiceSession extends ServiceSession {
-  private readonly environment: RampEnvironment;
-
-  constructor(service: Service, appNamePrefix: string, environment: RampEnvironment) {
-    super(service, appNamePrefix);
-    this.environment = environment;
-  }
-
   onResponse(_response: Response): void {
     // Not used -- login completion is signalled by the OAuth callback, not by
     // inspecting page responses.
@@ -299,8 +149,7 @@ class RampOAuthServiceSession extends ServiceSession {
     _oldCredentials?: ApiCredentials
   ): Promise<ApiCredentials> {
     const { withTempBrowserContext } = await import('../playwrightUtils.js');
-    const environment = this.environment;
-    const clientId = RAMP_OAUTH_CLIENT_IDS[environment];
+    const clientId = RAMP_OAUTH_CLIENT_ID;
 
     return withTempBrowserContext(encryptedStorage, launchOptions, async ({ context }) => {
       const page = await context.newPage();
@@ -314,7 +163,7 @@ class RampOAuthServiceSession extends ServiceSession {
 
       try {
         // 1. Stand up the localhost callback server (random port; Ramp's public
-        //    client allows arbitrary loopback ports, see validation note #2).
+        //    client allows arbitrary loopback ports per RFC 8252).
         const { port, codePromise } = await startOAuthCallbackServer(
           RAMP_LOGIN_TIMEOUT_MS,
           abortController.signal,
@@ -328,11 +177,10 @@ class RampOAuthServiceSession extends ServiceSession {
 
         // 3. Open Ramp's hosted authorize screen. auth_level=auto triggers the
         //    "create/approve an AI agent key" prompt.
-        const authUrl = new URL(RAMP_AUTHORIZE_URLS[environment]);
+        const authUrl = new URL(RAMP_AUTHORIZE_URL);
         authUrl.searchParams.set('response_type', 'code');
         authUrl.searchParams.set('client_id', clientId);
         authUrl.searchParams.set('redirect_uri', redirectUri);
-        authUrl.searchParams.set('scope', RAMP_OAUTH_SCOPES);
         authUrl.searchParams.set('state', randomUUID());
         authUrl.searchParams.set('code_challenge', codeChallenge);
         authUrl.searchParams.set('code_challenge_method', 'S256');
@@ -345,7 +193,7 @@ class RampOAuthServiceSession extends ServiceSession {
 
         // 5. Exchange the code for tokens (public client: no secret).
         const tokens = exchangeCodeForTokens(
-          RAMP_PKCE_TOKEN_ENDPOINTS[environment],
+          RAMP_PKCE_TOKEN_ENDPOINT,
           code,
           clientId,
           '',
@@ -389,7 +237,6 @@ export const RampCredentialsSchema = z.object({
   clientId: z.string(),
   clientSecret: z.string(),
   scope: z.string(),
-  environment: z.enum(['production', 'sandbox']),
   accessToken: z.string().optional(),
   accessTokenExpiresAt: z.string().optional(),
 });
@@ -401,7 +248,6 @@ export class RampCredentials implements ApiCredentials {
   readonly clientId: string;
   readonly clientSecret: string;
   readonly scope: string;
-  readonly environment: RampEnvironment;
   readonly accessToken?: string;
   readonly accessTokenExpiresAt?: string;
 
@@ -409,14 +255,12 @@ export class RampCredentials implements ApiCredentials {
     clientId: string,
     clientSecret: string,
     scope: string,
-    environment: RampEnvironment,
     accessToken?: string,
     accessTokenExpiresAt?: string
   ) {
     this.clientId = clientId;
     this.clientSecret = clientSecret;
     this.scope = scope;
-    this.environment = environment;
     this.accessToken = accessToken;
     this.accessTokenExpiresAt = accessTokenExpiresAt;
   }
@@ -443,15 +287,12 @@ export class RampCredentials implements ApiCredentials {
     return Date.now() >= new Date(this.accessTokenExpiresAt).getTime() - EXPIRY_BUFFER_MS;
   }
 
-  /**
-   * Return a copy carrying a freshly minted access token.
-   */
+  /** Return a copy carrying a freshly minted access token. */
   withToken(accessToken: string, accessTokenExpiresAt: string): RampCredentials {
     return new RampCredentials(
       this.clientId,
       this.clientSecret,
       this.scope,
-      this.environment,
       accessToken,
       accessTokenExpiresAt
     );
@@ -463,7 +304,6 @@ export class RampCredentials implements ApiCredentials {
       clientId: this.clientId,
       clientSecret: this.clientSecret,
       scope: this.scope,
-      environment: this.environment,
       accessToken: this.accessToken,
       accessTokenExpiresAt: this.accessTokenExpiresAt,
     };
@@ -474,7 +314,6 @@ export class RampCredentials implements ApiCredentials {
       data.clientId,
       data.clientSecret,
       data.scope,
-      data.environment,
       data.accessToken,
       data.accessTokenExpiresAt
     );
@@ -492,35 +331,13 @@ class RampCredentialError extends NoCurlCredentialsNotSupportedError {
 export class Ramp extends Service {
   readonly name = 'ramp';
   readonly displayName = 'Ramp';
-  // Both the production and sandbox (demo) hosts route here; the stored
-  // credential records which environment it was issued for.
-  readonly baseApiUrls = ['https://api.ramp.com/', 'https://demo-api.ramp.com/'] as const;
+  readonly baseApiUrls = ['https://api.ramp.com/'] as const;
   readonly loginUrl = 'https://app.ramp.com/';
   readonly info =
-    'https://docs.ramp.com/developer-api/v1/overview. Base host https://api.ramp.com/developer/v1 ' +
-    '(demo-api.ramp.com for sandbox). IMPORTANT: Ramp has TWO API surfaces, and which one you may ' +
-    'use is determined by how the credential was created -- pick endpoints accordingly: ' +
-    '(A) Browser/agent-key login (the `latchkey auth browser ramp` flow, auth_level=auto): you can ' +
-    'ONLY use the AGENT-TOOLS endpoints -- POST https://api.ramp.com/developer/v1/agent-tools/<tool> ' +
-    'with a JSON body {"rationale":"<why you are making this call>"} (e.g. agent-tools/list-cards, ' +
-    'agent-tools/list-transactions). The standard REST endpoints (e.g. GET /developer/v1/cards) reject ' +
-    'agent keys with HTTP 403 "Authorization level not allowed" (DEVELOPER_7077) regardless of scopes, ' +
-    'so do NOT use them with a browser/agent-key credential. ' +
-    '(B) API client (client_credentials, stored via `latchkey auth set-nocurl`): use the STANDARD REST ' +
-    'endpoints (GET /developer/v1/cards, /transactions, ...) with the scopes you enabled on the app. ' +
-    'Two ways to authenticate: ' +
-    '(1) Browser login (recommended): run `latchkey auth browser ramp`. This runs the same ' +
-    "OAuth 2.0 authorization-code + PKCE flow as Ramp's official CLI (ramp-cli `ramp auth login`) " +
-    "using Ramp's public client, opens Ramp's hosted sign-in/consent screen (which prompts you to " +
-    'create/approve an AI agent key), and stores the resulting bearer + refresh token, refreshing ' +
-    'automatically. Targets production. Use the agent-tools endpoints (surface A) with this credential. ' +
-    '(2) API client (client_credentials): in the Ramp dashboard, register an API client under ' +
-    'Settings -> Developer and enable the scopes you want it to have, then store it with ' +
-    '`latchkey auth set-nocurl ramp <client_id> <client_secret> <scope> [scope ...]`, passing ' +
-    'the same scopes you enabled on the app (e.g. transactions:read users:read). Latchkey ' +
-    'requests exactly those scopes and mints/refreshes the bearer token automatically, so the ' +
-    'token can do everything the app is allowed to do and nothing more. Add `--sandbox` to use ' +
-    'the demo environment (https://demo-api.ramp.com).';
+    'Ramp developer API. Agent-tools OpenAPI spec: https://api.ramp.com/v1/public/agent-tools/spec/. ' +
+    'Sign in with `latchkey auth browser ramp` to mint an AI agent key; agent keys call ' +
+    'POST https://api.ramp.com/developer/v1/agent-tools/<tool> with a JSON {"rationale":"..."} body. ' +
+    '(An API client can also be stored with `latchkey auth set-nocurl ramp <client_id> <client_secret> <scope> ...`.)';
 
   // Unused: credentials are validated by minting a token (see checkApiCredentials),
   // which is scope-independent. Kept for documentation of the simplest read call.
@@ -533,18 +350,7 @@ export class Ramp extends Service {
   }
 
   override getCredentialsNoCurl(arguments_: readonly string[]): ApiCredentials {
-    let environment: RampEnvironment = 'production';
-    const positional: string[] = [];
-    for (const argument of arguments_) {
-      if (argument === '--sandbox' || argument === 'sandbox') {
-        environment = 'sandbox';
-      } else if (argument === '--production' || argument === 'production') {
-        environment = 'production';
-      } else if (argument !== '') {
-        positional.push(argument);
-      }
-    }
-
+    const positional = arguments_.filter((argument) => argument !== '');
     const [clientId, clientSecret, ...scopes] = positional;
     if (clientId === undefined || clientSecret === undefined || scopes.length === 0) {
       throw new RampCredentialError(
@@ -553,22 +359,20 @@ export class Ramp extends Service {
           'Example: latchkey auth set-nocurl ramp <client_id> <client_secret> transactions:read users:read'
       );
     }
-    return new RampCredentials(clientId, clientSecret, scopes.join(' '), environment);
+    return new RampCredentials(clientId, clientSecret, scopes.join(' '));
   }
 
   /**
-   * Browser login: run the ramp-cli OAuth authorization-code + PKCE flow and store
-   * the resulting bearer + refresh token. Always targets production -- the standard
-   * `auth browser` command can't pass an environment, and the sandbox is served by
-   * the existing client_credentials (`set-nocurl ... --sandbox`) pathway instead.
+   * Browser login: run the OAuth authorization-code + PKCE flow and store the
+   * resulting bearer + refresh token.
    */
   override getSession(appNamePrefix: string): RampOAuthServiceSession {
-    return new RampOAuthServiceSession(this, appNamePrefix, 'production');
+    return new RampOAuthServiceSession(this, appNamePrefix);
   }
 
   override refreshCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentials | null> {
     // Browser-login credentials: refresh the PKCE access token with the (rotating)
-    // refresh token against the `/token/pkce` endpoint, mirroring ramp-cli.
+    // refresh token against the `/token/pkce` endpoint.
     if (apiCredentials instanceof OAuthCredentials) {
       return this.refreshOAuthCredentials(apiCredentials);
     }
@@ -578,8 +382,7 @@ export class Ramp extends Service {
     const token = requestRampToken(
       apiCredentials.clientId,
       apiCredentials.clientSecret,
-      apiCredentials.scope,
-      apiCredentials.environment
+      apiCredentials.scope
     );
     if (token === null) {
       return Promise.resolve(null);
@@ -594,9 +397,8 @@ export class Ramp extends Service {
     if (apiCredentials.refreshToken === undefined || apiCredentials.refreshToken === '') {
       return Promise.resolve(null);
     }
-    const environment = rampOAuthEnvironmentForClientId(apiCredentials.clientId);
     const tokens = refreshAccessToken(
-      RAMP_PKCE_TOKEN_ENDPOINTS[environment],
+      RAMP_PKCE_TOKEN_ENDPOINT,
       apiCredentials.refreshToken,
       apiCredentials.clientId,
       apiCredentials.clientSecret
@@ -619,20 +421,10 @@ export class Ramp extends Service {
   }
 
   /**
-   * Validate credentials by confirming a token can be minted, rather than by
-   * hitting a specific resource endpoint. Ramp has no scope-free endpoint, so a
-   * resource check would force every user to grant one particular scope; minting
-   * is the scope-independent source of truth ("can these client credentials
-   * obtain a token for their scopes?").
-   *
-   * The refresh path runs before this and mints a token when needed, so in the
-   * common case we just confirm the (already refreshed) credentials hold a live
-   * token; we mint here only as a fallback when they don't.
-   *
-   * Browser-login (OAuthCredentials) credentials are validated the same way: we
-   * treat "holds a live access token, or can refresh one" as valid. This is also
-   * environment-agnostic (it avoids hitting a hardcoded prod-vs-sandbox endpoint
-   * with a token issued for the other host).
+   * Validate credentials by confirming a token can be minted/refreshed rather than
+   * by hitting a specific resource endpoint. Ramp has no scope-free endpoint, so a
+   * resource check would force every user to grant one particular scope; minting is
+   * the scope-independent source of truth ("can these credentials obtain a token?").
    */
   override async checkApiCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentialStatus> {
     if (apiCredentials instanceof OAuthCredentials) {

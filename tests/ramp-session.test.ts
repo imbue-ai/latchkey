@@ -3,10 +3,8 @@
  * handling that supports it.
  *
  * These are intentionally network-free: they only exercise the synchronous
- * branches (no token mint, no refresh HTTP call, no browser). The actual OAuth
- * authorization-code + PKCE flow against Ramp's live servers cannot be unit
- * tested here and must be validated by recording a real login -- see the big
- * comment above RampOAuthServiceSession in src/services/ramp.ts.
+ * branches (no token mint, no refresh HTTP call, no browser). The live OAuth
+ * authorization-code + PKCE flow against Ramp's servers is validated manually.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -77,18 +75,6 @@ describe('Ramp.getCredentialsNoCurl (client_credentials pathway still works)', (
     expect(ramp.clientId).toBe('cid');
     expect(ramp.clientSecret).toBe('secret');
     expect(ramp.scope).toBe('transactions:read users:read');
-    expect(ramp.environment).toBe('production');
-  });
-
-  it('honors the --sandbox flag', () => {
-    const creds = RAMP.getCredentialsNoCurl([
-      'cid',
-      'secret',
-      'transactions:read',
-      '--sandbox',
-    ]) as RampCredentials;
-    expect(creds.environment).toBe('sandbox');
-    expect(creds.scope).toBe('transactions:read');
   });
 
   it('throws when required arguments are missing', () => {

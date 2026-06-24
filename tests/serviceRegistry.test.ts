@@ -84,7 +84,6 @@ describe('ServiceRegistry', () => {
       ['https://sts.amazonaws.com/?Action=GetCallerIdentity', AWS],
       ['https://s3.us-east-1.amazonaws.com/my-bucket', AWS],
       ['https://api.ramp.com/developer/v1/transactions', RAMP],
-      ['https://demo-api.ramp.com/developer/v1/transactions', RAMP],
       ['https://api.todoist.com/api/v1/projects', TODOIST],
     ] as const;
 
