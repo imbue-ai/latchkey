@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import {
   AuthorizationBearer,
   AuthorizationBare,
-  ApiCredentialsUsageError,
   RawCurlCredentials,
 } from '../src/apiCredentials/base.js';
 import {
@@ -14,8 +13,6 @@ import { SlackApiCredentials } from '../src/services/slack.js';
 import { TelegramBotCredentials } from '../src/services/telegram.js';
 import { AwsCredentials } from '../src/services/aws.js';
 import { GoogleApiKeyCredentials } from '../src/services/google/base.js';
-import { RampCredentials, RAMP } from '../src/services/ramp.js';
-import { NoCurlCredentialsNotSupportedError } from '../src/services/core/base.js';
 
 describe('AuthorizationBearer', () => {
   it('should inject Bearer token header', async () => {
@@ -180,76 +177,6 @@ describe('AwsCredentials', () => {
   });
 });
 
-describe('RampCredentials', () => {
-  it('reports expired when no access token has been minted yet', () => {
-    const credentials = new RampCredentials('id', 'secret', 'transactions:read');
-    expect(credentials.isExpired()).toBe(true);
-  });
-
-  it('throws when injected without an access token', () => {
-    const credentials = new RampCredentials('id', 'secret', 'transactions:read');
-    expect(() => credentials.injectIntoCurlCall([])).toThrow(ApiCredentialsUsageError);
-  });
-
-  it('injects a bearer header once a token is present', async () => {
-    const credentials = new RampCredentials(
-      'id',
-      'secret',
-      'transactions:read',
-      'ramp_tok_abc',
-      '2099-01-01T00:00:00.000Z'
-    );
-    await expect(credentials.injectIntoCurlCall([])).resolves.toEqual([
-      '-H',
-      'Authorization: Bearer ramp_tok_abc',
-    ]);
-  });
-
-  it('is not expired while the token is still within its lifetime', () => {
-    const credentials = new RampCredentials(
-      'id',
-      'secret',
-      'transactions:read',
-      'ramp_tok_abc',
-      '2099-01-01T00:00:00.000Z'
-    );
-    expect(credentials.isExpired()).toBe(false);
-  });
-
-  it('is expired once the token lifetime has passed', () => {
-    const credentials = new RampCredentials(
-      'id',
-      'secret',
-      'transactions:read',
-      'ramp_tok_abc',
-      '2000-01-01T00:00:00.000Z'
-    );
-    expect(credentials.isExpired()).toBe(true);
-  });
-});
-
-describe('Ramp.getCredentialsNoCurl', () => {
-  it('stores the client credentials and the exact scopes passed', () => {
-    const credentials = RAMP.getCredentialsNoCurl([
-      'id',
-      'secret',
-      'transactions:read',
-      'users:read',
-    ]);
-    expect(credentials).toBeInstanceOf(RampCredentials);
-    const ramp = credentials as RampCredentials;
-    expect(ramp.clientId).toBe('id');
-    expect(ramp.clientSecret).toBe('secret');
-    expect(ramp.scope).toBe('transactions:read users:read');
-  });
-
-  it('requires at least one scope', () => {
-    expect(() => RAMP.getCredentialsNoCurl(['id', 'secret'])).toThrow(
-      NoCurlCredentialsNotSupportedError
-    );
-  });
-});
-
 describe('serialization roundtrip', () => {
   const cases: {
     name: string;
@@ -276,17 +203,6 @@ describe('serialization roundtrip', () => {
     {
       name: 'GoogleApiKeyCredentials',
       credentials: () => new GoogleApiKeyCredentials('AIzaSyTestKey123'),
-    },
-    {
-      name: 'RampCredentials',
-      credentials: () =>
-        new RampCredentials(
-          'ramp_id_test',
-          'ramp_secret_test',
-          'transactions:read',
-          'ramp_tok_test',
-          '2099-01-01T00:00:00.000Z'
-        ),
     },
   ];
 

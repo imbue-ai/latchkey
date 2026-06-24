@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { RAMP, RampCredentials } from '../src/services/ramp.js';
+import { RAMP } from '../src/services/ramp.js';
 import { AuthorizationBearer, OAuthCredentials } from '../src/apiCredentials/base.js';
 import { ApiCredentialStatus } from '../src/apiCredentials/base.js';
 import { ServiceSession } from '../src/services/core/base.js';
@@ -64,20 +64,5 @@ describe('Ramp.checkApiCredentials with OAuth (browser-login) credentials', () =
     expect(await RAMP.checkApiCredentials(new AuthorizationBearer('tok'))).toBe(
       ApiCredentialStatus.Missing
     );
-  });
-});
-
-describe('Ramp.getCredentialsNoCurl (client_credentials pathway still works)', () => {
-  it('builds production RampCredentials and joins scopes', () => {
-    const creds = RAMP.getCredentialsNoCurl(['cid', 'secret', 'transactions:read', 'users:read']);
-    expect(creds).toBeInstanceOf(RampCredentials);
-    const ramp = creds as RampCredentials;
-    expect(ramp.clientId).toBe('cid');
-    expect(ramp.clientSecret).toBe('secret');
-    expect(ramp.scope).toBe('transactions:read users:read');
-  });
-
-  it('throws when required arguments are missing', () => {
-    expect(() => RAMP.getCredentialsNoCurl(['cid'])).toThrow();
   });
 });

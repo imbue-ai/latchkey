@@ -1,32 +1,20 @@
 /**
- * Ramp service implementation. Two authentication pathways, both production:
+ * Ramp service implementation (browser / AI agent-key pathway, production only).
  *
- * 1. Browser login (`latchkey auth browser ramp`): the OAuth 2.0
- *    authorization-code + PKCE flow against Ramp's public client (a fixed client
- *    ID, no secret). The hosted consent screen (auth_level=auto) mints an "AI
- *    agent key"; latchkey catches the loopback callback, exchanges the code for a
- *    bearer + refresh token at `.../developer/v1/token/pkce`, and stores them as
- *    OAuthCredentials (auto-refreshed). Agent keys use the agent-tools endpoints.
+ * `latchkey auth browser ramp` runs the OAuth 2.0 authorization-code + PKCE flow
+ * against Ramp's public client (a fixed client ID, no secret). The hosted consent
+ * screen (auth_level=auto) mints an "AI agent key"; latchkey catches the loopback
+ * callback, exchanges the code for a bearer + refresh token at
+ * `.../developer/v1/token/pkce`, and stores them as OAuthCredentials (auto-refreshed).
  *
- * 2. API client (`latchkey auth set-nocurl ramp <client_id> <client_secret>
- *    <scope> ...`): the OAuth 2.0 client_credentials grant for single-org access.
- *    The user registers an API client in the Ramp dashboard, enables scopes, and
- *    gives latchkey the client ID/secret and those scopes; latchkey mints/refreshes
- *    a bearer token for exactly those scopes. No refresh token in this grant.
- *
- * Every API call targets https://api.ramp.com/developer/v1.
+ * Agent keys use the agent-tools endpoints -- POST https://api.ramp.com/developer/v1/
+ * agent-tools/<tool> with a {"rationale": ...} body (they are auth-level barred from
+ * the standard REST endpoints). Spec: https://api.ramp.com/v1/public/agent-tools/spec/.
  */
 
 import { randomUUID } from 'node:crypto';
 import type { Browser, BrowserContext, Response } from 'playwright';
-import { z } from 'zod';
-import {
-  ApiCredentials,
-  ApiCredentialStatus,
-  ApiCredentialsUsageError,
-  OAuthCredentials,
-} from '../apiCredentials/base.js';
-import { runCaptured } from '../curl.js';
+import { ApiCredentials, ApiCredentialStatus, OAuthCredentials } from '../apiCredentials/base.js';
 import {
   exchangeCodeForTokens,
   generateCodeChallenge,
@@ -34,73 +22,7 @@ import {
   refreshAccessToken,
   startOAuthCallbackServer,
 } from '../oauthUtils.js';
-import {
-  isBrowserClosedError,
-  LoginCancelledError,
-  NoCurlCredentialsNotSupportedError,
-  Service,
-  ServiceSession,
-} from './core/base.js';
-
-/** Client_credentials token endpoint. */
-const RAMP_TOKEN_ENDPOINT = 'https://api.ramp.com/developer/v1/token';
-
-/**
- * Treat a token as expired this long before its real expiry, so it is never
- * used right at the edge of its lifetime.
- */
-const EXPIRY_BUFFER_MS = 60_000;
-
-interface RampTokenResponse {
-  access_token: string;
-  expires_in: number;
-}
-
-/**
- * Mint a fresh access token from Ramp using the client_credentials grant.
- * Returns null if the request fails or the response is malformed.
- */
-function requestRampToken(
-  clientId: string,
-  clientSecret: string,
-  scope: string
-): RampTokenResponse | null {
-  const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-  const body = new URLSearchParams({
-    grant_type: 'client_credentials',
-    scope,
-  }).toString();
-
-  const result = runCaptured(
-    [
-      '-s',
-      '-X',
-      'POST',
-      '-H',
-      `Authorization: Basic ${basicAuth}`,
-      '-H',
-      'Content-Type: application/x-www-form-urlencoded',
-      '-d',
-      body,
-      RAMP_TOKEN_ENDPOINT,
-    ],
-    30
-  );
-
-  if (result.returncode !== 0) {
-    return null;
-  }
-
-  try {
-    const response = JSON.parse(result.stdout) as Partial<RampTokenResponse>;
-    if (typeof response.access_token !== 'string' || typeof response.expires_in !== 'number') {
-      return null;
-    }
-    return { access_token: response.access_token, expires_in: response.expires_in };
-  } catch {
-    return null;
-  }
-}
+import { isBrowserClosedError, LoginCancelledError, Service, ServiceSession } from './core/base.js';
 
 /** Ramp's public OAuth client (PKCE, no secret), from ramp-cli. */
 const RAMP_OAUTH_CLIENT_ID = 'ramp_id_6pKvd0IR3d8Kuzp82SV6YgpVCZOlz68Px6s3wVsr';
@@ -108,7 +30,7 @@ const RAMP_OAUTH_CLIENT_ID = 'ramp_id_6pKvd0IR3d8Kuzp82SV6YgpVCZOlz68Px6s3wVsr';
 /** Hosted authorize endpoint (where the user signs in / approves the agent key). */
 const RAMP_AUTHORIZE_URL = 'https://app.ramp.com/v1/authorize';
 
-/** PKCE token endpoint (code exchange + refresh). Distinct from the `/token` one. */
+/** PKCE token endpoint (code exchange + refresh). */
 const RAMP_PKCE_TOKEN_ENDPOINT = 'https://api.ramp.com/developer/v1/token/pkce';
 
 /** Loopback callback path; matches ramp-cli's `/callback`. */
@@ -265,141 +187,25 @@ class RampOAuthServiceSession extends ServiceSession {
   }
 }
 
-/**
- * Ramp OAuth client_credentials credentials.
- *
- * Stores the client ID/secret and the exact scopes the app was granted (used to
- * mint tokens) plus the most recently minted access token. The token is injected
- * as `Authorization: Bearer`.
- */
-export const RampCredentialsSchema = z.object({
-  objectType: z.literal('ramp'),
-  clientId: z.string(),
-  clientSecret: z.string(),
-  scope: z.string(),
-  accessToken: z.string().optional(),
-  accessTokenExpiresAt: z.string().optional(),
-});
-
-export type RampCredentialsData = z.infer<typeof RampCredentialsSchema>;
-
-export class RampCredentials implements ApiCredentials {
-  readonly objectType = 'ramp' as const;
-  readonly clientId: string;
-  readonly clientSecret: string;
-  readonly scope: string;
-  readonly accessToken?: string;
-  readonly accessTokenExpiresAt?: string;
-
-  constructor(
-    clientId: string,
-    clientSecret: string,
-    scope: string,
-    accessToken?: string,
-    accessTokenExpiresAt?: string
-  ) {
-    this.clientId = clientId;
-    this.clientSecret = clientSecret;
-    this.scope = scope;
-    this.accessToken = accessToken;
-    this.accessTokenExpiresAt = accessTokenExpiresAt;
-  }
-
-  injectIntoCurlCall(curlArguments: readonly string[]): Promise<readonly string[]> {
-    if (this.accessToken === undefined) {
-      throw new ApiCredentialsUsageError(
-        'Ramp credentials have no access token yet. A token is minted automatically on use; ' +
-          'if you see this, re-run the command or re-set the credentials.'
-      );
-    }
-    return Promise.resolve(['-H', `Authorization: Bearer ${this.accessToken}`, ...curlArguments]);
-  }
-
-  isExpired(): boolean | undefined {
-    // No token yet (only client ID/secret stored): report expired so the refresh
-    // path mints the first token before the request goes out.
-    if (this.accessToken === undefined) {
-      return true;
-    }
-    if (this.accessTokenExpiresAt === undefined) {
-      return undefined;
-    }
-    return Date.now() >= new Date(this.accessTokenExpiresAt).getTime() - EXPIRY_BUFFER_MS;
-  }
-
-  /** Return a copy carrying a freshly minted access token. */
-  withToken(accessToken: string, accessTokenExpiresAt: string): RampCredentials {
-    return new RampCredentials(
-      this.clientId,
-      this.clientSecret,
-      this.scope,
-      accessToken,
-      accessTokenExpiresAt
-    );
-  }
-
-  toJSON(): RampCredentialsData {
-    return {
-      objectType: this.objectType,
-      clientId: this.clientId,
-      clientSecret: this.clientSecret,
-      scope: this.scope,
-      accessToken: this.accessToken,
-      accessTokenExpiresAt: this.accessTokenExpiresAt,
-    };
-  }
-
-  static fromJSON(data: RampCredentialsData): RampCredentials {
-    return new RampCredentials(
-      data.clientId,
-      data.clientSecret,
-      data.scope,
-      data.accessToken,
-      data.accessTokenExpiresAt
-    );
-  }
-}
-
-class RampCredentialError extends NoCurlCredentialsNotSupportedError {
-  constructor(message: string) {
-    super('ramp');
-    this.message = message;
-    this.name = 'RampCredentialError';
-  }
-}
-
 export class Ramp extends Service {
   readonly name = 'ramp';
   readonly displayName = 'Ramp';
   readonly baseApiUrls = ['https://api.ramp.com/'] as const;
   readonly loginUrl = 'https://app.ramp.com/';
   readonly info =
-    'Ramp developer API. Agent-tools OpenAPI spec: https://api.ramp.com/v1/public/agent-tools/spec/. ' +
-    'Sign in with `latchkey auth browser ramp` to mint an AI agent key; agent keys call ' +
-    'POST https://api.ramp.com/developer/v1/agent-tools/<tool> with a JSON {"rationale":"..."} body. ' +
-    '(An API client can also be stored with `latchkey auth set-nocurl ramp <client_id> <client_secret> <scope> ...`.)';
+    'Ramp developer API for AI agents. Agent-tools OpenAPI spec: https://api.ramp.com/v1/public/agent-tools/spec/. ' +
+    'Sign in with `latchkey auth browser ramp` to mint an AI agent key; calls are ' +
+    'POST https://api.ramp.com/developer/v1/agent-tools/<tool> with a JSON {"rationale":"..."} body.';
 
-  // Unused: credentials are validated by minting a token (see checkApiCredentials),
-  // which is scope-independent. Kept for documentation of the simplest read call.
+  // Unused: browser-login credentials are validated by holding/refreshing a live
+  // token (see checkApiCredentials), not by hitting a resource endpoint. Only present
+  // because the base class declares it abstract.
   readonly credentialCheckCurlArguments = [
-    'https://api.ramp.com/developer/v1/transactions',
+    'https://api.ramp.com/developer/v1/agent-tools/search-help-center-snippets',
   ] as const;
 
   setCredentialsExample(serviceName: string): string {
-    return `latchkey auth set-nocurl ${serviceName} <client_id> <client_secret> <scope> [scope ...]`;
-  }
-
-  override getCredentialsNoCurl(arguments_: readonly string[]): ApiCredentials {
-    const positional = arguments_.filter((argument) => argument !== '');
-    const [clientId, clientSecret, ...scopes] = positional;
-    if (clientId === undefined || clientSecret === undefined || scopes.length === 0) {
-      throw new RampCredentialError(
-        'Expected: <client_id> <client_secret> <scope> [scope ...]\n' +
-          'Pass the scopes you enabled on the Ramp app (Settings -> Developer), space-separated.\n' +
-          'Example: latchkey auth set-nocurl ramp <client_id> <client_secret> transactions:read users:read'
-      );
-    }
-    return new RampCredentials(clientId, clientSecret, scopes.join(' '));
+    return `latchkey auth browser ${serviceName}`;
   }
 
   /**
@@ -411,29 +217,11 @@ export class Ramp extends Service {
   }
 
   override refreshCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentials | null> {
-    // Browser-login credentials: refresh the PKCE access token with the (rotating)
-    // refresh token against the `/token/pkce` endpoint.
-    if (apiCredentials instanceof OAuthCredentials) {
-      return this.refreshOAuthCredentials(apiCredentials);
-    }
-    if (!(apiCredentials instanceof RampCredentials)) {
+    // Refresh the PKCE access token with the (rotating) refresh token against the
+    // `/token/pkce` endpoint, mirroring ramp-cli.
+    if (!(apiCredentials instanceof OAuthCredentials)) {
       return Promise.resolve(null);
     }
-    const token = requestRampToken(
-      apiCredentials.clientId,
-      apiCredentials.clientSecret,
-      apiCredentials.scope
-    );
-    if (token === null) {
-      return Promise.resolve(null);
-    }
-    const accessTokenExpiresAt = new Date(Date.now() + token.expires_in * 1000).toISOString();
-    return Promise.resolve(apiCredentials.withToken(token.access_token, accessTokenExpiresAt));
-  }
-
-  private refreshOAuthCredentials(
-    apiCredentials: OAuthCredentials
-  ): Promise<ApiCredentials | null> {
     if (apiCredentials.refreshToken === undefined || apiCredentials.refreshToken === '') {
       return Promise.resolve(null);
     }
@@ -461,34 +249,14 @@ export class Ramp extends Service {
   }
 
   /**
-   * Validate credentials by confirming a token can be minted/refreshed rather than
-   * by hitting a specific resource endpoint. Ramp has no scope-free endpoint, so a
-   * resource check would force every user to grant one particular scope; minting is
-   * the scope-independent source of truth ("can these credentials obtain a token?").
+   * Validate credentials by confirming a live token is held (refreshing first if
+   * expired) rather than by hitting a resource endpoint -- Ramp has no scope-free
+   * endpoint, so a resource check would force the user to grant a particular scope.
    */
   override async checkApiCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentialStatus> {
-    if (apiCredentials instanceof OAuthCredentials) {
-      return this.checkOAuthCredentials(apiCredentials);
-    }
-    if (!(apiCredentials instanceof RampCredentials)) {
+    if (!(apiCredentials instanceof OAuthCredentials)) {
       return ApiCredentialStatus.Missing;
     }
-    let credentials: RampCredentials | null = apiCredentials;
-    if (credentials.isExpired() === true) {
-      const refreshed = await this.refreshCredentials(apiCredentials);
-      credentials = refreshed instanceof RampCredentials ? refreshed : null;
-    }
-    if (credentials?.accessToken === undefined) {
-      return ApiCredentialStatus.Invalid;
-    }
-    return credentials.isExpired() === true
-      ? ApiCredentialStatus.Invalid
-      : ApiCredentialStatus.Valid;
-  }
-
-  private async checkOAuthCredentials(
-    apiCredentials: OAuthCredentials
-  ): Promise<ApiCredentialStatus> {
     let credentials: OAuthCredentials | null = apiCredentials;
     if (credentials.isExpired() === true) {
       const refreshed = await this.refreshCredentials(apiCredentials);
