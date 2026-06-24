@@ -40,19 +40,16 @@ const RAMP_OAUTH_CALLBACK_PATH = '/callback';
 const RAMP_LOGIN_TIMEOUT_MS = 300_000;
 
 /**
- * Scopes requested on the authorize URL: the agent-tools scope set Ramp's OpenAPI
- * declares. Ramp grants only the subset the signed-in user is entitled to (returned
- * in the token's `scope`), so over-requesting is harmless, but omitting a scope an
- * endpoint needs fails at call time with DEVELOPER_7100.
+ * Scopes requested on the authorize URL: exactly the scopes Ramp's agent-tools
+ * OpenAPI declares (no regular-REST-only scopes -- agent keys can't use the standard
+ * REST API anyway). Ramp grants only the subset the signed-in user is entitled to
+ * (returned in the token's `scope`), so over-requesting is harmless, but omitting a
+ * scope an endpoint needs fails at call time with DEVELOPER_7100.
  */
 const RAMP_OAUTH_SCOPES = [
   'accounting:read',
-  'agent_account_numbers:read',
   'ai_spend:read',
-  'applications:read',
-  'applications:write',
   'approvals:write',
-  'bank_accounts:read',
   'bills:read',
   'cards:read_agentic',
   'cards:write',
