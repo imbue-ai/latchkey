@@ -45,4 +45,5 @@ export { GoogleDirections, GOOGLE_DIRECTIONS } from './google/directions.js';
 export { Yelp, YELP } from './yelp.js';
 export { Coolify, COOLIFY } from './coolify.js';
 export { Umami, UMAMI } from './umami.js';
+export { Ramp, RAMP } from './ramp.js';
 export { Todoist, TODOIST } from './todoist.js';

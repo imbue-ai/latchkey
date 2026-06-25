@@ -33,6 +33,7 @@ import {
   GOOGLE_DIRECTIONS,
   COOLIFY,
   UMAMI,
+  RAMP,
   TODOIST,
 } from './services/index.js';
 
@@ -161,5 +162,6 @@ export const SERVICE_REGISTRY = new ServiceRegistry([
   GOOGLE_DIRECTIONS,
   COOLIFY,
   UMAMI,
+  RAMP,
   TODOIST,
 ]);
