@@ -14,7 +14,7 @@
 
 import { randomUUID } from 'node:crypto';
 import type { Browser, BrowserContext, Response } from 'playwright';
-import { ApiCredentials, ApiCredentialStatus, OAuthCredentials } from '../apiCredentials/base.js';
+import { ApiCredentials, OAuthCredentials } from '../apiCredentials/base.js';
 import {
   exchangeCodeForTokens,
   generateCodeChallenge,
@@ -193,10 +193,18 @@ export class Ramp extends Service {
     'Ramp agent-tools API; the REST API is not supported. ' +
     'Docs: https://api.ramp.com/v1/public/agent-tools/spec/.';
 
-  // Unused: browser-login credentials are validated by holding/refreshing a live
-  // token (see checkApiCredentials), not by hitting a resource endpoint. Only present
-  // because the base class declares it abstract.
+  // Validate credentials against `search-help-center-snippets`: the one agent-tools
+  // endpoint that requires only a valid token and no specific scope (`security:
+  // [{oauth2: []}]` in the spec), so the check works regardless of which scopes the
+  // signed-in user's agent key was granted. It's a POST taking a required
+  // {query, rationale} body; a bad token returns a non-200 (404 DEVELOPER_7002).
   readonly credentialCheckCurlArguments = [
+    '-X',
+    'POST',
+    '-H',
+    'Content-Type: application/json',
+    '-d',
+    '{"query":"ping","rationale":"latchkey credential check"}',
     'https://api.ramp.com/developer/v1/agent-tools/search-help-center-snippets',
   ] as const;
 
@@ -242,28 +250,6 @@ export class Ramp extends Service {
         apiCredentials.refreshTokenExpiresAt
       )
     );
-  }
-
-  /**
-   * Validate credentials by confirming a live token is held (refreshing first if
-   * expired) rather than by hitting a resource endpoint -- Ramp has no scope-free
-   * endpoint, so a resource check would force the user to grant a particular scope.
-   */
-  override async checkApiCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentialStatus> {
-    if (!(apiCredentials instanceof OAuthCredentials)) {
-      return ApiCredentialStatus.Missing;
-    }
-    let credentials: OAuthCredentials | null = apiCredentials;
-    if (credentials.isExpired() === true) {
-      const refreshed = await this.refreshCredentials(apiCredentials);
-      credentials = refreshed instanceof OAuthCredentials ? refreshed : null;
-    }
-    if (credentials?.accessToken === undefined) {
-      return ApiCredentialStatus.Invalid;
-    }
-    return credentials.isExpired() === true
-      ? ApiCredentialStatus.Invalid
-      : ApiCredentialStatus.Valid;
   }
 }
 

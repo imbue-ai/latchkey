@@ -10,7 +10,6 @@
 import { describe, it, expect } from 'vitest';
 import { RAMP } from '../src/services/ramp.js';
 import { AuthorizationBearer, OAuthCredentials } from '../src/apiCredentials/base.js';
-import { ApiCredentialStatus } from '../src/apiCredentials/base.js';
 import { ServiceSession } from '../src/services/core/base.js';
 
 const FUTURE = new Date(Date.now() + 60 * 60 * 1000).toISOString();
@@ -46,23 +45,5 @@ describe('Ramp.refreshCredentials with OAuth (browser-login) credentials', () =>
 
   it('returns null for unrelated credential types', async () => {
     expect(await RAMP.refreshCredentials(new AuthorizationBearer('tok'))).toBeNull();
-  });
-});
-
-describe('Ramp.checkApiCredentials with OAuth (browser-login) credentials', () => {
-  it('reports Valid when a live (unexpired) access token is held', async () => {
-    const creds = new OAuthCredentials('ramp_id_test', '', 'access-token', 'refresh-token', FUTURE);
-    expect(await RAMP.checkApiCredentials(creds)).toBe(ApiCredentialStatus.Valid);
-  });
-
-  it('reports Invalid when there is no access token and no way to obtain one', async () => {
-    const creds = new OAuthCredentials('ramp_id_test', '', undefined, undefined, undefined);
-    expect(await RAMP.checkApiCredentials(creds)).toBe(ApiCredentialStatus.Invalid);
-  });
-
-  it('reports Missing for unrelated credential types', async () => {
-    expect(await RAMP.checkApiCredentials(new AuthorizationBearer('tok'))).toBe(
-      ApiCredentialStatus.Missing
-    );
   });
 });
