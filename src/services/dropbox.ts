@@ -11,6 +11,7 @@ const DEFAULT_TIMEOUT_MS = 8000;
 
 class DropboxServiceSession extends BrowserFollowupServiceSession {
   private isLoggedIn = false;
+  private currentAccountUid?: string;
 
   onResponse(response: Response): void {
     if (this.isLoggedIn) {
@@ -35,6 +36,9 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
       return;
     }
 
+    // Remember the currently active account so the app can be created under the
+    // account the user is actually logged in as when several are linked.
+    this.currentAccountUid = uidHeader;
     this.isLoggedIn = true;
   }
 
@@ -44,10 +48,21 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
 
   /**
    * When more than one account is linked, Dropbox asks which account should own
-   * the app before enabling the "Create app" button. Pick the work account if
-   * one is available, otherwise fall back to the personal account.
+   * the app before enabling the "Create app" button. Prefer the account the
+   * user is currently logged in as, then the work account, then the personal
+   * account.
    */
   private async selectOwningAccount(page: Page): Promise<void> {
+    if (this.currentAccountUid !== undefined) {
+      const currentAccount = page.locator(
+        `input[name="_subject_uid"][value="${this.currentAccountUid}"]`
+      );
+      if ((await currentAccount.count()) > 0) {
+        await currentAccount.check();
+        return;
+      }
+    }
+
     const workAccount = page.locator('input#company[name="_subject_uid"]');
     const personalAccount = page.locator('input#personal[name="_subject_uid"]');
 
