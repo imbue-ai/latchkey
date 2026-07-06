@@ -2,7 +2,7 @@
  * Dropbox service implementation.
  */
 
-import type { Response, BrowserContext } from 'playwright';
+import type { Response, BrowserContext, Page } from 'playwright';
 import { ApiCredentials, AuthorizationBearer } from '../apiCredentials/base.js';
 import { typeLikeHuman } from '../playwrightUtils.js';
 import { Service, BrowserFollowupServiceSession, LoginFailedError } from './core/base.js';
@@ -42,6 +42,25 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
     return this.isLoggedIn;
   }
 
+  /**
+   * When more than one account is linked, Dropbox asks which account should own
+   * the app before enabling the "Create app" button. Pick the work account if
+   * one is available, otherwise fall back to the personal account.
+   */
+  private async selectOwningAccount(page: Page): Promise<void> {
+    const workAccount = page.locator('input#company[name="_subject_uid"]');
+    const personalAccount = page.locator('input#personal[name="_subject_uid"]');
+
+    if ((await workAccount.count()) > 0) {
+      await workAccount.check();
+      return;
+    }
+
+    if ((await personalAccount.count()) > 0) {
+      await personalAccount.check();
+    }
+  }
+
   protected async performBrowserFollowup(
     context: BrowserContext,
     _oldCredentials?: ApiCredentials
@@ -66,7 +85,11 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
     await appNameInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await typeLikeHuman(page, appNameInput, appName);
 
-    const createButton = page.locator('//*[@id="create-button" and not(@disabled)]');
+    await this.selectOwningAccount(page);
+
+    const createButton = page.locator(
+      '//button[@id="create-button" and @type="submit" and not(@disabled)]'
+    );
     await createButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await createButton.click();
 
