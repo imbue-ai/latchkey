@@ -17,6 +17,7 @@ import { CurlParseError, extractUrlFromCurlArguments } from './curl.js';
 import { parseCurlArgs } from '@imbue-ai/detent';
 import { ErrorMessages } from './errorMessages.js';
 import type { ServiceRegistry } from './serviceRegistry.js';
+import type { Service } from './services/core/base.js';
 
 export class RequestNotPermittedError extends Error {
   constructor() {
@@ -143,21 +144,48 @@ export async function prepareCurlInvocation(
     throw new UrlExtractionFailedError();
   }
 
-  const service = dependencies.registry.getByUrl(url);
-  if (service === null) {
+  // A single URL can match several services when an API is shared (e.g. the
+  // Google Drive files API is used by Drive, Docs, and Sheets). Pick the
+  // matching service that actually has usable credentials, preferring one
+  // whose credentials are not expired so we avoid unnecessary refreshes and
+  // network round-trips. Registration order breaks ties, which lets the
+  // canonical owner win when it too has usable credentials.
+  const candidates = dependencies.registry.getCandidatesByUrl(url);
+  const firstCandidate = candidates[0];
+  if (firstCandidate === undefined) {
     if (dependencies.passthroughUnknown) {
       return [...curlArguments];
     }
     throw new NoServiceForUrlError(url);
   }
 
-  let apiCredentials: ApiCredentials | null = apiCredentialStore.get(service.name);
-  if (apiCredentials === null) {
+  let selection: { service: Service; apiCredentials: ApiCredentials } | null = null;
+  let fallbackWithCredentials: { service: Service; apiCredentials: ApiCredentials } | null = null;
+  for (const candidate of candidates) {
+    const candidateCredentials = apiCredentialStore.get(candidate.name);
+    if (candidateCredentials === null) {
+      continue;
+    }
+    fallbackWithCredentials ??= { service: candidate, apiCredentials: candidateCredentials };
+    if (candidateCredentials.isExpired() !== true) {
+      selection = { service: candidate, apiCredentials: candidateCredentials };
+      break;
+    }
+  }
+
+  // Fall back to the first candidate that has credentials at all (they may be
+  // expired and refreshable below). If nothing has credentials, report against
+  // the first matching service for a sensible error message.
+  const chosen = selection ?? fallbackWithCredentials;
+  if (chosen === null) {
     if (dependencies.passthroughUnknown) {
       return [...curlArguments];
     }
-    throw new NoCredentialsForServiceError(service.name);
+    throw new NoCredentialsForServiceError(firstCandidate.name);
   }
+
+  const service = chosen.service;
+  let apiCredentials: ApiCredentials = chosen.apiCredentials;
 
   if (apiCredentials.isExpired() === true) {
     apiCredentials = await maybeRefreshCredentials(

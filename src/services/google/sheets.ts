@@ -11,7 +11,14 @@ const CONFIG: GoogleServiceConfig = {
 export class GoogleSheets extends GoogleService {
   readonly name = 'google-sheets';
   readonly displayName = 'Google Sheets';
-  readonly baseApiUrls = ['https://sheets.googleapis.com/'] as const;
+  // Sheets workflows also reach into the Drive files API to find, read, and
+  // export spreadsheets, so match that subset of the Drive API too. The
+  // routing layer resolves the overlap with Google Drive by preferring
+  // whichever matching service has usable credentials.
+  readonly baseApiUrls = [
+    'https://sheets.googleapis.com/',
+    /^https:\/\/www\.googleapis\.com\/drive\/v\d+\/files\b/,
+  ] as const;
   readonly info =
     'https://developers.google.com/sheets/api/reference/rest. ' +
     'If needed, run "latchkey auth browser-prepare google-sheets" to create an OAuth client first. ' +

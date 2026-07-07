@@ -22,6 +22,8 @@ import {
 } from '../src/gateway/permissionsOverride.js';
 import { TELEGRAM } from '../src/services/telegram.js';
 import { GOOGLE_GMAIL } from '../src/services/google/gmail.js';
+import { GOOGLE_DRIVE } from '../src/services/google/drive.js';
+import { GOOGLE_DOCS } from '../src/services/google/docs.js';
 import {
   deleteRegisteredService,
   loadRegisteredServices,
@@ -1391,6 +1393,116 @@ describe('CLI commands with dependency injection', () => {
       expect(errorLogs.length).toBeGreaterThan(0);
     });
 
+    it('should route a shared Drive files call to the Docs service when only Docs is authed', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(
+        storePath,
+        JSON.stringify({
+          'google-docs': {
+            objectType: 'oauth',
+            clientId: 'cid',
+            clientSecret: 'csecret',
+            accessToken: 'docs-token',
+          },
+        })
+      );
+
+      const deps = createMockDependencies({
+        registry: new ServiceRegistry([GOOGLE_DRIVE, GOOGLE_DOCS]),
+      });
+
+      await runCommand(['curl', 'https://www.googleapis.com/drive/v3/files?pageSize=1'], deps);
+
+      expect(exitCode).toBe(0);
+      expect(capturedArgs).toContain('Authorization: Bearer docs-token');
+    });
+
+    it('should prefer the canonical Drive service for a shared Drive files call when both are authed', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(
+        storePath,
+        JSON.stringify({
+          'google-drive': {
+            objectType: 'oauth',
+            clientId: 'cid',
+            clientSecret: 'csecret',
+            accessToken: 'drive-token',
+          },
+          'google-docs': {
+            objectType: 'oauth',
+            clientId: 'cid',
+            clientSecret: 'csecret',
+            accessToken: 'docs-token',
+          },
+        })
+      );
+
+      const deps = createMockDependencies({
+        registry: new ServiceRegistry([GOOGLE_DRIVE, GOOGLE_DOCS]),
+      });
+
+      await runCommand(['curl', 'https://www.googleapis.com/drive/v3/files?pageSize=1'], deps);
+
+      expect(exitCode).toBe(0);
+      expect(capturedArgs).toContain('Authorization: Bearer drive-token');
+    });
+
+    it('should skip an expired candidate in favor of one with unexpired credentials', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(
+        storePath,
+        JSON.stringify({
+          'google-drive': {
+            objectType: 'oauth',
+            clientId: 'cid',
+            clientSecret: 'csecret',
+            accessToken: 'drive-token',
+            accessTokenExpiresAt: '2000-01-01T00:00:00.000Z',
+          },
+          'google-docs': {
+            objectType: 'oauth',
+            clientId: 'cid',
+            clientSecret: 'csecret',
+            accessToken: 'docs-token',
+          },
+        })
+      );
+
+      const deps = createMockDependencies({
+        registry: new ServiceRegistry([GOOGLE_DRIVE, GOOGLE_DOCS]),
+        config: createMockConfig({ credentialsRefreshDisabled: true }),
+      });
+
+      await runCommand(['curl', 'https://www.googleapis.com/drive/v3/files?pageSize=1'], deps);
+
+      expect(exitCode).toBe(0);
+      expect(capturedArgs).toContain('Authorization: Bearer docs-token');
+    });
+
+    it('should not route a non-files Drive call to the Docs service', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(
+        storePath,
+        JSON.stringify({
+          'google-docs': {
+            objectType: 'oauth',
+            clientId: 'cid',
+            clientSecret: 'csecret',
+            accessToken: 'docs-token',
+          },
+        })
+      );
+
+      const deps = createMockDependencies({
+        registry: new ServiceRegistry([GOOGLE_DRIVE, GOOGLE_DOCS]),
+      });
+
+      await runCommand(['curl', 'https://www.googleapis.com/drive/v3/about?fields=user'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs.some((line) => line.includes('google-drive'))).toBe(true);
+    });
+
     it('should pass through unknown service when passthroughUnknown is enabled', async () => {
       const deps = createMockDependencies({
         config: createMockConfig({ passthroughUnknown: true }),
@@ -1720,7 +1832,9 @@ describe('CLI commands with dependency injection', () => {
       expect(deps.registry.getByName('my-gitlab')).not.toBeNull();
 
       // Should be findable by URL
-      expect(deps.registry.getByUrl('https://gitlab.mycompany.com/api/v4/user')).not.toBeNull();
+      expect(
+        deps.registry.getCandidatesByUrl('https://gitlab.mycompany.com/api/v4/user')
+      ).not.toHaveLength(0);
     });
 
     it('should persist registration to config.json', async () => {
@@ -2014,7 +2128,9 @@ describe('CLI commands with dependency injection', () => {
       expect(deps.registry.getByName('my-api')).not.toBeNull();
 
       // Should be findable by URL
-      expect(deps.registry.getByUrl('https://api.example.com/v1/users')).not.toBeNull();
+      expect(
+        deps.registry.getCandidatesByUrl('https://api.example.com/v1/users')
+      ).not.toHaveLength(0);
     });
 
     it('should persist registration without service family to config.json', async () => {

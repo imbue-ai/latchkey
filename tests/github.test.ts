@@ -6,34 +6,33 @@ import {
 } from '../src/services/github.js';
 import { AuthorizationBearer, RawCurlCredentials } from '../src/apiCredentials/base.js';
 import { SERVICE_REGISTRY } from '../src/serviceRegistry.js';
+import type { Service } from '../src/services/core/base.js';
+
+function primaryServiceForUrl(url: string): Service | null {
+  return SERVICE_REGISTRY.getCandidatesByUrl(url)[0] ?? null;
+}
 
 describe('Github URL matching', () => {
   it('matches the REST API host', () => {
-    expect(SERVICE_REGISTRY.getByUrl('https://api.github.com/user')).toBe(GITHUB);
-    expect(SERVICE_REGISTRY.getByUrl('https://uploads.github.com/anything')).toBe(GITHUB);
+    expect(primaryServiceForUrl('https://api.github.com/user')).toBe(GITHUB);
+    expect(primaryServiceForUrl('https://uploads.github.com/anything')).toBe(GITHUB);
   });
 
   it('matches git smart-HTTP operation URLs', () => {
     expect(
-      SERVICE_REGISTRY.getByUrl(
-        'https://github.com/owner/repo.git/info/refs?service=git-upload-pack'
-      )
+      primaryServiceForUrl('https://github.com/owner/repo.git/info/refs?service=git-upload-pack')
     ).toBe(GITHUB);
-    expect(SERVICE_REGISTRY.getByUrl('https://github.com/owner/repo/info/refs')).toBe(GITHUB);
-    expect(SERVICE_REGISTRY.getByUrl('https://github.com/owner/repo.git/git-upload-pack')).toBe(
-      GITHUB
-    );
-    expect(SERVICE_REGISTRY.getByUrl('https://github.com/owner/repo/git-receive-pack')).toBe(
-      GITHUB
-    );
+    expect(primaryServiceForUrl('https://github.com/owner/repo/info/refs')).toBe(GITHUB);
+    expect(primaryServiceForUrl('https://github.com/owner/repo.git/git-upload-pack')).toBe(GITHUB);
+    expect(primaryServiceForUrl('https://github.com/owner/repo/git-receive-pack')).toBe(GITHUB);
   });
 
   it('does not match repository web pages or website routes', () => {
-    expect(SERVICE_REGISTRY.getByUrl('https://github.com/owner/repo')).toBeNull();
-    expect(SERVICE_REGISTRY.getByUrl('https://github.com/owner/repo/issues/1')).toBeNull();
-    expect(SERVICE_REGISTRY.getByUrl('https://github.com/settings/tokens')).toBeNull();
-    expect(SERVICE_REGISTRY.getByUrl('https://github.com/owner')).toBeNull();
-    expect(SERVICE_REGISTRY.getByUrl('https://example.com/owner/repo.git/info/refs')).toBeNull();
+    expect(primaryServiceForUrl('https://github.com/owner/repo')).toBeNull();
+    expect(primaryServiceForUrl('https://github.com/owner/repo/issues/1')).toBeNull();
+    expect(primaryServiceForUrl('https://github.com/settings/tokens')).toBeNull();
+    expect(primaryServiceForUrl('https://github.com/owner')).toBeNull();
+    expect(primaryServiceForUrl('https://example.com/owner/repo.git/info/refs')).toBeNull();
   });
 });
 

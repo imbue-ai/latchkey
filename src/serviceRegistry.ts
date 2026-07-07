@@ -90,21 +90,32 @@ export class ServiceRegistry {
     return null;
   }
 
-  getByUrl(url: string): Service | null {
-    for (const service of this._services) {
-      for (const baseApiUrl of service.baseApiUrls) {
-        if (typeof baseApiUrl === 'string') {
-          if (url.startsWith(baseApiUrl)) {
-            return service;
-          }
-        } else {
-          if (baseApiUrl.test(url)) {
-            return service;
-          }
+  private matchesUrl(service: Service, url: string): boolean {
+    for (const baseApiUrl of service.baseApiUrls) {
+      if (typeof baseApiUrl === 'string') {
+        if (url.startsWith(baseApiUrl)) {
+          return true;
+        }
+      } else {
+        if (baseApiUrl.test(url)) {
+          return true;
         }
       }
     }
-    return null;
+    return false;
+  }
+
+  /**
+   * Return every service whose base API URLs match the given URL, in
+   * registration order.
+   *
+   * Some APIs are shared across services (e.g. the Google Drive files API is
+   * used by Drive, Docs, and Sheets), so a single URL can legitimately match
+   * more than one service. Callers disambiguate by picking the candidate that
+   * actually has usable credentials.
+   */
+  getCandidatesByUrl(url: string): readonly Service[] {
+    return this._services.filter((service) => this.matchesUrl(service, url));
   }
 }
 

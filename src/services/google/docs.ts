@@ -11,7 +11,14 @@ const CONFIG: GoogleServiceConfig = {
 export class GoogleDocs extends GoogleService {
   readonly name = 'google-docs';
   readonly displayName = 'Google Docs';
-  readonly baseApiUrls = ['https://docs.googleapis.com/'] as const;
+  // Docs workflows also reach into the Drive files API to find, read, and
+  // export documents, so match that subset of the Drive API too. The routing
+  // layer resolves the overlap with Google Drive by preferring whichever
+  // matching service has usable credentials.
+  readonly baseApiUrls = [
+    'https://docs.googleapis.com/',
+    /^https:\/\/www\.googleapis\.com\/drive\/v\d+\/files\b/,
+  ] as const;
   readonly info =
     'https://developers.google.com/docs/api/reference/rest. ' +
     'If needed, run "latchkey auth browser-prepare google-docs" to create an OAuth client first. ' +
