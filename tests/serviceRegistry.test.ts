@@ -27,6 +27,15 @@ import {
   RAMP,
   TODOIST,
 } from '../src/services/index.js';
+import type { Service } from '../src/services/core/base.js';
+
+/**
+ * The primary (first-registered) service that matches a URL. Mirrors how the
+ * injection pipeline treats registration order as the tie-breaker.
+ */
+function primaryServiceForUrl(registry: ServiceRegistry, url: string): Service | null {
+  return registry.getByUrl(url);
+}
 
 describe('ServiceRegistry', () => {
   describe('getByName', () => {
@@ -65,7 +74,7 @@ describe('ServiceRegistry', () => {
     });
   });
 
-  describe('getByUrl', () => {
+  describe('primary service resolution', () => {
     const urlMappings = [
       ['https://slack.com/api/auth.test', SLACK],
       ['https://discord.com/api/v9/users/@me', DISCORD],
@@ -89,32 +98,59 @@ describe('ServiceRegistry', () => {
 
     for (const [url, service] of urlMappings) {
       it(`should find ${service.name} by URL ${url}`, () => {
-        expect(SERVICE_REGISTRY.getByUrl(url)).toBe(service);
+        expect(primaryServiceForUrl(SERVICE_REGISTRY, url)).toBe(service);
       });
     }
 
     it('should return null for unknown URL', () => {
-      expect(SERVICE_REGISTRY.getByUrl('https://example.com/api')).toBeNull();
+      expect(primaryServiceForUrl(SERVICE_REGISTRY, 'https://example.com/api')).toBeNull();
     });
 
     it('should not match partial URLs', () => {
-      expect(SERVICE_REGISTRY.getByUrl('https://slack.com/')).toBeNull();
+      expect(primaryServiceForUrl(SERVICE_REGISTRY, 'https://slack.com/')).toBeNull();
     });
 
     it('should match GitHub git smart-HTTP operation URLs', () => {
       expect(
-        SERVICE_REGISTRY.getByUrl(
+        primaryServiceForUrl(
+          SERVICE_REGISTRY,
           'https://github.com/owner/repo.git/info/refs?service=git-upload-pack'
         )
       ).toBe(GITHUB);
-      expect(SERVICE_REGISTRY.getByUrl('https://github.com/owner/repo/git-upload-pack')).toBe(
-        GITHUB
-      );
+      expect(
+        primaryServiceForUrl(SERVICE_REGISTRY, 'https://github.com/owner/repo/git-upload-pack')
+      ).toBe(GITHUB);
     });
 
     it('should not match GitHub web pages as git operations', () => {
-      expect(SERVICE_REGISTRY.getByUrl('https://github.com/owner/repo')).toBeNull();
-      expect(SERVICE_REGISTRY.getByUrl('https://github.com/settings/tokens')).toBeNull();
+      expect(primaryServiceForUrl(SERVICE_REGISTRY, 'https://github.com/owner/repo')).toBeNull();
+      expect(
+        primaryServiceForUrl(SERVICE_REGISTRY, 'https://github.com/settings/tokens')
+      ).toBeNull();
+    });
+  });
+
+  describe('getCandidatesByUrl', () => {
+    it('should return every service matching a shared Drive files URL', () => {
+      const candidates = SERVICE_REGISTRY.getCandidatesByUrl(
+        'https://www.googleapis.com/drive/v3/files?pageSize=1'
+      );
+      expect(candidates).toContain(GOOGLE_DRIVE);
+      expect(candidates).toContain(GOOGLE_DOCS);
+      expect(candidates).toContain(GOOGLE_SHEETS);
+      // Drive is the canonical owner and is registered first, so it wins ties.
+      expect(candidates[0]).toBe(GOOGLE_DRIVE);
+    });
+
+    it('should only match Drive itself for non-files Drive URLs', () => {
+      const candidates = SERVICE_REGISTRY.getCandidatesByUrl(
+        'https://www.googleapis.com/drive/v3/about?fields=user'
+      );
+      expect(candidates).toEqual([GOOGLE_DRIVE]);
+    });
+
+    it('should return an empty list for unknown URLs', () => {
+      expect(SERVICE_REGISTRY.getCandidatesByUrl('https://example.com/api')).toEqual([]);
     });
   });
 
@@ -148,7 +184,9 @@ describe('ServiceRegistry', () => {
       registry.addService(registered);
 
       expect(registry.getByName('my-gitlab')).toBe(registered);
-      expect(registry.getByUrl('https://gitlab.mycompany.com/api/v4/user')).toBe(registered);
+      expect(primaryServiceForUrl(registry, 'https://gitlab.mycompany.com/api/v4/user')).toBe(
+        registered
+      );
     });
 
     it('should throw DuplicateServiceNameError for existing built-in name', () => {
