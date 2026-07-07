@@ -220,6 +220,10 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
       authorizeUrl.searchParams.set('code_challenge_method', 'S256');
       authorizeUrl.searchParams.set('scope', DROPBOX_SCOPES.join(' '));
 
+      // The finalize spinner runs in a separate tab that is kept in the
+      // foreground. Bring the working page forward so the user can actually see
+      // and confirm the authorization dialog.
+      await page.bringToFront();
       await page.goto(authorizeUrl.toString());
 
       const code = await codePromise;
