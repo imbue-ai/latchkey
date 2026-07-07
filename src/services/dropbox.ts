@@ -31,11 +31,16 @@ const TOKEN_ENDPOINT = 'https://api.dropboxapi.com/oauth2/token';
 // Scopes enabled on the created app. The same list is requested during
 // authorization so the resulting token carries exactly these permissions.
 const DROPBOX_SCOPES = [
+  'account_info.read',
   'files.metadata.write',
+  'files.metadata.read',
   'files.content.write',
   'files.content.read',
+  'sharing.read',
   'sharing.write',
+  'file_requests.read',
   'file_requests.write',
+  'contacts.read',
   'contacts.write',
 ] as const;
 
