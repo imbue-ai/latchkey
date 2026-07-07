@@ -34,7 +34,7 @@ import type { Service } from '../src/services/core/base.js';
  * injection pipeline treats registration order as the tie-breaker.
  */
 function primaryServiceForUrl(registry: ServiceRegistry, url: string): Service | null {
-  return registry.getCandidatesByUrl(url)[0] ?? null;
+  return registry.getByUrl(url);
 }
 
 describe('ServiceRegistry', () => {

@@ -2128,9 +2128,9 @@ describe('CLI commands with dependency injection', () => {
       expect(deps.registry.getByName('my-api')).not.toBeNull();
 
       // Should be findable by URL
-      expect(
-        deps.registry.getCandidatesByUrl('https://api.example.com/v1/users')
-      ).not.toHaveLength(0);
+      expect(deps.registry.getCandidatesByUrl('https://api.example.com/v1/users')).not.toHaveLength(
+        0
+      );
     });
 
     it('should persist registration without service family to config.json', async () => {

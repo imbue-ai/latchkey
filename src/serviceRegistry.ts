@@ -117,6 +117,17 @@ export class ServiceRegistry {
   getCandidatesByUrl(url: string): readonly Service[] {
     return this._services.filter((service) => this.matchesUrl(service, url));
   }
+
+  /**
+   * The primary (first-registered) service matching a URL, or null if none do.
+   *
+   * The injection pipeline uses {@link getCandidatesByUrl} to consider every
+   * match and disambiguate by credential availability; this remains as a
+   * convenience for SDK consumers that just want the canonical owner.
+   */
+  getByUrl(url: string): Service | null {
+    return this.getCandidatesByUrl(url)[0] ?? null;
+  }
 }
 
 export function loadRegisteredServicesIntoServiceRegistry(

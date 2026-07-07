@@ -43,10 +43,7 @@ const DROPBOX_SCOPES = [
   'contacts.read',
   'contacts.write',
 ] as const;
-const IMPLICITLY_GRANTED_SCOPES = [
-   'account_info.read',
-   'files.metadata.read',
-] as const;
+const IMPLICITLY_GRANTED_SCOPES = ['account_info.read', 'files.metadata.read'] as const;
 
 // Time allowed for the user to approve the authorization request in the browser.
 const AUTHORIZATION_TIMEOUT_MS = 120000;

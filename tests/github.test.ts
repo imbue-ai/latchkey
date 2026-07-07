@@ -9,7 +9,7 @@ import { SERVICE_REGISTRY } from '../src/serviceRegistry.js';
 import type { Service } from '../src/services/core/base.js';
 
 function primaryServiceForUrl(url: string): Service | null {
-  return SERVICE_REGISTRY.getCandidatesByUrl(url)[0] ?? null;
+  return SERVICE_REGISTRY.getByUrl(url);
 }
 
 describe('Github URL matching', () => {
