@@ -28,6 +28,7 @@ export { GoogleCalendar, GOOGLE_CALENDAR } from './google/calendar.js';
 export { GoogleDrive, GOOGLE_DRIVE } from './google/drive.js';
 export { GoogleSheets, GOOGLE_SHEETS } from './google/sheets.js';
 export { GoogleDocs, GOOGLE_DOCS } from './google/docs.js';
+export { GoogleSlides, GOOGLE_SLIDES } from './google/slides.js';
 export { GooglePeople, GOOGLE_PEOPLE } from './google/people.js';
 export { Notion, NOTION } from './notion.js';
 export { NotionMcp, NOTION_MCP } from './notion-mcp.js';

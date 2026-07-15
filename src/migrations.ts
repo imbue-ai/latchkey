@@ -21,6 +21,7 @@ const GOOGLE_OAUTH_SERVICE_NAMES = [
   'google-drive',
   'google-sheets',
   'google-docs',
+  'google-slides',
   'google-people',
 ] as const;
 

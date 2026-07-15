@@ -8,7 +8,10 @@ const CONFIG: GoogleServiceConfig = {
 export class GoogleDrive extends GoogleService {
   readonly name = 'google-drive';
   readonly displayName = 'Google Drive';
-  readonly baseApiUrls = ['https://www.googleapis.com/drive/'] as const;
+  readonly baseApiUrls = [
+    'https://www.googleapis.com/drive/',
+    'https://www.googleapis.com/upload/drive/',
+  ] as const;
   readonly info =
     'https://developers.google.com/drive/api/reference/rest/v3. ' +
     'If needed, run "latchkey auth browser-prepare google-drive" to create an OAuth client first. ' +
