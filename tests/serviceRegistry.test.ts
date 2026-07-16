@@ -19,6 +19,7 @@ import {
   GOOGLE_DRIVE,
   GOOGLE_SHEETS,
   GOOGLE_DOCS,
+  GOOGLE_SLIDES,
   GOOGLE_PEOPLE,
   MAILCHIMP,
   GITLAB,
@@ -51,6 +52,7 @@ describe('ServiceRegistry', () => {
       ['google-drive', GOOGLE_DRIVE],
       ['google-sheets', GOOGLE_SHEETS],
       ['google-docs', GOOGLE_DOCS],
+      ['google-slides', GOOGLE_SLIDES],
       ['google-people', GOOGLE_PEOPLE],
       ['mailchimp', MAILCHIMP],
       ['aws', AWS],
@@ -86,6 +88,7 @@ describe('ServiceRegistry', () => {
       ['https://www.googleapis.com/drive/v3/files', GOOGLE_DRIVE],
       ['https://sheets.googleapis.com/v4/spreadsheets', GOOGLE_SHEETS],
       ['https://docs.googleapis.com/v1/documents/abc', GOOGLE_DOCS],
+      ['https://slides.googleapis.com/v1/presentations/abc', GOOGLE_SLIDES],
       ['https://people.googleapis.com/v1/people/me', GOOGLE_PEOPLE],
       ['https://api.notion.com/v1/users/me', NOTION],
       ['https://api.mailchimp.com/3.0/ping', MAILCHIMP],
@@ -138,6 +141,7 @@ describe('ServiceRegistry', () => {
       expect(candidates).toContain(GOOGLE_DRIVE);
       expect(candidates).toContain(GOOGLE_DOCS);
       expect(candidates).toContain(GOOGLE_SHEETS);
+      expect(candidates).toContain(GOOGLE_SLIDES);
       // Drive is the canonical owner and is registered first, so it wins ties.
       expect(candidates[0]).toBe(GOOGLE_DRIVE);
     });
