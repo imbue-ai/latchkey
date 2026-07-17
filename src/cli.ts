@@ -53,7 +53,7 @@ if (!gatewayMode) {
       accountName: deps.config.accountName,
       allowKeyGeneration: !hasEncryptedData,
     });
-    runMigrations(deps.config, new EncryptedStorage(encryptionKey));
+    await runMigrations(deps.config, new EncryptedStorage(encryptionKey));
   } catch (error) {
     if (error instanceof KeychainTimeoutError) {
       console.error(`Error: ${error.message}`);

@@ -1,8 +1,16 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { writeFileAtomic } from './atomicWrite.js';
+import { DEFAULT_ACCOUNT } from './apiCredentials/account.js';
+import { ApiCredentialStatus } from './apiCredentials/base.js';
+import {
+  ApiCredentialsSchema,
+  deserializeCredentials,
+} from './apiCredentials/serialization.js';
 import type { Config } from './config.js';
 import type { EncryptedStorage } from './encryptedStorage.js';
+import { SERVICE_REGISTRY } from './serviceRegistry.js';
+import type { CredentialCheck } from './services/core/base.js';
 
 export class MigrationError extends Error {
   constructor(message: string) {
@@ -13,7 +21,51 @@ export class MigrationError extends Error {
 
 const DATA_FORMAT_VERSION_FILENAME = 'data-format-version';
 
-type MigrationFunction = (config: Config, encryptedStorage: EncryptedStorage) => void;
+/**
+ * Resolves the validity and owning account of a service's stored credentials.
+ * Injected into migrations so tests can avoid real network calls.
+ *
+ * A resolver must be best-effort: it should never reject. Anything it cannot
+ * determine (unknown service, unparseable data, network error, timeout) is
+ * reported as {@link ApiCredentialStatus.Unknown} so the migration leaves the
+ * default account in place rather than dropping credentials.
+ */
+export type CredentialResolver = (
+  serviceName: string,
+  credentialData: unknown
+) => Promise<CredentialCheck>;
+
+/**
+ * Default resolver: look the service up in the registry and ask it to check the
+ * credentials, translating every failure mode into an inconclusive result.
+ */
+async function resolveCredentialViaServiceRegistry(
+  serviceName: string,
+  credentialData: unknown
+): Promise<CredentialCheck> {
+  const service = SERVICE_REGISTRY.getByName(serviceName);
+  if (service === null) {
+    return { status: ApiCredentialStatus.Unknown, account: null };
+  }
+
+  const parsed = ApiCredentialsSchema.safeParse(credentialData);
+  if (!parsed.success) {
+    return { status: ApiCredentialStatus.Unknown, account: null };
+  }
+
+  try {
+    const credentials = deserializeCredentials(parsed.data);
+    return await service.checkApiCredentials(credentials);
+  } catch {
+    return { status: ApiCredentialStatus.Unknown, account: null };
+  }
+}
+
+type MigrationFunction = (
+  config: Config,
+  encryptedStorage: EncryptedStorage,
+  resolveCredential: CredentialResolver
+) => void | Promise<void>;
 
 const GOOGLE_OAUTH_SERVICE_NAMES = [
   'google-gmail',
@@ -49,20 +101,51 @@ function migrationSplitGoogleCredentials(config: Config, encryptedStorage: Encry
 }
 
 /**
- * Wrap each service's credentials in an account-keyed dictionary, using the
- * empty string as the default account. Converts the pre-multi-account format
- * `{ service: credentials }` into `{ service: { "": credentials } }`.
+ * Wrap each service's credentials in an account-keyed dictionary. Converts the
+ * pre-multi-account format `{ service: credentials }` into
+ * `{ service: { account: credentials } }`.
+ *
+ * For every service, the stored credentials are validated in parallel:
+ *   - valid credentials whose account can be determined are keyed by that
+ *     account instead of the default one,
+ *   - valid credentials whose account cannot be determined stay under the
+ *     default account,
+ *   - definitively invalid credentials are dropped,
+ *   - anything inconclusive (unknown service, network error, timeout) is left
+ *     under the default account (best-effort).
  */
-function migrationIntroduceAccounts(config: Config, encryptedStorage: EncryptedStorage): void {
+async function migrationIntroduceAccounts(
+  config: Config,
+  encryptedStorage: EncryptedStorage,
+  resolveCredential: CredentialResolver
+): Promise<void> {
   const content = encryptedStorage.readFile(config.credentialStorePath);
   if (content === null) {
     return;
   }
 
   const store = JSON.parse(content) as Record<string, unknown>;
+
+  const resolvedEntries = await Promise.all(
+    Object.entries(store).map(async ([serviceName, credentials]) => ({
+      serviceName,
+      credentials,
+      check: await resolveCredential(serviceName, credentials),
+    }))
+  );
+
   const migrated: Record<string, Record<string, unknown>> = {};
-  for (const [serviceName, credentials] of Object.entries(store)) {
-    migrated[serviceName] = { '': credentials };
+  for (const { serviceName, credentials, check } of resolvedEntries) {
+    if (check.status === ApiCredentialStatus.Invalid) {
+      continue;
+    }
+    const account =
+      check.status === ApiCredentialStatus.Valid &&
+      check.account !== null &&
+      check.account !== DEFAULT_ACCOUNT
+        ? check.account
+        : DEFAULT_ACCOUNT;
+    migrated[serviceName] = { [account]: credentials };
   }
 
   encryptedStorage.writeFile(config.credentialStorePath, JSON.stringify(migrated, null, 2));
@@ -99,7 +182,11 @@ function isFirstInstallation(config: Config): boolean {
   return !existsSync(config.directory) || !existsSync(config.credentialStorePath);
 }
 
-export function runMigrations(config: Config, encryptedStorage: EncryptedStorage): void {
+export async function runMigrations(
+  config: Config,
+  encryptedStorage: EncryptedStorage,
+  resolveCredential: CredentialResolver = resolveCredentialViaServiceRegistry
+): Promise<void> {
   if (isFirstInstallation(config)) {
     return;
   }
@@ -118,7 +205,7 @@ export function runMigrations(config: Config, encryptedStorage: EncryptedStorage
     if (migration === undefined) {
       throw new MigrationError(`Missing migration function for version ${String(i + 1)}.`);
     }
-    migration(config, encryptedStorage);
+    await migration(config, encryptedStorage, resolveCredential);
   }
 
   if (currentVersion < LATEST_VERSION) {

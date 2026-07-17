@@ -10,13 +10,33 @@ import {
   readDataFormatVersion,
   LATEST_VERSION,
   MigrationError,
+  type CredentialResolver,
 } from '../src/migrations.js';
+import { ApiCredentialStatus } from '../src/apiCredentials/base.js';
+import type { CredentialCheck } from '../src/services/core/base.js';
 
 function createTestConfig(directory: string): Config {
   return new Config((name) => {
     if (name === 'LATCHKEY_DIRECTORY') return directory;
     return undefined;
   });
+}
+
+/**
+ * Resolver that never hits the network. It reports every credential as
+ * inconclusive, which makes the accounts migration keep each service under the
+ * default account (the pre-network behaviour these tests were written for).
+ */
+const inconclusiveResolver: CredentialResolver = () =>
+  Promise.resolve({ status: ApiCredentialStatus.Unknown, account: null });
+
+/**
+ * Build a resolver from a fixed map of service name to credential-check result,
+ * defaulting to inconclusive for anything not listed.
+ */
+function resolverFromMap(results: Record<string, CredentialCheck>): CredentialResolver {
+  return (serviceName) =>
+    Promise.resolve(results[serviceName] ?? { status: ApiCredentialStatus.Unknown, account: null });
 }
 
 describe('migrations', () => {
@@ -63,32 +83,32 @@ describe('migrations', () => {
   });
 
   describe('runMigrations', () => {
-    it('should skip migrations on first installation (no directory)', () => {
+    it('should skip migrations on first installation (no directory)', async () => {
       const freshConfig = createTestConfig(join(tempDir, 'nonexistent'));
-      runMigrations(freshConfig, encryptedStorage);
+      await runMigrations(freshConfig, encryptedStorage, inconclusiveResolver);
       // Should not throw and should not create any files
       expect(existsSync(join(tempDir, 'nonexistent', 'data-format-version'))).toBe(false);
     });
 
-    it('should skip migrations on first installation (directory exists but no credentials)', () => {
+    it('should skip migrations on first installation (directory exists but no credentials)', async () => {
       // tempDir exists but has no credentials file
-      runMigrations(config, encryptedStorage);
+      await runMigrations(config, encryptedStorage, inconclusiveResolver);
       expect(existsSync(join(tempDir, 'data-format-version'))).toBe(false);
     });
 
-    it('should run migrations when credentials exist and version is 0', () => {
+    it('should run migrations when credentials exist and version is 0', async () => {
       // Create a credentials store with no "google" entry
       encryptedStorage.writeFile(
         config.credentialStorePath,
         JSON.stringify({ slack: { objectType: 'slack', token: 't', dCookie: 'd' } })
       );
 
-      runMigrations(config, encryptedStorage);
+      await runMigrations(config, encryptedStorage, inconclusiveResolver);
 
       expect(readDataFormatVersion(config)).toBe(LATEST_VERSION);
     });
 
-    it('should not run migrations when already at latest version', () => {
+    it('should not run migrations when already at latest version', async () => {
       encryptedStorage.writeFile(
         config.credentialStorePath,
         JSON.stringify({ slack: { objectType: 'slack', token: 't', dCookie: 'd' } })
@@ -96,25 +116,25 @@ describe('migrations', () => {
       writeFileSync(join(tempDir, 'data-format-version'), String(LATEST_VERSION), 'utf-8');
 
       // Should not throw
-      runMigrations(config, encryptedStorage);
+      await runMigrations(config, encryptedStorage, inconclusiveResolver);
       expect(readDataFormatVersion(config)).toBe(LATEST_VERSION);
     });
 
-    it('should throw when version is newer than latest', () => {
+    it('should throw when version is newer than latest', async () => {
       encryptedStorage.writeFile(
         config.credentialStorePath,
         JSON.stringify({ slack: { objectType: 'slack', token: 't', dCookie: 'd' } })
       );
       writeFileSync(join(tempDir, 'data-format-version'), String(LATEST_VERSION + 1), 'utf-8');
 
-      expect(() => {
-        runMigrations(config, encryptedStorage);
-      }).toThrow(MigrationError);
+      await expect(runMigrations(config, encryptedStorage, inconclusiveResolver)).rejects.toThrow(
+        MigrationError
+      );
     });
   });
 
   describe('migration 1: split google credentials', () => {
-    it('should replace "google" with individual service entries', () => {
+    it('should replace "google" with individual service entries', async () => {
       const googleCredentials = {
         objectType: 'oauth',
         clientId: 'test-client-id',
@@ -128,7 +148,7 @@ describe('migrations', () => {
         JSON.stringify({ google: googleCredentials })
       );
 
-      runMigrations(config, encryptedStorage);
+      await runMigrations(config, encryptedStorage, inconclusiveResolver);
 
       const content = encryptedStorage.readFile(config.credentialStorePath)!;
       const store = JSON.parse(content) as Record<string, unknown>;
@@ -147,7 +167,7 @@ describe('migrations', () => {
       expect(store).not.toHaveProperty('google-directions');
     });
 
-    it('should not overwrite existing individual service credentials', () => {
+    it('should not overwrite existing individual service credentials', async () => {
       const googleCredentials = {
         objectType: 'oauth',
         clientId: 'old-client',
@@ -169,7 +189,7 @@ describe('migrations', () => {
         })
       );
 
-      runMigrations(config, encryptedStorage);
+      await runMigrations(config, encryptedStorage, inconclusiveResolver);
 
       const content = encryptedStorage.readFile(config.credentialStorePath)!;
       const store = JSON.parse(content) as Record<string, unknown>;
@@ -178,7 +198,7 @@ describe('migrations', () => {
       expect(store['google-gmail']).toEqual({ '': googleCredentials });
     });
 
-    it('should preserve non-google credentials', () => {
+    it('should preserve non-google credentials', async () => {
       const slackCredentials = { objectType: 'slack', token: 't', dCookie: 'd' };
       const googleCredentials = {
         objectType: 'oauth',
@@ -194,7 +214,7 @@ describe('migrations', () => {
         })
       );
 
-      runMigrations(config, encryptedStorage);
+      await runMigrations(config, encryptedStorage, inconclusiveResolver);
 
       const content = encryptedStorage.readFile(config.credentialStorePath)!;
       const store = JSON.parse(content) as Record<string, unknown>;
@@ -202,7 +222,7 @@ describe('migrations', () => {
       expect(store.slack).toEqual({ '': slackCredentials });
     });
 
-    it('should be a no-op when there is no "google" entry', () => {
+    it('should be a no-op when there is no "google" entry', async () => {
       const slackCredentials = { objectType: 'slack', token: 't', dCookie: 'd' };
 
       encryptedStorage.writeFile(
@@ -210,7 +230,7 @@ describe('migrations', () => {
         JSON.stringify({ slack: slackCredentials })
       );
 
-      runMigrations(config, encryptedStorage);
+      await runMigrations(config, encryptedStorage, inconclusiveResolver);
 
       const content = encryptedStorage.readFile(config.credentialStorePath)!;
       const store = JSON.parse(content) as Record<string, unknown>;
@@ -219,13 +239,13 @@ describe('migrations', () => {
       expect(Object.keys(store)).toEqual(['slack']);
     });
 
-    it('should update the version file after migration', () => {
+    it('should update the version file after migration', async () => {
       encryptedStorage.writeFile(
         config.credentialStorePath,
         JSON.stringify({ google: { objectType: 'oauth', clientId: 'c', clientSecret: 's' } })
       );
 
-      runMigrations(config, encryptedStorage);
+      await runMigrations(config, encryptedStorage, inconclusiveResolver);
 
       const versionContent = readFileSync(join(tempDir, 'data-format-version'), 'utf-8');
       expect(versionContent).toBe(String(LATEST_VERSION));
@@ -233,7 +253,7 @@ describe('migrations', () => {
   });
 
   describe('migration 2: introduce accounts', () => {
-    it('should wrap each service credential under the default account', () => {
+    it('should wrap each service credential under the default account', async () => {
       const slackCredentials = { objectType: 'slack', token: 't', dCookie: 'd' };
       const discordCredentials = { objectType: 'authorizationBare', token: 'discord' };
 
@@ -242,7 +262,7 @@ describe('migrations', () => {
         JSON.stringify({ slack: slackCredentials, discord: discordCredentials })
       );
 
-      runMigrations(config, encryptedStorage);
+      await runMigrations(config, encryptedStorage, inconclusiveResolver);
 
       const content = encryptedStorage.readFile(config.credentialStorePath)!;
       const store = JSON.parse(content) as Record<string, unknown>;
@@ -251,13 +271,104 @@ describe('migrations', () => {
       expect(store.discord).toEqual({ '': discordCredentials });
     });
 
-    it('should produce an empty store for an empty store', () => {
+    it('should produce an empty store for an empty store', async () => {
       encryptedStorage.writeFile(config.credentialStorePath, JSON.stringify({}));
 
-      runMigrations(config, encryptedStorage);
+      await runMigrations(config, encryptedStorage, inconclusiveResolver);
 
       const content = encryptedStorage.readFile(config.credentialStorePath)!;
       expect(JSON.parse(content)).toEqual({});
+    });
+
+    it('should key valid credentials by their resolved account', async () => {
+      const slackCredentials = { objectType: 'slack', token: 't', dCookie: 'd' };
+
+      encryptedStorage.writeFile(
+        config.credentialStorePath,
+        JSON.stringify({ slack: slackCredentials })
+      );
+
+      await runMigrations(
+        config,
+        encryptedStorage,
+        resolverFromMap({
+          slack: { status: ApiCredentialStatus.Valid, account: 'user@example.com' },
+        })
+      );
+
+      const store = JSON.parse(
+        encryptedStorage.readFile(config.credentialStorePath)!
+      ) as Record<string, unknown>;
+
+      expect(store.slack).toEqual({ 'user@example.com': slackCredentials });
+    });
+
+    it('should keep valid credentials under the default account when the account is unknown', async () => {
+      const slackCredentials = { objectType: 'slack', token: 't', dCookie: 'd' };
+
+      encryptedStorage.writeFile(
+        config.credentialStorePath,
+        JSON.stringify({ slack: slackCredentials })
+      );
+
+      await runMigrations(
+        config,
+        encryptedStorage,
+        resolverFromMap({ slack: { status: ApiCredentialStatus.Valid, account: null } })
+      );
+
+      const store = JSON.parse(
+        encryptedStorage.readFile(config.credentialStorePath)!
+      ) as Record<string, unknown>;
+
+      expect(store.slack).toEqual({ '': slackCredentials });
+    });
+
+    it('should drop invalid credentials', async () => {
+      const slackCredentials = { objectType: 'slack', token: 't', dCookie: 'd' };
+      const discordCredentials = { objectType: 'authorizationBare', token: 'discord' };
+
+      encryptedStorage.writeFile(
+        config.credentialStorePath,
+        JSON.stringify({ slack: slackCredentials, discord: discordCredentials })
+      );
+
+      await runMigrations(
+        config,
+        encryptedStorage,
+        resolverFromMap({
+          slack: { status: ApiCredentialStatus.Invalid, account: null },
+          discord: { status: ApiCredentialStatus.Valid, account: 'me#1234' },
+        })
+      );
+
+      const store = JSON.parse(
+        encryptedStorage.readFile(config.credentialStorePath)!
+      ) as Record<string, unknown>;
+
+      expect(store).not.toHaveProperty('slack');
+      expect(store.discord).toEqual({ 'me#1234': discordCredentials });
+    });
+
+    it('should leave credentials under the default account on inconclusive checks', async () => {
+      const slackCredentials = { objectType: 'slack', token: 't', dCookie: 'd' };
+
+      encryptedStorage.writeFile(
+        config.credentialStorePath,
+        JSON.stringify({ slack: slackCredentials })
+      );
+
+      await runMigrations(
+        config,
+        encryptedStorage,
+        resolverFromMap({ slack: { status: ApiCredentialStatus.Unknown, account: null } })
+      );
+
+      const store = JSON.parse(
+        encryptedStorage.readFile(config.credentialStorePath)!
+      ) as Record<string, unknown>;
+
+      expect(store.slack).toEqual({ '': slackCredentials });
     });
   });
 });
