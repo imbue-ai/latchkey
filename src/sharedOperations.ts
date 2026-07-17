@@ -6,8 +6,8 @@
  * rather than writing to stdout or calling process.exit.
  */
 
-import { ApiCredentialStatus } from './apiCredentials/base.js';
-import { DEFAULT_ACCOUNT, type ApiCredentialStore } from './apiCredentials/store.js';
+import { ApiCredentialStatus, type ApiCredentials } from './apiCredentials/base.js';
+import type { ApiCredentialStore } from './apiCredentials/store.js';
 import { getCredentialStatus } from './apiCredentials/utils.js';
 import type { Config } from './config.js';
 import { loadBrowserConfig } from './configDataStore.js';
@@ -115,11 +115,54 @@ export function servicesList(
   return services.map((service) => service.name).sort();
 }
 
+/**
+ * Status of a single stored credential, keyed by account in the various
+ * listings. Shared between `auth list` and `services info`.
+ */
+export interface CredentialStatusEntry {
+  readonly credentialType: string;
+  readonly credentialStatus: ApiCredentialStatus;
+}
+
+/**
+ * A service's stored credentials keyed by account. The default account is
+ * keyed by the empty string.
+ */
+export type AccountCredentialStatuses = Record<string, CredentialStatusEntry>;
+
+async function computeAccountStatuses(
+  registry: ServiceRegistry,
+  apiCredentialStore: ApiCredentialStore,
+  config: Config,
+  serviceName: string,
+  accountMap: ReadonlyMap<string, ApiCredentials> | undefined,
+  offline: boolean
+): Promise<AccountCredentialStatuses> {
+  const service = registry.getByName(serviceName);
+  const entries = await Promise.all(
+    Array.from(accountMap ?? [], async ([account, credentials]) => {
+      const credentialStatus =
+        service !== null
+          ? await getCredentialStatus(
+              service,
+              credentials,
+              apiCredentialStore,
+              config.credentialsRefreshDisabled,
+              offline,
+              account
+            )
+          : ApiCredentialStatus.Valid;
+      return [account, { credentialType: credentials.objectType, credentialStatus }] as const;
+    })
+  );
+  return Object.fromEntries(entries);
+}
+
 export interface ServicesInfoResult {
   readonly type: 'built-in' | 'user-registered';
   readonly baseApiUrls: readonly (string | RegExp)[];
   readonly authOptions: readonly string[];
-  readonly credentialStatus: ApiCredentialStatus;
+  readonly credentials: AccountCredentialStatuses;
   readonly setCredentialsExample: string;
   readonly developerNotes: string;
 }
@@ -129,22 +172,21 @@ export async function servicesInfo(
   apiCredentialStore: ApiCredentialStore,
   config: Config,
   serviceName: string,
-  offline = false,
-  account?: string
+  offline = false
 ): Promise<ServicesInfoResult> {
   const service = lookupService(registry, serviceName);
 
   const supportsBrowser = service.getSession !== undefined && !config.browserDisabled;
   const authOptions = supportsBrowser ? ['browser', 'set'] : ['set'];
 
-  const apiCredentials = apiCredentialStore.get(serviceName, account);
-  const credentialStatus = await getCredentialStatus(
-    service,
-    apiCredentials,
+  const accountMap = apiCredentialStore.getAll().get(serviceName);
+  const credentials = await computeAccountStatuses(
+    registry,
     apiCredentialStore,
-    config.credentialsRefreshDisabled,
-    offline,
-    account
+    config,
+    serviceName,
+    accountMap,
+    offline
   );
 
   const serviceType = service instanceof RegisteredService ? 'user-registered' : 'built-in';
@@ -153,7 +195,7 @@ export async function servicesInfo(
     type: serviceType,
     baseApiUrls: service.baseApiUrls,
     authOptions,
-    credentialStatus,
+    credentials,
     setCredentialsExample: service.setCredentialsExample(serviceName),
     developerNotes: service.info,
   };
@@ -163,47 +205,28 @@ export async function authList(
   registry: ServiceRegistry,
   apiCredentialStore: ApiCredentialStore,
   config: Config
-): Promise<Record<string, { credentialType: string; credentialStatus: ApiCredentialStatus }>> {
+): Promise<Record<string, AccountCredentialStatuses>> {
   const allCredentials = apiCredentialStore.getAll();
 
-  // Flatten the service -> account -> credentials structure into a list of
-  // (key, credentials, account) triples. The default account keeps the plain
-  // service name as its key for backwards compatibility; named accounts are
-  // reported as "service (account)".
-  const entries = Array.from(allCredentials).flatMap(([serviceName, accountMap]) =>
-    Array.from(accountMap, ([account, credentials]) => {
-      const key = account === DEFAULT_ACCOUNT ? serviceName : `${serviceName} (${account})`;
-      return { key, serviceName, account, credentials };
+  const entries = await Promise.all(
+    Array.from(allCredentials, async ([serviceName, accountMap]) => {
+      const statuses = await computeAccountStatuses(
+        registry,
+        apiCredentialStore,
+        config,
+        serviceName,
+        accountMap,
+        false
+      );
+      return [serviceName, statuses] as const;
     })
   );
 
-  const statusChecks = entries.map(
-    async ({
-      key,
-      serviceName,
-      account,
-      credentials,
-    }): Promise<
-      readonly [string, { credentialType: string; credentialStatus: ApiCredentialStatus }]
-    > => {
-      const service = registry.getByName(serviceName);
-      const credentialStatus =
-        service !== null
-          ? await getCredentialStatus(
-              service,
-              credentials,
-              apiCredentialStore,
-              config.credentialsRefreshDisabled,
-              false,
-              account
-            )
-          : ApiCredentialStatus.Valid;
+  return Object.fromEntries(entries);
+}
 
-      return [key, { credentialType: credentials.objectType, credentialStatus }];
-    }
-  );
-
-  return Object.fromEntries(await Promise.all(statusChecks));
+export interface AuthBrowserResult {
+  readonly account: string;
 }
 
 export async function authBrowser(
@@ -211,9 +234,8 @@ export async function authBrowser(
   apiCredentialStore: ApiCredentialStore,
   encryptedStorage: EncryptedStorage,
   config: Config,
-  serviceName: string,
-  account?: string
-): Promise<void> {
+  serviceName: string
+): Promise<AuthBrowserResult> {
   const service = lookupService(registry, serviceName);
 
   const session = service.getSession?.(config.appNamePrefix);
@@ -221,23 +243,27 @@ export async function authBrowser(
     throw new BrowserFlowsNotSupportedError(serviceName);
   }
 
-  const oldCredentials = apiCredentialStore.get(service.name, account);
+  const oldCredentials = apiCredentialStore.get(service.name);
   if (session.prepare && oldCredentials === null) {
     throw new PreparationRequiredError(serviceName);
   }
 
   const launchOptions = getBrowserLaunchOptions(config);
 
-  const apiCredentials = await session.login(
+  // The browser flow reports which account the user logged in as, so the
+  // credentials are stored under that account.
+  const { credentials, account } = await session.login(
     encryptedStorage,
     launchOptions,
     oldCredentials ?? undefined
   );
-  apiCredentialStore.save(service.name, apiCredentials, account);
+  apiCredentialStore.save(service.name, credentials, account);
+  return { account };
 }
 
 export interface AuthBrowserPrepareResult {
   readonly alreadyPrepared: boolean;
+  readonly account?: string;
 }
 
 export async function authBrowserPrepare(
@@ -245,8 +271,7 @@ export async function authBrowserPrepare(
   apiCredentialStore: ApiCredentialStore,
   encryptedStorage: EncryptedStorage,
   config: Config,
-  serviceName: string,
-  account?: string
+  serviceName: string
 ): Promise<AuthBrowserPrepareResult> {
   const service = lookupService(registry, serviceName);
 
@@ -255,16 +280,17 @@ export async function authBrowserPrepare(
     return { alreadyPrepared: true };
   }
 
-  const existingCredentials = apiCredentialStore.get(service.name, account);
+  const existingCredentials = apiCredentialStore.get(service.name);
   if (existingCredentials !== null) {
     return { alreadyPrepared: true };
   }
 
   const launchOptions = getBrowserLaunchOptions(config);
 
-  let apiCredentials;
+  let credentials;
+  let account: string;
   try {
-    apiCredentials = await session.prepare(encryptedStorage, launchOptions);
+    ({ credentials, account } = await session.prepare(encryptedStorage, launchOptions));
   } catch (error: unknown) {
     // Closing the browser window during preparation should be reported to
     // the user as a clean cancellation rather than a stack trace. Doing
@@ -275,8 +301,8 @@ export async function authBrowserPrepare(
     }
     throw error;
   }
-  apiCredentialStore.save(service.name, apiCredentials, account);
-  return { alreadyPrepared: false };
+  apiCredentialStore.save(service.name, credentials, account);
+  return { alreadyPrepared: false, account };
 }
 
 export interface PrepareServiceResult {

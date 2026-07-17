@@ -13,6 +13,7 @@
  * the caller must disambiguate.
  */
 
+import { DEFAULT_ACCOUNT } from './account.js';
 import type { ApiCredentials } from './base.js';
 import {
   ApiCredentialsSchema,
@@ -47,11 +48,6 @@ export class AmbiguousAccountError extends Error {
     this.accounts = accounts;
   }
 }
-
-/**
- * The account key used when no account is specified.
- */
-export const DEFAULT_ACCOUNT = '';
 
 // service name -> account -> serialized credentials
 type StoreData = Record<string, Record<string, unknown>>;

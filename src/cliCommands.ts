@@ -297,19 +297,65 @@ async function clearService(
 }
 
 /**
+ * Build the "Done" message for a completed browser flow, naming the account the
+ * credentials were stored under when it is not the default (unnamed) account.
+ */
+function loginDoneMessage(account: string | undefined): string {
+  return account !== undefined && account !== ''
+    ? `Done. Stored credentials for account '${account}'.`
+    : 'Done';
+}
+
+/**
+ * Build the space-separated command path (e.g. "auth set") for a command,
+ * excluding the root program name.
+ */
+function fullCommandPath(command: Command): string {
+  const parts: string[] = [];
+  let current: Command = command;
+  while (current.parent) {
+    parts.unshift(current.name());
+    current = current.parent;
+  }
+  return parts.join(' ');
+}
+
+/**
  * Register all CLI commands on the given program.
  */
 export function registerCommands(program: Command, deps: CliDependencies): void {
   program.option(
     '--account <account>',
-    'Account (e.g. an e-mail) whose credentials to use. Required when a service ' +
-      'has more than one stored account.'
+    "Account (e.g. an e-mail) whose credentials to use. Supported by 'curl', " +
+      "'auth set', 'auth set-nocurl', 'auth clear', and 'auth prepare'. Required " +
+      'when a service has more than one stored account.'
   );
 
   // The account is a global option; commander exposes it on the root program
   // regardless of which subcommand is invoked.
   const getAccount = (): string | undefined =>
     program.opts<{ account?: string }>().account;
+
+  // Only these commands act on a specific account. Every other command must
+  // reject --account rather than silently ignore it, so users are never misled
+  // into thinking it took effect.
+  const accountAwareCommands = new Set([
+    'curl',
+    'auth set',
+    'auth set-nocurl',
+    'auth clear',
+    'auth prepare',
+  ]);
+  program.hook('preAction', (_thisCommand, actionCommand) => {
+    if (getAccount() === undefined) {
+      return;
+    }
+    const commandPath = fullCommandPath(actionCommand);
+    if (!accountAwareCommands.has(commandPath)) {
+      deps.errorLog(`Error: The --account option is not supported by 'latchkey ${commandPath}'.`);
+      deps.exit(1);
+    }
+  });
 
   const servicesCommand = program
     .command('services')
@@ -369,8 +415,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           apiCredentialStore,
           deps.config,
           serviceName,
-          options.offline ?? false,
-          getAccount()
+          options.offline ?? false
         );
         deps.log(JSON.stringify(info, null, 2));
       } catch (error) {
@@ -656,11 +701,11 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .argument('<service_name>', 'Name of the service to login to')
     .action(async (serviceName: string) => {
       if (deps.config.gatewayUrl !== null) {
-        await forwardToGateway(deps, {
+        const result = (await forwardToGateway(deps, {
           command: 'auth browser',
           params: { serviceName },
-        });
-        deps.log('Done');
+        })) as { account?: string } | null;
+        deps.log(loginDoneMessage(result?.account));
         return;
       }
       try {
@@ -669,15 +714,14 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           deps.config.credentialStorePath,
           encryptedStorage
         );
-        await authBrowser(
+        const { account } = await authBrowser(
           deps.registry,
           apiCredentialStore,
           encryptedStorage,
           deps.config,
-          serviceName,
-          getAccount()
+          serviceName
         );
-        deps.log('Done');
+        deps.log(loginDoneMessage(account));
       } catch (error) {
         if (error instanceof UnknownServiceError || error instanceof AmbiguousAccountError) {
           deps.errorLog(`Error: ${error.message}`);
@@ -728,11 +772,11 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         const result = (await forwardToGateway(deps, {
           command: 'auth browser-prepare',
           params: { serviceName },
-        })) as { alreadyPrepared?: boolean } | null;
+        })) as { alreadyPrepared?: boolean; account?: string } | null;
         if (result !== null && result.alreadyPrepared === true) {
           deps.log('Already prepared.');
         } else {
-          deps.log('Done');
+          deps.log(loginDoneMessage(result?.account));
         }
         return;
       }
@@ -747,13 +791,12 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           apiCredentialStore,
           encryptedStorage,
           deps.config,
-          serviceName,
-          getAccount()
+          serviceName
         );
         if (result.alreadyPrepared) {
           deps.log('Already prepared.');
         } else {
-          deps.log('Done');
+          deps.log(loginDoneMessage(result.account));
         }
       } catch (error) {
         if (error instanceof UnknownServiceError || error instanceof AmbiguousAccountError) {

@@ -11,6 +11,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { Browser, BrowserContext, Locator, Page, Response } from 'playwright';
 import { type ApiCredentials, OAuthCredentials } from '../../apiCredentials/base.js';
+import { DEFAULT_ACCOUNT } from '../../apiCredentials/account.js';
 import { extractUrlFromCurlArguments } from '../../curl.js';
 import {
   showSpinnerPage,
@@ -29,6 +30,7 @@ import {
   Service,
   BrowserFollowupServiceSession,
   buildPreparedCredentials,
+  type LoginResult,
   LoginFailedError,
   LoginCancelledError,
   isBrowserClosedError,
@@ -720,11 +722,13 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
   override async prepare(
     encryptedStorage: EncryptedStorage,
     launchOptions?: BrowserLaunchOptions
-  ): Promise<ApiCredentials> {
+  ): Promise<LoginResult> {
     return withTempBrowserContext(encryptedStorage, launchOptions ?? {}, async ({ context }) => {
       const page = await context.newPage();
       try {
-        return await this.runPrepareFlow(context, page);
+        // Preparation only creates the OAuth client (no user is signed in yet),
+        // so the credentials belong to the default account for now.
+        return { credentials: await this.runPrepareFlow(context, page), account: DEFAULT_ACCOUNT };
       } catch (error: unknown) {
         // Google now enforces MFA for accounts that use Google Cloud. When the
         // account lacks it, the console redirects to the enable-mfa page, which

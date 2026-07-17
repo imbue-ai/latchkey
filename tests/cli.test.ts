@@ -731,7 +731,7 @@ describe('CLI commands with dependency injection', () => {
       expect(info.type).toBe('built-in');
       expect(info.baseApiUrls).toEqual(['https://slack.com/api/']);
       expect(info.authOptions).toEqual(['browser', 'set']);
-      expect(info.credentialStatus).toBe('missing');
+      expect(info.credentials).toEqual({});
       expect(info.setCredentialsExample).toBe(
         'latchkey auth set slack -H "Authorization: Bearer xoxb-your-token"'
       );
@@ -794,7 +794,32 @@ describe('CLI commands with dependency injection', () => {
       await runCommand(['services', 'info', 'slack'], deps);
 
       const info = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
-      expect(info.credentialStatus).toBe('valid');
+      expect(info.credentials).toEqual({
+        '': { credentialType: 'slack', credentialStatus: 'valid' },
+      });
+    });
+
+    it('should list credentials for each account', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(
+        storePath,
+        JSON.stringify({
+          slack: {
+            '': { objectType: 'rawCurl', curlArguments: ['-H', 'X-Token: default'] },
+            'work@example.com': { objectType: 'rawCurl', curlArguments: ['-H', 'X-Token: work'] },
+          },
+        })
+      );
+
+      const deps = createMockDependencies();
+
+      await runCommand(['services', 'info', 'slack'], deps);
+
+      const info = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
+      expect(info.credentials).toEqual({
+        '': { credentialType: 'rawCurl', credentialStatus: 'valid' },
+        'work@example.com': { credentialType: 'rawCurl', credentialStatus: 'valid' },
+      });
     });
 
     it('should return error for unknown service', async () => {
@@ -963,6 +988,35 @@ describe('CLI commands with dependency injection', () => {
       expect(capturedArgs).toEqual([]);
     });
 
+    it('auth prepare stores the client under the given account', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(storePath, '{}');
+
+      const deps = createMockDependencies({
+        registry: new ServiceRegistry([GOOGLE_GMAIL]),
+      });
+      await runCommand(
+        [
+          '--account',
+          'work@example.com',
+          'auth',
+          'prepare',
+          'google-gmail',
+          '{"clientId":"cid","clientSecret":"csecret"}',
+        ],
+        deps
+      );
+
+      expect(logs).toContain('Done');
+      const store = readStore(storePath);
+      expect(store['google-gmail']?.['work@example.com']).toEqual({
+        objectType: 'oauth',
+        clientId: 'cid',
+        clientSecret: 'csecret',
+      });
+      expect(store['google-gmail']?.['']).toBeUndefined();
+    });
+
     it('auth clear removes only the requested account', async () => {
       const storePath = writeMultiAccountStore({
         'a@example.com': 'a',
@@ -997,6 +1051,20 @@ describe('CLI commands with dependency injection', () => {
       expect(exitCode).toBeNull();
       expect(logs.join('\n')).toContain('No API credentials found for slack.');
     });
+
+    it.each([
+      ['services', 'info', 'slack'],
+      ['auth', 'browser', 'slack'],
+      ['auth', 'browser-prepare', 'slack'],
+      ['auth', 'list'],
+      ['services', 'list'],
+    ])('rejects --account for the unsupported command: %s %s', async (...commandArgs) => {
+      const deps = createMockDependencies();
+      await runCommand(['--account', 'hola@jola.com', ...commandArgs], deps);
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs.join('\n')).toContain('--account option is not supported');
+    });
   });
 
   describe('auth list command', () => {
@@ -1015,8 +1083,29 @@ describe('CLI commands with dependency injection', () => {
       expect(logs).toHaveLength(1);
       const entries = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
       expect(entries.slack).toEqual({
-        credentialType: 'slack',
-        credentialStatus: 'valid',
+        '': { credentialType: 'slack', credentialStatus: 'valid' },
+      });
+    });
+
+    it('should key each service by account', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(
+        storePath,
+        JSON.stringify({
+          slack: {
+            '': { objectType: 'rawCurl', curlArguments: ['-H', 'X-Token: default'] },
+            'work@example.com': { objectType: 'rawCurl', curlArguments: ['-H', 'X-Token: work'] },
+          },
+        })
+      );
+
+      const deps = createMockDependencies();
+      await runCommand(['auth', 'list'], deps);
+
+      const entries = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
+      expect(entries.slack).toEqual({
+        '': { credentialType: 'rawCurl', credentialStatus: 'valid' },
+        'work@example.com': { credentialType: 'rawCurl', credentialStatus: 'valid' },
       });
     });
 
@@ -1047,8 +1136,7 @@ describe('CLI commands with dependency injection', () => {
       expect(logs).toHaveLength(1);
       const entries = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
       expect(entries.unknown).toEqual({
-        credentialType: 'rawCurl',
-        credentialStatus: 'valid',
+        '': { credentialType: 'rawCurl', credentialStatus: 'valid' },
       });
     });
   });
@@ -2782,6 +2870,19 @@ describe('CLI commands with dependency injection', () => {
         params: { serviceName: 'slack' },
       });
       expect(logs).toContain('Done');
+    });
+
+    it('reports the account returned by the gateway for `auth browser`', async () => {
+      makeFetchMock(
+        new Response(JSON.stringify({ result: { account: 'user@example.com' } }), { status: 200 })
+      );
+      const deps = createMockDependencies({
+        config: createMockConfig({ gatewayUrl: GATEWAY_URL }),
+      });
+
+      await runCommand(['auth', 'browser', 'slack'], deps);
+
+      expect(logs).toContain("Done. Stored credentials for account 'user@example.com'.");
     });
 
     it('forwards `auth browser-prepare` and reports `Already prepared.` when the gateway says so', async () => {

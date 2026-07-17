@@ -329,10 +329,10 @@ describe('/latchkey/ endpoint', () => {
 
       expect(response.status).toBe(200);
       const body = (await response.json()) as {
-        result: { type: string; credentialStatus: string };
+        result: { type: string; credentials: Record<string, unknown> };
       };
       expect(body.result.type).toBe('built-in');
-      expect(body.result.credentialStatus).toBe('missing');
+      expect(body.result.credentials).toEqual({});
     });
 
     it('should return error for unknown service', async () => {
@@ -409,11 +409,13 @@ describe('/latchkey/ endpoint', () => {
 
       expect(response.status).toBe(200);
       const body = (await response.json()) as {
-        result: Record<string, { credentialType: string; credentialStatus: string }>;
+        result: Record<string, Record<string, { credentialType: string; credentialStatus: string }>>;
       };
       expect(body.result.slack).toEqual({
-        credentialType: 'slack',
-        credentialStatus: 'valid',
+        '': {
+          credentialType: 'slack',
+          credentialStatus: 'valid',
+        },
       });
     });
   });

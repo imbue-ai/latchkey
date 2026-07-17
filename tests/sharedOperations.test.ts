@@ -16,6 +16,7 @@ import { GOOGLE_GMAIL } from '../src/services/google/gmail.js';
 import { NOTION_MCP } from '../src/services/notion-mcp.js';
 import { RegisteredService } from '../src/services/core/registered.js';
 import { ServiceRegistry } from '../src/serviceRegistry.js';
+import { saveBrowserConfig } from '../src/configDataStore.js';
 import { Config } from '../src/config.js';
 import {
   servicesList,
@@ -158,7 +159,7 @@ describe('operations', () => {
       expect(info.baseApiUrls).toEqual(['https://slack.com/api/']);
       expect(info.authOptions).toContain('browser');
       expect(info.authOptions).toContain('set');
-      expect(info.credentialStatus).toBe('missing');
+      expect(info.credentials).toEqual({});
       expect(info.developerNotes).toBe('Test info for Slack service.');
     });
 
@@ -194,6 +195,22 @@ describe('operations', () => {
 
       expect(info.type).toBe('user-registered');
     });
+
+    it('should return stored credentials keyed by account', async () => {
+      const service = createMockService();
+      const registry = new ServiceRegistry([service]);
+      const store = createApiCredentialStore();
+      store.save('slack', new SlackApiCredentials('default-token', 'default-cookie'));
+      store.save('slack', new SlackApiCredentials('work-token', 'work-cookie'), 'work@example.com');
+      const config = createMockConfig();
+
+      const info = await servicesInfo(registry, store, config, 'slack');
+
+      expect(info.credentials).toEqual({
+        '': { credentialType: 'slack', credentialStatus: 'valid' },
+        'work@example.com': { credentialType: 'slack', credentialStatus: 'valid' },
+      });
+    });
   });
 
   describe('authList', () => {
@@ -207,8 +224,10 @@ describe('operations', () => {
       const result = await authList(registry, store, createMockConfig());
 
       expect(result.slack).toEqual({
-        credentialType: 'slack',
-        credentialStatus: 'valid',
+        '': {
+          credentialType: 'slack',
+          credentialStatus: 'valid',
+        },
       });
     });
 
@@ -230,8 +249,10 @@ describe('operations', () => {
       const result = await authList(registry, store, createMockConfig());
 
       expect(result.unknown).toEqual({
-        credentialType: 'rawCurl',
-        credentialStatus: 'valid',
+        '': {
+          credentialType: 'rawCurl',
+          credentialStatus: 'valid',
+        },
       });
     });
   });
@@ -275,6 +296,39 @@ describe('operations', () => {
       await expect(authBrowser(registry, store, encryptedStorage, config, 'slack')).rejects.toThrow(
         PreparationRequiredError
       );
+    });
+
+    it('stores credentials under the account reported by the login flow', async () => {
+      const originalPlatform = process.platform;
+      // Pretend we are on macOS so the graphical-environment check passes
+      // without relying on DISPLAY being set.
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+      try {
+        const login = vi.fn().mockResolvedValue({
+          credentials: new SlackApiCredentials('xoxc-token', 'cookie'),
+          account: 'user@example.com',
+        });
+        const service = createMockService({ getSession: vi.fn().mockReturnValue({ login }) });
+        const registry = new ServiceRegistry([service]);
+        const store = createApiCredentialStore();
+        const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
+        const config = createMockConfig({ directory: tempDir } as Partial<Config>);
+        // A valid browser config is required for the login flow to start; point
+        // it at any existing file.
+        saveBrowserConfig(config.configPath, {
+          executablePath: process.execPath,
+          source: 'system',
+          discoveredAt: new Date().toISOString(),
+        });
+
+        const result = await authBrowser(registry, store, encryptedStorage, config, 'slack');
+
+        expect(result).toEqual({ account: 'user@example.com' });
+        expect(store.listAccounts('slack')).toEqual(['user@example.com']);
+        expect(store.get('slack', 'user@example.com')).toBeInstanceOf(SlackApiCredentials);
+      } finally {
+        Object.defineProperty(process, 'platform', { value: originalPlatform });
+      }
     });
   });
 
@@ -336,6 +390,37 @@ describe('operations', () => {
       const result = await authBrowserPrepare(registry, store, encryptedStorage, config, 'slack');
 
       expect(result.alreadyPrepared).toBe(true);
+    });
+
+    it('stores prepared credentials under the account reported by prepare', async () => {
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+      try {
+        const prepare = vi.fn().mockResolvedValue({
+          credentials: new SlackApiCredentials('prep-token', 'prep-cookie'),
+          account: '',
+        });
+        const service = createMockService({
+          getSession: vi.fn().mockReturnValue({ prepare, login: vi.fn() }),
+        });
+        const registry = new ServiceRegistry([service]);
+        const store = createApiCredentialStore();
+        const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
+        const config = createMockConfig({ directory: tempDir } as Partial<Config>);
+        saveBrowserConfig(config.configPath, {
+          executablePath: process.execPath,
+          source: 'system',
+          discoveredAt: new Date().toISOString(),
+        });
+
+        const result = await authBrowserPrepare(registry, store, encryptedStorage, config, 'slack');
+
+        expect(result).toEqual({ alreadyPrepared: false, account: '' });
+        expect(store.listAccounts('slack')).toEqual(['']);
+        expect(prepare).toHaveBeenCalledOnce();
+      } finally {
+        Object.defineProperty(process, 'platform', { value: originalPlatform });
+      }
     });
   });
 

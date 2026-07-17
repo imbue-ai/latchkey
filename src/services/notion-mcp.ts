@@ -8,6 +8,7 @@
 import { z } from 'zod';
 import type { Browser, BrowserContext, Response } from 'playwright';
 import { type ApiCredentials, OAuthCredentials } from '../apiCredentials/base.js';
+import { DEFAULT_ACCOUNT } from '../apiCredentials/account.js';
 import { runCaptured } from '../curl.js';
 import {
   exchangeCodeForTokens,
@@ -19,6 +20,7 @@ import {
 import {
   Service,
   ServiceSession,
+  type LoginResult,
   LoginFailedError,
   LoginCancelledError,
   buildPreparedCredentials,
@@ -108,7 +110,7 @@ class NotionMcpSession extends ServiceSession {
     encryptedStorage: import('../encryptedStorage.js').EncryptedStorage,
     launchOptions: import('../playwrightUtils.js').BrowserLaunchOptions = {},
     oldCredentials?: ApiCredentials
-  ): Promise<ApiCredentials> {
+  ): Promise<LoginResult> {
     const { withTempBrowserContext } = await import('../playwrightUtils.js');
 
     return withTempBrowserContext(encryptedStorage, launchOptions, async ({ context }) => {
@@ -169,13 +171,18 @@ class NotionMcpSession extends ServiceSession {
 
         await page.close();
 
-        return new OAuthCredentials(
-          clientId,
-          '', // public client
-          tokens.access_token,
-          tokens.refresh_token,
-          accessTokenExpiresAt
-        );
+        // The account is not yet determined for Notion MCP; it defaults to the
+        // unnamed account. (See determineAccount for the general mechanism.)
+        return {
+          credentials: new OAuthCredentials(
+            clientId,
+            '', // public client
+            tokens.access_token,
+            tokens.refresh_token,
+            accessTokenExpiresAt
+          ),
+          account: DEFAULT_ACCOUNT,
+        };
       } catch (error: unknown) {
         if (error instanceof Error && isBrowserClosedError(error)) {
           throw new LoginCancelledError();

@@ -254,13 +254,16 @@ calls.
 ### Inspecting the status of stored credentials
 
 Calling `latchkey services info <service_name>` will show information
-about the service, including the credentials status. The
-credentials status line will show one of:
+about the service, including a `credentials` object keyed by account
+(the default account uses the empty string). Each entry mirrors the
+`latchkey auth list` format and reports a credentials status of:
 
-- `missing`
 - `invalid`
 - `valid`
 - `unknown` (for user-registered services)
+
+A service with no stored credentials shows an empty `credentials`
+object.
 
 ### Clearing credentials
 

@@ -9,6 +9,7 @@ import {
   ApiCredentials,
   ApiCredentialsUsageError,
 } from '../../apiCredentials/base.js';
+import { DEFAULT_ACCOUNT } from '../../apiCredentials/account.js';
 import { runCaptured } from '../../curl.js';
 import { EncryptedStorage } from '../../encryptedStorage.js';
 import {
@@ -89,6 +90,21 @@ export function buildPreparedCredentials<Schema extends ZodTypeAny>(
     throw new PrepareInputInvalidError(serviceName, detail);
   }
   return build(result.data as z.infer<Schema>);
+}
+
+/**
+ * The outcome of a browser login or preparation flow: the extracted
+ * credentials together with the account they belong to.
+ *
+ * The account is a string that uniquely identifies the account behind the
+ * credentials (typically an e-mail, sometimes an opaque id). Because the
+ * account is only known once the user has logged in, browser flows report it
+ * here rather than accepting it up front. Services that cannot (yet) determine
+ * the account use the default account (the empty string).
+ */
+export interface LoginResult {
+  readonly credentials: ApiCredentials;
+  readonly account: string;
 }
 
 export function isBrowserClosedError(error: Error): boolean {
@@ -291,13 +307,34 @@ export abstract class ServiceSession {
   }
 
   /**
+   * Determine which account the finalized credentials belong to, so it can be
+   * stored alongside them. Called after login completes, while the browser and
+   * context are still open, so services can read the account from the page or
+   * from an API call made with the fresh credentials.
+   *
+   * The default returns the unnamed default account. Services override this to
+   * report the real account (e.g. the signed-in e-mail).
+   */
+  protected determineAccount(
+    _apiCredentials: ApiCredentials,
+    _browser: Browser,
+    _context: BrowserContext
+  ): Promise<string> {
+    return Promise.resolve(DEFAULT_ACCOUNT);
+  }
+
+  /**
    * Optional preparation step before login.
    * Services can override this to perform setup (e.g., creating OAuth clients).
+   *
+   * Like {@link login}, this reports the account alongside the credentials.
+   * Preparation usually happens before any user is signed in, so services
+   * typically return the default account here.
    */
   prepare?(
     encryptedStorage: EncryptedStorage,
     launchOptions?: BrowserLaunchOptions
-  ): Promise<ApiCredentials>;
+  ): Promise<LoginResult>;
 
   /**
    * Perform the login flow and return the extracted credentials.
@@ -309,7 +346,7 @@ export abstract class ServiceSession {
     encryptedStorage: EncryptedStorage,
     launchOptions: BrowserLaunchOptions = {},
     oldCredentials?: ApiCredentials
-  ): Promise<ApiCredentials> {
+  ): Promise<LoginResult> {
     return withTempBrowserContext(encryptedStorage, launchOptions, async ({ browser, context }) => {
       const page = await context.newPage();
 
@@ -348,7 +385,8 @@ export abstract class ServiceSession {
         throw new LoginFailedError();
       }
 
-      return apiCredentials;
+      const account = await this.determineAccount(apiCredentials, browser, context);
+      return { credentials: apiCredentials, account };
     });
   }
 }

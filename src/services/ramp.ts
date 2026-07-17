@@ -15,6 +15,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Browser, BrowserContext, Response } from 'playwright';
 import { ApiCredentials, OAuthCredentials } from '../apiCredentials/base.js';
+import { DEFAULT_ACCOUNT } from '../apiCredentials/account.js';
 import {
   exchangeCodeForTokens,
   generateCodeChallenge,
@@ -22,7 +23,13 @@ import {
   refreshAccessToken,
   startOAuthCallbackServer,
 } from '../oauthUtils.js';
-import { isBrowserClosedError, LoginCancelledError, Service, ServiceSession } from './core/base.js';
+import {
+  isBrowserClosedError,
+  type LoginResult,
+  LoginCancelledError,
+  Service,
+  ServiceSession,
+} from './core/base.js';
 
 /** Ramp's public OAuth client (PKCE, no secret), from ramp-cli. */
 const RAMP_OAUTH_CLIENT_ID = 'ramp_id_6pKvd0IR3d8Kuzp82SV6YgpVCZOlz68Px6s3wVsr';
@@ -105,7 +112,7 @@ class RampOAuthServiceSession extends ServiceSession {
     encryptedStorage: import('../encryptedStorage.js').EncryptedStorage,
     launchOptions: import('../playwrightUtils.js').BrowserLaunchOptions = {},
     _oldCredentials?: ApiCredentials
-  ): Promise<ApiCredentials> {
+  ): Promise<LoginResult> {
     const { withTempBrowserContext } = await import('../playwrightUtils.js');
     const clientId = RAMP_OAUTH_CLIENT_ID;
 
@@ -164,13 +171,17 @@ class RampOAuthServiceSession extends ServiceSession {
         await page.close();
 
         // Public client: clientSecret is stored as '' so refresh sends client_id only.
-        return new OAuthCredentials(
-          clientId,
-          '',
-          tokens.access_token,
-          tokens.refresh_token,
-          accessTokenExpiresAt
-        );
+        // The account defaults to the unnamed account for now.
+        return {
+          credentials: new OAuthCredentials(
+            clientId,
+            '',
+            tokens.access_token,
+            tokens.refresh_token,
+            accessTokenExpiresAt
+          ),
+          account: DEFAULT_ACCOUNT,
+        };
       } catch (error: unknown) {
         if (error instanceof Error && isBrowserClosedError(error)) {
           throw new LoginCancelledError();

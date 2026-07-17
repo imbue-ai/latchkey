@@ -157,14 +157,13 @@ async function dispatch(
       return authList(deps.registry, apiCredentialStore, deps.config);
 
     case 'auth browser':
-      await authBrowser(
+      return authBrowser(
         deps.registry,
         apiCredentialStore,
         encryptedStorage,
         deps.config,
         parsed.params.serviceName
       );
-      return null;
 
     case 'auth browser-prepare':
       return authBrowserPrepare(
