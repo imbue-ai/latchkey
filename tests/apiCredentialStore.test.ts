@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { ApiCredentialStore } from '../src/apiCredentials/store.js';
+import { AmbiguousAccountError, ApiCredentialStore } from '../src/apiCredentials/store.js';
 import { AuthorizationBearer, AuthorizationBare } from '../src/apiCredentials/base.js';
 import { SlackApiCredentials } from '../src/services/slack.js';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
@@ -131,6 +131,126 @@ describe('ApiCredentialStore', () => {
 
       expect(store.get('github')).toBeNull();
       expect(store.get('discord')).not.toBeNull();
+    });
+  });
+
+  describe('accounts', () => {
+    it('should store and retrieve credentials per account', () => {
+      const store = new ApiCredentialStore(storePath, encryptedStorage);
+      store.save('github', new AuthorizationBearer('default-token'));
+      store.save('github', new AuthorizationBearer('work-token'), 'work@example.com');
+
+      expect((store.get('github', '') as AuthorizationBearer).token).toBe('default-token');
+      expect((store.get('github', 'work@example.com') as AuthorizationBearer).token).toBe(
+        'work-token'
+      );
+      expect(store.get('github', 'missing@example.com')).toBeNull();
+    });
+
+    it('should list the accounts stored for a service', () => {
+      const store = new ApiCredentialStore(storePath, encryptedStorage);
+      expect(store.listAccounts('github')).toEqual([]);
+
+      store.save('github', new AuthorizationBearer('default-token'));
+      store.save('github', new AuthorizationBearer('work-token'), 'work@example.com');
+
+      expect([...store.listAccounts('github')].sort()).toEqual(['', 'work@example.com']);
+    });
+
+    describe('implicit account resolution', () => {
+      it('get returns the single account when no account is requested', () => {
+        const store = new ApiCredentialStore(storePath, encryptedStorage);
+        store.save('github', new AuthorizationBearer('token'), 'only@example.com');
+        expect((store.get('github') as AuthorizationBearer).token).toBe('token');
+      });
+
+      it('get throws AmbiguousAccountError when several accounts exist and none is requested', () => {
+        const store = new ApiCredentialStore(storePath, encryptedStorage);
+        store.save('github', new AuthorizationBearer('a'), 'a@example.com');
+        store.save('github', new AuthorizationBearer('b'), 'b@example.com');
+        expect(() => store.get('github')).toThrow(AmbiguousAccountError);
+      });
+
+      it('save without an account updates the single existing account', () => {
+        const store = new ApiCredentialStore(storePath, encryptedStorage);
+        store.save('github', new AuthorizationBearer('old'), 'only@example.com');
+        store.save('github', new AuthorizationBearer('new'));
+
+        expect(store.listAccounts('github')).toEqual(['only@example.com']);
+        expect((store.get('github', 'only@example.com') as AuthorizationBearer).token).toBe('new');
+      });
+
+      it('save without an account creates the default account for a new service', () => {
+        const store = new ApiCredentialStore(storePath, encryptedStorage);
+        store.save('github', new AuthorizationBearer('token'));
+        expect(store.listAccounts('github')).toEqual(['']);
+      });
+
+      it('save without an account throws AmbiguousAccountError when several accounts exist', () => {
+        const store = new ApiCredentialStore(storePath, encryptedStorage);
+        store.save('github', new AuthorizationBearer('a'), 'a@example.com');
+        store.save('github', new AuthorizationBearer('b'), 'b@example.com');
+        expect(() => {
+          store.save('github', new AuthorizationBearer('c'));
+        }).toThrow(AmbiguousAccountError);
+      });
+    });
+
+    describe('delete', () => {
+      it('should delete a single account and keep the others', () => {
+        const store = new ApiCredentialStore(storePath, encryptedStorage);
+        store.save('github', new AuthorizationBearer('a'), 'a@example.com');
+        store.save('github', new AuthorizationBearer('b'), 'b@example.com');
+
+        expect(store.delete('github', 'a@example.com')).toBe(true);
+        expect(store.get('github', 'a@example.com')).toBeNull();
+        expect(store.get('github', 'b@example.com')).not.toBeNull();
+      });
+
+      it('should remove the service entry when its last account is deleted', () => {
+        const store = new ApiCredentialStore(storePath, encryptedStorage);
+        store.save('github', new AuthorizationBearer('a'), 'a@example.com');
+
+        expect(store.delete('github', 'a@example.com')).toBe(true);
+        expect(store.listAccounts('github')).toEqual([]);
+      });
+
+      it('should delete the single account when none is specified', () => {
+        const store = new ApiCredentialStore(storePath, encryptedStorage);
+        store.save('github', new AuthorizationBearer('a'), 'a@example.com');
+
+        expect(store.delete('github')).toBe(true);
+        expect(store.listAccounts('github')).toEqual([]);
+      });
+
+      it('should throw AmbiguousAccountError when deleting without an account and several exist', () => {
+        const store = new ApiCredentialStore(storePath, encryptedStorage);
+        store.save('github', new AuthorizationBearer('a'), 'a@example.com');
+        store.save('github', new AuthorizationBearer('b'), 'b@example.com');
+        expect(() => store.delete('github')).toThrow(AmbiguousAccountError);
+      });
+
+      it('should return false when deleting a missing account', () => {
+        const store = new ApiCredentialStore(storePath, encryptedStorage);
+        store.save('github', new AuthorizationBearer('a'), 'a@example.com');
+        expect(store.delete('github', 'missing@example.com')).toBe(false);
+      });
+    });
+
+    describe('getAll', () => {
+      it('should return credentials grouped by service and account', () => {
+        const store = new ApiCredentialStore(storePath, encryptedStorage);
+        store.save('github', new AuthorizationBearer('default'));
+        store.save('github', new AuthorizationBearer('work'), 'work@example.com');
+        store.save('discord', new AuthorizationBare('discord-token'));
+
+        const all = store.getAll();
+        expect([...all.keys()].sort()).toEqual(['discord', 'github']);
+        expect([...all.get('github')!.keys()].sort()).toEqual(['', 'work@example.com']);
+        expect((all.get('github')!.get('work@example.com') as AuthorizationBearer).token).toBe(
+          'work'
+        );
+      });
     });
   });
 });

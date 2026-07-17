@@ -7,7 +7,7 @@
  */
 
 import { ApiCredentialStatus } from './apiCredentials/base.js';
-import type { ApiCredentialStore } from './apiCredentials/store.js';
+import { DEFAULT_ACCOUNT, type ApiCredentialStore } from './apiCredentials/store.js';
 import { getCredentialStatus } from './apiCredentials/utils.js';
 import type { Config } from './config.js';
 import { loadBrowserConfig } from './configDataStore.js';
@@ -129,20 +129,22 @@ export async function servicesInfo(
   apiCredentialStore: ApiCredentialStore,
   config: Config,
   serviceName: string,
-  offline = false
+  offline = false,
+  account?: string
 ): Promise<ServicesInfoResult> {
   const service = lookupService(registry, serviceName);
 
   const supportsBrowser = service.getSession !== undefined && !config.browserDisabled;
   const authOptions = supportsBrowser ? ['browser', 'set'] : ['set'];
 
-  const apiCredentials = apiCredentialStore.get(serviceName);
+  const apiCredentials = apiCredentialStore.get(serviceName, account);
   const credentialStatus = await getCredentialStatus(
     service,
     apiCredentials,
     apiCredentialStore,
     config.credentialsRefreshDisabled,
-    offline
+    offline,
+    account
   );
 
   const serviceType = service instanceof RegisteredService ? 'user-registered' : 'built-in';
@@ -164,9 +166,24 @@ export async function authList(
 ): Promise<Record<string, { credentialType: string; credentialStatus: ApiCredentialStatus }>> {
   const allCredentials = apiCredentialStore.getAll();
 
-  const statusChecks = Array.from(
-    allCredentials,
-    async ([serviceName, credentials]): Promise<
+  // Flatten the service -> account -> credentials structure into a list of
+  // (key, credentials, account) triples. The default account keeps the plain
+  // service name as its key for backwards compatibility; named accounts are
+  // reported as "service (account)".
+  const entries = Array.from(allCredentials).flatMap(([serviceName, accountMap]) =>
+    Array.from(accountMap, ([account, credentials]) => {
+      const key = account === DEFAULT_ACCOUNT ? serviceName : `${serviceName} (${account})`;
+      return { key, serviceName, account, credentials };
+    })
+  );
+
+  const statusChecks = entries.map(
+    async ({
+      key,
+      serviceName,
+      account,
+      credentials,
+    }): Promise<
       readonly [string, { credentialType: string; credentialStatus: ApiCredentialStatus }]
     > => {
       const service = registry.getByName(serviceName);
@@ -176,11 +193,13 @@ export async function authList(
               service,
               credentials,
               apiCredentialStore,
-              config.credentialsRefreshDisabled
+              config.credentialsRefreshDisabled,
+              false,
+              account
             )
           : ApiCredentialStatus.Valid;
 
-      return [serviceName, { credentialType: credentials.objectType, credentialStatus }];
+      return [key, { credentialType: credentials.objectType, credentialStatus }];
     }
   );
 
@@ -192,7 +211,8 @@ export async function authBrowser(
   apiCredentialStore: ApiCredentialStore,
   encryptedStorage: EncryptedStorage,
   config: Config,
-  serviceName: string
+  serviceName: string,
+  account?: string
 ): Promise<void> {
   const service = lookupService(registry, serviceName);
 
@@ -201,7 +221,7 @@ export async function authBrowser(
     throw new BrowserFlowsNotSupportedError(serviceName);
   }
 
-  const oldCredentials = apiCredentialStore.get(service.name);
+  const oldCredentials = apiCredentialStore.get(service.name, account);
   if (session.prepare && oldCredentials === null) {
     throw new PreparationRequiredError(serviceName);
   }
@@ -213,7 +233,7 @@ export async function authBrowser(
     launchOptions,
     oldCredentials ?? undefined
   );
-  apiCredentialStore.save(service.name, apiCredentials);
+  apiCredentialStore.save(service.name, apiCredentials, account);
 }
 
 export interface AuthBrowserPrepareResult {
@@ -225,7 +245,8 @@ export async function authBrowserPrepare(
   apiCredentialStore: ApiCredentialStore,
   encryptedStorage: EncryptedStorage,
   config: Config,
-  serviceName: string
+  serviceName: string,
+  account?: string
 ): Promise<AuthBrowserPrepareResult> {
   const service = lookupService(registry, serviceName);
 
@@ -234,7 +255,7 @@ export async function authBrowserPrepare(
     return { alreadyPrepared: true };
   }
 
-  const existingCredentials = apiCredentialStore.get(service.name);
+  const existingCredentials = apiCredentialStore.get(service.name, account);
   if (existingCredentials !== null) {
     return { alreadyPrepared: true };
   }
@@ -254,7 +275,7 @@ export async function authBrowserPrepare(
     }
     throw error;
   }
-  apiCredentialStore.save(service.name, apiCredentials);
+  apiCredentialStore.save(service.name, apiCredentials, account);
   return { alreadyPrepared: false };
 }
 
@@ -273,7 +294,8 @@ export function prepareService(
   registry: ServiceRegistry,
   apiCredentialStore: ApiCredentialStore,
   serviceName: string,
-  json: string
+  json: string,
+  account?: string
 ): PrepareServiceResult {
   const service = lookupService(registry, serviceName);
 
@@ -297,6 +319,6 @@ export function prepareService(
   // PrepareInputInvalidError on any mismatch, so a store only happens once the
   // input is fully valid.
   const credentials = service.prepareFromJson(parsedJson);
-  apiCredentialStore.save(service.name, credentials);
+  apiCredentialStore.save(service.name, credentials, account);
   return { serviceName: service.name, credentialType: credentials.objectType };
 }

@@ -235,7 +235,11 @@ describe('gateway server', () => {
     configOverrides: Partial<Config> = {}
   ): Promise<GatewayServer> {
     const storePath = join(tempDir, 'credentials.json');
-    writeSecureFile(storePath, JSON.stringify(credentialsData));
+    // Store credentials under the default account, matching the on-disk layout.
+    const nestedCredentials = Object.fromEntries(
+      Object.entries(credentialsData).map(([service, creds]) => [service, { '': creds }])
+    );
+    writeSecureFile(storePath, JSON.stringify(nestedCredentials));
 
     const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
     const apiCredentialStore = new ApiCredentialStore(storePath, encryptedStorage);

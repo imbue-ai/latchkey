@@ -162,6 +162,33 @@ code, stdout and stderr are passed back from curl to the caller
 of `latchkey`.
 
 
+### Multiple accounts
+
+Credentials for a service can be stored under several *accounts*.
+An account is a string that uniquely identifies the account
+behind the credentials — typically an e-mail, but for some
+services it may be an id. Use the global `--account` option to
+select one:
+
+```bash
+# Store credentials for a specific account.
+latchkey --account hynek@imbue.com auth set slack -H "Authorization: Bearer xoxb-..."
+
+# Use them in a request.
+latchkey --account hynek@imbue.com curl https://slack.com/api/auth.test
+
+# Clear just that account's credentials.
+latchkey --account hynek@imbue.com auth clear slack
+```
+
+When `--account` is omitted, the single stored account is used
+automatically. If a service has more than one stored account,
+`--account` becomes required. Credentials stored without an
+account (including everything migrated from older Latchkey
+versions) live under a "default" account and are used whenever
+`--account` is not given.
+
+
 ### Self-hosted services
 
 For services that can be self-hosted, like GitLab, first make Latchkey aware of your service instance:

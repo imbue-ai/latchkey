@@ -133,13 +133,15 @@ describe('migrations', () => {
       const content = encryptedStorage.readFile(config.credentialStorePath)!;
       const store = JSON.parse(content) as Record<string, unknown>;
 
+      // The account migration additionally wraps each entry under the default
+      // account (the empty string).
       expect(store).not.toHaveProperty('google');
-      expect(store['google-gmail']).toEqual(googleCredentials);
-      expect(store['google-calendar']).toEqual(googleCredentials);
-      expect(store['google-drive']).toEqual(googleCredentials);
-      expect(store['google-sheets']).toEqual(googleCredentials);
-      expect(store['google-docs']).toEqual(googleCredentials);
-      expect(store['google-people']).toEqual(googleCredentials);
+      expect(store['google-gmail']).toEqual({ '': googleCredentials });
+      expect(store['google-calendar']).toEqual({ '': googleCredentials });
+      expect(store['google-drive']).toEqual({ '': googleCredentials });
+      expect(store['google-sheets']).toEqual({ '': googleCredentials });
+      expect(store['google-docs']).toEqual({ '': googleCredentials });
+      expect(store['google-people']).toEqual({ '': googleCredentials });
       // analytics and maps should NOT be created
       expect(store).not.toHaveProperty('google-analytics');
       expect(store).not.toHaveProperty('google-directions');
@@ -172,8 +174,8 @@ describe('migrations', () => {
       const content = encryptedStorage.readFile(config.credentialStorePath)!;
       const store = JSON.parse(content) as Record<string, unknown>;
 
-      expect(store['google-drive']).toEqual(existingDriveCredentials);
-      expect(store['google-gmail']).toEqual(googleCredentials);
+      expect(store['google-drive']).toEqual({ '': existingDriveCredentials });
+      expect(store['google-gmail']).toEqual({ '': googleCredentials });
     });
 
     it('should preserve non-google credentials', () => {
@@ -197,7 +199,7 @@ describe('migrations', () => {
       const content = encryptedStorage.readFile(config.credentialStorePath)!;
       const store = JSON.parse(content) as Record<string, unknown>;
 
-      expect(store.slack).toEqual(slackCredentials);
+      expect(store.slack).toEqual({ '': slackCredentials });
     });
 
     it('should be a no-op when there is no "google" entry', () => {
@@ -213,7 +215,7 @@ describe('migrations', () => {
       const content = encryptedStorage.readFile(config.credentialStorePath)!;
       const store = JSON.parse(content) as Record<string, unknown>;
 
-      expect(store.slack).toEqual(slackCredentials);
+      expect(store.slack).toEqual({ '': slackCredentials });
       expect(Object.keys(store)).toEqual(['slack']);
     });
 
@@ -227,6 +229,35 @@ describe('migrations', () => {
 
       const versionContent = readFileSync(join(tempDir, 'data-format-version'), 'utf-8');
       expect(versionContent).toBe(String(LATEST_VERSION));
+    });
+  });
+
+  describe('migration 2: introduce accounts', () => {
+    it('should wrap each service credential under the default account', () => {
+      const slackCredentials = { objectType: 'slack', token: 't', dCookie: 'd' };
+      const discordCredentials = { objectType: 'authorizationBare', token: 'discord' };
+
+      encryptedStorage.writeFile(
+        config.credentialStorePath,
+        JSON.stringify({ slack: slackCredentials, discord: discordCredentials })
+      );
+
+      runMigrations(config, encryptedStorage);
+
+      const content = encryptedStorage.readFile(config.credentialStorePath)!;
+      const store = JSON.parse(content) as Record<string, unknown>;
+
+      expect(store.slack).toEqual({ '': slackCredentials });
+      expect(store.discord).toEqual({ '': discordCredentials });
+    });
+
+    it('should produce an empty store for an empty store', () => {
+      encryptedStorage.writeFile(config.credentialStorePath, JSON.stringify({}));
+
+      runMigrations(config, encryptedStorage);
+
+      const content = encryptedStorage.readFile(config.credentialStorePath)!;
+      expect(JSON.parse(content)).toEqual({});
     });
   });
 });

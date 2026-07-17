@@ -48,7 +48,30 @@ function migrationSplitGoogleCredentials(config: Config, encryptedStorage: Encry
   encryptedStorage.writeFile(config.credentialStorePath, JSON.stringify(rest, null, 2));
 }
 
-const MIGRATIONS: readonly MigrationFunction[] = [migrationSplitGoogleCredentials];
+/**
+ * Wrap each service's credentials in an account-keyed dictionary, using the
+ * empty string as the default account. Converts the pre-multi-account format
+ * `{ service: credentials }` into `{ service: { "": credentials } }`.
+ */
+function migrationIntroduceAccounts(config: Config, encryptedStorage: EncryptedStorage): void {
+  const content = encryptedStorage.readFile(config.credentialStorePath);
+  if (content === null) {
+    return;
+  }
+
+  const store = JSON.parse(content) as Record<string, unknown>;
+  const migrated: Record<string, Record<string, unknown>> = {};
+  for (const [serviceName, credentials] of Object.entries(store)) {
+    migrated[serviceName] = { '': credentials };
+  }
+
+  encryptedStorage.writeFile(config.credentialStorePath, JSON.stringify(migrated, null, 2));
+}
+
+const MIGRATIONS: readonly MigrationFunction[] = [
+  migrationSplitGoogleCredentials,
+  migrationIntroduceAccounts,
+];
 
 export const LATEST_VERSION = MIGRATIONS.length;
 

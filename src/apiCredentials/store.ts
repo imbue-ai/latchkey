@@ -1,5 +1,16 @@
 /**
  * API credential store for persisting and loading API credentials.
+ *
+ * On disk, credentials are stored per service and, within each service, per
+ * account. An account is a string that uniquely identifies the account behind
+ * the credentials (typically an e-mail, sometimes an opaque id). The empty
+ * string denotes the "default" account, which is what pre-multi-account data
+ * is migrated into.
+ *
+ * All read/write methods accept an optional account. When it is omitted the
+ * account is resolved from the data itself: the single stored account is used,
+ * or an {@link AmbiguousAccountError} is raised when several accounts exist and
+ * the caller must disambiguate.
  */
 
 import type { ApiCredentials } from './base.js';
@@ -17,7 +28,33 @@ export class ApiCredentialStoreError extends Error {
   }
 }
 
-type StoreData = Record<string, unknown>;
+/**
+ * Thrown when a service has more than one account stored and no account was
+ * specified to disambiguate between them.
+ */
+export class AmbiguousAccountError extends Error {
+  readonly serviceName: string;
+  readonly accounts: readonly string[];
+
+  constructor(serviceName: string, accounts: readonly string[]) {
+    super(
+      `Multiple accounts are stored for service '${serviceName}': ` +
+        `${accounts.map((account) => `'${account}'`).join(', ')}. ` +
+        'Specify which one to use with --account.'
+    );
+    this.name = 'AmbiguousAccountError';
+    this.serviceName = serviceName;
+    this.accounts = accounts;
+  }
+}
+
+/**
+ * The account key used when no account is specified.
+ */
+export const DEFAULT_ACCOUNT = '';
+
+// service name -> account -> serialized credentials
+type StoreData = Record<string, Record<string, unknown>>;
 
 export class ApiCredentialStore {
   readonly path: string;
@@ -52,51 +89,113 @@ export class ApiCredentialStore {
     }
   }
 
-  get(serviceName: string): ApiCredentials | null {
-    const data = this.loadStoreData();
-    const credentialData = data[serviceName];
-    if (credentialData === undefined) {
-      return null;
-    }
-
+  private parseCredentials(serviceName: string, credentialData: unknown): ApiCredentials {
     const parseResult = ApiCredentialsSchema.safeParse(credentialData);
     if (!parseResult.success) {
       throw new ApiCredentialStoreError(
         `Invalid credential data for service ${serviceName}: ${parseResult.error.message}`
       );
     }
-
     return deserializeCredentials(parseResult.data);
   }
 
-  save(serviceName: string, apiCredentials: ApiCredentials): void {
+  /**
+   * Resolve which stored account to operate on when the caller did not name
+   * one. Returns null when the service has no stored accounts. Throws
+   * {@link AmbiguousAccountError} when several accounts exist.
+   */
+  private resolveImplicitAccount(serviceName: string, accounts: readonly string[]): string | null {
+    if (accounts.length === 0) {
+      return null;
+    }
+    if (accounts.length === 1) {
+      return accounts[0]!;
+    }
+    throw new AmbiguousAccountError(serviceName, accounts);
+  }
+
+  get(serviceName: string, account?: string): ApiCredentials | null {
     const data = this.loadStoreData();
-    data[serviceName] = serializeCredentials(apiCredentials);
+    const serviceData = data[serviceName];
+    const accounts = serviceData === undefined ? [] : Object.keys(serviceData);
+    const resolvedAccount = account ?? this.resolveImplicitAccount(serviceName, accounts);
+    if (resolvedAccount === null) {
+      return null;
+    }
+    const credentialData = serviceData?.[resolvedAccount];
+    if (credentialData === undefined) {
+      return null;
+    }
+    return this.parseCredentials(serviceName, credentialData);
+  }
+
+  save(serviceName: string, apiCredentials: ApiCredentials, account?: string): void {
+    const data = this.loadStoreData();
+    const serviceData = data[serviceName] ?? {};
+    const accounts = Object.keys(serviceData);
+    // A brand-new service with no account specified defaults to the default
+    // account; otherwise an unspecified account updates the single existing one
+    // (and raises for ambiguity), keeping writes consistent with reads.
+    const resolvedAccount =
+      account ?? this.resolveImplicitAccount(serviceName, accounts) ?? DEFAULT_ACCOUNT;
+    data[serviceName] = { ...serviceData, [resolvedAccount]: serializeCredentials(apiCredentials) };
     this.saveStoreData(data);
   }
 
-  getAll(): ReadonlyMap<string, ApiCredentials> {
+  /**
+   * List the accounts that have credentials stored for a service, in the order
+   * they appear in the store. Returns an empty array when the service has no
+   * stored credentials.
+   */
+  listAccounts(serviceName: string): readonly string[] {
     const data = this.loadStoreData();
-    const result = new Map<string, ApiCredentials>();
-    for (const [serviceName, credentialData] of Object.entries(data)) {
-      const parseResult = ApiCredentialsSchema.safeParse(credentialData);
-      if (!parseResult.success) {
-        throw new ApiCredentialStoreError(
-          `Invalid credential data for service ${serviceName}: ${parseResult.error.message}`
-        );
+    const serviceData = data[serviceName];
+    return serviceData === undefined ? [] : Object.keys(serviceData);
+  }
+
+  /**
+   * Return all stored credentials as a map of service name to a map of account
+   * to credentials.
+   */
+  getAll(): ReadonlyMap<string, ReadonlyMap<string, ApiCredentials>> {
+    const data = this.loadStoreData();
+    const result = new Map<string, ReadonlyMap<string, ApiCredentials>>();
+    for (const [serviceName, serviceData] of Object.entries(data)) {
+      const accountMap = new Map<string, ApiCredentials>();
+      for (const [account, credentialData] of Object.entries(serviceData)) {
+        accountMap.set(account, this.parseCredentials(serviceName, credentialData));
       }
-      result.set(serviceName, deserializeCredentials(parseResult.data));
+      result.set(serviceName, accountMap);
     }
     return result;
   }
 
-  delete(serviceName: string): boolean {
+  /**
+   * Delete stored credentials for the given account (resolving an unspecified
+   * account the same way reads do). If that leaves the service with no
+   * accounts, the service entry is removed entirely. Returns whether anything
+   * was deleted.
+   */
+  delete(serviceName: string, account?: string): boolean {
     const data = this.loadStoreData();
-    if (!(serviceName in data)) {
+    const serviceData = data[serviceName];
+    if (serviceData === undefined) {
       return false;
     }
-    const { [serviceName]: _, ...rest } = data;
-    this.saveStoreData(rest);
+    const accounts = Object.keys(serviceData);
+    const resolvedAccount = account ?? this.resolveImplicitAccount(serviceName, accounts);
+    if (resolvedAccount === null || !(resolvedAccount in serviceData)) {
+      return false;
+    }
+
+    const { [resolvedAccount]: _, ...remainingAccounts } = serviceData;
+    if (Object.keys(remainingAccounts).length === 0) {
+      const { [serviceName]: __, ...rest } = data;
+      this.saveStoreData(rest);
+    } else {
+      data[serviceName] = remainingAccounts;
+      this.saveStoreData(data);
+    }
     return true;
   }
 }

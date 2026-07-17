@@ -78,6 +78,12 @@ export interface CurlInjectionDependencies {
   readonly permissionsDoNotUseBuiltinSchemas: boolean;
   readonly passthroughUnknown: boolean;
   readonly credentialsRefreshDisabled: boolean;
+  /**
+   * Account to use for the credentials. When omitted, the single stored
+   * account is used automatically; if a service has multiple accounts an
+   * `AmbiguousAccountError` is raised so the caller can require `--account`.
+   */
+  readonly account?: string;
 }
 
 /**
@@ -159,10 +165,19 @@ export async function prepareCurlInvocation(
     throw new NoServiceForUrlError(url);
   }
 
-  let selection: { service: Service; apiCredentials: ApiCredentials } | null = null;
-  let fallbackWithCredentials: { service: Service; apiCredentials: ApiCredentials } | null = null;
+  interface Selection {
+    service: Service;
+    apiCredentials: ApiCredentials;
+  }
+  let selection: Selection | null = null;
+  let fallbackWithCredentials: Selection | null = null;
+  const account = dependencies.account;
+  // `get` resolves the account itself: it returns null when the requested
+  // account is absent (so we move on to the next candidate) and raises
+  // AmbiguousAccountError when several accounts exist and none was requested,
+  // which bubbles up so the caller can require --account.
   for (const candidate of candidates) {
-    const candidateCredentials = apiCredentialStore.get(candidate.name);
+    const candidateCredentials = apiCredentialStore.get(candidate.name, account);
     if (candidateCredentials === null) {
       continue;
     }
@@ -192,7 +207,8 @@ export async function prepareCurlInvocation(
       service,
       apiCredentials,
       apiCredentialStore,
-      dependencies.credentialsRefreshDisabled
+      dependencies.credentialsRefreshDisabled,
+      account
     );
     if (apiCredentials.isExpired() === true) {
       throw new CredentialsExpiredError(service.name);

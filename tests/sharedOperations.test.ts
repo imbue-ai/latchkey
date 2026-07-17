@@ -84,7 +84,11 @@ describe('operations', () => {
     credentialsData: Record<string, unknown> = {}
   ): ApiCredentialStore {
     const storePath = join(tempDir, 'credentials.json');
-    writeSecureFile(storePath, JSON.stringify(credentialsData));
+    // Store credentials under the default account, matching the on-disk layout.
+    const nestedCredentials = Object.fromEntries(
+      Object.entries(credentialsData).map(([service, creds]) => [service, { '': creds }])
+    );
+    writeSecureFile(storePath, JSON.stringify(nestedCredentials));
     const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
     return new ApiCredentialStore(storePath, encryptedStorage);
   }
