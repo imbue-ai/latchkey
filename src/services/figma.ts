@@ -1,4 +1,4 @@
-import { Service } from './core/base.js';
+import { Service, tryParseJson } from './core/base.js';
 
 export class Figma extends Service {
   readonly name = 'figma';
@@ -11,6 +11,11 @@ export class Figma extends Service {
 
   setCredentialsExample(serviceName: string): string {
     return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
+  }
+
+  protected override parseAccountFromCredentialCheckBody(responseBody: string): string | null {
+    const data = tryParseJson(responseBody) as { email?: string; handle?: string } | null;
+    return data?.email ?? data?.handle ?? null;
   }
 }
 

@@ -14,8 +14,13 @@
 
 import { randomUUID } from 'node:crypto';
 import type { Browser, BrowserContext, Response } from 'playwright';
-import { ApiCredentials, OAuthCredentials } from '../apiCredentials/base.js';
+import {
+  ApiCredentials,
+  ApiCredentialsUsageError,
+  OAuthCredentials,
+} from '../apiCredentials/base.js';
 import { DEFAULT_ACCOUNT } from '../apiCredentials/account.js';
+import { runCaptured } from '../curl.js';
 import {
   exchangeCodeForTokens,
   generateCodeChallenge,
@@ -29,6 +34,7 @@ import {
   LoginCancelledError,
   Service,
   ServiceSession,
+  tryParseJson,
 } from './core/base.js';
 
 /** Ramp's public OAuth client (PKCE, no secret), from ramp-cli. */
@@ -171,17 +177,15 @@ class RampOAuthServiceSession extends ServiceSession {
         await page.close();
 
         // Public client: clientSecret is stored as '' so refresh sends client_id only.
-        // The account defaults to the unnamed account for now.
-        return {
-          credentials: new OAuthCredentials(
-            clientId,
-            '',
-            tokens.access_token,
-            tokens.refresh_token,
-            accessTokenExpiresAt
-          ),
-          account: DEFAULT_ACCOUNT,
-        };
+        const credentials = new OAuthCredentials(
+          clientId,
+          '',
+          tokens.access_token,
+          tokens.refresh_token,
+          accessTokenExpiresAt
+        );
+        const account = (await this.service.determineAccount(credentials)) ?? DEFAULT_ACCOUNT;
+        return { credentials, account };
       } catch (error: unknown) {
         if (error instanceof Error && isBrowserClosedError(error)) {
           throw new LoginCancelledError();
@@ -221,6 +225,40 @@ export class Ramp extends Service {
 
   setCredentialsExample(serviceName: string): string {
     return `latchkey auth browser ${serviceName}`;
+  }
+
+  /**
+   * The credential-check endpoint carries no identity, so the account comes
+   * from a separate call to `get-simplified-user-detail` — the agent-tools
+   * endpoint that returns the caller's user. Best-effort: it needs the
+   * `users:read` scope (requested during login, but granted only if the
+   * signed-in user is entitled to it).
+   */
+  override async determineAccount(apiCredentials: ApiCredentials): Promise<string | null> {
+    let curlArguments: readonly string[];
+    try {
+      curlArguments = await apiCredentials.injectIntoCurlCall([
+        '-s',
+        '-X',
+        'POST',
+        '-H',
+        'Content-Type: application/json',
+        '-d',
+        '{"rationale":"latchkey determines which account these credentials belong to"}',
+        'https://api.ramp.com/developer/v1/agent-tools/get-simplified-user-detail',
+      ]);
+    } catch (error) {
+      if (error instanceof ApiCredentialsUsageError) {
+        return null;
+      }
+      throw error;
+    }
+    const result = runCaptured(curlArguments, 10);
+    const data = tryParseJson(result.stdout) as {
+      users?: readonly { email?: string; id?: string }[];
+    } | null;
+    const user = data?.users?.[0];
+    return user?.email ?? user?.id ?? null;
   }
 
   /**

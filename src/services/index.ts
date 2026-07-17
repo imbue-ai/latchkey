@@ -7,6 +7,8 @@ export {
   ServiceSession,
   SimpleServiceSession,
   BrowserFollowupServiceSession,
+  type CredentialCheck,
+  type LoginResult,
 } from './core/base.js';
 export {
   LoginCancelledError,

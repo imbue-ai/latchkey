@@ -11,8 +11,8 @@ import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { Config } from '../src/config.js';
 import { ServiceRegistry } from '../src/serviceRegistry.js';
 import { ApiCredentialStatus } from '../src/apiCredentials/base.js';
-import { SlackApiCredentials } from '../src/services/slack.js';
-import { NoCurlCredentialsNotSupportedError, Service } from '../src/services/core/base.js';
+import { Service } from '../src/services/core/base.js';
+import { createMockService, MockService } from './mockService.js';
 import { RegisteredService } from '../src/services/core/registered.js';
 import { GITLAB } from '../src/services/gitlab.js';
 import { GITHUB } from '../src/services/github.js';
@@ -399,24 +399,7 @@ describe('CLI commands with dependency injection', () => {
   }
 
   function createMockDependencies(overrides: Partial<CliDependencies> = {}): CliDependencies {
-    const mockSlackService: Service = {
-      name: 'slack',
-      displayName: 'Slack',
-      baseApiUrls: ['https://slack.com/api/'],
-      loginUrl: 'https://slack.com/signin',
-      info: 'Test info for Slack service.',
-      credentialCheckCurlArguments: ['https://slack.com/api/auth.test'],
-      checkApiCredentials: vi.fn().mockResolvedValue(ApiCredentialStatus.Valid),
-      setCredentialsExample(serviceName: string) {
-        return `latchkey auth set ${serviceName} -H "Authorization: Bearer xoxb-your-token"`;
-      },
-      getCredentialsNoCurl() {
-        throw new NoCurlCredentialsNotSupportedError('slack');
-      },
-      getSession: vi.fn().mockReturnValue({
-        login: vi.fn().mockResolvedValue(new SlackApiCredentials('xoxc-test-token', 'test-cookie')),
-      }),
-    };
+    const mockSlackService: Service = new MockService();
 
     const mockRegistry = new ServiceRegistry([mockSlackService]);
 
@@ -551,21 +534,20 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(storePath, '{}');
 
-      const noLoginService: Service = {
+      const noLoginService: Service = createMockService({
         name: 'nologin',
         displayName: 'No Login Service',
         baseApiUrls: ['https://nologin.example.com/api/'],
         loginUrl: 'https://nologin.example.com',
         info: 'A service without browser login support.',
         credentialCheckCurlArguments: [],
-        checkApiCredentials: vi.fn().mockResolvedValue(ApiCredentialStatus.Missing),
-        setCredentialsExample(serviceName: string) {
-          return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
-        },
-        getCredentialsNoCurl() {
-          throw new NoCurlCredentialsNotSupportedError('nologin');
-        },
-      };
+        checkApiCredentials: vi
+          .fn()
+          .mockResolvedValue({ status: ApiCredentialStatus.Missing, account: null }),
+        setCredentialsExample: (serviceName: string) =>
+          `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`,
+        getSession: undefined,
+      });
 
       const deps = createMockDependencies({
         registry: new ServiceRegistry([noLoginService]),
@@ -742,21 +724,20 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(storePath, '{}');
 
-      const noLoginService: Service = {
+      const noLoginService: Service = createMockService({
         name: 'nologin',
         displayName: 'No Login Service',
         baseApiUrls: ['https://nologin.example.com/api/'],
         loginUrl: 'https://nologin.example.com',
         info: 'A service without browser login support.',
         credentialCheckCurlArguments: [],
-        checkApiCredentials: vi.fn().mockResolvedValue(ApiCredentialStatus.Missing),
-        setCredentialsExample(serviceName: string) {
-          return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
-        },
-        getCredentialsNoCurl() {
-          throw new NoCurlCredentialsNotSupportedError('nologin');
-        },
-      };
+        checkApiCredentials: vi
+          .fn()
+          .mockResolvedValue({ status: ApiCredentialStatus.Missing, account: null }),
+        setCredentialsExample: (serviceName: string) =>
+          `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`,
+        getSession: undefined,
+      });
 
       const deps = createMockDependencies({
         registry: new ServiceRegistry([noLoginService]),
@@ -1782,22 +1763,11 @@ describe('CLI commands with dependency injection', () => {
       );
 
       const mockLogin = vi.fn();
-      const mockSlackService: Service = {
-        name: 'slack',
-        displayName: 'Slack',
-        baseApiUrls: ['https://slack.com/api/'],
-        loginUrl: 'https://slack.com/signin',
-        info: 'Test info for Slack service.',
+      const mockSlackService: Service = createMockService({
         credentialCheckCurlArguments: [],
         checkApiCredentials: vi.fn(),
-        setCredentialsExample(serviceName: string) {
-          return `latchkey auth set ${serviceName} -H "Authorization: Bearer xoxb-your-token"`;
-        },
-        getCredentialsNoCurl() {
-          throw new NoCurlCredentialsNotSupportedError('slack');
-        },
         getSession: vi.fn().mockReturnValue({ login: mockLogin }),
-      };
+      });
 
       const deps = createMockDependencies({
         registry: new ServiceRegistry([mockSlackService]),
@@ -1848,22 +1818,21 @@ describe('CLI commands with dependency injection', () => {
         }))
       );
 
-      const noLoginService: Service = {
+      const noLoginService: Service = createMockService({
         name: 'nologin',
         displayName: 'No Login Service',
         baseApiUrls: ['https://nologin.example.com/api/'],
         loginUrl: 'https://nologin.example.com',
         info: 'A service without browser login support.',
         credentialCheckCurlArguments: [],
-        checkApiCredentials: vi.fn().mockResolvedValue(ApiCredentialStatus.Valid),
-        setCredentialsExample(serviceName: string) {
-          return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
-        },
-        getCredentialsNoCurl() {
-          throw new NoCurlCredentialsNotSupportedError('nologin');
-        },
+        checkApiCredentials: vi
+          .fn()
+          .mockResolvedValue({ status: ApiCredentialStatus.Valid, account: null }),
+        setCredentialsExample: (serviceName: string) =>
+          `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`,
         // No getSession - service doesn't support browser login
-      };
+        getSession: undefined,
+      });
 
       const deps = createMockDependencies({
         registry: new ServiceRegistry([noLoginService]),
@@ -1941,7 +1910,7 @@ describe('CLI commands with dependency injection', () => {
 
   describe('auth browser command', () => {
     it('should return error when service does not support browser login', async () => {
-      const noLoginService: Service = {
+      const noLoginService: Service = createMockService({
         name: 'nologin',
         displayName: 'No Login Service',
         baseApiUrls: ['https://nologin.example.com/api/'],
@@ -1949,13 +1918,13 @@ describe('CLI commands with dependency injection', () => {
         info: 'A service without browser login support.',
         credentialCheckCurlArguments: [],
         checkApiCredentials: vi.fn(),
-        setCredentialsExample(serviceName: string) {
-          return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
-        },
+        setCredentialsExample: (serviceName: string) =>
+          `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`,
         // eslint-disable-next-line @typescript-eslint/unbound-method
         getCredentialsNoCurl: Service.prototype.getCredentialsNoCurl,
         // No getSession - service doesn't support browser login
-      };
+        getSession: undefined,
+      });
 
       const deps = createMockDependencies({
         registry: new ServiceRegistry([noLoginService]),
@@ -1999,7 +1968,7 @@ describe('CLI commands with dependency injection', () => {
     });
 
     it('should suggest set-nocurl when service supports nocurl credentials', async () => {
-      const nocurlService: Service = {
+      const nocurlService: Service = createMockService({
         name: 'nocurl-only',
         displayName: 'NoCurl Only Service',
         baseApiUrls: ['https://nocurl.example.com/api/'],
@@ -2007,9 +1976,8 @@ describe('CLI commands with dependency injection', () => {
         info: 'A service with nocurl credentials but no browser login.',
         credentialCheckCurlArguments: [],
         checkApiCredentials: vi.fn(),
-        setCredentialsExample(serviceName: string) {
-          return `latchkey auth set-nocurl ${serviceName} <some-arg>`;
-        },
+        setCredentialsExample: (serviceName: string) =>
+          `latchkey auth set-nocurl ${serviceName} <some-arg>`,
         getCredentialsNoCurl(arguments_: readonly string[]) {
           if (arguments_.length !== 1) {
             throw new Error('Expected exactly one argument');
@@ -2017,7 +1985,8 @@ describe('CLI commands with dependency injection', () => {
           return { objectType: 'test', injectIntoCurlCall: vi.fn(), isExpired: () => false };
         },
         // No getSession - service doesn't support browser login
-      };
+        getSession: undefined,
+      });
 
       const deps = createMockDependencies({
         registry: new ServiceRegistry([nocurlService]),

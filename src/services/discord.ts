@@ -4,7 +4,7 @@
 
 import type { Response } from 'playwright';
 import { ApiCredentials, AuthorizationBare } from '../apiCredentials/base.js';
-import { Service, SimpleServiceSession } from './core/base.js';
+import { Service, SimpleServiceSession, tryParseJson } from './core/base.js';
 
 class DiscordServiceSession extends SimpleServiceSession {
   protected async getApiCredentialsFromResponse(
@@ -50,6 +50,17 @@ export class Discord extends Service {
 
   override getSession(appNamePrefix: string): DiscordServiceSession {
     return new DiscordServiceSession(this, appNamePrefix);
+  }
+
+  protected override parseAccountFromCredentialCheckBody(responseBody: string): string | null {
+    // The e-mail is present for user-session credentials; bot tokens only
+    // carry the bot's username.
+    const data = tryParseJson(responseBody) as {
+      email?: string | null;
+      username?: string;
+      id?: string;
+    } | null;
+    return data?.email ?? data?.username ?? data?.id ?? null;
   }
 }
 

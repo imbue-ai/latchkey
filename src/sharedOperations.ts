@@ -6,7 +6,12 @@
  * rather than writing to stdout or calling process.exit.
  */
 
-import { ApiCredentialStatus, type ApiCredentials } from './apiCredentials/base.js';
+import { DEFAULT_ACCOUNT } from './apiCredentials/account.js';
+import {
+  ApiCredentialStatus,
+  OAuthCredentials,
+  type ApiCredentials,
+} from './apiCredentials/base.js';
 import type { ApiCredentialStore } from './apiCredentials/store.js';
 import { getCredentialStatus } from './apiCredentials/utils.js';
 import type { Config } from './config.js';
@@ -243,7 +248,17 @@ export async function authBrowser(
     throw new BrowserFlowsNotSupportedError(serviceName);
   }
 
-  const oldCredentials = apiCredentialStore.get(service.name);
+  // Login reuses stored credentials only for service-level artifacts (e.g.
+  // the OAuth client created by browser-prepare), which all of a service's
+  // accounts share — so logging in to an additional account can borrow any
+  // stored account's credentials. Prefer the default account, where
+  // browser-prepare places the client before the first login.
+  const storedAccounts = apiCredentialStore.listAccounts(service.name);
+  const reusableAccount = storedAccounts.includes(DEFAULT_ACCOUNT)
+    ? DEFAULT_ACCOUNT
+    : storedAccounts[0];
+  const oldCredentials =
+    reusableAccount === undefined ? null : apiCredentialStore.get(service.name, reusableAccount);
   if (session.prepare && oldCredentials === null) {
     throw new PreparationRequiredError(serviceName);
   }
@@ -258,7 +273,33 @@ export async function authBrowser(
     oldCredentials ?? undefined
   );
   apiCredentialStore.save(service.name, credentials, account);
+  removeObsoletePreparedCredentials(apiCredentialStore, service.name, account);
   return { account };
+}
+
+/**
+ * After a login stores credentials under a real account, drop a leftover
+ * token-less entry under the default account — the placeholder created by
+ * `auth browser-prepare`. Its purpose (carrying the OAuth client to the first
+ * login) is served, and the client lives on inside every logged-in account's
+ * credentials; keeping the placeholder would only make account resolution
+ * ambiguous. Complete credentials under the default account are left alone.
+ */
+function removeObsoletePreparedCredentials(
+  apiCredentialStore: ApiCredentialStore,
+  serviceName: string,
+  savedAccount: string
+): void {
+  if (savedAccount === DEFAULT_ACCOUNT) {
+    return;
+  }
+  const defaultAccountCredentials = apiCredentialStore.get(serviceName, DEFAULT_ACCOUNT);
+  if (
+    defaultAccountCredentials instanceof OAuthCredentials &&
+    defaultAccountCredentials.accessToken === undefined
+  ) {
+    apiCredentialStore.delete(serviceName, DEFAULT_ACCOUNT);
+  }
 }
 
 export interface AuthBrowserPrepareResult {

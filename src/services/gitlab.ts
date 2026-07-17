@@ -1,4 +1,4 @@
-import { Service } from './core/base.js';
+import { Service, tryParseJson } from './core/base.js';
 
 export class Gitlab extends Service {
   readonly name = 'gitlab';
@@ -11,6 +11,13 @@ export class Gitlab extends Service {
 
   setCredentialsExample(serviceName: string): string {
     return `latchkey auth set ${serviceName} -H "PRIVATE-TOKEN: <token>"`;
+  }
+
+  protected override parseAccountFromCredentialCheckBody(responseBody: string): string | null {
+    // Unlike lookups of other users, /user always exposes the token owner's
+    // own e-mail, so it can be preferred over the username.
+    const data = tryParseJson(responseBody) as { username?: string; email?: string } | null;
+    return data?.email ?? data?.username ?? null;
   }
 }
 

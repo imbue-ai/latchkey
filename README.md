@@ -188,6 +188,13 @@ account (including everything migrated from older Latchkey
 versions) live under a "default" account and are used whenever
 `--account` is not given.
 
+Browser logins (`latchkey auth browser`) determine the account
+automatically: after the login completes, Latchkey asks the
+service which account the fresh credentials belong to (usually
+via the same request used for credential checks) and stores them
+under that account. Running the login again with a different
+user adds a second account instead of overwriting the first.
+
 
 ### Self-hosted services
 

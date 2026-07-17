@@ -5,7 +5,7 @@
  * (e.g. by creating an internal integration at the loginUrl below).
  */
 
-import { Service } from './core/base.js';
+import { Service, tryParseJson } from './core/base.js';
 
 const NOTION_INTEGRATIONS_URL =
   'https://www.notion.so/profile/integrations/internal/form/new-integration';
@@ -27,6 +27,25 @@ export class Notion extends Service {
 
   setCredentialsExample(serviceName: string): string {
     return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
+  }
+
+  protected override parseAccountFromCredentialCheckBody(responseBody: string): string | null {
+    // Internal-integration tokens authenticate as a bot user; the workspace
+    // name distinguishes tokens for different workspaces better than the
+    // per-integration bot name alone.
+    const data = tryParseJson(responseBody) as {
+      name?: string;
+      id?: string;
+      bot?: { workspace_name?: string };
+    } | null;
+    if (data === null) {
+      return null;
+    }
+    const workspaceName = data.bot?.workspace_name;
+    if (data.name !== undefined && workspaceName !== undefined) {
+      return `${data.name}@${workspaceName}`;
+    }
+    return data.name ?? workspaceName ?? data.id ?? null;
   }
 }
 

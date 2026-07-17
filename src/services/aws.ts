@@ -298,6 +298,17 @@ export class Aws extends Service {
     }
     return new AwsCredentials(accessKeyId, secretAccessKey);
   }
+
+  protected override parseAccountFromCredentialCheckBody(responseBody: string): string | null {
+    // GetCallerIdentity responds with XML; the ARN identifies both the AWS
+    // account and the IAM user behind the access key.
+    const arnMatch = /<Arn>([^<]+)<\/Arn>/.exec(responseBody);
+    if (arnMatch?.[1] !== undefined) {
+      return arnMatch[1];
+    }
+    const accountMatch = /<Account>([^<]+)<\/Account>/.exec(responseBody);
+    return accountMatch?.[1] ?? null;
+  }
 }
 
 class AwsCredentialError extends NoCurlCredentialsNotSupportedError {

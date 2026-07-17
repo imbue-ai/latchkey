@@ -4,7 +4,12 @@
 
 import type { Response, BrowserContext } from 'playwright';
 import { ApiCredentials, AuthorizationBearer } from '../apiCredentials/base.js';
-import { Service, BrowserFollowupServiceSession, LoginFailedError } from './core/base.js';
+import {
+  Service,
+  BrowserFollowupServiceSession,
+  LoginFailedError,
+  tryParseJson,
+} from './core/base.js';
 
 const DEFAULT_TIMEOUT_MS = 8000;
 
@@ -81,10 +86,20 @@ export class Todoist extends Service {
     'https://developer.todoist.com/api/v1. ' +
     'The personal API token is read from Settings → Integrations → Developer during login.';
 
-  readonly credentialCheckCurlArguments = ['https://api.todoist.com/api/v1/projects'] as const;
+  // /user both validates the token and identifies the account.
+  readonly credentialCheckCurlArguments = ['https://api.todoist.com/api/v1/user'] as const;
 
   setCredentialsExample(serviceName: string): string {
     return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
+  }
+
+  protected override parseAccountFromCredentialCheckBody(responseBody: string): string | null {
+    const data = tryParseJson(responseBody) as {
+      email?: string;
+      full_name?: string;
+      id?: string;
+    } | null;
+    return data?.email ?? data?.full_name ?? data?.id ?? null;
   }
 
   override getSession(appNamePrefix: string): TodoistServiceSession {

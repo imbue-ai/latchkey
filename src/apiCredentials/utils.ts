@@ -55,5 +55,5 @@ export async function getCredentialStatus(
     disableRefresh,
     account
   );
-  return await service.checkApiCredentials(refreshed);
+  return (await service.checkApiCredentials(refreshed)).status;
 }

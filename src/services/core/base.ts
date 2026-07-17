@@ -140,6 +140,32 @@ export function isTimeoutError(error: Error): boolean {
 }
 
 /**
+ * The outcome of a credential check: whether the credentials are valid, and —
+ * when the check response reveals it — which account they belong to.
+ *
+ * The account is null when the check cannot determine it (invalid credentials,
+ * a check endpoint that carries no identity, or a service that does not parse
+ * it). Callers that need a concrete account fall back to the default account.
+ */
+export interface CredentialCheck {
+  readonly status: ApiCredentialStatus;
+  readonly account: string | null;
+}
+
+/**
+ * Parse a JSON response body, returning null instead of throwing on malformed
+ * input. Credential-check bodies come from arbitrary servers, so account
+ * parsing must never crash on unexpected content.
+ */
+export function tryParseJson(body: string): unknown {
+  try {
+    return JSON.parse(body);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Abstract base class for services that latchkey can authenticate with.
  */
 export abstract class Service {
@@ -168,32 +194,75 @@ export abstract class Service {
   adjustCredentials?(apiCredentials: ApiCredentials, url: string): ApiCredentials;
 
   /**
-   * Check if the given API credentials are valid for this service.
+   * Check if the given API credentials are valid for this service, and report
+   * which account they belong to when the check response reveals it.
+   *
+   * The check is a single request: the response status decides validity (via
+   * {@link isCredentialCheckResponseValid}) and the response body yields the
+   * account (via {@link parseAccountFromCredentialCheckBody}). Services
+   * customize either aspect by overriding those hooks rather than this method.
    */
-  async checkApiCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentialStatus> {
+  async checkApiCredentials(apiCredentials: ApiCredentials): Promise<CredentialCheck> {
     let allCurlArgs: readonly string[];
     try {
       allCurlArgs = await apiCredentials.injectIntoCurlCall([
         '-s',
-        '-o',
-        '/dev/null',
         '-w',
-        '%{http_code}',
+        '\n%{http_code}',
         ...this.credentialCheckCurlArguments,
       ]);
     } catch (error) {
       if (error instanceof ApiCredentialsUsageError) {
-        return ApiCredentialStatus.Missing;
+        return { status: ApiCredentialStatus.Missing, account: null };
       }
       throw error;
     }
 
     const result = runCaptured(allCurlArgs, 10);
 
-    if (result.stdout === '200') {
-      return ApiCredentialStatus.Valid;
+    // The `-w '\n%{http_code}'` above appends the status code as the final
+    // line, so the body is everything before the last newline.
+    const separatorIndex = result.stdout.lastIndexOf('\n');
+    const httpStatusCode = result.stdout.slice(separatorIndex + 1).trim();
+    const responseBody = separatorIndex === -1 ? '' : result.stdout.slice(0, separatorIndex);
+
+    if (!this.isCredentialCheckResponseValid(httpStatusCode, responseBody)) {
+      return { status: ApiCredentialStatus.Invalid, account: null };
     }
-    return ApiCredentialStatus.Invalid;
+    return {
+      status: ApiCredentialStatus.Valid,
+      account: this.parseAccountFromCredentialCheckBody(responseBody),
+    };
+  }
+
+  /**
+   * Decide whether a credential-check response indicates valid credentials.
+   * The default accepts HTTP 200. Services whose check endpoint reports auth
+   * failures inside the body (e.g. Slack's `ok: false`) override this.
+   */
+  protected isCredentialCheckResponseValid(httpStatusCode: string, _responseBody: string): boolean {
+    return httpStatusCode === '200';
+  }
+
+  /**
+   * Extract the account from the body of a successful credential-check
+   * response: an e-mail when available, otherwise a human-readable handle,
+   * otherwise an opaque id. Returns null when the body carries no identity,
+   * which is the default for services that have not (yet) opted in.
+   */
+  protected parseAccountFromCredentialCheckBody(_responseBody: string): string | null {
+    return null;
+  }
+
+  /**
+   * Determine which account the given credentials belong to, or null when it
+   * cannot be determined. The default derives it from the credential check;
+   * services whose check endpoint carries no identity but that have another
+   * way to learn it (e.g. an OAuth userinfo endpoint) override this.
+   */
+  async determineAccount(apiCredentials: ApiCredentials): Promise<string | null> {
+    const credentialCheck = await this.checkApiCredentials(apiCredentials);
+    return credentialCheck.account;
   }
 
   /**
@@ -312,15 +381,17 @@ export abstract class ServiceSession {
    * context are still open, so services can read the account from the page or
    * from an API call made with the fresh credentials.
    *
-   * The default returns the unnamed default account. Services override this to
-   * report the real account (e.g. the signed-in e-mail).
+   * The default asks the service (which runs the credential check with the
+   * fresh credentials) and falls back to the unnamed default account. Sessions
+   * only override this when the account is easier to read from the still-open
+   * browser than from the API.
    */
-  protected determineAccount(
-    _apiCredentials: ApiCredentials,
+  protected async determineAccount(
+    apiCredentials: ApiCredentials,
     _browser: Browser,
     _context: BrowserContext
   ): Promise<string> {
-    return Promise.resolve(DEFAULT_ACCOUNT);
+    return (await this.service.determineAccount(apiCredentials)) ?? DEFAULT_ACCOUNT;
   }
 
   /**

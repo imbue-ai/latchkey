@@ -1,4 +1,4 @@
-import { Service } from './core/base.js';
+import { Service, tryParseJson } from './core/base.js';
 
 export class Mailchimp extends Service {
   readonly name = 'mailchimp';
@@ -14,6 +14,14 @@ export class Mailchimp extends Service {
 
   setCredentialsExample(serviceName: string): string {
     return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
+  }
+
+  protected override parseAccountFromCredentialCheckBody(responseBody: string): string | null {
+    const data = tryParseJson(responseBody) as {
+      login?: { email?: string; login_email?: string };
+      accountname?: string;
+    } | null;
+    return data?.login?.email ?? data?.login?.login_email ?? data?.accountname ?? null;
   }
 }
 

@@ -7,7 +7,7 @@
  */
 
 import { ApiCredentialStatus, type ApiCredentials } from '../../apiCredentials/base.js';
-import { Service, type ServiceSession } from './base.js';
+import { type CredentialCheck, Service, type ServiceSession } from './base.js';
 
 export class RegisteredService extends Service {
   readonly name: string;
@@ -42,8 +42,8 @@ export class RegisteredService extends Service {
 
   override getSession?(appNamePrefix: string): ServiceSession;
 
-  override checkApiCredentials(): Promise<ApiCredentialStatus> {
-    return Promise.resolve(ApiCredentialStatus.Unknown);
+  override checkApiCredentials(): Promise<CredentialCheck> {
+    return Promise.resolve({ status: ApiCredentialStatus.Unknown, account: null });
   }
 
   setCredentialsExample(serviceName: string): string {

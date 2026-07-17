@@ -87,6 +87,26 @@ function registerClient(redirectUri: string, clientName: string): RegistrationRe
   }
 }
 
+/**
+ * Derive the account from the token-exchange response. Notion's MCP token
+ * endpoint reports `user_id`, `workspace_id` and `email_domain` (but not the
+ * full e-mail or the workspace name), and MCP-audienced tokens cannot call the
+ * classic REST API to look up anything richer. Credentials are unique per
+ * (user, workspace), so both parts go into the account key, with the e-mail
+ * domain as the human-readable half.
+ */
+function parseAccountFromTokenResponse(tokens: {
+  user_id?: string;
+  workspace_id?: string;
+  email_domain?: string;
+}): string {
+  const workspacePart = tokens.email_domain ?? tokens.workspace_id;
+  if (tokens.user_id !== undefined && workspacePart !== undefined) {
+    return `${tokens.user_id}@${workspacePart}`;
+  }
+  return tokens.user_id ?? tokens.workspace_id ?? DEFAULT_ACCOUNT;
+}
+
 class NotionMcpSession extends ServiceSession {
   onResponse(_response: Response): void {
     // Not used — login detection is via OAuth callback, not response inspection.
@@ -157,7 +177,9 @@ class NotionMcpSession extends ServiceSession {
         // 5. Wait for user to authorize and callback to receive code
         const code = await codePromise;
 
-        // 6. Exchange code for tokens
+        // 6. Exchange code for tokens. Besides the tokens, Notion's MCP token
+        // endpoint reports who authorized: user_id, workspace_id and
+        // email_domain ride along in the same response.
         const tokens = exchangeCodeForTokens(
           TOKEN_ENDPOINT,
           code,
@@ -165,14 +187,16 @@ class NotionMcpSession extends ServiceSession {
           '', // public client, no secret
           redirectUri,
           codeVerifier
-        );
+        ) as ReturnType<typeof exchangeCodeForTokens> & {
+          user_id?: string;
+          workspace_id?: string;
+          email_domain?: string;
+        };
 
         const accessTokenExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
         await page.close();
 
-        // The account is not yet determined for Notion MCP; it defaults to the
-        // unnamed account. (See determineAccount for the general mechanism.)
         return {
           credentials: new OAuthCredentials(
             clientId,
@@ -181,7 +205,7 @@ class NotionMcpSession extends ServiceSession {
             tokens.refresh_token,
             accessTokenExpiresAt
           ),
-          account: DEFAULT_ACCOUNT,
+          account: parseAccountFromTokenResponse(tokens),
         };
       } catch (error: unknown) {
         if (error instanceof Error && isBrowserClosedError(error)) {

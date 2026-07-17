@@ -1,4 +1,4 @@
-import { Service } from './core/base.js';
+import { Service, tryParseJson } from './core/base.js';
 
 export class Calendly extends Service {
   readonly name = 'calendly';
@@ -15,6 +15,13 @@ export class Calendly extends Service {
 
   setCredentialsExample(serviceName: string): string {
     return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
+  }
+
+  protected override parseAccountFromCredentialCheckBody(responseBody: string): string | null {
+    const data = tryParseJson(responseBody) as {
+      resource?: { email?: string; name?: string };
+    } | null;
+    return data?.resource?.email ?? data?.resource?.name ?? null;
   }
 }
 

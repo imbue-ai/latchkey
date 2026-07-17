@@ -4,14 +4,14 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { ApiCredentialStore } from '../src/apiCredentials/store.js';
-import { ApiCredentialStatus, OAuthCredentials } from '../src/apiCredentials/base.js';
+import { OAuthCredentials } from '../src/apiCredentials/base.js';
 import { SlackApiCredentials } from '../src/services/slack.js';
 import {
-  NoCurlCredentialsNotSupportedError,
   PrepareInputInvalidError,
   PrepareNotSupportedError,
   Service,
 } from '../src/services/core/base.js';
+import { MockService } from './mockService.js';
 import { GOOGLE_GMAIL } from '../src/services/google/gmail.js';
 import { NOTION_MCP } from '../src/services/notion-mcp.js';
 import { RegisteredService } from '../src/services/core/registered.js';
@@ -37,26 +37,8 @@ function writeSecureFile(path: string, content: string): void {
   storage.writeFile(path, content);
 }
 
-function createMockService(overrides: Partial<Service> = {}): Service {
-  return {
-    name: 'slack',
-    displayName: 'Slack',
-    baseApiUrls: ['https://slack.com/api/'],
-    loginUrl: 'https://slack.com/signin',
-    info: 'Test info for Slack service.',
-    credentialCheckCurlArguments: ['https://slack.com/api/auth.test'],
-    checkApiCredentials: vi.fn().mockResolvedValue(ApiCredentialStatus.Valid),
-    setCredentialsExample(serviceName: string) {
-      return `latchkey auth set ${serviceName} -H "Authorization: Bearer xoxb-your-token"`;
-    },
-    getCredentialsNoCurl() {
-      throw new NoCurlCredentialsNotSupportedError('slack');
-    },
-    getSession: vi.fn().mockReturnValue({
-      login: vi.fn().mockResolvedValue(new SlackApiCredentials('xoxc-test-token', 'test-cookie')),
-    }),
-    ...overrides,
-  };
+function createMockService(overrides: Partial<MockService> = {}): Service {
+  return Object.assign(new MockService(), overrides);
 }
 
 function createMockConfig(overrides: Partial<Config> = {}): Config {
@@ -326,6 +308,108 @@ describe('operations', () => {
         expect(result).toEqual({ account: 'user@example.com' });
         expect(store.listAccounts('slack')).toEqual(['user@example.com']);
         expect(store.get('slack', 'user@example.com')).toBeInstanceOf(SlackApiCredentials);
+      } finally {
+        Object.defineProperty(process, 'platform', { value: originalPlatform });
+      }
+    });
+
+    it('logs in to an additional account without ambiguity, reusing a stored account', async () => {
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+      try {
+        const login = vi.fn().mockResolvedValue({
+          credentials: new SlackApiCredentials('second-token', 'second-cookie'),
+          account: 'second@example.com',
+        });
+        const service = createMockService({ getSession: vi.fn().mockReturnValue({ login }) });
+        const registry = new ServiceRegistry([service]);
+        const store = createApiCredentialStore();
+        store.save('slack', new SlackApiCredentials('first-token', 'first-cookie'), 'first@example.com');
+        const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
+        const config = createMockConfig({ directory: tempDir } as Partial<Config>);
+        saveBrowserConfig(config.configPath, {
+          executablePath: process.execPath,
+          source: 'system',
+          discoveredAt: new Date().toISOString(),
+        });
+
+        const result = await authBrowser(registry, store, encryptedStorage, config, 'slack');
+
+        expect(result).toEqual({ account: 'second@example.com' });
+        expect(store.listAccounts('slack')).toEqual(['first@example.com', 'second@example.com']);
+        // The stored account's credentials are offered for reuse during login.
+        const reusedCredentials = login.mock.calls[0]?.[2] as SlackApiCredentials;
+        expect(reusedCredentials.token).toBe('first-token');
+      } finally {
+        Object.defineProperty(process, 'platform', { value: originalPlatform });
+      }
+    });
+
+    it('drops the token-less prepared placeholder once login stores a real account', async () => {
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+      try {
+        const preparedClient = new OAuthCredentials('client-id', 'client-secret');
+        const fullCredentials = new OAuthCredentials(
+          'client-id',
+          'client-secret',
+          'access-token',
+          'refresh-token'
+        );
+        const login = vi.fn().mockResolvedValue({
+          credentials: fullCredentials,
+          account: 'user@example.com',
+        });
+        const service = createMockService({
+          getSession: vi.fn().mockReturnValue({ prepare: vi.fn(), login }),
+        });
+        const registry = new ServiceRegistry([service]);
+        const store = createApiCredentialStore();
+        store.save('slack', preparedClient, '');
+        const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
+        const config = createMockConfig({ directory: tempDir } as Partial<Config>);
+        saveBrowserConfig(config.configPath, {
+          executablePath: process.execPath,
+          source: 'system',
+          discoveredAt: new Date().toISOString(),
+        });
+
+        const result = await authBrowser(registry, store, encryptedStorage, config, 'slack');
+
+        expect(result).toEqual({ account: 'user@example.com' });
+        // The placeholder created by browser-prepare is gone; only the real
+        // account remains, carrying the OAuth client onward.
+        expect(store.listAccounts('slack')).toEqual(['user@example.com']);
+        const reusedCredentials = login.mock.calls[0]?.[2] as OAuthCredentials;
+        expect(reusedCredentials.clientId).toBe('client-id');
+      } finally {
+        Object.defineProperty(process, 'platform', { value: originalPlatform });
+      }
+    });
+
+    it('keeps complete default-account credentials when a login adds a named account', async () => {
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+      try {
+        const login = vi.fn().mockResolvedValue({
+          credentials: new SlackApiCredentials('named-token', 'named-cookie'),
+          account: 'user@example.com',
+        });
+        const service = createMockService({ getSession: vi.fn().mockReturnValue({ login }) });
+        const registry = new ServiceRegistry([service]);
+        const store = createApiCredentialStore();
+        store.save('slack', new SlackApiCredentials('default-token', 'default-cookie'), '');
+        const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
+        const config = createMockConfig({ directory: tempDir } as Partial<Config>);
+        saveBrowserConfig(config.configPath, {
+          executablePath: process.execPath,
+          source: 'system',
+          discoveredAt: new Date().toISOString(),
+        });
+
+        await authBrowser(registry, store, encryptedStorage, config, 'slack');
+
+        expect(store.listAccounts('slack')).toEqual(['', 'user@example.com']);
       } finally {
         Object.defineProperty(process, 'platform', { value: originalPlatform });
       }

@@ -6,7 +6,8 @@ import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { derivePermissionsOverrideSigningKey } from '../src/gateway/permissionsOverride.js';
 import { ApiCredentialStore } from '../src/apiCredentials/store.js';
 import { ApiCredentialStatus } from '../src/apiCredentials/base.js';
-import { NoCurlCredentialsNotSupportedError, Service } from '../src/services/core/base.js';
+import { Service } from '../src/services/core/base.js';
+import { createMockService } from './mockService.js';
 import { GOOGLE_GMAIL } from '../src/services/google/gmail.js';
 import { ServiceRegistry } from '../src/serviceRegistry.js';
 import { Config } from '../src/config.js';
@@ -23,21 +24,10 @@ function writeSecureFile(path: string, content: string): void {
   storage.writeFile(path, content);
 }
 
-const mockSlackService: Service = {
-  name: 'slack',
-  displayName: 'Slack',
-  baseApiUrls: ['https://slack.com/api/'],
-  loginUrl: 'https://slack.com/signin',
+const mockSlackService: Service = createMockService({
   info: 'Test Slack service.',
-  credentialCheckCurlArguments: ['https://slack.com/api/auth.test'],
-  checkApiCredentials: vi.fn().mockResolvedValue(ApiCredentialStatus.Valid),
-  setCredentialsExample(serviceName: string) {
-    return `latchkey auth set ${serviceName} -H "Authorization: Bearer xoxb-your-token"`;
-  },
-  getCredentialsNoCurl() {
-    throw new NoCurlCredentialsNotSupportedError('slack');
-  },
-};
+  getSession: undefined,
+});
 
 // ─── Schema validation tests ──────────────────────────────────────────────────
 
@@ -434,7 +424,8 @@ describe('/latchkey/ endpoint', () => {
     });
 
     it('should return error when browser is disabled', async () => {
-      const browserSlack: Service = Object.assign({}, mockSlackService, {
+      const browserSlack: Service = createMockService({
+        info: 'Test Slack service.',
         getSession: vi.fn().mockReturnValue({
           login: vi.fn(),
         }),
@@ -455,21 +446,20 @@ describe('/latchkey/ endpoint', () => {
     });
 
     it('should return error for service without browser support', async () => {
-      const noLoginService: Service = {
+      const noLoginService: Service = createMockService({
         name: 'nologin',
         displayName: 'No Login Service',
         baseApiUrls: ['https://nologin.example.com/api/'],
         loginUrl: 'https://nologin.example.com',
         info: 'No browser login support.',
         credentialCheckCurlArguments: [],
-        checkApiCredentials: vi.fn().mockResolvedValue(ApiCredentialStatus.Missing),
-        setCredentialsExample(serviceName: string) {
-          return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
-        },
-        getCredentialsNoCurl() {
-          throw new NoCurlCredentialsNotSupportedError('nologin');
-        },
-      };
+        checkApiCredentials: vi
+          .fn()
+          .mockResolvedValue({ status: ApiCredentialStatus.Missing, account: null }),
+        setCredentialsExample: (serviceName: string) =>
+          `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`,
+        getSession: undefined,
+      });
 
       gateway = await createTestGateway({}, { registry: new ServiceRegistry([noLoginService]) });
       const response = await postLatchkey({
