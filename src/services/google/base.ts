@@ -16,7 +16,7 @@ import {
   OAuthCredentials,
 } from '../../apiCredentials/base.js';
 import { DEFAULT_ACCOUNT } from '../../apiCredentials/account.js';
-import { extractUrlFromCurlArguments, runCaptured } from '../../curl.js';
+import { extractUrlFromCurlArguments, runCapturedAsync } from '../../curl.js';
 import {
   showSpinnerPage,
   withTempBrowserContext,
@@ -866,7 +866,7 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
       await page.goto(authUrl.toString());
 
       const code = await codePromise;
-      const tokens = exchangeCodeForTokens(
+      const tokens = await exchangeCodeForTokens(
         GOOGLE_TOKEN_ENDPOINT,
         code,
         clientId,
@@ -959,21 +959,23 @@ export abstract class GoogleService extends Service {
       }
       throw error;
     }
-    const result = runCaptured(curlArguments, 10);
+    const result = await runCapturedAsync(curlArguments, 10);
     const data = tryParseJson(result.stdout) as { email?: string; sub?: string } | null;
     return data?.email ?? data?.sub ?? null;
   }
 
-  override refreshCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentials | null> {
+  override async refreshCredentials(
+    apiCredentials: ApiCredentials
+  ): Promise<ApiCredentials | null> {
     if (!(apiCredentials instanceof OAuthCredentials)) {
-      return Promise.resolve(null);
+      return null;
     }
 
     if (!apiCredentials.refreshToken) {
-      return Promise.resolve(null);
+      return null;
     }
 
-    const tokens = refreshAccessToken(
+    const tokens = await refreshAccessToken(
       GOOGLE_TOKEN_ENDPOINT,
       apiCredentials.refreshToken,
       apiCredentials.clientId,
@@ -981,20 +983,18 @@ export abstract class GoogleService extends Service {
     );
 
     if (tokens === null) {
-      return Promise.resolve(null);
+      return null;
     }
 
     const accessTokenExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
-    return Promise.resolve(
-      new OAuthCredentials(
-        apiCredentials.clientId,
-        apiCredentials.clientSecret,
-        tokens.access_token,
-        tokens.refresh_token ?? apiCredentials.refreshToken,
-        accessTokenExpiresAt,
-        apiCredentials.refreshTokenExpiresAt
-      )
+    return new OAuthCredentials(
+      apiCredentials.clientId,
+      apiCredentials.clientSecret,
+      tokens.access_token,
+      tokens.refresh_token ?? apiCredentials.refreshToken,
+      accessTokenExpiresAt,
+      apiCredentials.refreshTokenExpiresAt
     );
   }
 }

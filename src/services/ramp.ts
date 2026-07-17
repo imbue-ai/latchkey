@@ -20,7 +20,7 @@ import {
   OAuthCredentials,
 } from '../apiCredentials/base.js';
 import { DEFAULT_ACCOUNT } from '../apiCredentials/account.js';
-import { runCaptured } from '../curl.js';
+import { runCapturedAsync } from '../curl.js';
 import {
   exchangeCodeForTokens,
   generateCodeChallenge,
@@ -164,7 +164,7 @@ class RampOAuthServiceSession extends ServiceSession {
         const code = await codePromise;
 
         // 5. Exchange the code for tokens (public client: no secret).
-        const tokens = exchangeCodeForTokens(
+        const tokens = await exchangeCodeForTokens(
           RAMP_PKCE_TOKEN_ENDPOINT,
           code,
           clientId,
@@ -253,7 +253,7 @@ export class Ramp extends Service {
       }
       throw error;
     }
-    const result = runCaptured(curlArguments, 10);
+    const result = await runCapturedAsync(curlArguments, 10);
     const data = tryParseJson(result.stdout) as {
       users?: readonly { email?: string; id?: string }[];
     } | null;
@@ -269,35 +269,35 @@ export class Ramp extends Service {
     return new RampOAuthServiceSession(this, appNamePrefix);
   }
 
-  override refreshCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentials | null> {
+  override async refreshCredentials(
+    apiCredentials: ApiCredentials
+  ): Promise<ApiCredentials | null> {
     // Refresh the PKCE access token with the (rotating) refresh token against the
     // `/token/pkce` endpoint, mirroring ramp-cli.
     if (!(apiCredentials instanceof OAuthCredentials)) {
-      return Promise.resolve(null);
+      return null;
     }
     if (apiCredentials.refreshToken === undefined || apiCredentials.refreshToken === '') {
-      return Promise.resolve(null);
+      return null;
     }
-    const tokens = refreshAccessToken(
+    const tokens = await refreshAccessToken(
       RAMP_PKCE_TOKEN_ENDPOINT,
       apiCredentials.refreshToken,
       apiCredentials.clientId,
       apiCredentials.clientSecret
     );
     if (tokens === null) {
-      return Promise.resolve(null);
+      return null;
     }
     const accessTokenExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
     // Ramp rotates refresh tokens; keep the old one only if none came back.
-    return Promise.resolve(
-      new OAuthCredentials(
-        apiCredentials.clientId,
-        apiCredentials.clientSecret,
-        tokens.access_token,
-        tokens.refresh_token ?? apiCredentials.refreshToken,
-        accessTokenExpiresAt,
-        apiCredentials.refreshTokenExpiresAt
-      )
+    return new OAuthCredentials(
+      apiCredentials.clientId,
+      apiCredentials.clientSecret,
+      tokens.access_token,
+      tokens.refresh_token ?? apiCredentials.refreshToken,
+      accessTokenExpiresAt,
+      apiCredentials.refreshTokenExpiresAt
     );
   }
 }

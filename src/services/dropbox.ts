@@ -237,7 +237,7 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
 
       const code = await codePromise;
 
-      const tokens = exchangeCodeForTokens(
+      const tokens = await exchangeCodeForTokens(
         TOKEN_ENDPOINT,
         code,
         appKey,
@@ -324,12 +324,14 @@ export class Dropbox extends Service {
     return new DropboxServiceSession(this, appNamePrefix);
   }
 
-  override refreshCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentials | null> {
+  override async refreshCredentials(
+    apiCredentials: ApiCredentials
+  ): Promise<ApiCredentials | null> {
     if (!(apiCredentials instanceof OAuthCredentials) || !apiCredentials.refreshToken) {
-      return Promise.resolve(null);
+      return null;
     }
 
-    const tokens = refreshAccessToken(
+    const tokens = await refreshAccessToken(
       TOKEN_ENDPOINT,
       apiCredentials.refreshToken,
       apiCredentials.clientId,
@@ -337,20 +339,18 @@ export class Dropbox extends Service {
     );
 
     if (tokens === null) {
-      return Promise.resolve(null);
+      return null;
     }
 
     const accessTokenExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
-    return Promise.resolve(
-      new OAuthCredentials(
-        apiCredentials.clientId,
-        apiCredentials.clientSecret,
-        tokens.access_token,
-        tokens.refresh_token ?? apiCredentials.refreshToken,
-        accessTokenExpiresAt,
-        apiCredentials.refreshTokenExpiresAt
-      )
+    return new OAuthCredentials(
+      apiCredentials.clientId,
+      apiCredentials.clientSecret,
+      tokens.access_token,
+      tokens.refresh_token ?? apiCredentials.refreshToken,
+      accessTokenExpiresAt,
+      apiCredentials.refreshTokenExpiresAt
     );
   }
 }

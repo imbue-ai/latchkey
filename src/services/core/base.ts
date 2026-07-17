@@ -10,7 +10,7 @@ import {
   ApiCredentialsUsageError,
 } from '../../apiCredentials/base.js';
 import { DEFAULT_ACCOUNT } from '../../apiCredentials/account.js';
-import { runCaptured } from '../../curl.js';
+import { runCapturedAsync } from '../../curl.js';
 import { EncryptedStorage } from '../../encryptedStorage.js';
 import {
   generateLatchkeyAppName,
@@ -218,7 +218,7 @@ export abstract class Service {
       throw error;
     }
 
-    const result = runCaptured(allCurlArgs, 10);
+    const result = await runCapturedAsync(allCurlArgs, 10);
 
     // The `-w '\n%{http_code}'` above appends the status code as the final
     // line, so the body is everything before the last newline.

@@ -3,7 +3,7 @@
  *
  * The credential check runs a single curl call whose output is the response
  * body followed by the HTTP status code on the final line (produced by
- * `-w '\n%{http_code}'`). These tests mock the capturing subprocess runner to
+ * `-w '\n%{http_code}'`). These tests mock the async subprocess runner to
  * feed service implementations recorded response bodies.
  */
 
@@ -14,8 +14,8 @@ import {
   OAuthCredentials,
 } from '../src/apiCredentials/base.js';
 import {
-  resetCapturingSubprocessRunner,
-  setCapturingSubprocessRunner,
+  resetAsyncSubprocessRunner,
+  setAsyncSubprocessRunner,
 } from '../src/curl.js';
 import { RegisteredService } from '../src/services/core/registered.js';
 import { AWS } from '../src/services/aws.js';
@@ -37,7 +37,9 @@ import { TELEGRAM } from '../src/services/telegram.js';
 const BEARER = new AuthorizationBearer('test-token');
 
 function mockCurlOutput(stdout: string): void {
-  setCapturingSubprocessRunner(() => ({ returncode: 0, stdout, stderr: '' }));
+  setAsyncSubprocessRunner(() =>
+    Promise.resolve({ returncode: 0, stdout: Buffer.from(stdout), stderr: '' })
+  );
 }
 
 function withStatusLine(body: string, statusCode = '200'): string {
@@ -45,7 +47,7 @@ function withStatusLine(body: string, statusCode = '200'): string {
 }
 
 afterEach(() => {
-  resetCapturingSubprocessRunner();
+  resetAsyncSubprocessRunner();
 });
 
 describe('base credential check', () => {
@@ -210,9 +212,13 @@ describe('service-level determineAccount', () => {
 
   it('google services ask the OpenID userinfo endpoint', async () => {
     let requestedUrl: string | undefined;
-    setCapturingSubprocessRunner((args) => {
+    setAsyncSubprocessRunner((args) => {
       requestedUrl = args[args.length - 1];
-      return { returncode: 0, stdout: '{"email":"user@gmail.com","sub":"1"}', stderr: '' };
+      return Promise.resolve({
+        returncode: 0,
+        stdout: Buffer.from('{"email":"user@gmail.com","sub":"1"}'),
+        stderr: '',
+      });
     });
     const credentials = new OAuthCredentials('client-id', 'client-secret', 'access-token');
     expect(await GOOGLE_GMAIL.determineAccount(credentials)).toBe('user@gmail.com');
@@ -226,13 +232,13 @@ describe('service-level determineAccount', () => {
 
   it('stripe asks the account endpoint and prefers the e-mail', async () => {
     let requestedUrl: string | undefined;
-    setCapturingSubprocessRunner((args) => {
+    setAsyncSubprocessRunner((args) => {
       requestedUrl = args[args.length - 1];
-      return {
+      return Promise.resolve({
         returncode: 0,
-        stdout: '{"id":"acct_123","email":"owner@example.com"}',
+        stdout: Buffer.from('{"id":"acct_123","email":"owner@example.com"}'),
         stderr: '',
-      };
+      });
     });
     expect(await STRIPE.determineAccount(BEARER)).toBe('owner@example.com');
     expect(requestedUrl).toBe('https://api.stripe.com/v1/account');

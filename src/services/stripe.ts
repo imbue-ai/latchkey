@@ -2,7 +2,7 @@ import {
   type ApiCredentials,
   ApiCredentialsUsageError,
 } from '../apiCredentials/base.js';
-import { runCaptured } from '../curl.js';
+import { runCapturedAsync } from '../curl.js';
 import { Service, tryParseJson } from './core/base.js';
 
 export class Stripe extends Service {
@@ -37,7 +37,7 @@ export class Stripe extends Service {
       }
       throw error;
     }
-    const result = runCaptured(curlArguments, 10);
+    const result = await runCapturedAsync(curlArguments, 10);
     const data = tryParseJson(result.stdout) as {
       email?: string | null;
       id?: string;
