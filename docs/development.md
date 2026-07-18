@@ -19,6 +19,26 @@ After that, every time you make a change to the code, run
 `npm run rebuild`. Invoking `latchkey` in your terminal will
 then use the version you just built.
 
+### Dev shim: run from source, no rebuild
+
+Alternatively, put the dev shim on your PATH (ahead of any
+npm-linked or globally installed `latchkey`). From the repository
+root:
+
+```bash
+mkdir -p ~/.local/bin && ln -sfn "$PWD/scripts/latchkey" ~/.local/bin/latchkey
+```
+
+The shim runs `src/cli.ts` directly under [bun](https://bun.sh),
+so edits take effect immediately with no build step. It resolves
+the checkout from your current directory, which makes worktrees
+and secondary clones work without relinking; outside any checkout
+it falls back to the checkout the shim was installed from.
+
+Without bun on PATH (or with `LATCHKEY_DEV_SHIM_USE_DIST=1`), the
+shim runs the compiled `dist/src/cli.js` under node instead, which
+requires `npm run build`.
+
 ## Before you submit a PR
 
 - Run `npm run lint` and `npm test` to validate your changes.
@@ -131,6 +151,7 @@ npx tsx scripts/cryptFile.ts decrypt ~/.latchkey/credentials.json.enc
 The following environment variables can be set for development and debugging:
 
 - `LATCHKEY_DISABLE_SPINNER=1`: Disables the spinner overlay that normally hides browser activity during credential finalization. Useful for debugging browser automation sequences.
+- `LATCHKEY_DEV_SHIM_USE_DIST=1`: Makes the dev shim (`scripts/latchkey`) run the compiled `dist/src/cli.js` under node instead of `src/cli.ts` under bun.
 
 
 ## Style guidelines
