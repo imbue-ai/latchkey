@@ -63,6 +63,9 @@ function runShim(
         ...process.env,
         LATCHKEY_ENCRYPTION_KEY: TEST_ENCRYPTION_KEY,
         LATCHKEY_DISABLE_COUNTING: '1',
+        // Empty means unset to the shim; keeps an inherited value from the
+        // developer's shell from flipping the branch under test.
+        LATCHKEY_DEV_SHIM_USE_DIST: '',
         ...options.env,
       },
       stdio: ['pipe', 'pipe', 'pipe'],
