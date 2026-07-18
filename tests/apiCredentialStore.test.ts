@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { ApiCredentialStore } from '../src/apiCredentials/store.js';
+import { ApiCredentialStore, ApiCredentialStoreError } from '../src/apiCredentials/store.js';
 import { AuthorizationBearer, AuthorizationBare } from '../src/apiCredentials/base.js';
 import { SlackApiCredentials } from '../src/services/slack.js';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
@@ -64,6 +64,77 @@ describe('ApiCredentialStore', () => {
       expect(retrieved).toBeInstanceOf(SlackApiCredentials);
       expect((retrieved as SlackApiCredentials).token).toBe('xoxc-token');
       expect((retrieved as SlackApiCredentials).dCookie).toBe('d-cookie');
+    });
+
+    it('should throw an error naming the remedy for a corrupt entry', () => {
+      encryptedStorage.writeFile(
+        storePath,
+        JSON.stringify({ databricks: { objectType: 'databricksOauth', accessToken: 'stale' } })
+      );
+      const store = new ApiCredentialStore(storePath, encryptedStorage);
+
+      expect(() => store.get('databricks')).toThrow(ApiCredentialStoreError);
+      expect(() => store.get('databricks')).toThrow('latchkey auth clear databricks');
+    });
+  });
+
+  describe('getAll', () => {
+    it('should return all valid credentials with no corrupt entries', () => {
+      const store = new ApiCredentialStore(storePath, encryptedStorage);
+      store.save('github', new AuthorizationBearer('github-token'));
+      store.save('discord', new AuthorizationBare('discord-token'));
+
+      const { credentials, corruptEntries } = store.getAll();
+
+      expect(credentials.size).toBe(2);
+      expect(credentials.get('github')).toBeInstanceOf(AuthorizationBearer);
+      expect(credentials.get('discord')).toBeInstanceOf(AuthorizationBare);
+      expect(corruptEntries.size).toBe(0);
+    });
+
+    it('should report a corrupt entry and keep the valid ones', () => {
+      encryptedStorage.writeFile(
+        storePath,
+        JSON.stringify({
+          databricks: { objectType: 'databricksOauth', accessToken: 'stale' },
+          github: { objectType: 'authorizationBearer', token: 'github-token' },
+        })
+      );
+      const store = new ApiCredentialStore(storePath, encryptedStorage);
+
+      const { credentials, corruptEntries } = store.getAll();
+
+      expect(credentials.size).toBe(1);
+      expect(credentials.get('github')).toBeInstanceOf(AuthorizationBearer);
+      expect(corruptEntries.size).toBe(1);
+      const corruptEntry = corruptEntries.get('databricks');
+      expect(corruptEntry?.objectType).toBe('databricksOauth');
+      expect(corruptEntry?.error).toContain('objectType');
+    });
+
+    it('should report a known credential type with missing fields as corrupt', () => {
+      encryptedStorage.writeFile(
+        storePath,
+        JSON.stringify({ github: { objectType: 'authorizationBearer' } })
+      );
+      const store = new ApiCredentialStore(storePath, encryptedStorage);
+
+      const { credentials, corruptEntries } = store.getAll();
+
+      expect(credentials.size).toBe(0);
+      const corruptEntry = corruptEntries.get('github');
+      expect(corruptEntry?.objectType).toBe('authorizationBearer');
+      expect(corruptEntry?.error).toContain('token');
+    });
+
+    it('should report a non-object entry as corrupt with a null objectType', () => {
+      encryptedStorage.writeFile(storePath, JSON.stringify({ github: 'not-an-object' }));
+      const store = new ApiCredentialStore(storePath, encryptedStorage);
+
+      const { credentials, corruptEntries } = store.getAll();
+
+      expect(credentials.size).toBe(0);
+      expect(corruptEntries.get('github')?.objectType).toBeNull();
     });
   });
 

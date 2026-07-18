@@ -12,7 +12,12 @@ export {
 export { deserializeCredentials, serializeCredentials } from './apiCredentials/serialization.js';
 export { SlackApiCredentials } from './services/slack.js';
 
-export { ApiCredentialStore, ApiCredentialStoreError } from './apiCredentials/store.js';
+export {
+  ApiCredentialStore,
+  ApiCredentialStoreError,
+  CorruptCredentialEntry,
+  CredentialStoreListing,
+} from './apiCredentials/store.js';
 
 export { Config, CONFIG, InsecureFilePermissionsError } from './config.js';
 

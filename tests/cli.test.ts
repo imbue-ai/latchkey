@@ -824,6 +824,27 @@ describe('CLI commands with dependency injection', () => {
       expect(errorLogs.length).toBeGreaterThan(0);
     });
 
+    it('should delete a corrupt entry for a service not in the registry', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(
+        storePath,
+        JSON.stringify({
+          slack: { objectType: 'slack', token: 'slack-token', dCookie: 'slack-cookie' },
+          databricks: { objectType: 'databricksOauth', accessToken: 'stale' },
+        })
+      );
+
+      const deps = createMockDependencies();
+
+      await runCommand(['auth', 'clear', 'databricks'], deps);
+
+      expect(exitCode).toBeNull();
+      expect(logs).toContain('API credentials for databricks have been cleared.');
+      const storedData = JSON.parse(readSecureFile(storePath) ?? '{}') as StoredCredentials;
+      expect(storedData.databricks).toBeUndefined();
+      expect(storedData.slack).toBeDefined();
+    });
+
     it('should preserve other services when clearing one', async () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
@@ -913,6 +934,33 @@ describe('CLI commands with dependency injection', () => {
         credentialType: 'rawCurl',
         credentialStatus: 'valid',
       });
+    });
+
+    it('should list valid credentials and flag a corrupt entry instead of crashing', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(
+        storePath,
+        JSON.stringify({
+          slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
+          databricks: { objectType: 'databricksOauth', accessToken: 'stale' },
+        })
+      );
+
+      const deps = createMockDependencies();
+      await runCommand(['auth', 'list'], deps);
+
+      expect(exitCode).toBeNull();
+      expect(logs).toHaveLength(1);
+      const entries = JSON.parse(logs[0] ?? '') as Record<
+        string,
+        { credentialType: string; credentialStatus: string; error?: string }
+      >;
+      expect(entries.slack).toEqual({
+        credentialType: 'slack',
+        credentialStatus: 'valid',
+      });
+      expect(entries.databricks?.credentialStatus).toBe('corrupt');
+      expect(entries.databricks?.error).toContain('latchkey auth clear databricks');
     });
   });
 
