@@ -343,6 +343,25 @@ describe('/latchkey/ endpoint', () => {
         credentialStatus: 'valid',
       });
     });
+
+    it('should flag a corrupt entry instead of failing the whole listing', async () => {
+      gateway = await createTestGateway({
+        slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
+        databricks: { objectType: 'databricksOauth', accessToken: 'stale' },
+      });
+      const response = await postLatchkey({ command: 'auth list' });
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        result: Record<string, { credentialType: string; credentialStatus: string; error?: string }>;
+      };
+      expect(body.result.slack).toEqual({
+        credentialType: 'slack',
+        credentialStatus: 'valid',
+      });
+      expect(body.result.databricks?.credentialStatus).toBe('corrupt');
+      expect(body.result.databricks?.error).toContain('latchkey auth clear databricks');
+    });
   });
 
   describe('auth browser', () => {

@@ -131,6 +131,20 @@ describe('operations', () => {
 
       expect(result).not.toContain('nologin');
     });
+
+    it('should keep viable filtering working when the store contains a corrupt entry', () => {
+      const service = createMockService({ name: 'slack', getSession: undefined });
+      const registry = new ServiceRegistry([service]);
+      const store = createApiCredentialStore({
+        slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
+        databricks: { objectType: 'databricksOauth', accessToken: 'stale' },
+      });
+      const config = createMockConfig({ browserDisabled: true } as Partial<Config>);
+
+      const result = servicesList(registry, store, config, { viable: true });
+
+      expect(result).toContain('slack');
+    });
   });
 
   describe('servicesInfo', () => {
@@ -221,6 +235,38 @@ describe('operations', () => {
         credentialType: 'rawCurl',
         credentialStatus: 'valid',
       });
+    });
+
+    it('should list valid credentials and flag a corrupt entry instead of throwing', async () => {
+      const service = createMockService();
+      const registry = new ServiceRegistry([service]);
+      const store = createApiCredentialStore({
+        slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
+        databricks: { objectType: 'databricksOauth', accessToken: 'stale' },
+      });
+
+      const result = await authList(registry, store);
+
+      expect(result.slack).toEqual({
+        credentialType: 'slack',
+        credentialStatus: 'valid',
+      });
+      expect(result.databricks?.credentialType).toBe('databricksOauth');
+      expect(result.databricks?.credentialStatus).toBe('corrupt');
+      expect(result.databricks?.error).toContain('objectType');
+      expect(result.databricks?.error).toContain('latchkey auth clear databricks');
+    });
+
+    it('should flag a corrupt entry named __proto__ as a visible row', async () => {
+      const registry = new ServiceRegistry([]);
+      const store = createApiCredentialStore({
+        ['__proto__']: { objectType: 17 },
+      });
+
+      const result = await authList(registry, store);
+
+      const rows = new Map(Object.entries(result));
+      expect(rows.get('__proto__')?.credentialStatus).toBe('corrupt');
     });
   });
 

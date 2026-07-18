@@ -96,7 +96,7 @@ export function servicesList(
   }
 
   if (options.viable === true) {
-    const allCredentials = apiCredentialStore.getAll();
+    const allCredentials = apiCredentialStore.getAll().credentials;
     services = services.filter((service) => {
       if (allCredentials.has(service.name)) {
         return true;
@@ -145,17 +145,22 @@ export async function servicesInfo(
   };
 }
 
+export interface AuthListEntry {
+  readonly credentialType: string;
+  readonly credentialStatus: ApiCredentialStatus;
+  /** Only present for corrupt entries: what is wrong and how to remove the entry. */
+  readonly error?: string;
+}
+
 export async function authList(
   registry: ServiceRegistry,
   apiCredentialStore: ApiCredentialStore
-): Promise<Record<string, { credentialType: string; credentialStatus: ApiCredentialStatus }>> {
-  const allCredentials = apiCredentialStore.getAll();
+): Promise<Record<string, AuthListEntry>> {
+  const { credentials: allCredentials, brokenEntries } = apiCredentialStore.getAll();
 
   const statusChecks = Array.from(
     allCredentials,
-    async ([serviceName, credentials]): Promise<
-      readonly [string, { credentialType: string; credentialStatus: ApiCredentialStatus }]
-    > => {
+    async ([serviceName, credentials]): Promise<readonly [string, AuthListEntry]> => {
       const service = registry.getByName(serviceName);
       const credentialStatus =
         service !== null
@@ -166,7 +171,19 @@ export async function authList(
     }
   );
 
-  return Object.fromEntries(await Promise.all(statusChecks));
+  const entries = new Map<string, AuthListEntry>(await Promise.all(statusChecks));
+  for (const [serviceName, brokenEntry] of brokenEntries) {
+    entries.set(serviceName, {
+      credentialType: brokenEntry.objectType ?? 'unknown',
+      credentialStatus: ApiCredentialStatus.Corrupt,
+      error:
+        `${brokenEntry.error}. ` +
+        `Run 'latchkey auth clear ${serviceName}' to remove the corrupt entry.`,
+    });
+  }
+  // Object.fromEntries creates own properties, so a service name like
+  // '__proto__' still becomes a visible row.
+  return Object.fromEntries(entries);
 }
 
 export async function authBrowser(

@@ -239,25 +239,27 @@ async function createEncryptedStorageFromConfig(config: Config): Promise<Encrypt
 }
 
 async function clearService(deps: CliDependencies, serviceName: string): Promise<void> {
-  const service = deps.registry.getByName(serviceName);
-  if (service === null) {
-    deps.errorLog(`Error: Unknown service: ${serviceName}`);
-    deps.errorLog("Use 'latchkey services list' to see available services.");
-    deps.exit(1);
-  }
-
   const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
   const apiCredentialStore = new ApiCredentialStore(
     deps.config.credentialStorePath,
     encryptedStorage
   );
+  // Store entries can exist for services absent from the registry, so the
+  // delete is attempted before any registry lookup.
   const deleted = apiCredentialStore.delete(serviceName);
 
   if (deleted) {
     deps.log(`API credentials for ${serviceName} have been cleared.`);
-  } else {
-    deps.log(`No API credentials found for ${serviceName}.`);
+    return;
   }
+
+  if (deps.registry.getByName(serviceName) === null) {
+    deps.errorLog(`Error: Unknown service: ${serviceName}`);
+    deps.errorLog("Use 'latchkey services list' to see available services.");
+    deps.exit(1);
+  }
+
+  deps.log(`No API credentials found for ${serviceName}.`);
 }
 
 /**

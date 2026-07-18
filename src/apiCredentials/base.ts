@@ -9,6 +9,8 @@ export enum ApiCredentialStatus {
   Valid = 'valid',
   Invalid = 'invalid',
   Unknown = 'unknown',
+  /** The stored credential data does not match any known credential schema. */
+  Corrupt = 'corrupt',
 }
 
 /**
