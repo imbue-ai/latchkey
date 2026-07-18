@@ -15,7 +15,7 @@ export { SlackApiCredentials } from './services/slack.js';
 export {
   ApiCredentialStore,
   ApiCredentialStoreError,
-  BrokenCredentialEntry,
+  CorruptCredentialEntry,
   CredentialStoreListing,
 } from './apiCredentials/store.js';
 

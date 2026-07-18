@@ -156,7 +156,7 @@ export async function authList(
   registry: ServiceRegistry,
   apiCredentialStore: ApiCredentialStore
 ): Promise<Record<string, AuthListEntry>> {
-  const { credentials: allCredentials, brokenEntries } = apiCredentialStore.getAll();
+  const { credentials: allCredentials, corruptEntries } = apiCredentialStore.getAll();
 
   const statusChecks = Array.from(
     allCredentials,
@@ -172,11 +172,11 @@ export async function authList(
   );
 
   const entries = new Map<string, AuthListEntry>(await Promise.all(statusChecks));
-  for (const [serviceName, brokenEntry] of brokenEntries) {
+  for (const [serviceName, corruptEntry] of corruptEntries) {
     entries.set(serviceName, {
-      credentialType: brokenEntry.objectType ?? 'unknown',
+      credentialType: corruptEntry.objectType ?? 'unknown',
       credentialStatus: ApiCredentialStatus.Corrupt,
-      error: `${brokenEntry.error}. ${corruptEntryRemedy(serviceName)}`,
+      error: `${corruptEntry.error}. ${corruptEntryRemedy(serviceName)}`,
     });
   }
   // Object.fromEntries creates own properties, so a service name like

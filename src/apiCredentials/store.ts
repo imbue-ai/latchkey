@@ -21,7 +21,7 @@ export class ApiCredentialStoreError extends Error {
 type StoreData = Record<string, unknown>;
 
 /** A store entry whose data does not match any known credential schema. */
-export interface BrokenCredentialEntry {
+export interface CorruptCredentialEntry {
   /** The entry's claimed objectType, or null when it is missing or not a string. */
   readonly objectType: string | null;
   readonly error: string;
@@ -29,7 +29,7 @@ export interface BrokenCredentialEntry {
 
 export interface CredentialStoreListing {
   readonly credentials: ReadonlyMap<string, ApiCredentials>;
-  readonly brokenEntries: ReadonlyMap<string, BrokenCredentialEntry>;
+  readonly corruptEntries: ReadonlyMap<string, CorruptCredentialEntry>;
 }
 
 export function corruptEntryRemedy(serviceName: string): string {
@@ -115,16 +115,16 @@ export class ApiCredentialStore {
 
   /**
    * Load all entries, parsing each one independently: entries that do not match
-   * any known credential schema are returned in brokenEntries.
+   * any known credential schema are returned in corruptEntries.
    */
   getAll(): CredentialStoreListing {
     const data = this.loadStoreData();
     const credentials = new Map<string, ApiCredentials>();
-    const brokenEntries = new Map<string, BrokenCredentialEntry>();
+    const corruptEntries = new Map<string, CorruptCredentialEntry>();
     for (const [serviceName, credentialData] of Object.entries(data)) {
       const parseResult = ApiCredentialsSchema.safeParse(credentialData);
       if (!parseResult.success) {
-        brokenEntries.set(serviceName, {
+        corruptEntries.set(serviceName, {
           objectType: extractObjectType(credentialData),
           error: formatSchemaIssues(parseResult.error),
         });
@@ -132,7 +132,7 @@ export class ApiCredentialStore {
       }
       credentials.set(serviceName, deserializeCredentials(parseResult.data));
     }
-    return { credentials, brokenEntries };
+    return { credentials, corruptEntries };
   }
 
   delete(serviceName: string): boolean {
