@@ -1,6 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -228,6 +237,19 @@ describe('dev shim (scripts/latchkey)', () => {
 
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain('npm run build');
+  });
+
+  it('fails when neither cwd nor the shim location is inside a latchkey checkout', () => {
+    // A copy (not a symlink) severs the shim from its checkout, like a stray
+    // install outside any clone.
+    const copiedShim = join(tempDir, 'latchkey');
+    copyFileSync(shimPath, copiedShim);
+    chmodSync(copiedShim, 0o755);
+
+    const result = runShim(['--version'], { cwd: tempDir, command: copiedShim });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain('not inside a latchkey checkout');
   });
 
   it('fails with an install instruction when the checkout has no node_modules', () => {
