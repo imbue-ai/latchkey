@@ -32,6 +32,10 @@ export interface CredentialStoreListing {
   readonly brokenEntries: ReadonlyMap<string, BrokenCredentialEntry>;
 }
 
+export function corruptEntryRemedy(serviceName: string): string {
+  return `Run 'latchkey auth clear ${serviceName}' to remove the corrupt entry.`;
+}
+
 function formatSchemaIssues(error: ZodError): string {
   return error.issues
     .map((issue) =>
@@ -96,7 +100,7 @@ export class ApiCredentialStore {
     if (!parseResult.success) {
       throw new ApiCredentialStoreError(
         `Invalid credential data for service ${serviceName}: ${formatSchemaIssues(parseResult.error)}. ` +
-          `Run 'latchkey auth clear ${serviceName}' to remove the corrupt entry.`
+          corruptEntryRemedy(serviceName)
       );
     }
 

@@ -7,7 +7,7 @@
  */
 
 import { ApiCredentialStatus } from './apiCredentials/base.js';
-import type { ApiCredentialStore } from './apiCredentials/store.js';
+import { corruptEntryRemedy, type ApiCredentialStore } from './apiCredentials/store.js';
 import { getCredentialStatus } from './apiCredentials/utils.js';
 import type { Config } from './config.js';
 import { loadBrowserConfig } from './configDataStore.js';
@@ -176,9 +176,7 @@ export async function authList(
     entries.set(serviceName, {
       credentialType: brokenEntry.objectType ?? 'unknown',
       credentialStatus: ApiCredentialStatus.Corrupt,
-      error:
-        `${brokenEntry.error}. ` +
-        `Run 'latchkey auth clear ${serviceName}' to remove the corrupt entry.`,
+      error: `${brokenEntry.error}. ${corruptEntryRemedy(serviceName)}`,
     });
   }
   // Object.fromEntries creates own properties, so a service name like
