@@ -119,6 +119,37 @@ describe('dev shim (scripts/latchkey)', () => {
     expect(secondRun.stdout.trim()).toBe('fake-cli source v2');
   });
 
+  it.skipIf(!bunAvailable)('generates the missing src/version.ts before running the CLI', () => {
+    const fakeCheckout = join(tempDir, 'fake-checkout');
+    mkdirSync(fakeCheckout);
+    createFakeLatchkeyCheckout(fakeCheckout);
+    rmSync(join(fakeCheckout, 'src', 'version.ts'));
+    mkdirSync(join(fakeCheckout, 'scripts'));
+    writeFileSync(
+      join(fakeCheckout, 'scripts', 'generateVersion.js'),
+      [
+        "const { writeFileSync } = require('node:fs');",
+        "const { join } = require('node:path');",
+        'writeFileSync(',
+        "  join(__dirname, '..', 'src', 'version.ts'),",
+        '  "export const VERSION = \'generated-by-fake-script\';\\n"',
+        ');',
+        '',
+      ].join('\n')
+    );
+    // The CLI can only print the marker if the shim generated version.ts first.
+    writeFileSync(
+      join(fakeCheckout, 'src', 'cli.ts'),
+      "import { VERSION } from './version';\nconsole.log(VERSION);\n"
+    );
+
+    const result = runShim([], { cwd: fakeCheckout });
+
+    expect(result.stderr).toBe('');
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.trim()).toBe('generated-by-fake-script');
+  });
+
   it.skipIf(!bunAvailable)(
     'falls back to its own checkout when cwd is outside any checkout',
     () => {
