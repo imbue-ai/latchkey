@@ -5,7 +5,7 @@
 #   - inside any latchkey checkout/worktree: use THAT tree, running src/cli.ts
 #     directly under bun, so local edits take effect with no build step.
 #   - anywhere else: fall back to the checkout this shim is installed from,
-#     discovered from the shim's own path (no hard-coded per-user path).
+#     discovered from the shim's own path.
 #
 # Without bun on PATH -- or with LATCHKEY_DEV_SHIM_USE_DIST=1 -- runs the
 # compiled dist/src/cli.js under node instead, which requires `npm run build`.
