@@ -14,6 +14,11 @@ import {
 } from '../src/migrations.js';
 import { ApiCredentialStatus } from '../src/apiCredentials/base.js';
 import type { CredentialCheck } from '../src/services/core/base.js';
+import {
+  setCapturingSubprocessRunner,
+  resetCapturingSubprocessRunner,
+  type CurlResult,
+} from '../src/curl.js';
 
 function createTestConfig(directory: string): Config {
   return new Config((name) => {
@@ -53,6 +58,7 @@ describe('migrations', () => {
   });
 
   afterEach(() => {
+    resetCapturingSubprocessRunner();
     rmSync(tempDir, { recursive: true, force: true });
   });
 
@@ -348,6 +354,50 @@ describe('migrations', () => {
 
       expect(store).not.toHaveProperty('slack');
       expect(store.discord).toEqual({ 'me#1234': discordCredentials });
+    });
+
+    it('should key google credentials by the account from determineAccount()', async () => {
+      // Google services validate credentials via a check endpoint that carries
+      // no identity and learn the account from a separate userinfo endpoint by
+      // overriding determineAccount(). This exercises the real registry
+      // resolver (no injected resolver) to ensure that fallback runs during the
+      // migration. The curl runner is stubbed so nothing hits the network.
+      setCapturingSubprocessRunner((args: readonly string[]): CurlResult => {
+        const joined = args.join(' ');
+        if (joined.includes('openidconnect.googleapis.com')) {
+          // determineAccount() reads the signed-in e-mail from userinfo.
+          return {
+            returncode: 0,
+            stdout: JSON.stringify({ email: 'alice@example.com' }),
+            stderr: '',
+          };
+        }
+        // Credential check endpoint: valid (HTTP 200), but the body carries no
+        // identity, so checkApiCredentials() reports a null account.
+        return { returncode: 0, stdout: '{}\n200', stderr: '' };
+      });
+
+      const gmailCredentials = {
+        objectType: 'oauth',
+        clientId: 'client',
+        clientSecret: 'secret',
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
+      };
+
+      encryptedStorage.writeFile(
+        config.credentialStorePath,
+        JSON.stringify({ 'google-gmail': gmailCredentials })
+      );
+
+      // Note: no resolver is injected, so the default registry resolver runs.
+      await runMigrations(config, encryptedStorage);
+
+      const store = JSON.parse(
+        encryptedStorage.readFile(config.credentialStorePath)!
+      ) as Record<string, unknown>;
+
+      expect(store['google-gmail']).toEqual({ 'alice@example.com': gmailCredentials });
     });
 
     it('should leave credentials under the default account on inconclusive checks', async () => {
