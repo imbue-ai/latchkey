@@ -50,8 +50,8 @@ export class NoServiceForUrlError extends Error {
 export class NoCredentialsForServiceError extends Error {
   readonly serviceName: string;
 
-  constructor(serviceName: string) {
-    super(ErrorMessages.noCredentialsFound(serviceName));
+  constructor(serviceName: string, account?: string) {
+    super(ErrorMessages.noCredentialsFound(serviceName, account));
     this.name = 'NoCredentialsForServiceError';
     this.serviceName = serviceName;
   }
@@ -60,8 +60,8 @@ export class NoCredentialsForServiceError extends Error {
 export class CredentialsExpiredError extends Error {
   readonly serviceName: string;
 
-  constructor(serviceName: string) {
-    super(ErrorMessages.credentialsExpired(serviceName));
+  constructor(serviceName: string, account?: string) {
+    super(ErrorMessages.credentialsExpired(serviceName, account));
     this.name = 'CredentialsExpiredError';
     this.serviceName = serviceName;
   }
@@ -196,7 +196,7 @@ export async function prepareCurlInvocation(
     if (dependencies.passthroughUnknown) {
       return [...curlArguments];
     }
-    throw new NoCredentialsForServiceError(firstCandidate.name);
+    throw new NoCredentialsForServiceError(firstCandidate.name, account);
   }
 
   const service = chosen.service;
@@ -211,7 +211,7 @@ export async function prepareCurlInvocation(
       account
     );
     if (apiCredentials.isExpired() === true) {
-      throw new CredentialsExpiredError(service.name);
+      throw new CredentialsExpiredError(service.name, account);
     }
   }
 

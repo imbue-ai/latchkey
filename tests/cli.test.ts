@@ -995,9 +995,16 @@ describe('CLI commands with dependency injection', () => {
         deps
       );
 
-      // A missing account is treated as "no credentials for this service".
+      // A missing account is treated as "no credentials for this service",
+      // and the suggested commands carry the requested account.
       expect(exitCode).toBe(1);
       expect(capturedArgs).toEqual([]);
+      expect(errorLogs.join('\n')).toContain(
+        "No credentials found for slack (account 'missing@example.com')"
+      );
+      expect(errorLogs.join('\n')).toContain(
+        'latchkey --account missing@example.com auth browser slack'
+      );
     });
 
     it('auth clear keeps the preparation without --all', async () => {
@@ -2690,8 +2697,52 @@ describe('CLI commands with dependency injection', () => {
       await runCommand(['services', 'deregister', 'my-gitlab'], deps);
 
       expect(exitCode).toBe(1);
-      expect(errorLogs[0]).toContain('Credentials still exist');
-      expect(errorLogs[0]).toContain('latchkey auth clear my-gitlab');
+      expect(errorLogs[0]).toContain('Credentials or a preparation still exist');
+      expect(errorLogs[0]).toContain('latchkey auth clear my-gitlab --all');
+
+      // Service should still be in config
+      const entries = loadRegisteredServices(deps.config.configPath);
+      expect(entries.get('my-gitlab')).toBeDefined();
+    });
+
+    it('should reject deregistering when only a preparation still exists', async () => {
+      const deps = createMockDependencies({
+        registry: new ServiceRegistry([GITLAB]),
+      });
+
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-gitlab',
+          '--base-api-url',
+          'https://gitlab.mycompany.com/api/',
+          '--service-family',
+          'gitlab',
+        ],
+        deps
+      );
+
+      // Store a preparation (but no credentials) for the service
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(
+        storePath,
+        JSON.stringify({
+          credentials: {},
+          preparations: {
+            'my-gitlab': { objectType: 'oauth', clientId: 'cid', clientSecret: 'csecret' },
+          },
+        })
+      );
+
+      logs = [];
+      errorLogs = [];
+      exitCode = null;
+      await runCommand(['services', 'deregister', 'my-gitlab'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs[0]).toContain('Credentials or a preparation still exist');
+      expect(errorLogs[0]).toContain('latchkey auth clear my-gitlab --all');
 
       // Service should still be in config
       const entries = loadRegisteredServices(deps.config.configPath);

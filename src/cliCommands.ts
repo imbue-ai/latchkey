@@ -539,10 +539,13 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         deps.config.credentialStorePath,
         encryptedStorage
       );
-      if (apiCredentialStore.listAccounts(serviceName).length > 0) {
+      if (
+        apiCredentialStore.listAccounts(serviceName).length > 0 ||
+        apiCredentialStore.getPreparation(serviceName) !== null
+      ) {
         deps.errorLog(
-          `Error: Credentials still exist for '${serviceName}'. ` +
-            `Run 'latchkey auth clear ${serviceName}' before deregistering.`
+          `Error: Credentials or a preparation still exist for '${serviceName}'. ` +
+            `Run 'latchkey auth clear ${serviceName} --all' before deregistering.`
         );
         deps.exit(1);
       }
