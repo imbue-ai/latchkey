@@ -562,7 +562,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .description('Clear stored API credentials.')
     .argument('[service_name]', 'Name of the service to clear API credentials for')
     .option('-y, --yes', 'Skip confirmation prompt when clearing all data')
-    .option('--all', "Clear all of the service's accounts as well as its preparation (if any)")
+    .option('--all', "Clear all of the service's accounts")
     .action(async (serviceName: string | undefined, options: { yes?: boolean; all?: boolean }) => {
       refuseInGatewayMode(deps, 'auth clear');
       const all = options.all ?? false;
