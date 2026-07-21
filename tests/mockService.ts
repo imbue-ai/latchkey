@@ -22,7 +22,9 @@ export class MockService extends Service {
 
   override checkApiCredentials: Service['checkApiCredentials'] = vi
     .fn()
-    .mockResolvedValue({ status: ApiCredentialStatus.Valid, account: null });
+    .mockResolvedValue(ApiCredentialStatus.Valid);
+
+  override getAccount: Service['getAccount'] = vi.fn().mockResolvedValue(null);
 
   setCredentialsExample(serviceName: string): string {
     return `latchkey auth set ${serviceName} -H "Authorization: Bearer xoxb-your-token"`;

@@ -1,4 +1,6 @@
-import { Service, tryParseJson } from './core/base.js';
+import type { ApiCredentials } from '../apiCredentials/base.js';
+import { Service } from './core/base.js';
+import { fetchAccountFromEndpoint, tryParseJson } from '../apiCredentials/account.js';
 
 export class Umami extends Service {
   readonly name = 'umami';
@@ -15,12 +17,18 @@ export class Umami extends Service {
     return `latchkey auth set ${serviceName} -H "x-umami-api-key: <api-key>"`;
   }
 
-  protected override parseAccountFromCredentialCheckBody(responseBody: string): string | null {
-    // On Umami Cloud the username is the account e-mail.
-    const data = tryParseJson(responseBody) as {
-      user?: { username?: string; id?: string };
-    } | null;
-    return data?.user?.username ?? data?.user?.id ?? null;
+  override getAccount(apiCredentials: ApiCredentials): Promise<string | null> {
+    return fetchAccountFromEndpoint(
+      apiCredentials,
+      this.credentialCheckCurlArguments,
+      (responseBody) => {
+        // On Umami Cloud the username is the account e-mail.
+        const data = tryParseJson(responseBody) as {
+          user?: { username?: string; id?: string };
+        } | null;
+        return data?.user?.username ?? data?.user?.id ?? null;
+      }
+    );
   }
 }
 

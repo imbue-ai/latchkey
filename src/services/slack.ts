@@ -5,7 +5,8 @@
 import type { Response } from 'playwright';
 import { z } from 'zod';
 import type { ApiCredentials } from '../apiCredentials/base.js';
-import { Service, SimpleServiceSession, tryParseJson } from './core/base.js';
+import { Service, SimpleServiceSession } from './core/base.js';
+import { fetchAccountFromEndpoint, tryParseJson } from '../apiCredentials/account.js';
 
 /**
  * Slack-specific credentials (token + d cookie).
@@ -126,21 +127,28 @@ export class Slack extends Service {
     return data?.ok === true;
   }
 
-  protected override parseAccountFromCredentialCheckBody(responseBody: string): string | null {
-    const data = tryParseJson(responseBody) as {
-      user?: string;
-      team?: string;
-      url?: string;
-    } | null;
-    if (data?.user === undefined) {
-      return null;
-    }
-    // The same user can be signed in to several workspaces, so the account
-    // includes the workspace: prefer the stable subdomain from the workspace
-    // URL, falling back to the display name.
-    const workspaceMatch = data.url === undefined ? null : /^https:\/\/([^./]+)\./.exec(data.url);
-    const workspace = workspaceMatch?.[1] ?? data.team;
-    return workspace === undefined ? data.user : `${data.user}@${workspace}`;
+  override getAccount(apiCredentials: ApiCredentials): Promise<string | null> {
+    return fetchAccountFromEndpoint(
+      apiCredentials,
+      this.credentialCheckCurlArguments,
+      (responseBody) => {
+        const data = tryParseJson(responseBody) as {
+          user?: string;
+          team?: string;
+          url?: string;
+        } | null;
+        if (data?.user === undefined) {
+          return null;
+        }
+        // The same user can be signed in to several workspaces, so the account
+        // includes the workspace: prefer the stable subdomain from the workspace
+        // URL, falling back to the display name.
+        const workspaceMatch =
+          data.url === undefined ? null : /^https:\/\/([^./]+)\./.exec(data.url);
+        const workspace = workspaceMatch?.[1] ?? data.team;
+        return workspace === undefined ? data.user : `${data.user}@${workspace}`;
+      }
+    );
   }
 }
 

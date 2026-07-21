@@ -5,12 +5,8 @@
 import type { Response, BrowserContext } from 'playwright';
 import { ApiCredentials, AuthorizationBearer } from '../apiCredentials/base.js';
 import { typeLikeHuman } from '../playwrightUtils.js';
-import {
-  Service,
-  BrowserFollowupServiceSession,
-  LoginFailedError,
-  tryParseJson,
-} from './core/base.js';
+import { Service, BrowserFollowupServiceSession, LoginFailedError } from './core/base.js';
+import { fetchAccountFromEndpoint, tryParseJson } from '../apiCredentials/account.js';
 
 const DEFAULT_TIMEOUT_MS = 8000;
 
@@ -186,11 +182,17 @@ export class Github extends Service {
     return new GithubServiceSession(this, appNamePrefix);
   }
 
-  protected override parseAccountFromCredentialCheckBody(responseBody: string): string | null {
-    // The login is the stable GitHub handle; the e-mail is null unless the
-    // user makes it public, so keying on it would be unreliable.
-    const data = tryParseJson(responseBody) as { login?: string } | null;
-    return data?.login ?? null;
+  override getAccount(apiCredentials: ApiCredentials): Promise<string | null> {
+    return fetchAccountFromEndpoint(
+      apiCredentials,
+      this.credentialCheckCurlArguments,
+      (responseBody) => {
+        // The login is the stable GitHub handle; the e-mail is null unless the
+        // user makes it public, so keying on it would be unreliable.
+        const data = tryParseJson(responseBody) as { login?: string } | null;
+        return data?.login ?? null;
+      }
+    );
   }
 }
 

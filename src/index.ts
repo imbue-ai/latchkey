@@ -60,7 +60,6 @@ export {
   ServiceSession,
   SimpleServiceSession,
   BrowserFollowupServiceSession,
-  type CredentialCheck,
   type LoginResult,
   LoginCancelledError,
   LoginFailedError,

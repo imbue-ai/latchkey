@@ -1,9 +1,6 @@
-import {
-  type ApiCredentials,
-  ApiCredentialsUsageError,
-} from '../apiCredentials/base.js';
-import { runCapturedAsync } from '../curl.js';
-import { Service, tryParseJson } from './core/base.js';
+import type { ApiCredentials } from '../apiCredentials/base.js';
+import { fetchAccountFromEndpoint, tryParseJson } from '../apiCredentials/account.js';
+import { Service } from './core/base.js';
 
 export class Stripe extends Service {
   readonly name = 'stripe';
@@ -19,34 +16,26 @@ export class Stripe extends Service {
   }
 
   /**
-   * The balance endpoint used for the credential check works with restricted
-   * keys but carries no identity, so the account is fetched separately from
-   * /v1/account — best-effort, because restricted keys may not be allowed to
-   * read the account.
+   * The account comes from /v1/account rather than the balance endpoint used
+   * by the credential check, which carries no identity. Restricted keys may
+   * not be allowed to read the account, in which case it stays undetermined.
    */
-  override async determineAccount(apiCredentials: ApiCredentials): Promise<string | null> {
-    let curlArguments: readonly string[];
-    try {
-      curlArguments = await apiCredentials.injectIntoCurlCall([
-        '-s',
-        'https://api.stripe.com/v1/account',
-      ]);
-    } catch (error) {
-      if (error instanceof ApiCredentialsUsageError) {
-        return null;
+  override getAccount(apiCredentials: ApiCredentials): Promise<string | null> {
+    return fetchAccountFromEndpoint(
+      apiCredentials,
+      ['https://api.stripe.com/v1/account'],
+      (responseBody) => {
+        const data = tryParseJson(responseBody) as {
+          email?: string | null;
+          id?: string;
+          error?: unknown;
+        } | null;
+        if (data === null || data.error !== undefined) {
+          return null;
+        }
+        return data.email ?? data.id ?? null;
       }
-      throw error;
-    }
-    const result = await runCapturedAsync(curlArguments, 10);
-    const data = tryParseJson(result.stdout) as {
-      email?: string | null;
-      id?: string;
-      error?: unknown;
-    } | null;
-    if (data === null || data.error !== undefined) {
-      return null;
-    }
-    return data.email ?? data.id ?? null;
+    );
   }
 }
 

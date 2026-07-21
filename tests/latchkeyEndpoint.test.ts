@@ -153,7 +153,7 @@ describe('/latchkey/ endpoint', () => {
     const nestedCredentials = Object.fromEntries(
       Object.entries(credentialsData).map(([service, creds]) => [service, { '': creds }])
     );
-    writeSecureFile(storePath, JSON.stringify(nestedCredentials));
+    writeSecureFile(storePath, JSON.stringify({ credentials: nestedCredentials }));
 
     const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
     const apiCredentialStore = new ApiCredentialStore(storePath, encryptedStorage);
@@ -399,7 +399,10 @@ describe('/latchkey/ endpoint', () => {
 
       expect(response.status).toBe(200);
       const body = (await response.json()) as {
-        result: Record<string, Record<string, { credentialType: string; credentialStatus: string }>>;
+        result: Record<
+          string,
+          Record<string, { credentialType: string; credentialStatus: string }>
+        >;
       };
       expect(body.result.slack).toEqual({
         '': {
@@ -453,9 +456,7 @@ describe('/latchkey/ endpoint', () => {
         loginUrl: 'https://nologin.example.com',
         info: 'No browser login support.',
         credentialCheckCurlArguments: [],
-        checkApiCredentials: vi
-          .fn()
-          .mockResolvedValue({ status: ApiCredentialStatus.Missing, account: null }),
+        checkApiCredentials: vi.fn().mockResolvedValue(ApiCredentialStatus.Missing),
         setCredentialsExample: (serviceName: string) =>
           `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`,
         getSession: undefined,

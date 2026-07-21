@@ -140,32 +140,6 @@ export function isTimeoutError(error: Error): boolean {
 }
 
 /**
- * The outcome of a credential check: whether the credentials are valid, and —
- * when the check response reveals it — which account they belong to.
- *
- * The account is null when the check cannot determine it (invalid credentials,
- * a check endpoint that carries no identity, or a service that does not parse
- * it). Callers that need a concrete account fall back to the default account.
- */
-export interface CredentialCheck {
-  readonly status: ApiCredentialStatus;
-  readonly account: string | null;
-}
-
-/**
- * Parse a JSON response body, returning null instead of throwing on malformed
- * input. Credential-check bodies come from arbitrary servers, so account
- * parsing must never crash on unexpected content.
- */
-export function tryParseJson(body: string): unknown {
-  try {
-    return JSON.parse(body);
-  } catch {
-    return null;
-  }
-}
-
-/**
  * Abstract base class for services that latchkey can authenticate with.
  */
 export abstract class Service {
@@ -194,15 +168,14 @@ export abstract class Service {
   adjustCredentials?(apiCredentials: ApiCredentials, url: string): ApiCredentials;
 
   /**
-   * Check if the given API credentials are valid for this service, and report
-   * which account they belong to when the check response reveals it.
+   * Check if the given API credentials are valid for this service.
    *
-   * The check is a single request: the response status decides validity (via
-   * {@link isCredentialCheckResponseValid}) and the response body yields the
-   * account (via {@link parseAccountFromCredentialCheckBody}). Services
-   * customize either aspect by overriding those hooks rather than this method.
+   * The check is a single request whose response decides validity via
+   * {@link isCredentialCheckResponseValid}; services whose check endpoint
+   * reports auth failures inside the body customize that hook rather than
+   * this method.
    */
-  async checkApiCredentials(apiCredentials: ApiCredentials): Promise<CredentialCheck> {
+  async checkApiCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentialStatus> {
     let allCurlArgs: readonly string[];
     try {
       allCurlArgs = await apiCredentials.injectIntoCurlCall([
@@ -213,7 +186,7 @@ export abstract class Service {
       ]);
     } catch (error) {
       if (error instanceof ApiCredentialsUsageError) {
-        return { status: ApiCredentialStatus.Missing, account: null };
+        return ApiCredentialStatus.Missing;
       }
       throw error;
     }
@@ -227,12 +200,9 @@ export abstract class Service {
     const responseBody = separatorIndex === -1 ? '' : result.stdout.slice(0, separatorIndex);
 
     if (!this.isCredentialCheckResponseValid(httpStatusCode, responseBody)) {
-      return { status: ApiCredentialStatus.Invalid, account: null };
+      return ApiCredentialStatus.Invalid;
     }
-    return {
-      status: ApiCredentialStatus.Valid,
-      account: this.parseAccountFromCredentialCheckBody(responseBody),
-    };
+    return ApiCredentialStatus.Valid;
   }
 
   /**
@@ -245,25 +215,18 @@ export abstract class Service {
   }
 
   /**
-   * Extract the account from the body of a successful credential-check
-   * response: an e-mail when available, otherwise a human-readable handle,
-   * otherwise an opaque id. Returns null when the body carries no identity,
-   * which is the default for services that have not (yet) opted in.
+   * Determine which account the given credentials belong to: an e-mail when
+   * available, otherwise a human-readable handle, otherwise an opaque id.
+   * Returns null when the account cannot be determined.
+   *
+   * Best-effort and entirely separate from the credential check: services
+   * typically implement it via `fetchAccountFromEndpoint()`, asking an
+   * identity-revealing endpoint and parsing the account from its body.
+   * Services whose credentials carry no queryable identity (e.g. app-scoped
+   * API keys) must still implement this — explicitly returning null — so that
+   * the decision is a conscious one for every service.
    */
-  protected parseAccountFromCredentialCheckBody(_responseBody: string): string | null {
-    return null;
-  }
-
-  /**
-   * Determine which account the given credentials belong to, or null when it
-   * cannot be determined. The default derives it from the credential check;
-   * services whose check endpoint carries no identity but that have another
-   * way to learn it (e.g. an OAuth userinfo endpoint) override this.
-   */
-  async determineAccount(apiCredentials: ApiCredentials): Promise<string | null> {
-    const credentialCheck = await this.checkApiCredentials(apiCredentials);
-    return credentialCheck.account;
-  }
+  abstract getAccount(apiCredentials: ApiCredentials): Promise<string | null>;
 
   /**
    * Return an example showing how to set credentials for this service via the CLI.
@@ -376,36 +339,17 @@ export abstract class ServiceSession {
   }
 
   /**
-   * Determine which account the finalized credentials belong to, so it can be
-   * stored alongside them. Called after login completes, while the browser and
-   * context are still open, so services can read the account from the page or
-   * from an API call made with the fresh credentials.
-   *
-   * The default asks the service (which runs the credential check with the
-   * fresh credentials) and falls back to the unnamed default account. Sessions
-   * only override this when the account is easier to read from the still-open
-   * browser than from the API.
-   */
-  protected async determineAccount(
-    apiCredentials: ApiCredentials,
-    _browser: Browser,
-    _context: BrowserContext
-  ): Promise<string> {
-    return (await this.service.determineAccount(apiCredentials)) ?? DEFAULT_ACCOUNT;
-  }
-
-  /**
    * Optional preparation step before login.
    * Services can override this to perform setup (e.g., creating OAuth clients).
    *
-   * Like {@link login}, this reports the account alongside the credentials.
-   * Preparation usually happens before any user is signed in, so services
-   * typically return the default account here.
+   * Unlike {@link login}, this returns bare credentials without an account:
+   * preparations are service-level artifacts shared by all of a service's
+   * accounts, and usually happen before any user is signed in.
    */
   prepare?(
     encryptedStorage: EncryptedStorage,
     launchOptions?: BrowserLaunchOptions
-  ): Promise<LoginResult>;
+  ): Promise<ApiCredentials>;
 
   /**
    * Perform the login flow and return the extracted credentials.
@@ -456,7 +400,9 @@ export abstract class ServiceSession {
         throw new LoginFailedError();
       }
 
-      const account = await this.determineAccount(apiCredentials, browser, context);
+      // Ask the service which account the fresh credentials belong to,
+      // falling back to the unnamed default account.
+      const account = (await this.service.getAccount(apiCredentials)) ?? DEFAULT_ACCOUNT;
       return { credentials: apiCredentials, account };
     });
   }

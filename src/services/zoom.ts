@@ -1,9 +1,6 @@
-import {
-  type ApiCredentials,
-  ApiCredentialsUsageError,
-} from '../apiCredentials/base.js';
-import { runCapturedAsync } from '../curl.js';
-import { Service, tryParseJson } from './core/base.js';
+import type { ApiCredentials } from '../apiCredentials/base.js';
+import { fetchAccountFromEndpoint, tryParseJson } from '../apiCredentials/account.js';
+import { Service } from './core/base.js';
 
 export class Zoom extends Service {
   readonly name = 'zoom';
@@ -23,34 +20,27 @@ export class Zoom extends Service {
   }
 
   /**
-   * The credential check must stay on the user-list endpoint because
-   * server-to-server tokens have no user context and error on /users/me. The
-   * account is instead determined by a separate best-effort call to /users/me,
-   * which works for user-level tokens.
+   * The account comes from /users/me rather than the user-list endpoint used
+   * by the credential check, which carries no identity. Server-to-server
+   * tokens have no user context and error on /users/me, in which case the
+   * account stays undetermined.
    */
-  override async determineAccount(apiCredentials: ApiCredentials): Promise<string | null> {
-    let curlArguments: readonly string[];
-    try {
-      curlArguments = await apiCredentials.injectIntoCurlCall([
-        '-s',
-        'https://api.zoom.us/v2/users/me',
-      ]);
-    } catch (error) {
-      if (error instanceof ApiCredentialsUsageError) {
-        return null;
+  override getAccount(apiCredentials: ApiCredentials): Promise<string | null> {
+    return fetchAccountFromEndpoint(
+      apiCredentials,
+      ['https://api.zoom.us/v2/users/me'],
+      (responseBody) => {
+        const data = tryParseJson(responseBody) as {
+          email?: string;
+          id?: string;
+          code?: number;
+        } | null;
+        if (data === null || data.code !== undefined) {
+          return null;
+        }
+        return data.email ?? data.id ?? null;
       }
-      throw error;
-    }
-    const result = await runCapturedAsync(curlArguments, 10);
-    const data = tryParseJson(result.stdout) as {
-      email?: string;
-      id?: string;
-      code?: number;
-    } | null;
-    if (data === null || data.code !== undefined) {
-      return null;
-    }
-    return data.email ?? data.id ?? null;
+    );
   }
 }
 

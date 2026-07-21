@@ -6,12 +6,7 @@
  * rather than writing to stdout or calling process.exit.
  */
 
-import { DEFAULT_ACCOUNT } from './apiCredentials/account.js';
-import {
-  ApiCredentialStatus,
-  OAuthCredentials,
-  type ApiCredentials,
-} from './apiCredentials/base.js';
+import { ApiCredentialStatus, type ApiCredentials } from './apiCredentials/base.js';
 import type { ApiCredentialStore } from './apiCredentials/store.js';
 import { getCredentialStatus } from './apiCredentials/utils.js';
 import type { Config } from './config.js';
@@ -55,9 +50,20 @@ export class PreparationRequiredError extends Error {
   constructor(serviceName: string) {
     super(
       `Service ${serviceName} requires preparation first. ` +
-        `Run 'latchkey auth browser-prepare ${serviceName}' before logging in.`
+        `Run 'latchkey auth browser-prepare ${serviceName}' before logging in, ` +
+        `or pass --account to reuse the client stored with an existing account's credentials.`
     );
     this.name = 'PreparationRequiredError';
+  }
+}
+
+/**
+ * Thrown when an explicitly named account has no stored credentials.
+ */
+export class AccountNotFoundError extends Error {
+  constructor(serviceName: string, account: string) {
+    super(`No credentials stored for account '${account}' of service '${serviceName}'.`);
+    this.name = 'AccountNotFoundError';
   }
 }
 
@@ -239,7 +245,8 @@ export async function authBrowser(
   apiCredentialStore: ApiCredentialStore,
   encryptedStorage: EncryptedStorage,
   config: Config,
-  serviceName: string
+  serviceName: string,
+  account?: string
 ): Promise<AuthBrowserResult> {
   const service = lookupService(registry, serviceName);
 
@@ -248,17 +255,22 @@ export async function authBrowser(
     throw new BrowserFlowsNotSupportedError(serviceName);
   }
 
-  // Login reuses stored credentials only for service-level artifacts (e.g.
-  // the OAuth client created by browser-prepare), which all of a service's
-  // accounts share — so logging in to an additional account can borrow any
-  // stored account's credentials. Prefer the default account, where
-  // browser-prepare places the client before the first login.
-  const storedAccounts = apiCredentialStore.listAccounts(service.name);
-  const reusableAccount = storedAccounts.includes(DEFAULT_ACCOUNT)
-    ? DEFAULT_ACCOUNT
-    : storedAccounts[0];
-  const oldCredentials =
-    reusableAccount === undefined ? null : apiCredentialStore.get(service.name, reusableAccount);
+  // Login reuses previously stored credentials only for service-level
+  // artifacts (e.g. an OAuth client), which all of a service's accounts can
+  // share. By default the service's preparation (created by `auth prepare` or
+  // `auth browser-prepare`) is used; with an explicit account, that account's
+  // stored credentials carry the client instead. Either way the login may
+  // still end up stored under a different account — whichever the user logs
+  // in as.
+  let oldCredentials: ApiCredentials | null;
+  if (account !== undefined) {
+    oldCredentials = apiCredentialStore.get(service.name, account);
+    if (oldCredentials === null) {
+      throw new AccountNotFoundError(serviceName, account);
+    }
+  } else {
+    oldCredentials = apiCredentialStore.getPreparation(service.name);
+  }
   if (session.prepare && oldCredentials === null) {
     throw new PreparationRequiredError(serviceName);
   }
@@ -267,44 +279,17 @@ export async function authBrowser(
 
   // The browser flow reports which account the user logged in as, so the
   // credentials are stored under that account.
-  const { credentials, account } = await session.login(
+  const { credentials, account: loggedInAccount } = await session.login(
     encryptedStorage,
     launchOptions,
     oldCredentials ?? undefined
   );
-  apiCredentialStore.save(service.name, credentials, account);
-  removeObsoletePreparedCredentials(apiCredentialStore, service.name, account);
-  return { account };
-}
-
-/**
- * After a login stores credentials under a real account, drop a leftover
- * token-less entry under the default account — the placeholder created by
- * `auth browser-prepare`. Its purpose (carrying the OAuth client to the first
- * login) is served, and the client lives on inside every logged-in account's
- * credentials; keeping the placeholder would only make account resolution
- * ambiguous. Complete credentials under the default account are left alone.
- */
-function removeObsoletePreparedCredentials(
-  apiCredentialStore: ApiCredentialStore,
-  serviceName: string,
-  savedAccount: string
-): void {
-  if (savedAccount === DEFAULT_ACCOUNT) {
-    return;
-  }
-  const defaultAccountCredentials = apiCredentialStore.get(serviceName, DEFAULT_ACCOUNT);
-  if (
-    defaultAccountCredentials instanceof OAuthCredentials &&
-    defaultAccountCredentials.accessToken === undefined
-  ) {
-    apiCredentialStore.delete(serviceName, DEFAULT_ACCOUNT);
-  }
+  apiCredentialStore.save(service.name, credentials, loggedInAccount);
+  return { account: loggedInAccount };
 }
 
 export interface AuthBrowserPrepareResult {
   readonly alreadyPrepared: boolean;
-  readonly account?: string;
 }
 
 export async function authBrowserPrepare(
@@ -321,17 +306,15 @@ export async function authBrowserPrepare(
     return { alreadyPrepared: true };
   }
 
-  const existingCredentials = apiCredentialStore.get(service.name);
-  if (existingCredentials !== null) {
+  if (apiCredentialStore.getPreparation(service.name) !== null) {
     return { alreadyPrepared: true };
   }
 
   const launchOptions = getBrowserLaunchOptions(config);
 
-  let credentials;
-  let account: string;
+  let credentials: ApiCredentials;
   try {
-    ({ credentials, account } = await session.prepare(encryptedStorage, launchOptions));
+    credentials = await session.prepare(encryptedStorage, launchOptions);
   } catch (error: unknown) {
     // Closing the browser window during preparation should be reported to
     // the user as a clean cancellation rather than a stack trace. Doing
@@ -342,8 +325,8 @@ export async function authBrowserPrepare(
     }
     throw error;
   }
-  apiCredentialStore.save(service.name, credentials, account);
-  return { alreadyPrepared: false, account };
+  apiCredentialStore.savePreparation(service.name, credentials);
+  return { alreadyPrepared: false };
 }
 
 export interface PrepareServiceResult {
@@ -352,17 +335,17 @@ export interface PrepareServiceResult {
 }
 
 /**
- * Store credentials for a service from a validated JSON payload
- * (`latchkey auth prepare <service> <json>`). The whole operation is rejected — and
- * nothing is stored — if the JSON is malformed, fails the service's schema, or
- * the service does not support prepare.
+ * Store a service's preparation from a validated JSON payload
+ * (`latchkey auth prepare <service> <json>`), overwriting any previous
+ * preparation. The whole operation is rejected — and nothing is stored — if
+ * the JSON is malformed, fails the service's schema, or the service does not
+ * support prepare.
  */
 export function prepareService(
   registry: ServiceRegistry,
   apiCredentialStore: ApiCredentialStore,
   serviceName: string,
-  json: string,
-  account?: string
+  json: string
 ): PrepareServiceResult {
   const service = lookupService(registry, serviceName);
 
@@ -386,6 +369,6 @@ export function prepareService(
   // PrepareInputInvalidError on any mismatch, so a store only happens once the
   // input is fully valid.
   const credentials = service.prepareFromJson(parsedJson);
-  apiCredentialStore.save(service.name, credentials, account);
+  apiCredentialStore.savePreparation(service.name, credentials);
   return { serviceName: service.name, credentialType: credentials.objectType };
 }

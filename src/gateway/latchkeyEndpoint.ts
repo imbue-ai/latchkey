@@ -19,6 +19,7 @@ import {
   authBrowserPrepare,
   prepareService,
   UnknownServiceError,
+  AccountNotFoundError,
   BrowserNotConfiguredError,
   PreparationRequiredError,
 } from '../sharedOperations.js';
@@ -66,7 +67,9 @@ const AuthListRequestSchema = z.object({
 
 const AuthBrowserRequestSchema = z.object({
   command: z.literal('auth browser'),
-  params: serviceNameParams,
+  params: serviceNameParams.extend({
+    account: z.string().optional(),
+  }),
 });
 
 const AuthBrowserPrepareRequestSchema = z.object({
@@ -94,6 +97,7 @@ export type LatchkeyRequest = z.infer<typeof LatchkeyRequestSchema>;
 
 const KNOWN_ERROR_CLASSES: readonly (abstract new (...args: never[]) => Error)[] = [
   UnknownServiceError,
+  AccountNotFoundError,
   BrowserDisabledError,
   GraphicalEnvironmentNotFoundError,
   BrowserNotConfiguredError,
@@ -162,7 +166,8 @@ async function dispatch(
         apiCredentialStore,
         encryptedStorage,
         deps.config,
-        parsed.params.serviceName
+        parsed.params.serviceName,
+        parsed.params.account
       );
 
     case 'auth browser-prepare':

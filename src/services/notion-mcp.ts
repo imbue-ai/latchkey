@@ -268,6 +268,15 @@ export class NotionMcp extends Service {
     );
   }
 
+  // MCP-audienced tokens cannot call the classic REST API, and the MCP
+  // endpoint itself reveals no identity. The account is only reported by the
+  // token endpoint during the login code exchange (user_id / workspace_id /
+  // email_domain riding along in the token response), so the login flow
+  // derives it there and stored credentials cannot be re-attributed later.
+  getAccount(): Promise<string | null> {
+    return Promise.resolve(null);
+  }
+
   override getSession(appNamePrefix: string): NotionMcpSession {
     return new NotionMcpSession(this, appNamePrefix);
   }

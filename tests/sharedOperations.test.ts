@@ -26,6 +26,7 @@ import {
   authBrowserPrepare,
   prepareService,
   UnknownServiceError,
+  AccountNotFoundError,
   PreparationRequiredError,
 } from '../src/sharedOperations.js';
 import { BrowserFlowsNotSupportedError } from '../src/playwrightUtils.js';
@@ -71,7 +72,7 @@ describe('operations', () => {
     const nestedCredentials = Object.fromEntries(
       Object.entries(credentialsData).map(([service, creds]) => [service, { '': creds }])
     );
-    writeSecureFile(storePath, JSON.stringify(nestedCredentials));
+    writeSecureFile(storePath, JSON.stringify({ credentials: nestedCredentials }));
     const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
     return new ApiCredentialStore(storePath, encryptedStorage);
   }
@@ -313,7 +314,7 @@ describe('operations', () => {
       }
     });
 
-    it('logs in to an additional account without ambiguity, reusing a stored account', async () => {
+    it('logs in to an additional account without ambiguity', async () => {
       const originalPlatform = process.platform;
       Object.defineProperty(process, 'platform', { value: 'darwin' });
       try {
@@ -324,7 +325,11 @@ describe('operations', () => {
         const service = createMockService({ getSession: vi.fn().mockReturnValue({ login }) });
         const registry = new ServiceRegistry([service]);
         const store = createApiCredentialStore();
-        store.save('slack', new SlackApiCredentials('first-token', 'first-cookie'), 'first@example.com');
+        store.save(
+          'slack',
+          new SlackApiCredentials('first-token', 'first-cookie'),
+          'first@example.com'
+        );
         const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
         const config = createMockConfig({ directory: tempDir } as Partial<Config>);
         saveBrowserConfig(config.configPath, {
@@ -337,15 +342,12 @@ describe('operations', () => {
 
         expect(result).toEqual({ account: 'second@example.com' });
         expect(store.listAccounts('slack')).toEqual(['first@example.com', 'second@example.com']);
-        // The stored account's credentials are offered for reuse during login.
-        const reusedCredentials = login.mock.calls[0]?.[2] as SlackApiCredentials;
-        expect(reusedCredentials.token).toBe('first-token');
       } finally {
         Object.defineProperty(process, 'platform', { value: originalPlatform });
       }
     });
 
-    it('drops the token-less prepared placeholder once login stores a real account', async () => {
+    it('uses the stored preparation for login and keeps it for future logins', async () => {
       const originalPlatform = process.platform;
       Object.defineProperty(process, 'platform', { value: 'darwin' });
       try {
@@ -365,7 +367,7 @@ describe('operations', () => {
         });
         const registry = new ServiceRegistry([service]);
         const store = createApiCredentialStore();
-        store.save('slack', preparedClient, '');
+        store.savePreparation('slack', preparedClient);
         const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
         const config = createMockConfig({ directory: tempDir } as Partial<Config>);
         saveBrowserConfig(config.configPath, {
@@ -377,14 +379,80 @@ describe('operations', () => {
         const result = await authBrowser(registry, store, encryptedStorage, config, 'slack');
 
         expect(result).toEqual({ account: 'user@example.com' });
-        // The placeholder created by browser-prepare is gone; only the real
-        // account remains, carrying the OAuth client onward.
         expect(store.listAccounts('slack')).toEqual(['user@example.com']);
         const reusedCredentials = login.mock.calls[0]?.[2] as OAuthCredentials;
         expect(reusedCredentials.clientId).toBe('client-id');
+        // The preparation stays around so another account can log in with the
+        // same client.
+        expect(store.getPreparation('slack')).toBeInstanceOf(OAuthCredentials);
       } finally {
         Object.defineProperty(process, 'platform', { value: originalPlatform });
       }
+    });
+
+    it("reuses the named account's credentials when an account is given", async () => {
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+      try {
+        const existingCredentials = new OAuthCredentials(
+          'client-id',
+          'client-secret',
+          'old-access-token',
+          'old-refresh-token'
+        );
+        const login = vi.fn().mockResolvedValue({
+          credentials: new OAuthCredentials(
+            'client-id',
+            'client-secret',
+            'new-access-token',
+            'new-refresh-token'
+          ),
+          account: 'second@example.com',
+        });
+        const service = createMockService({
+          getSession: vi.fn().mockReturnValue({ prepare: vi.fn(), login }),
+        });
+        const registry = new ServiceRegistry([service]);
+        const store = createApiCredentialStore();
+        store.save('slack', existingCredentials, 'first@example.com');
+        const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
+        const config = createMockConfig({ directory: tempDir } as Partial<Config>);
+        saveBrowserConfig(config.configPath, {
+          executablePath: process.execPath,
+          source: 'system',
+          discoveredAt: new Date().toISOString(),
+        });
+
+        const result = await authBrowser(
+          registry,
+          store,
+          encryptedStorage,
+          config,
+          'slack',
+          'first@example.com'
+        );
+
+        expect(result).toEqual({ account: 'second@example.com' });
+        expect(store.listAccounts('slack')).toEqual(['first@example.com', 'second@example.com']);
+        const reusedCredentials = login.mock.calls[0]?.[2] as OAuthCredentials;
+        expect(reusedCredentials.accessToken).toBe('old-access-token');
+      } finally {
+        Object.defineProperty(process, 'platform', { value: originalPlatform });
+      }
+    });
+
+    it('throws AccountNotFoundError when the given account has no credentials', async () => {
+      const service = createMockService({
+        getSession: vi.fn().mockReturnValue({ login: vi.fn() }),
+      });
+      const registry = new ServiceRegistry([service]);
+      const store = createApiCredentialStore();
+      const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
+      const config = createMockConfig();
+
+      await expect(
+        authBrowser(registry, store, encryptedStorage, config, 'slack', 'missing@example.com')
+      ).rejects.toThrow(AccountNotFoundError);
     });
 
     it('keeps complete default-account credentials when a login adds a named account', async () => {
@@ -445,23 +513,24 @@ describe('operations', () => {
       expect(result.alreadyPrepared).toBe(true);
     });
 
-    it('should return alreadyPrepared true when credentials already exist', async () => {
+    it('should return alreadyPrepared true when a preparation already exists', async () => {
+      const prepare = vi.fn();
       const service = createMockService({
         getSession: vi.fn().mockReturnValue({
-          prepare: vi.fn(),
+          prepare,
           login: vi.fn(),
         }),
       });
       const registry = new ServiceRegistry([service]);
-      const store = createApiCredentialStore({
-        slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
-      });
+      const store = createApiCredentialStore();
+      store.savePreparation('slack', new OAuthCredentials('client-id', 'client-secret'));
       const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
       const config = createMockConfig();
 
       const result = await authBrowserPrepare(registry, store, encryptedStorage, config, 'slack');
 
       expect(result.alreadyPrepared).toBe(true);
+      expect(prepare).not.toHaveBeenCalled();
     });
 
     it('should return alreadyPrepared true when service has no getSession', async () => {
@@ -476,14 +545,13 @@ describe('operations', () => {
       expect(result.alreadyPrepared).toBe(true);
     });
 
-    it('stores prepared credentials under the account reported by prepare', async () => {
+    it("stores the prepared credentials as the service's preparation", async () => {
       const originalPlatform = process.platform;
       Object.defineProperty(process, 'platform', { value: 'darwin' });
       try {
-        const prepare = vi.fn().mockResolvedValue({
-          credentials: new SlackApiCredentials('prep-token', 'prep-cookie'),
-          account: '',
-        });
+        const prepare = vi
+          .fn()
+          .mockResolvedValue(new OAuthCredentials('client-id', 'client-secret'));
         const service = createMockService({
           getSession: vi.fn().mockReturnValue({ prepare, login: vi.fn() }),
         });
@@ -499,8 +567,10 @@ describe('operations', () => {
 
         const result = await authBrowserPrepare(registry, store, encryptedStorage, config, 'slack');
 
-        expect(result).toEqual({ alreadyPrepared: false, account: '' });
-        expect(store.listAccounts('slack')).toEqual(['']);
+        expect(result).toEqual({ alreadyPrepared: false });
+        expect(store.getPreparation('slack')).toBeInstanceOf(OAuthCredentials);
+        // Preparations are not account credentials.
+        expect(store.listAccounts('slack')).toEqual([]);
         expect(prepare).toHaveBeenCalledOnce();
       } finally {
         Object.defineProperty(process, 'platform', { value: originalPlatform });
@@ -509,7 +579,7 @@ describe('operations', () => {
   });
 
   describe('prepareService', () => {
-    it('stores token-less OAuth credentials for a Google service and returns the result', () => {
+    it('stores a token-less OAuth preparation for a Google service and returns the result', () => {
       const registry = new ServiceRegistry([GOOGLE_GMAIL]);
       const store = createApiCredentialStore();
 
@@ -521,20 +591,21 @@ describe('operations', () => {
       );
 
       expect(result).toEqual({ serviceName: 'google-gmail', credentialType: 'oauth' });
-      const stored = store.get('google-gmail');
+      const stored = store.getPreparation('google-gmail');
       expect(stored).toBeInstanceOf(OAuthCredentials);
       const oauth = stored as OAuthCredentials;
       expect(oauth.clientId).toBe('cid');
       expect(oauth.clientSecret).toBe('csecret');
       expect(oauth.accessToken).toBeUndefined();
       expect(oauth.refreshToken).toBeUndefined();
+      // Preparations do not touch the credentials section.
+      expect(store.get('google-gmail')).toBeNull();
     });
 
-    it('overwrites existing credentials unconditionally', () => {
+    it('overwrites an existing preparation unconditionally', () => {
       const registry = new ServiceRegistry([GOOGLE_GMAIL]);
-      const store = createApiCredentialStore({
-        'google-gmail': { objectType: 'oauth', clientId: 'old-id', clientSecret: 'old-secret' },
-      });
+      const store = createApiCredentialStore();
+      store.savePreparation('google-gmail', new OAuthCredentials('old-id', 'old-secret'));
 
       prepareService(
         registry,
@@ -543,8 +614,10 @@ describe('operations', () => {
         JSON.stringify({ clientId: 'new-id', clientSecret: 'new-secret' })
       );
 
-      expect((store.get('google-gmail') as OAuthCredentials).clientId).toBe('new-id');
-      expect((store.get('google-gmail') as OAuthCredentials).clientSecret).toBe('new-secret');
+      expect((store.getPreparation('google-gmail') as OAuthCredentials).clientId).toBe('new-id');
+      expect((store.getPreparation('google-gmail') as OAuthCredentials).clientSecret).toBe(
+        'new-secret'
+      );
     });
 
     it('throws UnknownServiceError for an unknown service', () => {
@@ -566,7 +639,7 @@ describe('operations', () => {
           JSON.stringify({ clientId: 'a', clientSecret: 'b' })
         )
       ).toThrow(PrepareNotSupportedError);
-      expect(store.get('slack')).toBeNull();
+      expect(store.getPreparation('slack')).toBeNull();
     });
 
     it('rejects malformed JSON without storing anything', () => {
@@ -576,7 +649,7 @@ describe('operations', () => {
       expect(() => prepareService(registry, store, 'google-gmail', '{not valid')).toThrow(
         PrepareInputInvalidError
       );
-      expect(store.get('google-gmail')).toBeNull();
+      expect(store.getPreparation('google-gmail')).toBeNull();
     });
 
     it('rejects input missing required fields without storing anything', () => {
@@ -586,7 +659,7 @@ describe('operations', () => {
       expect(() =>
         prepareService(registry, store, 'google-gmail', JSON.stringify({ clientId: 'only-id' }))
       ).toThrow(PrepareInputInvalidError);
-      expect(store.get('google-gmail')).toBeNull();
+      expect(store.getPreparation('google-gmail')).toBeNull();
     });
 
     it('rejects unknown keys (strict schema)', () => {
@@ -601,7 +674,7 @@ describe('operations', () => {
           JSON.stringify({ clientId: 'a', clientSecret: 'b', extra: 'nope' })
         )
       ).toThrow(PrepareInputInvalidError);
-      expect(store.get('google-gmail')).toBeNull();
+      expect(store.getPreparation('google-gmail')).toBeNull();
     });
 
     it('rejects empty string fields', () => {
@@ -630,7 +703,7 @@ describe('operations', () => {
       );
 
       expect(result).toEqual({ serviceName: 'notion-mcp', credentialType: 'oauth' });
-      const stored = store.get('notion-mcp');
+      const stored = store.getPreparation('notion-mcp');
       expect(stored).toBeInstanceOf(OAuthCredentials);
       const oauth = stored as OAuthCredentials;
       expect(oauth.clientId).toBe('notion-client-id');
@@ -651,7 +724,7 @@ describe('operations', () => {
           JSON.stringify({ clientId: 'a', clientSecret: 'b' })
         )
       ).toThrow(PrepareInputInvalidError);
-      expect(store.get('notion-mcp')).toBeNull();
+      expect(store.getPreparation('notion-mcp')).toBeNull();
     });
 
     it('rejects notion-mcp input missing clientId', () => {
@@ -661,7 +734,7 @@ describe('operations', () => {
       expect(() => prepareService(registry, store, 'notion-mcp', '{}')).toThrow(
         PrepareInputInvalidError
       );
-      expect(store.get('notion-mcp')).toBeNull();
+      expect(store.getPreparation('notion-mcp')).toBeNull();
     });
   });
 });
