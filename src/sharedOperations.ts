@@ -312,9 +312,9 @@ export async function authBrowserPrepare(
 
   const launchOptions = getBrowserLaunchOptions(config);
 
-  let credentials;
+  let credentials: ApiCredentials;
   try {
-    ({ credentials } = await session.prepare(encryptedStorage, launchOptions));
+    credentials = await session.prepare(encryptedStorage, launchOptions);
   } catch (error: unknown) {
     // Closing the browser window during preparation should be reported to
     // the user as a clean cancellation rather than a stack trace. Doing

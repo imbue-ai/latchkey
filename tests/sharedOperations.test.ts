@@ -549,10 +549,9 @@ describe('operations', () => {
       const originalPlatform = process.platform;
       Object.defineProperty(process, 'platform', { value: 'darwin' });
       try {
-        const prepare = vi.fn().mockResolvedValue({
-          credentials: new OAuthCredentials('client-id', 'client-secret'),
-          account: '',
-        });
+        const prepare = vi
+          .fn()
+          .mockResolvedValue(new OAuthCredentials('client-id', 'client-secret'));
         const service = createMockService({
           getSession: vi.fn().mockReturnValue({ prepare, login: vi.fn() }),
         });

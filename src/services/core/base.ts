@@ -360,14 +360,14 @@ export abstract class ServiceSession {
    * Optional preparation step before login.
    * Services can override this to perform setup (e.g., creating OAuth clients).
    *
-   * Like {@link login}, this reports the account alongside the credentials.
-   * Preparation usually happens before any user is signed in, so services
-   * typically return the default account here.
+   * Unlike {@link login}, this returns bare credentials without an account:
+   * preparations are service-level artifacts shared by all of a service's
+   * accounts, and usually happen before any user is signed in.
    */
   prepare?(
     encryptedStorage: EncryptedStorage,
     launchOptions?: BrowserLaunchOptions
-  ): Promise<LoginResult>;
+  ): Promise<ApiCredentials>;
 
   /**
    * Perform the login flow and return the extracted credentials.
