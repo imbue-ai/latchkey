@@ -217,16 +217,16 @@ export abstract class Service {
   /**
    * Determine which account the given credentials belong to: an e-mail when
    * available, otherwise a human-readable handle, otherwise an opaque id.
-   * Returns null when the account cannot be determined — the default for
-   * services that have not (yet) opted in.
+   * Returns null when the account cannot be determined.
    *
    * Best-effort and entirely separate from the credential check: services
    * typically implement it via `fetchAccountFromEndpoint()`, asking an
    * identity-revealing endpoint and parsing the account from its body.
+   * Services whose credentials carry no queryable identity (e.g. app-scoped
+   * API keys) must still implement this — explicitly returning null — so that
+   * the decision is a conscious one for every service.
    */
-  getAccount(_apiCredentials: ApiCredentials): Promise<string | null> {
-    return Promise.resolve(null);
-  }
+  abstract getAccount(apiCredentials: ApiCredentials): Promise<string | null>;
 
   /**
    * Return an example showing how to set credentials for this service via the CLI.

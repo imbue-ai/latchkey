@@ -95,7 +95,7 @@ describe('base account determination', () => {
 
   it('returns null for registered services without a request', async () => {
     const registered = new RegisteredService('my-service', 'https://example.com/api/');
-    const account = await registered.getAccount(BEARER);
+    const account = await registered.getAccount();
     expect(account).toBeNull();
   });
 });
