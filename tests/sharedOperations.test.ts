@@ -325,7 +325,11 @@ describe('operations', () => {
         const service = createMockService({ getSession: vi.fn().mockReturnValue({ login }) });
         const registry = new ServiceRegistry([service]);
         const store = createApiCredentialStore();
-        store.save('slack', new SlackApiCredentials('first-token', 'first-cookie'), 'first@example.com');
+        store.save(
+          'slack',
+          new SlackApiCredentials('first-token', 'first-cookie'),
+          'first@example.com'
+        );
         const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
         const config = createMockConfig({ directory: tempDir } as Partial<Config>);
         saveBrowserConfig(config.configPath, {

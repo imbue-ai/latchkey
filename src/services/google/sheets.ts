@@ -24,7 +24,6 @@ export class GoogleSheets extends GoogleService {
     'If needed, run "latchkey auth browser-prepare google-sheets" to create an OAuth client first. ' +
     'It may take a few minutes before the OAuth client is ready to use.';
 
-
   protected readonly config = CONFIG;
 }
 

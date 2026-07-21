@@ -325,9 +325,9 @@ describe('migrations', () => {
         })
       );
 
-      const store = JSON.parse(
-        encryptedStorage.readFile(config.credentialStorePath)!
-      ) as { credentials: Record<string, unknown> };
+      const store = JSON.parse(encryptedStorage.readFile(config.credentialStorePath)!) as {
+        credentials: Record<string, unknown>;
+      };
 
       expect(store.credentials.slack).toEqual({ 'user@example.com': slackCredentials });
     });
@@ -346,9 +346,9 @@ describe('migrations', () => {
         resolverFromMap({ slack: { status: ApiCredentialStatus.Valid, account: null } })
       );
 
-      const store = JSON.parse(
-        encryptedStorage.readFile(config.credentialStorePath)!
-      ) as { credentials: Record<string, unknown> };
+      const store = JSON.parse(encryptedStorage.readFile(config.credentialStorePath)!) as {
+        credentials: Record<string, unknown>;
+      };
 
       expect(store.credentials.slack).toEqual({ '': slackCredentials });
     });
@@ -375,9 +375,10 @@ describe('migrations', () => {
         })
       );
 
-      const store = JSON.parse(
-        encryptedStorage.readFile(config.credentialStorePath)!
-      ) as { credentials: Record<string, unknown>; preparations: Record<string, unknown> };
+      const store = JSON.parse(encryptedStorage.readFile(config.credentialStorePath)!) as {
+        credentials: Record<string, unknown>;
+        preparations: Record<string, unknown>;
+      };
 
       expect(store.credentials).not.toHaveProperty('google-gmail');
       expect(store.preparations['google-gmail']).toEqual({
@@ -405,9 +406,9 @@ describe('migrations', () => {
         })
       );
 
-      const store = JSON.parse(
-        encryptedStorage.readFile(config.credentialStorePath)!
-      ) as { credentials: Record<string, unknown> };
+      const store = JSON.parse(encryptedStorage.readFile(config.credentialStorePath)!) as {
+        credentials: Record<string, unknown>;
+      };
 
       expect(store.credentials).not.toHaveProperty('slack');
       expect(store.credentials.discord).toEqual({ 'me#1234': discordCredentials });
@@ -448,9 +449,10 @@ describe('migrations', () => {
       // Note: no resolver is injected, so the default registry resolver runs.
       await runMigrations(config, encryptedStorage);
 
-      const store = JSON.parse(
-        encryptedStorage.readFile(config.credentialStorePath)!
-      ) as { credentials: Record<string, unknown>; preparations: Record<string, unknown> };
+      const store = JSON.parse(encryptedStorage.readFile(config.credentialStorePath)!) as {
+        credentials: Record<string, unknown>;
+        preparations: Record<string, unknown>;
+      };
 
       expect(store.credentials['google-gmail']).toEqual({
         'alice@example.com': gmailCredentials,
@@ -476,9 +478,9 @@ describe('migrations', () => {
         resolverFromMap({ slack: { status: ApiCredentialStatus.Unknown, account: null } })
       );
 
-      const store = JSON.parse(
-        encryptedStorage.readFile(config.credentialStorePath)!
-      ) as { credentials: Record<string, unknown> };
+      const store = JSON.parse(encryptedStorage.readFile(config.credentialStorePath)!) as {
+        credentials: Record<string, unknown>;
+      };
 
       expect(store.credentials.slack).toEqual({ '': slackCredentials });
     });

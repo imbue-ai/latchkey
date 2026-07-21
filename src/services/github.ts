@@ -5,11 +5,7 @@
 import type { Response, BrowserContext } from 'playwright';
 import { ApiCredentials, AuthorizationBearer } from '../apiCredentials/base.js';
 import { typeLikeHuman } from '../playwrightUtils.js';
-import {
-  Service,
-  BrowserFollowupServiceSession,
-  LoginFailedError,
-} from './core/base.js';
+import { Service, BrowserFollowupServiceSession, LoginFailedError } from './core/base.js';
 import { tryParseJson } from '../apiCredentials/account.js';
 
 const DEFAULT_TIMEOUT_MS = 8000;

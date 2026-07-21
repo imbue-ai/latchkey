@@ -14,11 +14,7 @@
 
 import { randomUUID } from 'node:crypto';
 import type { Browser, BrowserContext, Response } from 'playwright';
-import {
-  ApiCredentials,
-  ApiCredentialStatus,
-  OAuthCredentials,
-} from '../apiCredentials/base.js';
+import { ApiCredentials, ApiCredentialStatus, OAuthCredentials } from '../apiCredentials/base.js';
 import { DEFAULT_ACCOUNT, fetchAccountFromEndpoint } from '../apiCredentials/account.js';
 import {
   exchangeCodeForTokens,

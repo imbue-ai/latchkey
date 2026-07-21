@@ -506,9 +506,11 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify(nestAccounts({
-          slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
-        }))
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
+          })
+        )
       );
 
       const deps = createMockDependencies();
@@ -623,9 +625,11 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify(nestAccounts({
-          slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
-        }))
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
+          })
+        )
       );
 
       const originalPlatform = process.platform;
@@ -661,9 +665,11 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify(nestAccounts({
-          slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
-        }))
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
+          })
+        )
       );
 
       const deps = createMockDependencies({
@@ -680,12 +686,14 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify(nestAccounts({
-          'my-gitlab': {
-            objectType: 'rawCurl',
-            curlArguments: ['-H', 'PRIVATE-TOKEN: token'],
-          },
-        }))
+        JSON.stringify(
+          nestAccounts({
+            'my-gitlab': {
+              objectType: 'rawCurl',
+              curlArguments: ['-H', 'PRIVATE-TOKEN: token'],
+            },
+          })
+        )
       );
 
       // Ensure a graphical environment is available so browser auth is considered viable
@@ -778,9 +786,11 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify(nestAccounts({
-          slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
-        }))
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
+          })
+        )
       );
 
       const deps = createMockDependencies();
@@ -846,9 +856,11 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify(nestAccounts({
-          slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
-        }))
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
+          })
+        )
       );
 
       const deps = createMockDependencies();
@@ -872,10 +884,12 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify(nestAccounts({
-          slack: { objectType: 'slack', token: 'slack-token', dCookie: 'slack-cookie' },
-          discord: { objectType: 'authorizationBare', token: 'discord-token' },
-        }))
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'slack', token: 'slack-token', dCookie: 'slack-cookie' },
+            discord: { objectType: 'authorizationBare', token: 'discord-token' },
+          })
+        )
       );
 
       const deps = createMockDependencies();
@@ -893,7 +907,9 @@ describe('CLI commands with dependency injection', () => {
       const browserStatePath = join(tempDir, 'browser_state.json');
       writeSecureFile(
         storePath,
-        JSON.stringify(nestAccounts({ slack: { objectType: 'slack', token: 'test', dCookie: 'test' } }))
+        JSON.stringify(
+          nestAccounts({ slack: { objectType: 'slack', token: 'test', dCookie: 'test' } })
+        )
       );
       writeSecureFile(browserStatePath, '{}');
 
@@ -1035,10 +1051,7 @@ describe('CLI commands with dependency injection', () => {
       writeMultiAccountStore({ 'a@example.com': 'a' });
 
       const deps = createMockDependencies();
-      await runCommand(
-        ['--account', 'a@example.com', 'auth', 'clear', 'slack', '--all'],
-        deps
-      );
+      await runCommand(['--account', 'a@example.com', 'auth', 'clear', 'slack', '--all'], deps);
 
       expect(exitCode).toBe(1);
       expect(errorLogs.join('\n')).toContain('--all cannot be combined with --account');
@@ -1099,9 +1112,11 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify(nestAccounts({
-          slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
-        }))
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
+          })
+        )
       );
 
       const deps = createMockDependencies();
@@ -1154,9 +1169,11 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify(nestAccounts({
-          unknown: { objectType: 'rawCurl', curlArguments: ['-H', 'X-Token: secret'] },
-        }))
+        JSON.stringify(
+          nestAccounts({
+            unknown: { objectType: 'rawCurl', curlArguments: ['-H', 'X-Token: secret'] },
+          })
+        )
       );
 
       const deps = createMockDependencies();
@@ -1218,9 +1235,11 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify(nestAccounts({
-          slack: { objectType: 'slack', token: 'old-token', dCookie: 'old-cookie' },
-        }))
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'slack', token: 'old-token', dCookie: 'old-cookie' },
+          })
+        )
       );
 
       const deps = createMockDependencies();
@@ -1524,9 +1543,11 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify(nestAccounts({
-          slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
-        }))
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
+          })
+        )
       );
 
       const deps = createMockDependencies();
@@ -1547,9 +1568,11 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify(nestAccounts({
-          slack: { objectType: 'rawCurl', curlArguments: ['-H', 'X-Custom: header'] },
-        }))
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'rawCurl', curlArguments: ['-H', 'X-Custom: header'] },
+          })
+        )
       );
 
       const deps = createMockDependencies();
@@ -1564,9 +1587,11 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify(nestAccounts({
-          slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
-        }))
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
+          })
+        )
       );
 
       const deps = createMockDependencies();
@@ -1596,9 +1621,11 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify(nestAccounts({
-          slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
-        }))
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
+          })
+        )
       );
 
       const deps = createMockDependencies({
@@ -1630,9 +1657,11 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify(nestAccounts({
-          'google-gmail': { objectType: 'oauth', clientId: 'cid', clientSecret: 'csecret' },
-        }))
+        JSON.stringify(
+          nestAccounts({
+            'google-gmail': { objectType: 'oauth', clientId: 'cid', clientSecret: 'csecret' },
+          })
+        )
       );
 
       const deps = createMockDependencies({
@@ -1649,14 +1678,16 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify(nestAccounts({
-          'google-docs': {
-            objectType: 'oauth',
-            clientId: 'cid',
-            clientSecret: 'csecret',
-            accessToken: 'docs-token',
-          },
-        }))
+        JSON.stringify(
+          nestAccounts({
+            'google-docs': {
+              objectType: 'oauth',
+              clientId: 'cid',
+              clientSecret: 'csecret',
+              accessToken: 'docs-token',
+            },
+          })
+        )
       );
 
       const deps = createMockDependencies({
@@ -1673,20 +1704,22 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify(nestAccounts({
-          'google-drive': {
-            objectType: 'oauth',
-            clientId: 'cid',
-            clientSecret: 'csecret',
-            accessToken: 'drive-token',
-          },
-          'google-docs': {
-            objectType: 'oauth',
-            clientId: 'cid',
-            clientSecret: 'csecret',
-            accessToken: 'docs-token',
-          },
-        }))
+        JSON.stringify(
+          nestAccounts({
+            'google-drive': {
+              objectType: 'oauth',
+              clientId: 'cid',
+              clientSecret: 'csecret',
+              accessToken: 'drive-token',
+            },
+            'google-docs': {
+              objectType: 'oauth',
+              clientId: 'cid',
+              clientSecret: 'csecret',
+              accessToken: 'docs-token',
+            },
+          })
+        )
       );
 
       const deps = createMockDependencies({
@@ -1703,21 +1736,23 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify(nestAccounts({
-          'google-drive': {
-            objectType: 'oauth',
-            clientId: 'cid',
-            clientSecret: 'csecret',
-            accessToken: 'drive-token',
-            accessTokenExpiresAt: '2000-01-01T00:00:00.000Z',
-          },
-          'google-docs': {
-            objectType: 'oauth',
-            clientId: 'cid',
-            clientSecret: 'csecret',
-            accessToken: 'docs-token',
-          },
-        }))
+        JSON.stringify(
+          nestAccounts({
+            'google-drive': {
+              objectType: 'oauth',
+              clientId: 'cid',
+              clientSecret: 'csecret',
+              accessToken: 'drive-token',
+              accessTokenExpiresAt: '2000-01-01T00:00:00.000Z',
+            },
+            'google-docs': {
+              objectType: 'oauth',
+              clientId: 'cid',
+              clientSecret: 'csecret',
+              accessToken: 'docs-token',
+            },
+          })
+        )
       );
 
       const deps = createMockDependencies({
@@ -1735,14 +1770,16 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify(nestAccounts({
-          'google-docs': {
-            objectType: 'oauth',
-            clientId: 'cid',
-            clientSecret: 'csecret',
-            accessToken: 'docs-token',
-          },
-        }))
+        JSON.stringify(
+          nestAccounts({
+            'google-docs': {
+              objectType: 'oauth',
+              clientId: 'cid',
+              clientSecret: 'csecret',
+              accessToken: 'docs-token',
+            },
+          })
+        )
       );
 
       const deps = createMockDependencies({
@@ -1786,9 +1823,11 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify(nestAccounts({
-          slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
-        }))
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
+          })
+        )
       );
 
       const deps = createMockDependencies({
@@ -1805,9 +1844,11 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify(nestAccounts({
-          slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
-        }))
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
+          })
+        )
       );
 
       const mockLogin = vi.fn();
@@ -1842,9 +1883,11 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify(nestAccounts({
-          telegram: { objectType: 'telegramBot', token: '123456:ABC-DEF' },
-        }))
+        JSON.stringify(
+          nestAccounts({
+            telegram: { objectType: 'telegramBot', token: '123456:ABC-DEF' },
+          })
+        )
       );
 
       const deps = createMockDependencies({
@@ -1861,9 +1904,11 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify(nestAccounts({
-          nologin: { objectType: 'rawCurl', curlArguments: ['-H', 'X-API-Key: secret'] },
-        }))
+        JSON.stringify(
+          nestAccounts({
+            nologin: { objectType: 'rawCurl', curlArguments: ['-H', 'X-API-Key: secret'] },
+          })
+        )
       );
 
       const noLoginService: Service = createMockService({
@@ -1897,9 +1942,11 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify(nestAccounts({
-          slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
-        }))
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
+          })
+        )
       );
 
       const deps = createMockDependencies({
@@ -1917,9 +1964,11 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify(nestAccounts({
-          slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
-        }))
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
+          })
+        )
       );
 
       const deps = createMockDependencies({
@@ -1936,9 +1985,11 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify(nestAccounts({
-          slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
-        }))
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
+          })
+        )
       );
 
       const { PermissionCheckError } = await import('../src/permissions.js');
@@ -2426,12 +2477,14 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify(nestAccounts({
-          'my-api': {
-            objectType: 'rawCurl',
-            curlArguments: ['-H', 'Authorization: Bearer my-token'],
-          },
-        }))
+        JSON.stringify(
+          nestAccounts({
+            'my-api': {
+              objectType: 'rawCurl',
+              curlArguments: ['-H', 'Authorization: Bearer my-token'],
+            },
+          })
+        )
       );
 
       logs = [];
@@ -2505,12 +2558,14 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify(nestAccounts({
-          'my-gitlab': {
-            objectType: 'rawCurl',
-            curlArguments: ['-H', 'PRIVATE-TOKEN: my-secret-token'],
-          },
-        }))
+        JSON.stringify(
+          nestAccounts({
+            'my-gitlab': {
+              objectType: 'rawCurl',
+              curlArguments: ['-H', 'PRIVATE-TOKEN: my-secret-token'],
+            },
+          })
+        )
       );
 
       logs = [];
@@ -2619,12 +2674,14 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify(nestAccounts({
-          'my-gitlab': {
-            objectType: 'rawCurl',
-            curlArguments: ['-H', 'PRIVATE-TOKEN: my-secret-token'],
-          },
-        }))
+        JSON.stringify(
+          nestAccounts({
+            'my-gitlab': {
+              objectType: 'rawCurl',
+              curlArguments: ['-H', 'PRIVATE-TOKEN: my-secret-token'],
+            },
+          })
+        )
       );
 
       logs = [];
@@ -2664,12 +2721,14 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify(nestAccounts({
-          'my-gitlab': {
-            objectType: 'rawCurl',
-            curlArguments: ['-H', 'PRIVATE-TOKEN: my-secret-token'],
-          },
-        }))
+        JSON.stringify(
+          nestAccounts({
+            'my-gitlab': {
+              objectType: 'rawCurl',
+              curlArguments: ['-H', 'PRIVATE-TOKEN: my-secret-token'],
+            },
+          })
+        )
       );
 
       logs = [];

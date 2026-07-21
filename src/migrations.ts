@@ -3,10 +3,7 @@ import { join } from 'node:path';
 import { writeFileAtomic } from './atomicWrite.js';
 import { DEFAULT_ACCOUNT } from './apiCredentials/account.js';
 import { ApiCredentialStatus } from './apiCredentials/base.js';
-import {
-  ApiCredentialsSchema,
-  deserializeCredentials,
-} from './apiCredentials/serialization.js';
+import { ApiCredentialsSchema, deserializeCredentials } from './apiCredentials/serialization.js';
 import type { Config } from './config.js';
 import type { EncryptedStorage } from './encryptedStorage.js';
 import { SERVICE_REGISTRY } from './serviceRegistry.js';

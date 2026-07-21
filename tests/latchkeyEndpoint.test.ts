@@ -399,7 +399,10 @@ describe('/latchkey/ endpoint', () => {
 
       expect(response.status).toBe(200);
       const body = (await response.json()) as {
-        result: Record<string, Record<string, { credentialType: string; credentialStatus: string }>>;
+        result: Record<
+          string,
+          Record<string, { credentialType: string; credentialStatus: string }>
+        >;
       };
       expect(body.result.slack).toEqual({
         '': {

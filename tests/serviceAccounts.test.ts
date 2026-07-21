@@ -13,10 +13,7 @@ import {
   AuthorizationBearer,
   OAuthCredentials,
 } from '../src/apiCredentials/base.js';
-import {
-  resetCapturingSubprocessRunner,
-  setCapturingSubprocessRunner,
-} from '../src/curl.js';
+import { resetCapturingSubprocessRunner, setCapturingSubprocessRunner } from '../src/curl.js';
 import { RegisteredService } from '../src/services/core/registered.js';
 import { AWS } from '../src/services/aws.js';
 import { CALENDLY } from '../src/services/calendly.js';
@@ -109,25 +106,19 @@ describe('account parsing from the credential check', () => {
   });
 
   it('discord prefers the e-mail over the username', async () => {
-    mockCurlOutput(
-      withStatusLine('{"username":"gamer","email":"gamer@example.com","id":"1234"}')
-    );
+    mockCurlOutput(withStatusLine('{"username":"gamer","email":"gamer@example.com","id":"1234"}'));
     const result = await DISCORD.checkApiCredentials(BEARER);
     expect(result.account).toBe('gamer@example.com');
   });
 
   it('dropbox uses the e-mail from get_current_account', async () => {
-    mockCurlOutput(
-      withStatusLine('{"account_id":"dbid:abc","email":"user@example.com"}')
-    );
+    mockCurlOutput(withStatusLine('{"account_id":"dbid:abc","email":"user@example.com"}'));
     const result = await DROPBOX.checkApiCredentials(BEARER);
     expect(result.account).toBe('user@example.com');
   });
 
   it('linear uses the viewer e-mail', async () => {
-    mockCurlOutput(
-      withStatusLine('{"data":{"viewer":{"id":"uuid-1","email":"dev@example.com"}}}')
-    );
+    mockCurlOutput(withStatusLine('{"data":{"viewer":{"id":"uuid-1","email":"dev@example.com"}}}'));
     const result = await LINEAR.checkApiCredentials(BEARER);
     expect(result.account).toBe('dev@example.com');
   });
@@ -141,9 +132,7 @@ describe('account parsing from the credential check', () => {
   });
 
   it('notion combines the bot name and workspace', async () => {
-    mockCurlOutput(
-      withStatusLine('{"name":"My Integration","bot":{"workspace_name":"Acme Inc"}}')
-    );
+    mockCurlOutput(withStatusLine('{"name":"My Integration","bot":{"workspace_name":"Acme Inc"}}'));
     const result = await NOTION.checkApiCredentials(BEARER);
     expect(result.account).toBe('My Integration@Acme Inc');
   });
@@ -177,9 +166,7 @@ describe('slack credential check', () => {
 
   it('combines the user and the workspace subdomain', async () => {
     mockCurlOutput(
-      withStatusLine(
-        '{"ok":true,"url":"https://acme.slack.com/","team":"Acme Inc","user":"jane"}'
-      )
+      withStatusLine('{"ok":true,"url":"https://acme.slack.com/","team":"Acme Inc","user":"jane"}')
     );
     const result = await SLACK.checkApiCredentials(BEARER);
     expect(result).toEqual({ status: ApiCredentialStatus.Valid, account: 'jane@acme' });

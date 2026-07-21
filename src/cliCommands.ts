@@ -337,8 +337,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
 
   // The account is a global option; commander exposes it on the root program
   // regardless of which subcommand is invoked.
-  const getAccount = (): string | undefined =>
-    program.opts<{ account?: string }>().account;
+  const getAccount = (): string | undefined => program.opts<{ account?: string }>().account;
 
   // Only these commands act on a specific account. Every other command must
   // reject --account rather than silently ignore it, so users are never misled
@@ -560,10 +559,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .description('Clear stored API credentials.')
     .argument('[service_name]', 'Name of the service to clear API credentials for')
     .option('-y, --yes', 'Skip confirmation prompt when clearing all data')
-    .option(
-      '--all',
-      "Clear all of the service's accounts as well as its preparation (if any)"
-    )
+    .option('--all', "Clear all of the service's accounts as well as its preparation (if any)")
     .action(async (serviceName: string | undefined, options: { yes?: boolean; all?: boolean }) => {
       refuseInGatewayMode(deps, 'auth clear');
       const all = options.all ?? false;
