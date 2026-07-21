@@ -5,7 +5,8 @@
 import type { Response } from 'playwright';
 import { z } from 'zod';
 import type { ApiCredentials } from '../apiCredentials/base.js';
-import { Service, SimpleServiceSession, tryParseJson } from './core/base.js';
+import { Service, SimpleServiceSession } from './core/base.js';
+import { tryParseJson } from '../apiCredentials/account.js';
 
 /**
  * Slack-specific credentials (token + d cookie).

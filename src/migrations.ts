@@ -55,17 +55,7 @@ async function resolveCredentialViaServiceRegistry(
 
   try {
     const credentials = deserializeCredentials(parsed.data);
-    const check = await service.checkApiCredentials(credentials);
-    // Some services (notably the Google OAuth ones) validate credentials via a
-    // check endpoint that carries no identity, and instead learn the account
-    // from a separate source by overriding determineAccount(). For those the
-    // check reports a valid status but a null account, so fall back to
-    // determineAccount() to find out which account the credentials belong to.
-    if (check.status === ApiCredentialStatus.Valid && check.account === null) {
-      const account = await service.determineAccount(credentials);
-      return { status: check.status, account };
-    }
-    return check;
+    return await service.checkApiCredentials(credentials);
   } catch {
     return { status: ApiCredentialStatus.Unknown, account: null };
   }

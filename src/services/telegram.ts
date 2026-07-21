@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { type ApiCredentials } from '../apiCredentials/base.js';
 import { extractUrlFromCurlArguments } from '../curl.js';
-import { NoCurlCredentialsNotSupportedError, Service, tryParseJson } from './core/base.js';
+import { NoCurlCredentialsNotSupportedError, Service } from './core/base.js';
+import { tryParseJson } from '../apiCredentials/account.js';
 
 const BASE_API_URL = 'https://api.telegram.org/';
 

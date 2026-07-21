@@ -1,9 +1,6 @@
-import {
-  type ApiCredentials,
-  ApiCredentialsUsageError,
-} from '../apiCredentials/base.js';
-import { runCaptured } from '../curl.js';
-import { Service, tryParseJson } from './core/base.js';
+import { type ApiCredentials, ApiCredentialStatus } from '../apiCredentials/base.js';
+import { fetchAccountFromEndpoint } from '../apiCredentials/account.js';
+import { type CredentialCheck, Service } from './core/base.js';
 
 export class Zoom extends Service {
   readonly name = 'zoom';
@@ -23,34 +20,32 @@ export class Zoom extends Service {
   }
 
   /**
-   * The credential check must stay on the user-list endpoint because
-   * server-to-server tokens have no user context and error on /users/me. The
-   * account is instead determined by a separate best-effort call to /users/me,
-   * which works for user-level tokens.
+   * The check first asks /users/me, whose response both proves the token
+   * valid and reveals the account. Server-to-server tokens have no user
+   * context and error on /users/me, so when that reveals nothing the check
+   * falls back to the user-list endpoint (which works for them but carries no
+   * identity).
    */
-  override async determineAccount(apiCredentials: ApiCredentials): Promise<string | null> {
-    let curlArguments: readonly string[];
-    try {
-      curlArguments = await apiCredentials.injectIntoCurlCall([
-        '-s',
-        'https://api.zoom.us/v2/users/me',
-      ]);
-    } catch (error) {
-      if (error instanceof ApiCredentialsUsageError) {
-        return null;
+  override async checkApiCredentials(apiCredentials: ApiCredentials): Promise<CredentialCheck> {
+    const account = await fetchAccountFromEndpoint(
+      apiCredentials,
+      ['https://api.zoom.us/v2/users/me'],
+      (responseData) => {
+        const data = responseData as {
+          email?: string;
+          id?: string;
+          code?: number;
+        } | null;
+        if (data === null || data.code !== undefined) {
+          return null;
+        }
+        return data.email ?? data.id ?? null;
       }
-      throw error;
+    );
+    if (account !== null) {
+      return { status: ApiCredentialStatus.Valid, account };
     }
-    const result = runCaptured(curlArguments, 10);
-    const data = tryParseJson(result.stdout) as {
-      email?: string;
-      id?: string;
-      code?: number;
-    } | null;
-    if (data === null || data.code !== undefined) {
-      return null;
-    }
-    return data.email ?? data.id ?? null;
+    return super.checkApiCredentials(apiCredentials);
   }
 }
 

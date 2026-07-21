@@ -1,4 +1,5 @@
-import { Service, tryParseJson } from './core/base.js';
+import { Service } from './core/base.js';
+import { tryParseJson } from '../apiCredentials/account.js';
 
 export class Gitlab extends Service {
   readonly name = 'gitlab';

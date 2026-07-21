@@ -153,19 +153,6 @@ export interface CredentialCheck {
 }
 
 /**
- * Parse a JSON response body, returning null instead of throwing on malformed
- * input. Credential-check bodies come from arbitrary servers, so account
- * parsing must never crash on unexpected content.
- */
-export function tryParseJson(body: string): unknown {
-  try {
-    return JSON.parse(body);
-  } catch {
-    return null;
-  }
-}
-
-/**
  * Abstract base class for services that latchkey can authenticate with.
  */
 export abstract class Service {
@@ -201,6 +188,11 @@ export abstract class Service {
    * {@link isCredentialCheckResponseValid}) and the response body yields the
    * account (via {@link parseAccountFromCredentialCheckBody}). Services
    * customize either aspect by overriding those hooks rather than this method.
+   *
+   * Services whose check endpoint carries no identity but that have a separate
+   * account endpoint override this method instead: they try the account
+   * endpoint first (via `fetchAccountFromEndpoint()`) and fall back to this
+   * plain check when it reveals nothing.
    */
   async checkApiCredentials(apiCredentials: ApiCredentials): Promise<CredentialCheck> {
     let allCurlArgs: readonly string[];
@@ -252,17 +244,6 @@ export abstract class Service {
    */
   protected parseAccountFromCredentialCheckBody(_responseBody: string): string | null {
     return null;
-  }
-
-  /**
-   * Determine which account the given credentials belong to, or null when it
-   * cannot be determined. The default derives it from the credential check;
-   * services whose check endpoint carries no identity but that have another
-   * way to learn it (e.g. an OAuth userinfo endpoint) override this.
-   */
-  async determineAccount(apiCredentials: ApiCredentials): Promise<string | null> {
-    const credentialCheck = await this.checkApiCredentials(apiCredentials);
-    return credentialCheck.account;
   }
 
   /**
@@ -376,25 +357,6 @@ export abstract class ServiceSession {
   }
 
   /**
-   * Determine which account the finalized credentials belong to, so it can be
-   * stored alongside them. Called after login completes, while the browser and
-   * context are still open, so services can read the account from the page or
-   * from an API call made with the fresh credentials.
-   *
-   * The default asks the service (which runs the credential check with the
-   * fresh credentials) and falls back to the unnamed default account. Sessions
-   * only override this when the account is easier to read from the still-open
-   * browser than from the API.
-   */
-  protected async determineAccount(
-    apiCredentials: ApiCredentials,
-    _browser: Browser,
-    _context: BrowserContext
-  ): Promise<string> {
-    return (await this.service.determineAccount(apiCredentials)) ?? DEFAULT_ACCOUNT;
-  }
-
-  /**
    * Optional preparation step before login.
    * Services can override this to perform setup (e.g., creating OAuth clients).
    *
@@ -456,8 +418,10 @@ export abstract class ServiceSession {
         throw new LoginFailedError();
       }
 
-      const account = await this.determineAccount(apiCredentials, browser, context);
-      return { credentials: apiCredentials, account };
+      // Run the credential check with the fresh credentials to learn which
+      // account they belong to, falling back to the unnamed default account.
+      const credentialCheck = await this.service.checkApiCredentials(apiCredentials);
+      return { credentials: apiCredentials, account: credentialCheck.account ?? DEFAULT_ACCOUNT };
     });
   }
 }

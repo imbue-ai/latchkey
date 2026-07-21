@@ -18,8 +18,8 @@ import {
   LoginFailedError,
   isBrowserClosedError,
   LoginCancelledError,
-  tryParseJson,
 } from './core/base.js';
+import { tryParseJson } from '../apiCredentials/account.js';
 
 const DEFAULT_TIMEOUT_MS = 8000;
 

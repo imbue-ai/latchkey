@@ -17,9 +17,6 @@ export class GoogleAnalytics extends GoogleService {
     'If needed, run "latchkey auth browser-prepare google-analytics" to create an OAuth client first. ' +
     'It may take a few minutes before the OAuth client is ready to use.';
 
-  readonly credentialCheckCurlArguments = [
-    'https://analyticsadmin.googleapis.com/v1beta/accountSummaries',
-  ] as const;
 
   protected readonly config = CONFIG;
 }

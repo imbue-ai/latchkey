@@ -1,9 +1,6 @@
-import {
-  type ApiCredentials,
-  ApiCredentialsUsageError,
-} from '../apiCredentials/base.js';
-import { runCaptured } from '../curl.js';
-import { Service, tryParseJson } from './core/base.js';
+import { type ApiCredentials, ApiCredentialStatus } from '../apiCredentials/base.js';
+import { fetchAccountFromEndpoint } from '../apiCredentials/account.js';
+import { type CredentialCheck, Service } from './core/base.js';
 
 export class Stripe extends Service {
   readonly name = 'stripe';
@@ -19,34 +16,32 @@ export class Stripe extends Service {
   }
 
   /**
-   * The balance endpoint used for the credential check works with restricted
-   * keys but carries no identity, so the account is fetched separately from
-   * /v1/account — best-effort, because restricted keys may not be allowed to
-   * read the account.
+   * The check first asks /v1/account, whose response both proves the key
+   * valid and reveals the account. Restricted keys may not be allowed to read
+   * the account, so when that reveals nothing the check falls back to the
+   * balance endpoint (which works with restricted keys but carries no
+   * identity).
    */
-  override async determineAccount(apiCredentials: ApiCredentials): Promise<string | null> {
-    let curlArguments: readonly string[];
-    try {
-      curlArguments = await apiCredentials.injectIntoCurlCall([
-        '-s',
-        'https://api.stripe.com/v1/account',
-      ]);
-    } catch (error) {
-      if (error instanceof ApiCredentialsUsageError) {
-        return null;
+  override async checkApiCredentials(apiCredentials: ApiCredentials): Promise<CredentialCheck> {
+    const account = await fetchAccountFromEndpoint(
+      apiCredentials,
+      ['https://api.stripe.com/v1/account'],
+      (responseData) => {
+        const data = responseData as {
+          email?: string | null;
+          id?: string;
+          error?: unknown;
+        } | null;
+        if (data === null || data.error !== undefined) {
+          return null;
+        }
+        return data.email ?? data.id ?? null;
       }
-      throw error;
+    );
+    if (account !== null) {
+      return { status: ApiCredentialStatus.Valid, account };
     }
-    const result = runCaptured(curlArguments, 10);
-    const data = tryParseJson(result.stdout) as {
-      email?: string | null;
-      id?: string;
-      error?: unknown;
-    } | null;
-    if (data === null || data.error !== undefined) {
-      return null;
-    }
-    return data.email ?? data.id ?? null;
+    return super.checkApiCredentials(apiCredentials);
   }
 }
 

@@ -1,4 +1,5 @@
-import { Service, tryParseJson } from './core/base.js';
+import { Service } from './core/base.js';
+import { tryParseJson } from '../apiCredentials/account.js';
 
 export class Sentry extends Service {
   readonly name = 'sentry';

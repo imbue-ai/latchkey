@@ -33,6 +33,7 @@ import { SENTRY } from '../src/services/sentry.js';
 import { SLACK } from '../src/services/slack.js';
 import { STRIPE } from '../src/services/stripe.js';
 import { TELEGRAM } from '../src/services/telegram.js';
+import { ZOOM } from '../src/services/zoom.js';
 
 const BEARER = new AuthorizationBearer('test-token');
 
@@ -50,8 +51,8 @@ afterEach(() => {
 
 describe('base credential check', () => {
   it('reports valid credentials without an account when the body carries no identity', async () => {
-    mockCurlOutput(withStatusLine('{"balance": []}'));
-    const result = await STRIPE.checkApiCredentials(BEARER);
+    mockCurlOutput(withStatusLine('{}'));
+    const result = await GITHUB.checkApiCredentials(BEARER);
     expect(result).toEqual({ status: ApiCredentialStatus.Valid, account: null });
   });
 
@@ -202,28 +203,38 @@ describe('sentry credential check', () => {
   });
 });
 
-describe('service-level determineAccount', () => {
-  it('defaults to the credential-check account', async () => {
-    mockCurlOutput(withStatusLine('{"login":"octocat"}'));
-    expect(await GITHUB.determineAccount(BEARER)).toBe('octocat');
-  });
-
-  it('google services ask the OpenID userinfo endpoint', async () => {
+describe('google credential check', () => {
+  it('google services check credentials against the OpenID userinfo endpoint', async () => {
     let requestedUrl: string | undefined;
     setCapturingSubprocessRunner((args) => {
       requestedUrl = args[args.length - 1];
-      return { returncode: 0, stdout: '{"email":"user@gmail.com","sub":"1"}', stderr: '' };
+      return {
+        returncode: 0,
+        stdout: withStatusLine('{"email":"user@gmail.com","sub":"1"}'),
+        stderr: '',
+      };
     });
     const credentials = new OAuthCredentials('client-id', 'client-secret', 'access-token');
-    expect(await GOOGLE_GMAIL.determineAccount(credentials)).toBe('user@gmail.com');
+    const result = await GOOGLE_GMAIL.checkApiCredentials(credentials);
+    expect(result).toEqual({ status: ApiCredentialStatus.Valid, account: 'user@gmail.com' });
     expect(requestedUrl).toBe('https://openidconnect.googleapis.com/v1/userinfo');
   });
 
-  it('google services return null for token-less prepared credentials', async () => {
+  it('google services report token-less prepared credentials as missing', async () => {
     const prepared = new OAuthCredentials('client-id', 'client-secret');
-    expect(await GOOGLE_GMAIL.determineAccount(prepared)).toBeNull();
+    const result = await GOOGLE_GMAIL.checkApiCredentials(prepared);
+    expect(result).toEqual({ status: ApiCredentialStatus.Missing, account: null });
   });
 
+  it('google services report tokens rejected by userinfo as invalid', async () => {
+    mockCurlOutput(withStatusLine('{"error":"invalid_token"}', '401'));
+    const credentials = new OAuthCredentials('client-id', 'client-secret', 'access-token');
+    const result = await GOOGLE_GMAIL.checkApiCredentials(credentials);
+    expect(result).toEqual({ status: ApiCredentialStatus.Invalid, account: null });
+  });
+});
+
+describe('credential check via a separate account endpoint', () => {
   it('stripe asks the account endpoint and prefers the e-mail', async () => {
     let requestedUrl: string | undefined;
     setCapturingSubprocessRunner((args) => {
@@ -234,12 +245,40 @@ describe('service-level determineAccount', () => {
         stderr: '',
       };
     });
-    expect(await STRIPE.determineAccount(BEARER)).toBe('owner@example.com');
+    const result = await STRIPE.checkApiCredentials(BEARER);
+    expect(result).toEqual({ status: ApiCredentialStatus.Valid, account: 'owner@example.com' });
     expect(requestedUrl).toBe('https://api.stripe.com/v1/account');
   });
 
-  it('stripe returns null when the key may not read the account', async () => {
-    mockCurlOutput('{"error":{"type":"invalid_request_error"}}');
-    expect(await STRIPE.determineAccount(BEARER)).toBeNull();
+  it('stripe falls back to the balance check when the key may not read the account', async () => {
+    setCapturingSubprocessRunner((args) => {
+      const url = args[args.length - 1] ?? '';
+      if (url.endsWith('/v1/account')) {
+        return {
+          returncode: 0,
+          stdout: '{"error":{"type":"invalid_request_error"}}',
+          stderr: '',
+        };
+      }
+      return { returncode: 0, stdout: withStatusLine('{"balance": []}'), stderr: '' };
+    });
+    const result = await STRIPE.checkApiCredentials(BEARER);
+    expect(result).toEqual({ status: ApiCredentialStatus.Valid, account: null });
+  });
+
+  it('zoom falls back to the user-list check for server-to-server tokens', async () => {
+    setCapturingSubprocessRunner((args) => {
+      const url = args[args.length - 1] ?? '';
+      if (url.endsWith('/users/me')) {
+        return {
+          returncode: 0,
+          stdout: '{"code":124,"message":"Invalid access token."}',
+          stderr: '',
+        };
+      }
+      return { returncode: 0, stdout: withStatusLine('{"users":[]}'), stderr: '' };
+    });
+    const result = await ZOOM.checkApiCredentials(BEARER);
+    expect(result).toEqual({ status: ApiCredentialStatus.Valid, account: null });
   });
 });

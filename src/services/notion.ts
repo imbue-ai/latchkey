@@ -5,7 +5,8 @@
  * (e.g. by creating an internal integration at the loginUrl below).
  */
 
-import { Service, tryParseJson } from './core/base.js';
+import { Service } from './core/base.js';
+import { tryParseJson } from '../apiCredentials/account.js';
 
 const NOTION_INTEGRATIONS_URL =
   'https://www.notion.so/profile/integrations/internal/form/new-integration';

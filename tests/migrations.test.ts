@@ -378,24 +378,22 @@ describe('migrations', () => {
       expect(store.credentials.discord).toEqual({ 'me#1234': discordCredentials });
     });
 
-    it('should key google credentials by the account from determineAccount()', async () => {
-      // Google services validate credentials via a check endpoint that carries
-      // no identity and learn the account from a separate userinfo endpoint by
-      // overriding determineAccount(). This exercises the real registry
-      // resolver (no injected resolver) to ensure that fallback runs during the
-      // migration. The curl runner is stubbed so nothing hits the network.
+    it('should key google credentials by the account from the userinfo endpoint', async () => {
+      // Google services learn both validity and the account from their
+      // credential check against the OpenID userinfo endpoint. This exercises
+      // the real registry resolver (no injected resolver) to ensure that path
+      // runs during the migration. The curl runner is stubbed so nothing hits
+      // the network; the check appends the HTTP status code as the final line
+      // (via `-w '\n%{http_code}'`).
       setCapturingSubprocessRunner((args: readonly string[]): CurlResult => {
         const joined = args.join(' ');
         if (joined.includes('openidconnect.googleapis.com')) {
-          // determineAccount() reads the signed-in e-mail from userinfo.
           return {
             returncode: 0,
-            stdout: JSON.stringify({ email: 'alice@example.com' }),
+            stdout: `${JSON.stringify({ email: 'alice@example.com' })}\n200`,
             stderr: '',
           };
         }
-        // Credential check endpoint: valid (HTTP 200), but the body carries no
-        // identity, so checkApiCredentials() reports a null account.
         return { returncode: 0, stdout: '{}\n200', stderr: '' };
       });
 
