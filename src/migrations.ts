@@ -62,10 +62,11 @@ async function resolveCredentialViaServiceRegistry(
 
   try {
     const credentials = deserializeCredentials(parsed.data);
-    const status = await service.checkApiCredentials(credentials);
-    const account =
-      status === ApiCredentialStatus.Valid ? await service.getAccount(credentials) : null;
-    return { status, account };
+    const [status, account] = await Promise.all([
+      service.checkApiCredentials(credentials),
+      service.getAccount(credentials),
+    ]);
+    return { status, account: status === ApiCredentialStatus.Valid ? account : null };
   } catch {
     return { status: ApiCredentialStatus.Unknown, account: null };
   }
