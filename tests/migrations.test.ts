@@ -89,17 +89,19 @@ describe('migrations', () => {
   });
 
   describe('runMigrations', () => {
-    it('should skip migrations on first installation (no directory)', async () => {
+    it('should skip migrations but stamp the version on first installation (no directory)', async () => {
       const freshConfig = createTestConfig(join(tempDir, 'nonexistent'));
       await runMigrations(freshConfig, encryptedStorage, inconclusiveResolver);
-      // Should not throw and should not create any files
-      expect(existsSync(join(tempDir, 'nonexistent', 'data-format-version'))).toBe(false);
+      // A fresh installation starts in the newest format; the version stamp
+      // prevents future runs from "migrating" a store created in that format.
+      expect(readDataFormatVersion(freshConfig)).toBe(LATEST_VERSION);
+      expect(existsSync(join(tempDir, 'nonexistent', 'credentials.json'))).toBe(false);
     });
 
-    it('should skip migrations on first installation (directory exists but no credentials)', async () => {
+    it('should skip migrations but stamp the version on first installation (directory exists but no credentials)', async () => {
       // tempDir exists but has no credentials file
       await runMigrations(config, encryptedStorage, inconclusiveResolver);
-      expect(existsSync(join(tempDir, 'data-format-version'))).toBe(false);
+      expect(readDataFormatVersion(config)).toBe(LATEST_VERSION);
     });
 
     it('should run migrations when credentials exist and version is 0', async () => {
@@ -157,20 +159,34 @@ describe('migrations', () => {
       await runMigrations(config, encryptedStorage, inconclusiveResolver);
 
       const content = encryptedStorage.readFile(config.credentialStorePath)!;
-      const store = JSON.parse(content) as Record<string, unknown>;
+      const store = JSON.parse(content) as {
+        credentials: Record<string, unknown>;
+        preparations: Record<string, unknown>;
+      };
 
       // The account migration additionally wraps each entry under the default
-      // account (the empty string).
-      expect(store).not.toHaveProperty('google');
-      expect(store['google-gmail']).toEqual({ '': googleCredentials });
-      expect(store['google-calendar']).toEqual({ '': googleCredentials });
-      expect(store['google-drive']).toEqual({ '': googleCredentials });
-      expect(store['google-sheets']).toEqual({ '': googleCredentials });
-      expect(store['google-docs']).toEqual({ '': googleCredentials });
-      expect(store['google-people']).toEqual({ '': googleCredentials });
+      // account (the empty string), and the preparations migration derives a
+      // token-less OAuth client for each Google service.
+      const expectedPreparation = {
+        objectType: 'oauth',
+        clientId: 'test-client-id',
+        clientSecret: 'test-client-secret',
+      };
+      expect(store.credentials).not.toHaveProperty('google');
+      for (const serviceName of [
+        'google-gmail',
+        'google-calendar',
+        'google-drive',
+        'google-sheets',
+        'google-docs',
+        'google-people',
+      ]) {
+        expect(store.credentials[serviceName]).toEqual({ '': googleCredentials });
+        expect(store.preparations[serviceName]).toEqual(expectedPreparation);
+      }
       // analytics and maps should NOT be created
-      expect(store).not.toHaveProperty('google-analytics');
-      expect(store).not.toHaveProperty('google-directions');
+      expect(store.credentials).not.toHaveProperty('google-analytics');
+      expect(store.credentials).not.toHaveProperty('google-directions');
     });
 
     it('should not overwrite existing individual service credentials', async () => {
@@ -198,10 +214,16 @@ describe('migrations', () => {
       await runMigrations(config, encryptedStorage, inconclusiveResolver);
 
       const content = encryptedStorage.readFile(config.credentialStorePath)!;
-      const store = JSON.parse(content) as Record<string, unknown>;
+      const store = JSON.parse(content) as {
+        credentials: Record<string, unknown>;
+        preparations: Record<string, unknown>;
+      };
 
-      expect(store['google-drive']).toEqual({ '': existingDriveCredentials });
-      expect(store['google-gmail']).toEqual({ '': googleCredentials });
+      expect(store.credentials['google-drive']).toEqual({ '': existingDriveCredentials });
+      // The old shared "google" credentials carry no tokens, so the
+      // preparations migration treats them as prepared placeholders.
+      expect(store.credentials['google-gmail']).toBeUndefined();
+      expect(store.preparations['google-gmail']).toEqual(googleCredentials);
     });
 
     it('should preserve non-google credentials', async () => {
@@ -223,9 +245,9 @@ describe('migrations', () => {
       await runMigrations(config, encryptedStorage, inconclusiveResolver);
 
       const content = encryptedStorage.readFile(config.credentialStorePath)!;
-      const store = JSON.parse(content) as Record<string, unknown>;
+      const store = JSON.parse(content) as { credentials: Record<string, unknown> };
 
-      expect(store.slack).toEqual({ '': slackCredentials });
+      expect(store.credentials.slack).toEqual({ '': slackCredentials });
     });
 
     it('should be a no-op when there is no "google" entry', async () => {
@@ -239,10 +261,10 @@ describe('migrations', () => {
       await runMigrations(config, encryptedStorage, inconclusiveResolver);
 
       const content = encryptedStorage.readFile(config.credentialStorePath)!;
-      const store = JSON.parse(content) as Record<string, unknown>;
+      const store = JSON.parse(content) as { credentials: Record<string, unknown> };
 
-      expect(store.slack).toEqual({ '': slackCredentials });
-      expect(Object.keys(store)).toEqual(['slack']);
+      expect(store.credentials.slack).toEqual({ '': slackCredentials });
+      expect(Object.keys(store.credentials)).toEqual(['slack']);
     });
 
     it('should update the version file after migration', async () => {
@@ -271,10 +293,10 @@ describe('migrations', () => {
       await runMigrations(config, encryptedStorage, inconclusiveResolver);
 
       const content = encryptedStorage.readFile(config.credentialStorePath)!;
-      const store = JSON.parse(content) as Record<string, unknown>;
+      const store = JSON.parse(content) as { credentials: Record<string, unknown> };
 
-      expect(store.slack).toEqual({ '': slackCredentials });
-      expect(store.discord).toEqual({ '': discordCredentials });
+      expect(store.credentials.slack).toEqual({ '': slackCredentials });
+      expect(store.credentials.discord).toEqual({ '': discordCredentials });
     });
 
     it('should produce an empty store for an empty store', async () => {
@@ -283,7 +305,7 @@ describe('migrations', () => {
       await runMigrations(config, encryptedStorage, inconclusiveResolver);
 
       const content = encryptedStorage.readFile(config.credentialStorePath)!;
-      expect(JSON.parse(content)).toEqual({});
+      expect(JSON.parse(content)).toEqual({ credentials: {}, preparations: {} });
     });
 
     it('should key valid credentials by their resolved account', async () => {
@@ -304,9 +326,9 @@ describe('migrations', () => {
 
       const store = JSON.parse(
         encryptedStorage.readFile(config.credentialStorePath)!
-      ) as Record<string, unknown>;
+      ) as { credentials: Record<string, unknown> };
 
-      expect(store.slack).toEqual({ 'user@example.com': slackCredentials });
+      expect(store.credentials.slack).toEqual({ 'user@example.com': slackCredentials });
     });
 
     it('should keep valid credentials under the default account when the account is unknown', async () => {
@@ -325,9 +347,9 @@ describe('migrations', () => {
 
       const store = JSON.parse(
         encryptedStorage.readFile(config.credentialStorePath)!
-      ) as Record<string, unknown>;
+      ) as { credentials: Record<string, unknown> };
 
-      expect(store.slack).toEqual({ '': slackCredentials });
+      expect(store.credentials.slack).toEqual({ '': slackCredentials });
     });
 
     it('should drop invalid credentials', async () => {
@@ -350,10 +372,10 @@ describe('migrations', () => {
 
       const store = JSON.parse(
         encryptedStorage.readFile(config.credentialStorePath)!
-      ) as Record<string, unknown>;
+      ) as { credentials: Record<string, unknown> };
 
-      expect(store).not.toHaveProperty('slack');
-      expect(store.discord).toEqual({ 'me#1234': discordCredentials });
+      expect(store.credentials).not.toHaveProperty('slack');
+      expect(store.credentials.discord).toEqual({ 'me#1234': discordCredentials });
     });
 
     it('should key google credentials by the account from determineAccount()', async () => {
@@ -395,9 +417,16 @@ describe('migrations', () => {
 
       const store = JSON.parse(
         encryptedStorage.readFile(config.credentialStorePath)!
-      ) as Record<string, unknown>;
+      ) as { credentials: Record<string, unknown>; preparations: Record<string, unknown> };
 
-      expect(store['google-gmail']).toEqual({ 'alice@example.com': gmailCredentials });
+      expect(store.credentials['google-gmail']).toEqual({
+        'alice@example.com': gmailCredentials,
+      });
+      expect(store.preparations['google-gmail']).toEqual({
+        objectType: 'oauth',
+        clientId: 'client',
+        clientSecret: 'secret',
+      });
     });
 
     it('should leave credentials under the default account on inconclusive checks', async () => {
@@ -416,9 +445,99 @@ describe('migrations', () => {
 
       const store = JSON.parse(
         encryptedStorage.readFile(config.credentialStorePath)!
-      ) as Record<string, unknown>;
+      ) as { credentials: Record<string, unknown> };
 
-      expect(store.slack).toEqual({ '': slackCredentials });
+      expect(store.credentials.slack).toEqual({ '': slackCredentials });
+    });
+  });
+
+  describe('migration 3: separate preparations', () => {
+    async function runPreparationsMigrationOn(
+      store: Record<string, Record<string, unknown>>
+    ): Promise<{ credentials: Record<string, unknown>; preparations: Record<string, unknown> }> {
+      encryptedStorage.writeFile(config.credentialStorePath, JSON.stringify(store));
+      // Skip migrations 1 and 2: the input is already account-keyed.
+      writeFileSync(join(tempDir, 'data-format-version'), '2', 'utf-8');
+      await runMigrations(config, encryptedStorage, inconclusiveResolver);
+      return JSON.parse(encryptedStorage.readFile(config.credentialStorePath)!) as {
+        credentials: Record<string, unknown>;
+        preparations: Record<string, unknown>;
+      };
+    }
+
+    it('moves a token-less default-account OAuth client into preparations', async () => {
+      const preparedClient = { objectType: 'oauth', clientId: 'cid', clientSecret: 'csecret' };
+
+      const store = await runPreparationsMigrationOn({ 'google-gmail': { '': preparedClient } });
+
+      expect(store.credentials).not.toHaveProperty('google-gmail');
+      expect(store.preparations['google-gmail']).toEqual(preparedClient);
+    });
+
+    it('derives a token-less preparation from complete OAuth credentials', async () => {
+      const fullCredentials = {
+        objectType: 'oauth',
+        clientId: 'cid',
+        clientSecret: 'csecret',
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
+      };
+
+      const store = await runPreparationsMigrationOn({
+        'google-docs': { 'user@example.com': fullCredentials },
+      });
+
+      expect(store.credentials['google-docs']).toEqual({ 'user@example.com': fullCredentials });
+      expect(store.preparations['google-docs']).toEqual({
+        objectType: 'oauth',
+        clientId: 'cid',
+        clientSecret: 'csecret',
+      });
+    });
+
+    it("prefers the default account's client when deriving a preparation", async () => {
+      const defaultCredentials = {
+        objectType: 'oauth',
+        clientId: 'default-cid',
+        clientSecret: 'default-csecret',
+        accessToken: 'access-token',
+      };
+      const namedCredentials = {
+        objectType: 'oauth',
+        clientId: 'named-cid',
+        clientSecret: 'named-csecret',
+        accessToken: 'access-token',
+      };
+
+      const store = await runPreparationsMigrationOn({
+        'google-gmail': { 'user@example.com': namedCredentials, '': defaultCredentials },
+      });
+
+      expect(store.preparations['google-gmail']).toEqual({
+        objectType: 'oauth',
+        clientId: 'default-cid',
+        clientSecret: 'default-csecret',
+      });
+    });
+
+    it('creates no preparation for non-OAuth credentials', async () => {
+      const slackCredentials = { objectType: 'slack', token: 't', dCookie: 'd' };
+
+      const store = await runPreparationsMigrationOn({ slack: { '': slackCredentials } });
+
+      expect(store.credentials.slack).toEqual({ '': slackCredentials });
+      expect(store.preparations).toEqual({});
+    });
+
+    it('keeps a token-less OAuth client stored under a named account as credentials', async () => {
+      const namedClient = { objectType: 'oauth', clientId: 'cid', clientSecret: 'csecret' };
+
+      const store = await runPreparationsMigrationOn({
+        'notion-mcp': { 'user@workspace': namedClient },
+      });
+
+      expect(store.credentials['notion-mcp']).toEqual({ 'user@workspace': namedClient });
+      expect(store.preparations['notion-mcp']).toEqual(namedClient);
     });
   });
 });

@@ -195,6 +195,22 @@ via the same request used for credential checks) and stores them
 under that account. Running the login again with a different
 user adds a second account instead of overwriting the first.
 
+Some services need to be prepared before the first browser login
+(`latchkey auth prepare` or `latchkey auth browser-prepare`),
+typically to set up an OAuth client. Preparations are stored per
+service (not per account) and are reused by every subsequent
+login, so several accounts can share one prepared client. When
+no preparation is stored, `latchkey auth browser` can instead
+borrow the client from an already logged-in account:
+
+```bash
+latchkey --account hynek@imbue.com auth browser google-gmail
+```
+
+This reuses the OAuth client stored with `hynek@imbue.com`'s
+credentials while the resulting login is stored under whichever
+account you actually sign in as.
+
 
 ### Self-hosted services
 

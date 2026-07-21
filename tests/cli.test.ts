@@ -45,17 +45,30 @@ function readSecureFile(path: string): string | null {
   return storage.readFile(path);
 }
 
-// Wrap a flat { service: credentials } map into the account-keyed on-disk
-// layout, storing everything under the default account.
-function nestAccounts(
-  flat: Record<string, unknown>
-): Record<string, Record<string, unknown>> {
-  return Object.fromEntries(Object.entries(flat).map(([service, creds]) => [service, { '': creds }]));
+// Wrap a flat { service: credentials } map into the on-disk layout, storing
+// everything as account-keyed credentials under the default account.
+function nestAccounts(flat: Record<string, unknown>): Record<string, unknown> {
+  return {
+    credentials: Object.fromEntries(
+      Object.entries(flat).map(([service, creds]) => [service, { '': creds }])
+    ),
+  };
 }
 
-// Read the raw account-keyed credential store contents.
+// Read the raw account-keyed credentials section of the store.
 function readStore(path: string): Record<string, Record<string, unknown>> {
-  return JSON.parse(readSecureFile(path) ?? '{}') as Record<string, Record<string, unknown>>;
+  const parsed = JSON.parse(readSecureFile(path) ?? '{}') as {
+    credentials?: Record<string, Record<string, unknown>>;
+  };
+  return parsed.credentials ?? {};
+}
+
+// Read the raw preparations section of the store.
+function readPreparations(path: string): Record<string, unknown> {
+  const parsed = JSON.parse(readSecureFile(path) ?? '{}') as {
+    preparations?: Record<string, unknown>;
+  };
+  return parsed.preparations ?? {};
 }
 
 // Read a single service's default-account credentials from the store.
@@ -785,9 +798,11 @@ describe('CLI commands with dependency injection', () => {
       writeSecureFile(
         storePath,
         JSON.stringify({
-          slack: {
-            '': { objectType: 'rawCurl', curlArguments: ['-H', 'X-Token: default'] },
-            'work@example.com': { objectType: 'rawCurl', curlArguments: ['-H', 'X-Token: work'] },
+          credentials: {
+            slack: {
+              '': { objectType: 'rawCurl', curlArguments: ['-H', 'X-Token: default'] },
+              'work@example.com': { objectType: 'rawCurl', curlArguments: ['-H', 'X-Token: work'] },
+            },
           },
         })
       );
@@ -902,7 +917,7 @@ describe('CLI commands with dependency injection', () => {
       const slackAccounts = Object.fromEntries(
         Object.entries(accounts).map(([account, token]) => [account, rawCurl(token)])
       );
-      writeSecureFile(storePath, JSON.stringify({ slack: slackAccounts }));
+      writeSecureFile(storePath, JSON.stringify({ credentials: { slack: slackAccounts } }));
       return storePath;
     }
 
@@ -969,33 +984,23 @@ describe('CLI commands with dependency injection', () => {
       expect(capturedArgs).toEqual([]);
     });
 
-    it('auth prepare stores the client under the given account', async () => {
+    it('auth clear without --account also removes the preparation', async () => {
       const storePath = join(tempDir, 'credentials.json');
-      writeSecureFile(storePath, '{}');
-
-      const deps = createMockDependencies({
-        registry: new ServiceRegistry([GOOGLE_GMAIL]),
-      });
-      await runCommand(
-        [
-          '--account',
-          'work@example.com',
-          'auth',
-          'prepare',
-          'google-gmail',
-          '{"clientId":"cid","clientSecret":"csecret"}',
-        ],
-        deps
+      writeSecureFile(
+        storePath,
+        JSON.stringify({
+          credentials: { slack: { 'a@example.com': rawCurl('a') } },
+          preparations: {
+            slack: { objectType: 'oauth', clientId: 'cid', clientSecret: 'csecret' },
+          },
+        })
       );
 
-      expect(logs).toContain('Done');
-      const store = readStore(storePath);
-      expect(store['google-gmail']?.['work@example.com']).toEqual({
-        objectType: 'oauth',
-        clientId: 'cid',
-        clientSecret: 'csecret',
-      });
-      expect(store['google-gmail']?.['']).toBeUndefined();
+      const deps = createMockDependencies();
+      await runCommand(['auth', 'clear', 'slack'], deps);
+
+      expect(readStore(storePath).slack).toBeUndefined();
+      expect(readPreparations(storePath).slack).toBeUndefined();
     });
 
     it('auth clear removes only the requested account', async () => {
@@ -1035,8 +1040,8 @@ describe('CLI commands with dependency injection', () => {
 
     it.each([
       ['services', 'info', 'slack'],
-      ['auth', 'browser', 'slack'],
       ['auth', 'browser-prepare', 'slack'],
+      ['auth', 'prepare', 'google-gmail', '{"clientId":"a","clientSecret":"b"}'],
       ['auth', 'list'],
       ['services', 'list'],
     ])('rejects --account for the unsupported command: %s %s', async (...commandArgs) => {
@@ -1073,9 +1078,11 @@ describe('CLI commands with dependency injection', () => {
       writeSecureFile(
         storePath,
         JSON.stringify({
-          slack: {
-            '': { objectType: 'rawCurl', curlArguments: ['-H', 'X-Token: default'] },
-            'work@example.com': { objectType: 'rawCurl', curlArguments: ['-H', 'X-Token: work'] },
+          credentials: {
+            slack: {
+              '': { objectType: 'rawCurl', curlArguments: ['-H', 'X-Token: default'] },
+              'work@example.com': { objectType: 'rawCurl', curlArguments: ['-H', 'X-Token: work'] },
+            },
           },
         })
       );
@@ -1194,13 +1201,12 @@ describe('CLI commands with dependency injection', () => {
 
     function readWithKey(path: string, key: string): Record<string, unknown> {
       const storage = new EncryptedStorage(key);
-      const raw = JSON.parse(storage.readFile(path) ?? '{}') as Record<
-        string,
-        Record<string, unknown>
-      >;
+      const raw = JSON.parse(storage.readFile(path) ?? '{}') as {
+        credentials?: Record<string, Record<string, unknown>>;
+      };
       // Unwrap the default account so assertions can compare flat credentials.
       return Object.fromEntries(
-        Object.entries(raw).map(([service, accounts]) => [service, accounts['']])
+        Object.entries(raw.credentials ?? {}).map(([service, accounts]) => [service, accounts['']])
       );
     }
 
@@ -1403,7 +1409,7 @@ describe('CLI commands with dependency injection', () => {
   });
 
   describe('prepare command', () => {
-    it('stores an OAuth client for a Google service and reports success', async () => {
+    it("stores an OAuth client as the service's preparation and reports success", async () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(storePath, '{}');
 
@@ -1417,11 +1423,12 @@ describe('CLI commands with dependency injection', () => {
       );
 
       expect(logs).toContain('Done');
-      expect(readDefaultCredentials(storePath, 'google-gmail')).toEqual({
+      expect(readPreparations(storePath)['google-gmail']).toEqual({
         objectType: 'oauth',
         clientId: 'cid',
         clientSecret: 'csecret',
       });
+      expect(readDefaultCredentials(storePath, 'google-gmail')).toBeUndefined();
     });
 
     it('returns an error for an unknown service', async () => {

@@ -3,7 +3,11 @@ import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { AmbiguousAccountError, ApiCredentialStore } from '../src/apiCredentials/store.js';
-import { AuthorizationBearer, AuthorizationBare } from '../src/apiCredentials/base.js';
+import {
+  AuthorizationBearer,
+  AuthorizationBare,
+  OAuthCredentials,
+} from '../src/apiCredentials/base.js';
 import { SlackApiCredentials } from '../src/services/slack.js';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { generateKey } from '../src/encryption.js';
@@ -131,6 +135,77 @@ describe('ApiCredentialStore', () => {
 
       expect(store.get('github')).toBeNull();
       expect(store.get('discord')).not.toBeNull();
+    });
+  });
+
+  describe('preparations', () => {
+    it('should return null when no preparation is stored', () => {
+      const store = new ApiCredentialStore(storePath, encryptedStorage);
+      expect(store.getPreparation('google-gmail')).toBeNull();
+    });
+
+    it('should store and retrieve a preparation per service', () => {
+      const store = new ApiCredentialStore(storePath, encryptedStorage);
+      store.savePreparation('google-gmail', new OAuthCredentials('client-id', 'client-secret'));
+
+      const retrieved = store.getPreparation('google-gmail');
+      expect(retrieved).toBeInstanceOf(OAuthCredentials);
+      expect((retrieved as OAuthCredentials).clientId).toBe('client-id');
+      expect(store.getPreparation('google-docs')).toBeNull();
+    });
+
+    it('should overwrite a previous preparation for the same service', () => {
+      const store = new ApiCredentialStore(storePath, encryptedStorage);
+      store.savePreparation('google-gmail', new OAuthCredentials('old-id', 'old-secret'));
+      store.savePreparation('google-gmail', new OAuthCredentials('new-id', 'new-secret'));
+
+      expect((store.getPreparation('google-gmail') as OAuthCredentials).clientId).toBe('new-id');
+    });
+
+    it('should keep preparations separate from credentials', () => {
+      const store = new ApiCredentialStore(storePath, encryptedStorage);
+      store.savePreparation('google-gmail', new OAuthCredentials('client-id', 'client-secret'));
+
+      expect(store.get('google-gmail')).toBeNull();
+      expect(store.listAccounts('google-gmail')).toEqual([]);
+      expect(store.getAll().has('google-gmail')).toBe(false);
+    });
+
+    it('delete without an account also removes the preparation', () => {
+      const store = new ApiCredentialStore(storePath, encryptedStorage);
+      store.savePreparation('google-gmail', new OAuthCredentials('client-id', 'client-secret'));
+      store.save('google-gmail', new AuthorizationBearer('token'), 'user@example.com');
+
+      expect(store.delete('google-gmail')).toBe(true);
+      expect(store.get('google-gmail', 'user@example.com')).toBeNull();
+      expect(store.getPreparation('google-gmail')).toBeNull();
+    });
+
+    it('delete without an account removes a preparation-only service', () => {
+      const store = new ApiCredentialStore(storePath, encryptedStorage);
+      store.savePreparation('google-gmail', new OAuthCredentials('client-id', 'client-secret'));
+
+      expect(store.delete('google-gmail')).toBe(true);
+      expect(store.getPreparation('google-gmail')).toBeNull();
+    });
+
+    it('delete with an explicit account keeps the preparation', () => {
+      const store = new ApiCredentialStore(storePath, encryptedStorage);
+      store.savePreparation('google-gmail', new OAuthCredentials('client-id', 'client-secret'));
+      store.save('google-gmail', new AuthorizationBearer('token'), 'user@example.com');
+
+      expect(store.delete('google-gmail', 'user@example.com')).toBe(true);
+      expect(store.getPreparation('google-gmail')).not.toBeNull();
+    });
+
+    it('delete without an account still throws on account ambiguity, keeping the preparation', () => {
+      const store = new ApiCredentialStore(storePath, encryptedStorage);
+      store.savePreparation('google-gmail', new OAuthCredentials('client-id', 'client-secret'));
+      store.save('google-gmail', new AuthorizationBearer('a'), 'a@example.com');
+      store.save('google-gmail', new AuthorizationBearer('b'), 'b@example.com');
+
+      expect(() => store.delete('google-gmail')).toThrow(AmbiguousAccountError);
+      expect(store.getPreparation('google-gmail')).not.toBeNull();
     });
   });
 

@@ -153,7 +153,7 @@ describe('/latchkey/ endpoint', () => {
     const nestedCredentials = Object.fromEntries(
       Object.entries(credentialsData).map(([service, creds]) => [service, { '': creds }])
     );
-    writeSecureFile(storePath, JSON.stringify(nestedCredentials));
+    writeSecureFile(storePath, JSON.stringify({ credentials: nestedCredentials }));
 
     const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
     const apiCredentialStore = new ApiCredentialStore(storePath, encryptedStorage);

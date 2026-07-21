@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { writeFileAtomic } from './atomicWrite.js';
 import { DEFAULT_ACCOUNT } from './apiCredentials/account.js';
@@ -161,9 +161,107 @@ async function migrationIntroduceAccounts(
   encryptedStorage.writeFile(config.credentialStorePath, JSON.stringify(migrated, null, 2));
 }
 
+/**
+ * The serialized shape of an OAuth credential entry, as far as this migration
+ * needs it: the client pair plus the access token whose absence marks the
+ * entry as "prepared but not yet logged in".
+ */
+interface OAuthCredentialData {
+  readonly objectType: 'oauth';
+  readonly clientId: string;
+  readonly clientSecret: string;
+  readonly accessToken?: string;
+}
+
+function asOAuthCredentialData(credentialData: unknown): OAuthCredentialData | null {
+  if (typeof credentialData !== 'object' || credentialData === null) {
+    return null;
+  }
+  const record = credentialData as Record<string, unknown>;
+  if (
+    record.objectType !== 'oauth' ||
+    typeof record.clientId !== 'string' ||
+    typeof record.clientSecret !== 'string'
+  ) {
+    return null;
+  }
+  return record as unknown as OAuthCredentialData;
+}
+
+/**
+ * Split the store into the two top-level sections "credentials" and
+ * "preparations". Converts `{ service: { account: credentials } }` into
+ * `{ credentials: { service: { account: credentials } }, preparations: { service: credentials } }`.
+ *
+ * Preparations are populated from two sources:
+ *   - a token-less OAuth client under the default account is the placeholder
+ *     that `auth prepare` / `auth browser-prepare` used to create; it is moved
+ *     out of the credentials section into preparations,
+ *   - otherwise, for every service with complete OAuth credentials (e.g. the
+ *     Google services), a token-less copy of the client id/secret is derived
+ *     so that future logins to additional accounts can reuse the client
+ *     without a fresh browser-prepare.
+ */
+function migrationSeparatePreparations(config: Config, encryptedStorage: EncryptedStorage): void {
+  const content = encryptedStorage.readFile(config.credentialStorePath);
+  if (content === null) {
+    return;
+  }
+
+  const store = JSON.parse(content) as Record<string, Record<string, unknown>>;
+
+  const credentials: Record<string, Record<string, unknown>> = {};
+  const preparations: Record<string, unknown> = {};
+
+  for (const [serviceName, accountMap] of Object.entries(store)) {
+    const remainingAccounts: Record<string, unknown> = {};
+    for (const [account, credentialData] of Object.entries(accountMap)) {
+      const oauthData = asOAuthCredentialData(credentialData);
+      const isPreparedPlaceholder =
+        account === DEFAULT_ACCOUNT && oauthData !== null && oauthData.accessToken === undefined;
+      if (isPreparedPlaceholder) {
+        preparations[serviceName] = credentialData;
+      } else {
+        remainingAccounts[account] = credentialData;
+      }
+    }
+    if (Object.keys(remainingAccounts).length > 0) {
+      credentials[serviceName] = remainingAccounts;
+    }
+  }
+
+  for (const [serviceName, accountMap] of Object.entries(credentials)) {
+    if (serviceName in preparations) {
+      continue;
+    }
+    // Prefer the default account's client, matching the account preference the
+    // pre-preparations login flow used when reusing stored credentials.
+    const orderedEntries = Object.values({
+      [DEFAULT_ACCOUNT]: accountMap[DEFAULT_ACCOUNT],
+      ...accountMap,
+    });
+    const oauthData = orderedEntries
+      .map(asOAuthCredentialData)
+      .find((candidate) => candidate !== null && candidate.clientId !== '');
+    if (oauthData !== null && oauthData !== undefined) {
+      preparations[serviceName] = {
+        objectType: 'oauth',
+        clientId: oauthData.clientId,
+        clientSecret: oauthData.clientSecret,
+      };
+    }
+  }
+
+  encryptedStorage.writeFile(
+    config.credentialStorePath,
+    JSON.stringify({ credentials, preparations }, null, 2)
+  );
+}
+
 const MIGRATIONS: readonly MigrationFunction[] = [
   migrationSplitGoogleCredentials,
   migrationIntroduceAccounts,
+  migrationSeparatePreparations,
 ];
 
 export const LATEST_VERSION = MIGRATIONS.length;
@@ -198,6 +296,12 @@ export async function runMigrations(
   resolveCredential: CredentialResolver = resolveCredentialViaServiceRegistry
 ): Promise<void> {
   if (isFirstInstallation(config)) {
+    // A fresh installation starts out in the newest data format. Stamp the
+    // version right away so that a later run does not mistake the newly
+    // created store for one in the oldest format and "migrate" (i.e. corrupt)
+    // it.
+    mkdirSync(config.directory, { recursive: true, mode: 0o700 });
+    writeDataFormatVersion(config, LATEST_VERSION);
     return;
   }
 

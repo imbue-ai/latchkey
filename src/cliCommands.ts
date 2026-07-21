@@ -89,6 +89,7 @@ import {
   authBrowserPrepare,
   prepareService,
   UnknownServiceError,
+  AccountNotFoundError,
   BrowserNotConfiguredError,
   PreparationRequiredError,
 } from './sharedOperations.js';
@@ -327,7 +328,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
   program.option(
     '--account <account>',
     "Account (e.g. an e-mail) whose credentials to use. Supported by 'curl', " +
-      "'auth set', 'auth set-nocurl', 'auth clear', and 'auth prepare'. Required " +
+      "'auth set', 'auth set-nocurl', 'auth clear', and 'auth browser'. Required " +
       'when a service has more than one stored account.'
   );
 
@@ -344,7 +345,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     'auth set',
     'auth set-nocurl',
     'auth clear',
-    'auth prepare',
+    'auth browser',
   ]);
   program.hook('preAction', (_thisCommand, actionCommand) => {
     if (getAccount() === undefined) {
@@ -703,7 +704,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       if (deps.config.gatewayUrl !== null) {
         const result = (await forwardToGateway(deps, {
           command: 'auth browser',
-          params: { serviceName },
+          params: { serviceName, account: getAccount() },
         })) as { account?: string } | null;
         deps.log(loginDoneMessage(result?.account));
         return;
@@ -719,11 +720,12 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           apiCredentialStore,
           encryptedStorage,
           deps.config,
-          serviceName
+          serviceName,
+          getAccount()
         );
         deps.log(loginDoneMessage(account));
       } catch (error) {
-        if (error instanceof UnknownServiceError || error instanceof AmbiguousAccountError) {
+        if (error instanceof UnknownServiceError || error instanceof AccountNotFoundError) {
           deps.errorLog(`Error: ${error.message}`);
           deps.exit(1);
         }
@@ -772,11 +774,11 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         const result = (await forwardToGateway(deps, {
           command: 'auth browser-prepare',
           params: { serviceName },
-        })) as { alreadyPrepared?: boolean; account?: string } | null;
+        })) as { alreadyPrepared?: boolean } | null;
         if (result !== null && result.alreadyPrepared === true) {
           deps.log('Already prepared.');
         } else {
-          deps.log(loginDoneMessage(result?.account));
+          deps.log('Done');
         }
         return;
       }
@@ -796,10 +798,10 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         if (result.alreadyPrepared) {
           deps.log('Already prepared.');
         } else {
-          deps.log(loginDoneMessage(result.account));
+          deps.log('Done');
         }
       } catch (error) {
-        if (error instanceof UnknownServiceError || error instanceof AmbiguousAccountError) {
+        if (error instanceof UnknownServiceError) {
           deps.errorLog(`Error: ${error.message}`);
           deps.exit(1);
         }
@@ -860,14 +862,13 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           deps.config.credentialStorePath,
           encryptedStorage
         );
-        prepareService(deps.registry, apiCredentialStore, serviceName, json, getAccount());
+        prepareService(deps.registry, apiCredentialStore, serviceName, json);
         deps.log(`Done`);
       } catch (error) {
         if (
           error instanceof UnknownServiceError ||
           error instanceof PrepareNotSupportedError ||
-          error instanceof PrepareInputInvalidError ||
-          error instanceof AmbiguousAccountError
+          error instanceof PrepareInputInvalidError
         ) {
           deps.errorLog(`Error: ${error.message}`);
           deps.exit(1);
@@ -1183,6 +1184,10 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           for (const [account, credentials] of accountMap) {
             destinationStore.save(serviceName, credentials, account);
           }
+        }
+        const preparation = sourceStore.getPreparation(serviceName);
+        if (preparation !== null) {
+          destinationStore.savePreparation(serviceName, preparation);
         }
       }
 
