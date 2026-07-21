@@ -11,9 +11,9 @@ import {
   LATEST_VERSION,
   MigrationError,
   type CredentialResolver,
+  type ResolvedCredential,
 } from '../src/migrations.js';
 import { ApiCredentialStatus } from '../src/apiCredentials/base.js';
-import type { CredentialCheck } from '../src/services/core/base.js';
 import {
   setCapturingSubprocessRunner,
   resetCapturingSubprocessRunner,
@@ -36,10 +36,10 @@ const inconclusiveResolver: CredentialResolver = () =>
   Promise.resolve({ status: ApiCredentialStatus.Unknown, account: null });
 
 /**
- * Build a resolver from a fixed map of service name to credential-check result,
+ * Build a resolver from a fixed map of service name to resolved credential,
  * defaulting to inconclusive for anything not listed.
  */
-function resolverFromMap(results: Record<string, CredentialCheck>): CredentialResolver {
+function resolverFromMap(results: Record<string, ResolvedCredential>): CredentialResolver {
   return (serviceName) =>
     Promise.resolve(results[serviceName] ?? { status: ApiCredentialStatus.Unknown, account: null });
 }
@@ -415,22 +415,24 @@ describe('migrations', () => {
     });
 
     it('should key google credentials by the account from the userinfo endpoint', async () => {
-      // Google services learn both validity and the account from their
-      // credential check against the OpenID userinfo endpoint. This exercises
-      // the real registry resolver (no injected resolver) to ensure that path
-      // runs during the migration. The curl runner is stubbed so nothing hits
-      // the network; the check appends the HTTP status code as the final line
-      // (via `-w '\n%{http_code}'`).
+      // Google services learn validity from their credential check and the
+      // account from getAccount(), both against the OpenID userinfo endpoint.
+      // This exercises the real registry resolver (no injected resolver) to
+      // ensure that path runs during the migration. The curl runner is stubbed
+      // so nothing hits the network; only the check appends the HTTP status
+      // code as the final line (via `-w '\n%{http_code}'`), the account
+      // request receives the bare body.
       setCapturingSubprocessRunner((args: readonly string[]): CurlResult => {
+        const isCredentialCheck = args.includes('-w');
         const joined = args.join(' ');
-        if (joined.includes('openidconnect.googleapis.com')) {
-          return {
-            returncode: 0,
-            stdout: `${JSON.stringify({ email: 'alice@example.com' })}\n200`,
-            stderr: '',
-          };
-        }
-        return { returncode: 0, stdout: '{}\n200', stderr: '' };
+        const body = joined.includes('openidconnect.googleapis.com')
+          ? JSON.stringify({ email: 'alice@example.com' })
+          : '{}';
+        return {
+          returncode: 0,
+          stdout: isCredentialCheck ? `${body}\n200` : body,
+          stderr: '',
+        };
       });
 
       const gmailCredentials = {

@@ -11,7 +11,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { Browser, BrowserContext, Locator, Page, Response } from 'playwright';
 import { type ApiCredentials, OAuthCredentials } from '../../apiCredentials/base.js';
-import { tryParseJson } from '../../apiCredentials/account.js';
+import { fetchAccountFromEndpoint, tryParseJson } from '../../apiCredentials/account.js';
 import { extractUrlFromCurlArguments } from '../../curl.js';
 import {
   showSpinnerPage,
@@ -922,9 +922,15 @@ export abstract class GoogleService extends Service {
     'https://openidconnect.googleapis.com/v1/userinfo',
   ] as const;
 
-  protected override parseAccountFromCredentialCheckBody(responseBody: string): string | null {
-    const data = tryParseJson(responseBody) as { email?: string; sub?: string } | null;
-    return data?.email ?? data?.sub ?? null;
+  override getAccount(apiCredentials: ApiCredentials): Promise<string | null> {
+    return fetchAccountFromEndpoint(
+      apiCredentials,
+      this.credentialCheckCurlArguments,
+      (responseBody) => {
+        const data = tryParseJson(responseBody) as { email?: string; sub?: string } | null;
+        return data?.email ?? data?.sub ?? null;
+      }
+    );
   }
 
   protected abstract readonly config: GoogleServiceConfig;

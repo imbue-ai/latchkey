@@ -1,5 +1,6 @@
+import type { ApiCredentials } from '../apiCredentials/base.js';
 import { Service } from './core/base.js';
-import { tryParseJson } from '../apiCredentials/account.js';
+import { fetchAccountFromEndpoint, tryParseJson } from '../apiCredentials/account.js';
 
 export class Coolify extends Service {
   readonly name = 'coolify';
@@ -16,9 +17,15 @@ export class Coolify extends Service {
     return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
   }
 
-  protected override parseAccountFromCredentialCheckBody(responseBody: string): string | null {
-    const data = tryParseJson(responseBody) as { name?: string; id?: number } | null;
-    return data?.name ?? data?.id?.toString() ?? null;
+  override getAccount(apiCredentials: ApiCredentials): Promise<string | null> {
+    return fetchAccountFromEndpoint(
+      apiCredentials,
+      this.credentialCheckCurlArguments,
+      (responseBody) => {
+        const data = tryParseJson(responseBody) as { name?: string; id?: number } | null;
+        return data?.name ?? data?.id?.toString() ?? null;
+      }
+    );
   }
 }
 

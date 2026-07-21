@@ -14,8 +14,8 @@
 
 import { randomUUID } from 'node:crypto';
 import type { Browser, BrowserContext, Response } from 'playwright';
-import { ApiCredentials, ApiCredentialStatus, OAuthCredentials } from '../apiCredentials/base.js';
-import { DEFAULT_ACCOUNT, fetchAccountFromEndpoint } from '../apiCredentials/account.js';
+import { ApiCredentials, OAuthCredentials } from '../apiCredentials/base.js';
+import { DEFAULT_ACCOUNT, fetchAccountFromEndpoint, tryParseJson } from '../apiCredentials/account.js';
 import {
   exchangeCodeForTokens,
   generateCodeChallenge,
@@ -24,7 +24,6 @@ import {
   startOAuthCallbackServer,
 } from '../oauthUtils.js';
 import {
-  type CredentialCheck,
   isBrowserClosedError,
   type LoginResult,
   LoginCancelledError,
@@ -179,8 +178,8 @@ class RampOAuthServiceSession extends ServiceSession {
           tokens.refresh_token,
           accessTokenExpiresAt
         );
-        const credentialCheck = await this.service.checkApiCredentials(credentials);
-        return { credentials, account: credentialCheck.account ?? DEFAULT_ACCOUNT };
+        const account = (await this.service.getAccount(credentials)) ?? DEFAULT_ACCOUNT;
+        return { credentials, account };
       } catch (error: unknown) {
         if (error instanceof Error && isBrowserClosedError(error)) {
           throw new LoginCancelledError();
@@ -223,15 +222,15 @@ export class Ramp extends Service {
   }
 
   /**
-   * The check first asks `get-simplified-user-detail` — the agent-tools
-   * endpoint that returns the caller's user — whose response both proves the
-   * token valid and reveals the account. It needs the `users:read` scope
-   * (requested during login, but granted only if the signed-in user is
-   * entitled to it), so when it reveals nothing the check falls back to the
-   * scope-less help-center endpoint, which carries no identity.
+   * The account comes from `get-simplified-user-detail` — the agent-tools
+   * endpoint that returns the caller's user — rather than the scope-less
+   * help-center endpoint used by the credential check, which carries no
+   * identity. It needs the `users:read` scope (requested during login, but
+   * granted only if the signed-in user is entitled to it), so the account may
+   * stay undetermined.
    */
-  override async checkApiCredentials(apiCredentials: ApiCredentials): Promise<CredentialCheck> {
-    const account = await fetchAccountFromEndpoint(
+  override getAccount(apiCredentials: ApiCredentials): Promise<string | null> {
+    return fetchAccountFromEndpoint(
       apiCredentials,
       [
         '-X',
@@ -242,18 +241,14 @@ export class Ramp extends Service {
         '{"rationale":"latchkey determines which account these credentials belong to"}',
         'https://api.ramp.com/developer/v1/agent-tools/get-simplified-user-detail',
       ],
-      (responseData) => {
-        const data = responseData as {
+      (responseBody) => {
+        const data = tryParseJson(responseBody) as {
           users?: readonly { email?: string; id?: string }[];
         } | null;
         const user = data?.users?.[0];
         return user?.email ?? user?.id ?? null;
       }
     );
-    if (account !== null) {
-      return { status: ApiCredentialStatus.Valid, account };
-    }
-    return super.checkApiCredentials(apiCredentials);
   }
 
   /**

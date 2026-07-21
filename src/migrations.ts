@@ -7,7 +7,6 @@ import { ApiCredentialsSchema, deserializeCredentials } from './apiCredentials/s
 import type { Config } from './config.js';
 import type { EncryptedStorage } from './encryptedStorage.js';
 import { SERVICE_REGISTRY } from './serviceRegistry.js';
-import type { CredentialCheck } from './services/core/base.js';
 
 export class MigrationError extends Error {
   constructor(message: string) {
@@ -17,6 +16,15 @@ export class MigrationError extends Error {
 }
 
 const DATA_FORMAT_VERSION_FILENAME = 'data-format-version';
+
+/**
+ * The resolved validity and owning account of a service's stored credentials.
+ * The account is null when it cannot be determined.
+ */
+export interface ResolvedCredential {
+  readonly status: ApiCredentialStatus;
+  readonly account: string | null;
+}
 
 /**
  * Resolves the validity and owning account of a service's stored credentials.
@@ -31,16 +39,17 @@ const DATA_FORMAT_VERSION_FILENAME = 'data-format-version';
 export type CredentialResolver = (
   serviceName: string,
   credentialData: unknown
-) => Promise<CredentialCheck>;
+) => Promise<ResolvedCredential>;
 
 /**
- * Default resolver: look the service up in the registry and ask it to check the
- * credentials, translating every failure mode into an inconclusive result.
+ * Default resolver: look the service up in the registry, ask it to check the
+ * credentials and — when they are valid — which account they belong to,
+ * translating every failure mode into an inconclusive result.
  */
 async function resolveCredentialViaServiceRegistry(
   serviceName: string,
   credentialData: unknown
-): Promise<CredentialCheck> {
+): Promise<ResolvedCredential> {
   const service = SERVICE_REGISTRY.getByName(serviceName);
   if (service === null) {
     return { status: ApiCredentialStatus.Unknown, account: null };
@@ -53,7 +62,10 @@ async function resolveCredentialViaServiceRegistry(
 
   try {
     const credentials = deserializeCredentials(parsed.data);
-    return await service.checkApiCredentials(credentials);
+    const status = await service.checkApiCredentials(credentials);
+    const account =
+      status === ApiCredentialStatus.Valid ? await service.getAccount(credentials) : null;
+    return { status, account };
   } catch {
     return { status: ApiCredentialStatus.Unknown, account: null };
   }

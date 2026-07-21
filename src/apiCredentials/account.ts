@@ -18,8 +18,8 @@ export const DEFAULT_ACCOUNT = '';
 
 /**
  * Parse a JSON response body, returning null instead of throwing on malformed
- * input. Credential-check bodies come from arbitrary servers, so account
- * parsing must never crash on unexpected content.
+ * input. Response bodies come from arbitrary servers, so account parsing must
+ * never crash on unexpected content.
  */
 export function tryParseJson(body: string): unknown {
   try {
@@ -30,17 +30,15 @@ export function tryParseJson(body: string): unknown {
 }
 
 /**
- * Fetch the account behind the given credentials from a dedicated endpoint,
- * best-effort: returns null when the credentials cannot be injected or when
- * the parser finds no identity in the response. Used by services whose
- * credential-check endpoint carries no identity but that have a separate
- * endpoint revealing it — a response that reveals the account also proves the
- * credentials valid, so those services try this before the plain check.
+ * Fetch the account behind the given credentials from an identity-revealing
+ * endpoint, best-effort: returns null when the credentials cannot be injected
+ * or when the parser finds no identity in the response body. The shared
+ * implementation behind the services' `getAccount()`.
  */
 export async function fetchAccountFromEndpoint(
   apiCredentials: ApiCredentials,
   accountCurlArguments: readonly string[],
-  parseAccount: (responseData: unknown) => string | null
+  parseAccount: (responseBody: string) => string | null
 ): Promise<string | null> {
   let curlArguments: readonly string[];
   try {
@@ -52,5 +50,5 @@ export async function fetchAccountFromEndpoint(
     throw error;
   }
   const result = runCaptured(curlArguments, 10);
-  return parseAccount(tryParseJson(result.stdout));
+  return parseAccount(result.stdout);
 }

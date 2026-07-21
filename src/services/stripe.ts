@@ -1,6 +1,6 @@
-import { type ApiCredentials, ApiCredentialStatus } from '../apiCredentials/base.js';
-import { fetchAccountFromEndpoint } from '../apiCredentials/account.js';
-import { type CredentialCheck, Service } from './core/base.js';
+import type { ApiCredentials } from '../apiCredentials/base.js';
+import { fetchAccountFromEndpoint, tryParseJson } from '../apiCredentials/account.js';
+import { Service } from './core/base.js';
 
 export class Stripe extends Service {
   readonly name = 'stripe';
@@ -16,18 +16,16 @@ export class Stripe extends Service {
   }
 
   /**
-   * The check first asks /v1/account, whose response both proves the key
-   * valid and reveals the account. Restricted keys may not be allowed to read
-   * the account, so when that reveals nothing the check falls back to the
-   * balance endpoint (which works with restricted keys but carries no
-   * identity).
+   * The account comes from /v1/account rather than the balance endpoint used
+   * by the credential check, which carries no identity. Restricted keys may
+   * not be allowed to read the account, in which case it stays undetermined.
    */
-  override async checkApiCredentials(apiCredentials: ApiCredentials): Promise<CredentialCheck> {
-    const account = await fetchAccountFromEndpoint(
+  override getAccount(apiCredentials: ApiCredentials): Promise<string | null> {
+    return fetchAccountFromEndpoint(
       apiCredentials,
       ['https://api.stripe.com/v1/account'],
-      (responseData) => {
-        const data = responseData as {
+      (responseBody) => {
+        const data = tryParseJson(responseBody) as {
           email?: string | null;
           id?: string;
           error?: unknown;
@@ -38,10 +36,6 @@ export class Stripe extends Service {
         return data.email ?? data.id ?? null;
       }
     );
-    if (account !== null) {
-      return { status: ApiCredentialStatus.Valid, account };
-    }
-    return super.checkApiCredentials(apiCredentials);
   }
 }
 

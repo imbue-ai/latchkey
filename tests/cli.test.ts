@@ -556,9 +556,7 @@ describe('CLI commands with dependency injection', () => {
         loginUrl: 'https://nologin.example.com',
         info: 'A service without browser login support.',
         credentialCheckCurlArguments: [],
-        checkApiCredentials: vi
-          .fn()
-          .mockResolvedValue({ status: ApiCredentialStatus.Missing, account: null }),
+        checkApiCredentials: vi.fn().mockResolvedValue(ApiCredentialStatus.Missing),
         setCredentialsExample: (serviceName: string) =>
           `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`,
         getSession: undefined,
@@ -752,9 +750,7 @@ describe('CLI commands with dependency injection', () => {
         loginUrl: 'https://nologin.example.com',
         info: 'A service without browser login support.',
         credentialCheckCurlArguments: [],
-        checkApiCredentials: vi
-          .fn()
-          .mockResolvedValue({ status: ApiCredentialStatus.Missing, account: null }),
+        checkApiCredentials: vi.fn().mockResolvedValue(ApiCredentialStatus.Missing),
         setCredentialsExample: (serviceName: string) =>
           `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`,
         getSession: undefined,
@@ -1925,9 +1921,7 @@ describe('CLI commands with dependency injection', () => {
         loginUrl: 'https://nologin.example.com',
         info: 'A service without browser login support.',
         credentialCheckCurlArguments: [],
-        checkApiCredentials: vi
-          .fn()
-          .mockResolvedValue({ status: ApiCredentialStatus.Valid, account: null }),
+        checkApiCredentials: vi.fn().mockResolvedValue(ApiCredentialStatus.Valid),
         setCredentialsExample: (serviceName: string) =>
           `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`,
         // No getSession - service doesn't support browser login

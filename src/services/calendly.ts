@@ -1,5 +1,6 @@
+import type { ApiCredentials } from '../apiCredentials/base.js';
 import { Service } from './core/base.js';
-import { tryParseJson } from '../apiCredentials/account.js';
+import { fetchAccountFromEndpoint, tryParseJson } from '../apiCredentials/account.js';
 
 export class Calendly extends Service {
   readonly name = 'calendly';
@@ -18,11 +19,17 @@ export class Calendly extends Service {
     return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
   }
 
-  protected override parseAccountFromCredentialCheckBody(responseBody: string): string | null {
-    const data = tryParseJson(responseBody) as {
-      resource?: { email?: string; name?: string };
-    } | null;
-    return data?.resource?.email ?? data?.resource?.name ?? null;
+  override getAccount(apiCredentials: ApiCredentials): Promise<string | null> {
+    return fetchAccountFromEndpoint(
+      apiCredentials,
+      this.credentialCheckCurlArguments,
+      (responseBody) => {
+        const data = tryParseJson(responseBody) as {
+          resource?: { email?: string; name?: string };
+        } | null;
+        return data?.resource?.email ?? data?.resource?.name ?? null;
+      }
+    );
   }
 }
 

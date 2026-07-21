@@ -1,6 +1,7 @@
 import { createHash, createHmac } from 'node:crypto';
 import { z } from 'zod';
 import { type ApiCredentials } from '../apiCredentials/base.js';
+import { fetchAccountFromEndpoint } from '../apiCredentials/account.js';
 import { CurlParseError, parseCurlArgs } from '../curl.js';
 import { NoCurlCredentialsNotSupportedError, Service } from './core/base.js';
 
@@ -299,15 +300,21 @@ export class Aws extends Service {
     return new AwsCredentials(accessKeyId, secretAccessKey);
   }
 
-  protected override parseAccountFromCredentialCheckBody(responseBody: string): string | null {
-    // GetCallerIdentity responds with XML; the ARN identifies both the AWS
-    // account and the IAM user behind the access key.
-    const arnMatch = /<Arn>([^<]+)<\/Arn>/.exec(responseBody);
-    if (arnMatch?.[1] !== undefined) {
-      return arnMatch[1];
-    }
-    const accountMatch = /<Account>([^<]+)<\/Account>/.exec(responseBody);
-    return accountMatch?.[1] ?? null;
+  override getAccount(apiCredentials: ApiCredentials): Promise<string | null> {
+    return fetchAccountFromEndpoint(
+      apiCredentials,
+      this.credentialCheckCurlArguments,
+      (responseBody) => {
+        // GetCallerIdentity responds with XML; the ARN identifies both the AWS
+        // account and the IAM user behind the access key.
+        const arnMatch = /<Arn>([^<]+)<\/Arn>/.exec(responseBody);
+        if (arnMatch?.[1] !== undefined) {
+          return arnMatch[1];
+        }
+        const accountMatch = /<Account>([^<]+)<\/Account>/.exec(responseBody);
+        return accountMatch?.[1] ?? null;
+      }
+    );
   }
 }
 

@@ -19,7 +19,7 @@ import {
   isBrowserClosedError,
   LoginCancelledError,
 } from './core/base.js';
-import { tryParseJson } from '../apiCredentials/account.js';
+import { fetchAccountFromEndpoint, tryParseJson } from '../apiCredentials/account.js';
 
 const DEFAULT_TIMEOUT_MS = 8000;
 
@@ -308,12 +308,18 @@ export class Dropbox extends Service {
     'https://api.dropboxapi.com/2/users/get_current_account',
   ] as const;
 
-  protected override parseAccountFromCredentialCheckBody(responseBody: string): string | null {
-    const data = tryParseJson(responseBody) as {
-      email?: string;
-      account_id?: string;
-    } | null;
-    return data?.email ?? data?.account_id ?? null;
+  override getAccount(apiCredentials: ApiCredentials): Promise<string | null> {
+    return fetchAccountFromEndpoint(
+      apiCredentials,
+      this.credentialCheckCurlArguments,
+      (responseBody) => {
+        const data = tryParseJson(responseBody) as {
+          email?: string;
+          account_id?: string;
+        } | null;
+        return data?.email ?? data?.account_id ?? null;
+      }
+    );
   }
 
   setCredentialsExample(serviceName: string): string {

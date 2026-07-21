@@ -456,9 +456,7 @@ describe('/latchkey/ endpoint', () => {
         loginUrl: 'https://nologin.example.com',
         info: 'No browser login support.',
         credentialCheckCurlArguments: [],
-        checkApiCredentials: vi
-          .fn()
-          .mockResolvedValue({ status: ApiCredentialStatus.Missing, account: null }),
+        checkApiCredentials: vi.fn().mockResolvedValue(ApiCredentialStatus.Missing),
         setCredentialsExample: (serviceName: string) =>
           `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`,
         getSession: undefined,

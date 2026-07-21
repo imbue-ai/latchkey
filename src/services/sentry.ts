@@ -1,5 +1,6 @@
+import type { ApiCredentials } from '../apiCredentials/base.js';
 import { Service } from './core/base.js';
-import { tryParseJson } from '../apiCredentials/account.js';
+import { fetchAccountFromEndpoint, tryParseJson } from '../apiCredentials/account.js';
 
 export class Sentry extends Service {
   readonly name = 'sentry';
@@ -28,11 +29,17 @@ export class Sentry extends Service {
     return data?.user !== undefined && data.user !== null && data.user !== false;
   }
 
-  protected override parseAccountFromCredentialCheckBody(responseBody: string): string | null {
-    const data = tryParseJson(responseBody) as {
-      user?: { email?: string; username?: string; id?: string };
-    } | null;
-    return data?.user?.email ?? data?.user?.username ?? data?.user?.id ?? null;
+  override getAccount(apiCredentials: ApiCredentials): Promise<string | null> {
+    return fetchAccountFromEndpoint(
+      apiCredentials,
+      this.credentialCheckCurlArguments,
+      (responseBody) => {
+        const data = tryParseJson(responseBody) as {
+          user?: { email?: string; username?: string; id?: string };
+        } | null;
+        return data?.user?.email ?? data?.user?.username ?? data?.user?.id ?? null;
+      }
+    );
   }
 }
 

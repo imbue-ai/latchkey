@@ -1,5 +1,6 @@
+import type { ApiCredentials } from '../apiCredentials/base.js';
 import { Service } from './core/base.js';
-import { tryParseJson } from '../apiCredentials/account.js';
+import { fetchAccountFromEndpoint, tryParseJson } from '../apiCredentials/account.js';
 
 export class Figma extends Service {
   readonly name = 'figma';
@@ -14,9 +15,15 @@ export class Figma extends Service {
     return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
   }
 
-  protected override parseAccountFromCredentialCheckBody(responseBody: string): string | null {
-    const data = tryParseJson(responseBody) as { email?: string; handle?: string } | null;
-    return data?.email ?? data?.handle ?? null;
+  override getAccount(apiCredentials: ApiCredentials): Promise<string | null> {
+    return fetchAccountFromEndpoint(
+      apiCredentials,
+      this.credentialCheckCurlArguments,
+      (responseBody) => {
+        const data = tryParseJson(responseBody) as { email?: string; handle?: string } | null;
+        return data?.email ?? data?.handle ?? null;
+      }
+    );
   }
 }
 
