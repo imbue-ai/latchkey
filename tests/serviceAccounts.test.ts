@@ -15,10 +15,7 @@ import {
   AuthorizationBearer,
   OAuthCredentials,
 } from '../src/apiCredentials/base.js';
-import {
-  resetAsyncSubprocessRunner,
-  setAsyncSubprocessRunner,
-} from '../src/curl.js';
+import { resetAsyncSubprocessRunner, setAsyncSubprocessRunner } from '../src/curl.js';
 import { RegisteredService } from '../src/services/core/registered.js';
 import { AWS } from '../src/services/aws.js';
 import { CALENDLY } from '../src/services/calendly.js';

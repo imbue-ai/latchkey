@@ -175,10 +175,7 @@ export function runAsync(
  * checks and OAuth token exchanges during `auth list` and the accounts
  * migration) actually run in parallel.
  */
-export async function runCapturedAsync(
-  args: readonly string[],
-  timeout = 10
-): Promise<CurlResult> {
+export async function runCapturedAsync(args: readonly string[], timeout = 10): Promise<CurlResult> {
   const result = await asyncSubprocessRunner(args, { timeout });
   return {
     returncode: result.returncode,
