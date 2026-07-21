@@ -23,7 +23,8 @@ const DATA_FORMAT_VERSION_FILENAME = 'data-format-version';
 
 /**
  * Resolves the validity and owning account of a service's stored credentials.
- * Injected into migrations so tests can avoid real network calls.
+ * Injected into migrations so tests can dictate check outcomes directly
+ * instead of stubbing the service registry and the curl subprocess layer.
  *
  * A resolver must be best-effort: it should never reject. Anything it cannot
  * determine (unknown service, unparseable data, network error, timeout) is
@@ -101,57 +102,6 @@ function migrationSplitGoogleCredentials(config: Config, encryptedStorage: Encry
 }
 
 /**
- * Wrap each service's credentials in an account-keyed dictionary. Converts the
- * pre-multi-account format `{ service: credentials }` into
- * `{ service: { account: credentials } }`.
- *
- * For every service, the stored credentials are validated in parallel:
- *   - valid credentials whose account can be determined are keyed by that
- *     account instead of the default one,
- *   - valid credentials whose account cannot be determined stay under the
- *     default account,
- *   - definitively invalid credentials are dropped,
- *   - anything inconclusive (unknown service, network error, timeout) is left
- *     under the default account (best-effort).
- */
-async function migrationIntroduceAccounts(
-  config: Config,
-  encryptedStorage: EncryptedStorage,
-  resolveCredential: CredentialResolver
-): Promise<void> {
-  const content = encryptedStorage.readFile(config.credentialStorePath);
-  if (content === null) {
-    return;
-  }
-
-  const store = JSON.parse(content) as Record<string, unknown>;
-
-  const resolvedEntries = await Promise.all(
-    Object.entries(store).map(async ([serviceName, credentials]) => ({
-      serviceName,
-      credentials,
-      check: await resolveCredential(serviceName, credentials),
-    }))
-  );
-
-  const migrated: Record<string, Record<string, unknown>> = {};
-  for (const { serviceName, credentials, check } of resolvedEntries) {
-    if (check.status === ApiCredentialStatus.Invalid) {
-      continue;
-    }
-    const account =
-      check.status === ApiCredentialStatus.Valid &&
-      check.account !== null &&
-      check.account !== DEFAULT_ACCOUNT
-        ? check.account
-        : DEFAULT_ACCOUNT;
-    migrated[serviceName] = { [account]: credentials };
-  }
-
-  encryptedStorage.writeFile(config.credentialStorePath, JSON.stringify(migrated, null, 2));
-}
-
-/**
  * The serialized shape of an OAuth credential entry, as far as this migration
  * needs it: the client pair plus the access token whose absence marks the
  * entry as "prepared but not yet logged in".
@@ -179,67 +129,72 @@ function asOAuthCredentialData(credentialData: unknown): OAuthCredentialData | n
 }
 
 /**
- * Split the store into the two top-level sections "credentials" and
- * "preparations". Converts `{ service: { account: credentials } }` into
- * `{ credentials: { service: { account: credentials } }, preparations: { service: credentials } }`.
+ * Convert the pre-multi-account format `{ service: credentials }` into the
+ * account-keyed store with separate preparations:
+ * `{ credentials: { service: { account: credentials } }, preparations: { service: oauthClient } }`.
  *
- * Preparations are populated from two sources:
- *   - a token-less OAuth client under the default account is the placeholder
- *     that `auth prepare` / `auth browser-prepare` used to create; it is moved
- *     out of the credentials section into preparations,
- *   - otherwise, for every service with complete OAuth credentials (e.g. the
- *     Google services), a token-less copy of the client id/secret is derived
- *     so that future logins to additional accounts can reuse the client
- *     without a fresh browser-prepare.
+ * For every service, the stored credentials are validated in parallel:
+ *   - valid credentials whose account can be determined are keyed by that
+ *     account instead of the default one,
+ *   - valid credentials whose account cannot be determined stay under the
+ *     default account,
+ *   - definitively invalid credentials are dropped,
+ *   - anything inconclusive (unknown service, network error, timeout) is left
+ *     under the default account (best-effort).
+ *
+ * Independently of validity, the OAuth client (id/secret) of every OAuth
+ * credential entry is saved as a preparation, so that future logins — also to
+ * additional accounts — can reuse the client without a fresh browser-prepare.
+ * This deliberately includes dropped invalid credentials (an expired token
+ * says nothing about the client) and the token-less placeholders that `auth
+ * prepare` / `auth browser-prepare` used to store as credentials; the
+ * placeholders live on only as preparations.
  */
-function migrationSeparatePreparations(config: Config, encryptedStorage: EncryptedStorage): void {
+async function migrationIntroduceAccountsAndPreparations(
+  config: Config,
+  encryptedStorage: EncryptedStorage,
+  resolveCredential: CredentialResolver
+): Promise<void> {
   const content = encryptedStorage.readFile(config.credentialStorePath);
   if (content === null) {
     return;
   }
 
-  const store = JSON.parse(content) as Record<string, Record<string, unknown>>;
+  const store = JSON.parse(content) as Record<string, unknown>;
+
+  const resolvedEntries = await Promise.all(
+    Object.entries(store).map(async ([serviceName, credentialData]) => ({
+      serviceName,
+      credentialData,
+      check: await resolveCredential(serviceName, credentialData),
+    }))
+  );
 
   const credentials: Record<string, Record<string, unknown>> = {};
   const preparations: Record<string, unknown> = {};
 
-  for (const [serviceName, accountMap] of Object.entries(store)) {
-    const remainingAccounts: Record<string, unknown> = {};
-    for (const [account, credentialData] of Object.entries(accountMap)) {
-      const oauthData = asOAuthCredentialData(credentialData);
-      const isPreparedPlaceholder =
-        account === DEFAULT_ACCOUNT && oauthData !== null && oauthData.accessToken === undefined;
-      if (isPreparedPlaceholder) {
-        preparations[serviceName] = credentialData;
-      } else {
-        remainingAccounts[account] = credentialData;
-      }
-    }
-    if (Object.keys(remainingAccounts).length > 0) {
-      credentials[serviceName] = remainingAccounts;
-    }
-  }
-
-  for (const [serviceName, accountMap] of Object.entries(credentials)) {
-    if (serviceName in preparations) {
-      continue;
-    }
-    // Prefer the default account's client, matching the account preference the
-    // pre-preparations login flow used when reusing stored credentials.
-    const orderedEntries = Object.values({
-      [DEFAULT_ACCOUNT]: accountMap[DEFAULT_ACCOUNT],
-      ...accountMap,
-    });
-    const oauthData = orderedEntries
-      .map(asOAuthCredentialData)
-      .find((candidate) => candidate !== null && candidate.clientId !== '');
-    if (oauthData !== null && oauthData !== undefined) {
+  for (const { serviceName, credentialData, check } of resolvedEntries) {
+    const oauthData = asOAuthCredentialData(credentialData);
+    if (oauthData !== null && oauthData.clientId !== '') {
       preparations[serviceName] = {
         objectType: 'oauth',
         clientId: oauthData.clientId,
         clientSecret: oauthData.clientSecret,
       };
     }
+
+    const isPreparedPlaceholder = oauthData !== null && oauthData.accessToken === undefined;
+    if (isPreparedPlaceholder || check.status === ApiCredentialStatus.Invalid) {
+      continue;
+    }
+
+    const account =
+      check.status === ApiCredentialStatus.Valid &&
+      check.account !== null &&
+      check.account !== DEFAULT_ACCOUNT
+        ? check.account
+        : DEFAULT_ACCOUNT;
+    credentials[serviceName] = { [account]: credentialData };
   }
 
   encryptedStorage.writeFile(
@@ -250,8 +205,7 @@ function migrationSeparatePreparations(config: Config, encryptedStorage: Encrypt
 
 const MIGRATIONS: readonly MigrationFunction[] = [
   migrationSplitGoogleCredentials,
-  migrationIntroduceAccounts,
-  migrationSeparatePreparations,
+  migrationIntroduceAccountsAndPreparations,
 ];
 
 export const LATEST_VERSION = MIGRATIONS.length;
