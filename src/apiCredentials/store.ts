@@ -209,42 +209,48 @@ export class ApiCredentialStore {
   /**
    * Delete stored credentials for the given account (resolving an unspecified
    * account the same way reads do). If that leaves the service with no
-   * accounts, the service entry is removed entirely. When no account is
-   * specified, the service's preparation (if any) is deleted as well. Returns
-   * whether anything was deleted.
+   * accounts, the service entry is removed entirely. Preparations are never
+   * touched; use {@link deleteAll} for that. Returns whether anything was
+   * deleted.
    */
   delete(serviceName: string, account?: string): boolean {
     const data = this.loadStoreData();
-    const serviceData = data.credentials[serviceName] ?? {};
-    const accounts = Object.keys(serviceData);
-    // May throw AmbiguousAccountError, in which case nothing is deleted.
-    const resolvedAccount = account ?? this.resolveImplicitAccount(serviceName, accounts);
-
-    const credentialsDeleted = resolvedAccount !== null && resolvedAccount in serviceData;
-    let credentials = data.credentials;
-    if (credentialsDeleted) {
-      const { [resolvedAccount]: _, ...remainingAccounts } = serviceData;
-      if (Object.keys(remainingAccounts).length === 0) {
-        const { [serviceName]: __, ...remainingServices } = credentials;
-        credentials = remainingServices;
-      } else {
-        credentials = { ...credentials, [serviceName]: remainingAccounts };
-      }
-    }
-
-    // Without an explicit account the caller means "clear this service", which
-    // includes any prepared credentials.
-    const preparationDeleted = account === undefined && serviceName in data.preparations;
-    let preparations = data.preparations;
-    if (preparationDeleted) {
-      const { [serviceName]: _, ...remainingPreparations } = preparations;
-      preparations = remainingPreparations;
-    }
-
-    if (!credentialsDeleted && !preparationDeleted) {
+    const serviceData = data.credentials[serviceName];
+    if (serviceData === undefined) {
       return false;
     }
-    this.saveStoreData({ credentials, preparations });
+    const accounts = Object.keys(serviceData);
+    const resolvedAccount = account ?? this.resolveImplicitAccount(serviceName, accounts);
+    if (resolvedAccount === null || !(resolvedAccount in serviceData)) {
+      return false;
+    }
+
+    const { [resolvedAccount]: _, ...remainingAccounts } = serviceData;
+    if (Object.keys(remainingAccounts).length === 0) {
+      const { [serviceName]: __, ...remainingServices } = data.credentials;
+      this.saveStoreData({ ...data, credentials: remainingServices });
+    } else {
+      this.saveStoreData({
+        ...data,
+        credentials: { ...data.credentials, [serviceName]: remainingAccounts },
+      });
+    }
+    return true;
+  }
+
+  /**
+   * Delete everything stored for a service: the credentials of all its
+   * accounts as well as its preparation (if any). Returns whether anything
+   * was deleted.
+   */
+  deleteAll(serviceName: string): boolean {
+    const data = this.loadStoreData();
+    if (!(serviceName in data.credentials) && !(serviceName in data.preparations)) {
+      return false;
+    }
+    const { [serviceName]: _, ...remainingServices } = data.credentials;
+    const { [serviceName]: __, ...remainingPreparations } = data.preparations;
+    this.saveStoreData({ credentials: remainingServices, preparations: remainingPreparations });
     return true;
   }
 }

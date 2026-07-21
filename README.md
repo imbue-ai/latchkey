@@ -199,7 +199,9 @@ Some services need to be prepared before the first browser login
 (`latchkey auth prepare` or `latchkey auth browser-prepare`),
 typically to set up an OAuth client. Preparations are stored per
 service (not per account) and are reused by every subsequent
-login, so several accounts can share one prepared client. When
+login, so several accounts can share one prepared client. To
+remove a service's preparation along with all of its accounts,
+run `latchkey auth clear <service_name> --all`. When
 no preparation is stored, `latchkey auth browser` can instead
 borrow the client from an already logged-in account:
 

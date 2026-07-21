@@ -264,7 +264,8 @@ async function createEncryptedStorageFromConfig(config: Config): Promise<Encrypt
 async function clearService(
   deps: CliDependencies,
   serviceName: string,
-  account: string | undefined
+  account: string | undefined,
+  all: boolean
 ): Promise<void> {
   const service = deps.registry.getByName(serviceName);
   if (service === null) {
@@ -281,7 +282,9 @@ async function clearService(
 
   let deleted: boolean;
   try {
-    deleted = apiCredentialStore.delete(serviceName, account);
+    deleted = all
+      ? apiCredentialStore.deleteAll(serviceName)
+      : apiCredentialStore.delete(serviceName, account);
   } catch (error) {
     if (error instanceof AmbiguousAccountError) {
       deps.errorLog(`Error: ${error.message}`);
@@ -557,12 +560,25 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .description('Clear stored API credentials.')
     .argument('[service_name]', 'Name of the service to clear API credentials for')
     .option('-y, --yes', 'Skip confirmation prompt when clearing all data')
-    .action(async (serviceName: string | undefined, options: { yes?: boolean }) => {
+    .option(
+      '--all',
+      "Clear all of the service's accounts as well as its preparation (if any)"
+    )
+    .action(async (serviceName: string | undefined, options: { yes?: boolean; all?: boolean }) => {
       refuseInGatewayMode(deps, 'auth clear');
+      const all = options.all ?? false;
+      if (all && serviceName === undefined) {
+        deps.errorLog('Error: --all requires a service name.');
+        deps.exit(1);
+      }
+      if (all && getAccount() !== undefined) {
+        deps.errorLog('Error: --all cannot be combined with --account.');
+        deps.exit(1);
+      }
       if (serviceName === undefined) {
         await clearAll(deps, options.yes ?? false);
       } else {
-        await clearService(deps, serviceName, getAccount());
+        await clearService(deps, serviceName, getAccount(), all);
       }
     });
 

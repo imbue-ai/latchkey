@@ -984,7 +984,7 @@ describe('CLI commands with dependency injection', () => {
       expect(capturedArgs).toEqual([]);
     });
 
-    it('auth clear without --account also removes the preparation', async () => {
+    it('auth clear keeps the preparation without --all', async () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
@@ -1000,7 +1000,48 @@ describe('CLI commands with dependency injection', () => {
       await runCommand(['auth', 'clear', 'slack'], deps);
 
       expect(readStore(storePath).slack).toBeUndefined();
+      expect(readPreparations(storePath).slack).toBeDefined();
+    });
+
+    it('auth clear --all removes all accounts and the preparation', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(
+        storePath,
+        JSON.stringify({
+          credentials: { slack: { 'a@example.com': rawCurl('a'), 'b@example.com': rawCurl('b') } },
+          preparations: {
+            slack: { objectType: 'oauth', clientId: 'cid', clientSecret: 'csecret' },
+          },
+        })
+      );
+
+      const deps = createMockDependencies();
+      await runCommand(['auth', 'clear', 'slack', '--all'], deps);
+
+      expect(logs.join('\n')).toContain('API credentials for slack have been cleared.');
+      expect(readStore(storePath).slack).toBeUndefined();
       expect(readPreparations(storePath).slack).toBeUndefined();
+    });
+
+    it('auth clear --all rejects a missing service name', async () => {
+      const deps = createMockDependencies();
+      await runCommand(['auth', 'clear', '--all'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs.join('\n')).toContain('--all requires a service name');
+    });
+
+    it('auth clear --all rejects --account', async () => {
+      writeMultiAccountStore({ 'a@example.com': 'a' });
+
+      const deps = createMockDependencies();
+      await runCommand(
+        ['--account', 'a@example.com', 'auth', 'clear', 'slack', '--all'],
+        deps
+      );
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs.join('\n')).toContain('--all cannot be combined with --account');
     });
 
     it('auth clear removes only the requested account', async () => {
