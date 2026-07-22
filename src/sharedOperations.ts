@@ -78,7 +78,7 @@ function lookupService(registry: ServiceRegistry, serviceName: string): Service 
 }
 
 function getBrowserLaunchOptions(config: Config): {
-  browserStatePath: string;
+  browserStatePath?: string;
   executablePath: string;
 } {
   if (config.browserDisabled) {
@@ -91,8 +91,10 @@ function getBrowserLaunchOptions(config: Config): {
   if (!browserConfig) {
     throw new BrowserNotConfiguredError();
   }
+  // In ephemeral mode we omit the state path entirely, so browser flows neither
+  // load previously stored state nor persist their state anywhere.
   return {
-    browserStatePath: config.browserStatePath,
+    browserStatePath: config.browserEphemeral ? undefined : config.browserStatePath,
     executablePath: browserConfig.executablePath,
   };
 }

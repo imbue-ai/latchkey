@@ -40,6 +40,7 @@ describe('Config with config.json settings', () => {
     expect(config.serviceName).toBe(DEFAULT_KEYRING_SERVICE_NAME);
     expect(config.accountName).toBe(DEFAULT_KEYRING_ACCOUNT_NAME);
     expect(config.browserDisabled).toBe(false);
+    expect(config.browserEphemeral).toBe(false);
     expect(config.countingDisabled).toBe(false);
     expect(config.credentialsRefreshDisabled).toBe(false);
     expect(config.permissionsConfigOverride).toBeNull();
@@ -57,6 +58,7 @@ describe('Config with config.json settings', () => {
       keyringServiceName: 'file-service',
       keyringAccountName: 'file-account',
       browserDisabled: true,
+      browserEphemeral: true,
       countingDisabled: true,
       credentialsRefreshDisabled: true,
       permissionsConfig: '/etc/latchkey/perm.json',
@@ -73,6 +75,7 @@ describe('Config with config.json settings', () => {
     expect(config.serviceName).toBe('file-service');
     expect(config.accountName).toBe('file-account');
     expect(config.browserDisabled).toBe(true);
+    expect(config.browserEphemeral).toBe(true);
     expect(config.countingDisabled).toBe(true);
     expect(config.credentialsRefreshDisabled).toBe(true);
     expect(config.permissionsConfigOverride).toBe('/etc/latchkey/perm.json');
@@ -110,6 +113,7 @@ describe('Config with config.json settings', () => {
       LATCHKEY_KEYRING_SERVICE_NAME: 'env-service',
       LATCHKEY_KEYRING_ACCOUNT_NAME: 'env-account',
       LATCHKEY_DISABLE_BROWSER: '1',
+      LATCHKEY_EPHEMERAL_BROWSER: '1',
       LATCHKEY_DISABLE_COUNTING: '1',
       LATCHKEY_DISABLE_CREDENTIALS_REFRESH: '1',
       LATCHKEY_PERMISSIONS_CONFIG: '/env/perm.json',
@@ -124,6 +128,7 @@ describe('Config with config.json settings', () => {
     expect(config.serviceName).toBe('env-service');
     expect(config.accountName).toBe('env-account');
     expect(config.browserDisabled).toBe(true);
+    expect(config.browserEphemeral).toBe(true);
     expect(config.countingDisabled).toBe(true);
     expect(config.credentialsRefreshDisabled).toBe(true);
     expect(config.permissionsConfigOverride).toBe('/env/perm.json');
