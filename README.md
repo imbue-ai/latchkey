@@ -164,55 +164,30 @@ of `latchkey`.
 
 ### Multiple accounts
 
-Credentials for a service can be stored under several *accounts*.
+Credentials for a service can be stored under several accounts.
 An account is a string that uniquely identifies the account
-behind the credentials — typically an e-mail, but for some
+behind the credentials - typically an e-mail, but for some
 services it may be an id. Use the global `--account` option to
 select one:
 
 ```bash
 # Store credentials for a specific account.
-latchkey --account hynek@imbue.com auth set slack -H "Authorization: Bearer xoxb-..."
+latchkey --account bob@example.com auth set slack -H "Authorization: Bearer xoxb-..."
 
 # Use them in a request.
-latchkey --account hynek@imbue.com curl https://slack.com/api/auth.test
-
-# Clear just that account's credentials.
-latchkey --account hynek@imbue.com auth clear slack
+latchkey --account bob@example.com curl https://slack.com/api/auth.test
 ```
 
 When `--account` is omitted, the single stored account is used
 automatically. If a service has more than one stored account,
 `--account` becomes required. Credentials stored without an
-account (including everything migrated from older Latchkey
-versions) live under a "default" account and are used whenever
-`--account` is not given.
+account live under a "default" account (empty string, `""`).
 
 Browser logins (`latchkey auth browser`) determine the account
-automatically: after the login completes, Latchkey asks the
-service which account the fresh credentials belong to (usually
-via an identity-revealing API endpoint) and stores them
-under that account. Running the login again with a different
-user adds a second account instead of overwriting the first.
-
-Some services need to be prepared before the first browser login
-(`latchkey auth prepare` or `latchkey auth browser-prepare`),
-typically to set up an OAuth client. Preparations are stored per
-service (not per account) and are reused by every subsequent
-login, so several accounts can share one prepared client. To
-remove a service's preparation along with all of its accounts,
-run `latchkey auth clear <service_name> --all`. When
-no preparation is stored, `latchkey auth browser` can instead
-borrow the client from an already logged-in account:
-
-```bash
-latchkey --account hynek@imbue.com auth browser google-gmail
-```
-
-This reuses the OAuth client stored with `hynek@imbue.com`'s
-credentials while the resulting login is stored under whichever
-account you actually sign in as.
-
+automatically. The `--account` option here merely allows users
+to specify which existing OAuth client configuration to use for
+the login (selecting one associated with an existing account) if
+needed.
 
 ### Self-hosted services
 
@@ -278,10 +253,10 @@ calls.
 
 ### Inspecting the status of stored credentials
 
-Calling `latchkey services info <service_name>` will show information
-about the service, including a `credentials` object keyed by account
-(the default account uses the empty string). Each entry mirrors the
-`latchkey auth list` format and reports a credentials status of:
+Calling `latchkey services info <service_name>` will show
+information about the service, including a `credentials` object
+keyed by account (the default account uses the empty string).
+Each entry reports a credentials status of:
 
 - `invalid`
 - `valid`
