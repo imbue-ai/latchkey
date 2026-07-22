@@ -5,8 +5,8 @@
  * body followed by the HTTP status code on the final line (produced by
  * `-w '\n%{http_code}'`). Account determination (`getAccount`) runs its own
  * curl call against an identity-revealing endpoint and parses the account
- * from the raw response body. These tests mock the capturing subprocess
- * runner to feed service implementations recorded response bodies.
+ * from the raw response body. These tests mock the async subprocess runner
+ * to feed service implementations recorded response bodies.
  */
 
 import { describe, it, expect, afterEach } from 'vitest';
@@ -15,7 +15,7 @@ import {
   AuthorizationBearer,
   OAuthCredentials,
 } from '../src/apiCredentials/base.js';
-import { resetCapturingSubprocessRunner, setCapturingSubprocessRunner } from '../src/curl.js';
+import { resetAsyncSubprocessRunner, setAsyncSubprocessRunner } from '../src/curl.js';
 import { RegisteredService } from '../src/services/core/registered.js';
 import { AWS } from '../src/services/aws.js';
 import { CALENDLY } from '../src/services/calendly.js';
@@ -38,7 +38,9 @@ import { ZOOM } from '../src/services/zoom.js';
 const BEARER = new AuthorizationBearer('test-token');
 
 function mockCurlOutput(stdout: string): void {
-  setCapturingSubprocessRunner(() => ({ returncode: 0, stdout, stderr: '' }));
+  setAsyncSubprocessRunner(() =>
+    Promise.resolve({ returncode: 0, stdout: Buffer.from(stdout), stderr: '' })
+  );
 }
 
 function withStatusLine(body: string, statusCode = '200'): string {
@@ -46,7 +48,7 @@ function withStatusLine(body: string, statusCode = '200'): string {
 }
 
 afterEach(() => {
-  resetCapturingSubprocessRunner();
+  resetAsyncSubprocessRunner();
 });
 
 describe('base credential check', () => {
@@ -211,13 +213,13 @@ describe('sentry', () => {
 describe('google', () => {
   it('google services determine the account via the OpenID userinfo endpoint', async () => {
     let requestedUrl: string | undefined;
-    setCapturingSubprocessRunner((args) => {
+    setAsyncSubprocessRunner((args) => {
       requestedUrl = args[args.length - 1];
-      return {
+      return Promise.resolve({
         returncode: 0,
-        stdout: '{"email":"user@gmail.com","sub":"1"}',
+        stdout: Buffer.from('{"email":"user@gmail.com","sub":"1"}'),
         stderr: '',
-      };
+      });
     });
     const credentials = new OAuthCredentials('client-id', 'client-secret', 'access-token');
     const account = await GOOGLE_GMAIL.getAccount(credentials);
@@ -242,13 +244,13 @@ describe('google', () => {
 describe('account determination via a separate endpoint', () => {
   it('stripe asks the account endpoint and prefers the e-mail', async () => {
     let requestedUrl: string | undefined;
-    setCapturingSubprocessRunner((args) => {
+    setAsyncSubprocessRunner((args) => {
       requestedUrl = args[args.length - 1];
-      return {
+      return Promise.resolve({
         returncode: 0,
-        stdout: '{"id":"acct_123","email":"owner@example.com"}',
+        stdout: Buffer.from('{"id":"acct_123","email":"owner@example.com"}'),
         stderr: '',
-      };
+      });
     });
     const account = await STRIPE.getAccount(BEARER);
     expect(account).toBe('owner@example.com');
@@ -282,9 +284,13 @@ describe('notion-mcp account determination via the get-users MCP tool', () => {
 
   it('resolves the e-mail via a single stateless tools/call', async () => {
     let observedArguments: readonly string[] = [];
-    setCapturingSubprocessRunner((args) => {
+    setAsyncSubprocessRunner((args) => {
       observedArguments = args;
-      return { returncode: 0, stdout: recordedGetSelfResponse, stderr: '' };
+      return Promise.resolve({
+        returncode: 0,
+        stdout: Buffer.from(recordedGetSelfResponse),
+        stderr: '',
+      });
     });
     const account = await NOTION_MCP.getAccount(BEARER);
     expect(account).toBe('jane@example.com');

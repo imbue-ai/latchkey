@@ -4,7 +4,7 @@
 
 import * as crypto from 'node:crypto';
 import * as http from 'node:http';
-import { runCaptured } from './curl.js';
+import { runCapturedAsync } from './curl.js';
 import { LoginCancelledError, LoginFailedError } from './services/core/base.js';
 
 export interface OAuthTokenResponse {
@@ -159,14 +159,14 @@ export function generateCodeChallenge(verifier: string): string {
  * @param redirectUri - The redirect URI used in the authorization request
  * @param codeVerifier - Optional PKCE code verifier
  */
-export function exchangeCodeForTokens(
+export async function exchangeCodeForTokens(
   tokenEndpoint: string,
   code: string,
   clientId: string,
   clientSecret: string,
   redirectUri: string,
   codeVerifier?: string
-): OAuthTokenExchangeResponse {
+): Promise<OAuthTokenExchangeResponse> {
   const body = new URLSearchParams({
     code,
     client_id: clientId,
@@ -180,7 +180,7 @@ export function exchangeCodeForTokens(
     body.set('code_verifier', codeVerifier);
   }
 
-  const result = runCaptured(
+  const result = await runCapturedAsync(
     [
       '-s',
       '-X',
@@ -224,12 +224,12 @@ export function exchangeCodeForTokens(
  * @param clientSecret - The OAuth client secret
  * @returns The new token response, or null if refresh failed
  */
-export function refreshAccessToken(
+export async function refreshAccessToken(
   tokenEndpoint: string,
   refreshToken: string,
   clientId: string,
   clientSecret: string
-): OAuthTokenResponse | null {
+): Promise<OAuthTokenResponse | null> {
   const body = new URLSearchParams({
     refresh_token: refreshToken,
     client_id: clientId,
@@ -239,7 +239,7 @@ export function refreshAccessToken(
     body.set('client_secret', clientSecret);
   }
 
-  const result = runCaptured(
+  const result = await runCapturedAsync(
     [
       '-s',
       '-X',

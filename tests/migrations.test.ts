@@ -14,11 +14,7 @@ import {
   type ResolvedCredential,
 } from '../src/migrations.js';
 import { ApiCredentialStatus } from '../src/apiCredentials/base.js';
-import {
-  setCapturingSubprocessRunner,
-  resetCapturingSubprocessRunner,
-  type CurlResult,
-} from '../src/curl.js';
+import { setAsyncSubprocessRunner, resetAsyncSubprocessRunner } from '../src/curl.js';
 
 function createTestConfig(directory: string): Config {
   return new Config((name) => {
@@ -58,7 +54,7 @@ describe('migrations', () => {
   });
 
   afterEach(() => {
-    resetCapturingSubprocessRunner();
+    resetAsyncSubprocessRunner();
     rmSync(tempDir, { recursive: true, force: true });
   });
 
@@ -422,17 +418,17 @@ describe('migrations', () => {
       // so nothing hits the network; only the check appends the HTTP status
       // code as the final line (via `-w '\n%{http_code}'`), the account
       // request receives the bare body.
-      setCapturingSubprocessRunner((args: readonly string[]): CurlResult => {
+      setAsyncSubprocessRunner((args: readonly string[]) => {
         const isCredentialCheck = args.includes('-w');
         const joined = args.join(' ');
         const body = joined.includes('openidconnect.googleapis.com')
           ? JSON.stringify({ email: 'alice@example.com' })
           : '{}';
-        return {
+        return Promise.resolve({
           returncode: 0,
-          stdout: isCredentialCheck ? `${body}\n200` : body,
+          stdout: Buffer.from(isCredentialCheck ? `${body}\n200` : body),
           stderr: '',
-        };
+        });
       });
 
       const gmailCredentials = {

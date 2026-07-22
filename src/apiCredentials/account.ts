@@ -12,7 +12,7 @@
  */
 
 import { type ApiCredentials, ApiCredentialsUsageError } from './base.js';
-import { runCaptured } from '../curl.js';
+import { runCapturedAsync } from '../curl.js';
 
 export const DEFAULT_ACCOUNT = '';
 
@@ -49,6 +49,6 @@ export async function fetchAccountFromEndpoint(
     }
     throw error;
   }
-  const result = runCaptured(curlArguments, 10);
+  const result = await runCapturedAsync(curlArguments, 10);
   return parseAccount(result.stdout);
 }

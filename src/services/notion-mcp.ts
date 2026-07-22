@@ -13,7 +13,7 @@ import {
   fetchAccountFromEndpoint,
   tryParseJson,
 } from '../apiCredentials/account.js';
-import { runCaptured } from '../curl.js';
+import { runCapturedAsync } from '../curl.js';
 import {
   exchangeCodeForTokens,
   generateCodeChallenge,
@@ -56,7 +56,10 @@ interface RegistrationResponse {
   client_name?: string;
 }
 
-function registerClient(redirectUri: string, clientName: string): RegistrationResponse {
+async function registerClient(
+  redirectUri: string,
+  clientName: string
+): Promise<RegistrationResponse> {
   const body = JSON.stringify({
     client_name: clientName,
     redirect_uris: [redirectUri],
@@ -65,7 +68,7 @@ function registerClient(redirectUri: string, clientName: string): RegistrationRe
     token_endpoint_auth_method: 'none',
   });
 
-  const result = runCaptured(
+  const result = await runCapturedAsync(
     ['-s', '-X', 'POST', '-H', 'Content-Type: application/json', '-d', body, REGISTRATION_ENDPOINT],
     30
   );
@@ -234,7 +237,7 @@ class NotionMcpSession extends ServiceSession {
         if (oldCredentials instanceof OAuthCredentials && oldCredentials.clientId) {
           clientId = oldCredentials.clientId;
         } else {
-          const registration = registerClient(redirectUri, this.generateAppName('-mcp'));
+          const registration = await registerClient(redirectUri, this.generateAppName('-mcp'));
           clientId = registration.client_id;
         }
 
@@ -258,14 +261,14 @@ class NotionMcpSession extends ServiceSession {
         // 6. Exchange code for tokens. Besides the tokens, Notion's MCP token
         // endpoint reports who authorized: user_id, workspace_id and
         // email_domain ride along in the same response.
-        const tokens = exchangeCodeForTokens(
+        const tokens = (await exchangeCodeForTokens(
           TOKEN_ENDPOINT,
           code,
           clientId,
           '', // public client, no secret
           redirectUri,
           codeVerifier
-        ) as ReturnType<typeof exchangeCodeForTokens> & {
+        )) as Awaited<ReturnType<typeof exchangeCodeForTokens>> & {
           user_id?: string;
           workspace_id?: string;
           email_domain?: string;
@@ -363,16 +366,18 @@ export class NotionMcp extends Service {
     return new NotionMcpSession(this, appNamePrefix);
   }
 
-  override refreshCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentials | null> {
+  override async refreshCredentials(
+    apiCredentials: ApiCredentials
+  ): Promise<ApiCredentials | null> {
     if (!(apiCredentials instanceof OAuthCredentials)) {
-      return Promise.resolve(null);
+      return null;
     }
 
     if (!apiCredentials.refreshToken) {
-      return Promise.resolve(null);
+      return null;
     }
 
-    const tokens = refreshAccessToken(
+    const tokens = await refreshAccessToken(
       TOKEN_ENDPOINT,
       apiCredentials.refreshToken,
       apiCredentials.clientId,
@@ -380,20 +385,18 @@ export class NotionMcp extends Service {
     );
 
     if (tokens === null) {
-      return Promise.resolve(null);
+      return null;
     }
 
     const accessTokenExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
-    return Promise.resolve(
-      new OAuthCredentials(
-        apiCredentials.clientId,
-        apiCredentials.clientSecret,
-        tokens.access_token,
-        tokens.refresh_token ?? apiCredentials.refreshToken,
-        accessTokenExpiresAt,
-        apiCredentials.refreshTokenExpiresAt
-      )
+    return new OAuthCredentials(
+      apiCredentials.clientId,
+      apiCredentials.clientSecret,
+      tokens.access_token,
+      tokens.refresh_token ?? apiCredentials.refreshToken,
+      accessTokenExpiresAt,
+      apiCredentials.refreshTokenExpiresAt
     );
   }
 }
