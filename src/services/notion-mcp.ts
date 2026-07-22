@@ -8,6 +8,11 @@
 import { z } from 'zod';
 import type { Browser, BrowserContext, Response } from 'playwright';
 import { type ApiCredentials, OAuthCredentials } from '../apiCredentials/base.js';
+import {
+  DEFAULT_ACCOUNT,
+  fetchAccountFromEndpoint,
+  tryParseJson,
+} from '../apiCredentials/account.js';
 import { runCaptured } from '../curl.js';
 import {
   exchangeCodeForTokens,
@@ -19,6 +24,7 @@ import {
 import {
   Service,
   ServiceSession,
+  type LoginResult,
   LoginFailedError,
   LoginCancelledError,
   buildPreparedCredentials,
@@ -39,6 +45,7 @@ export const NotionMcpPrepareInputSchema = z
 
 export type NotionMcpPrepareInput = z.infer<typeof NotionMcpPrepareInputSchema>;
 
+const MCP_ENDPOINT = 'https://mcp.notion.com/mcp';
 const TOKEN_ENDPOINT = 'https://mcp.notion.com/token';
 const REGISTRATION_ENDPOINT = 'https://mcp.notion.com/register';
 const AUTHORIZATION_ENDPOINT = 'https://mcp.notion.com/authorize';
@@ -85,6 +92,99 @@ function registerClient(redirectUri: string, clientName: string): RegistrationRe
   }
 }
 
+/**
+ * Fallback account derivation from the token-exchange response, used when the
+ * MCP `get-users` lookup fails. Notion's MCP token endpoint reports `user_id`,
+ * `workspace_id` and `email_domain` (but not the full e-mail or the workspace
+ * name), so the best it can offer is the opaque user id combined with the
+ * e-mail domain.
+ */
+function parseAccountFromTokenResponse(tokens: {
+  user_id?: string;
+  workspace_id?: string;
+  email_domain?: string;
+}): string {
+  const workspacePart = tokens.email_domain ?? tokens.workspace_id;
+  if (tokens.user_id !== undefined && workspacePart !== undefined) {
+    return `${tokens.user_id}@${workspacePart}`;
+  }
+  return tokens.user_id ?? tokens.workspace_id ?? DEFAULT_ACCOUNT;
+}
+
+/**
+ * A single stateless `tools/call` asking the `notion-get-users` tool for the
+ * current user. Notion's MCP server does not require the initialize handshake
+ * or a session id for this, so one POST is enough.
+ */
+const GET_SELF_CURL_ARGUMENTS = [
+  '-X',
+  'POST',
+  '-H',
+  'Content-Type: application/json',
+  '-H',
+  'Accept: application/json, text/event-stream',
+  '-d',
+  JSON.stringify({
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'tools/call',
+    params: { name: 'notion-get-users', arguments: { user_id: 'self' } },
+  }),
+  MCP_ENDPOINT,
+] as const;
+
+/**
+ * Parse an MCP Streamable HTTP response body: either a plain JSON-RPC message
+ * or an SSE stream whose `data:` lines carry JSON-RPC messages (the last
+ * parseable one wins, which is the response to our request).
+ */
+function parseMcpResponseBody(body: string): unknown {
+  const trimmed = body.trim();
+  if (trimmed.startsWith('data:') || trimmed.startsWith('event:') || trimmed.startsWith(':')) {
+    let lastParsedMessage: unknown = null;
+    for (const line of trimmed.split('\n')) {
+      if (line.startsWith('data:')) {
+        const parsed = tryParseJson(line.slice('data:'.length).trim());
+        if (parsed !== null) {
+          lastParsedMessage = parsed;
+        }
+      }
+    }
+    return lastParsedMessage;
+  }
+  return tryParseJson(trimmed);
+}
+
+/**
+ * Extract the current user from a `notion-get-users` tool response. The tool
+ * result rides as JSON text inside the MCP content parts, e.g.
+ * `{"results":[{"type":"person","id":"...","name":"Hynek Urban","email":
+ * "hynek@imbue.com"}],"has_more":false}`. Prefers the e-mail; falls back to
+ * the name (bots have no e-mail).
+ */
+function parseAccountFromGetUsersResponse(responseBody: string): string | null {
+  const message = parseMcpResponseBody(responseBody) as {
+    result?: { content?: readonly { type?: string; text?: string }[] };
+  } | null;
+  const content = message?.result?.content;
+  if (!Array.isArray(content)) {
+    return null;
+  }
+  for (const part of content as readonly { type?: string; text?: string }[]) {
+    if (part.type !== 'text' || typeof part.text !== 'string') {
+      continue;
+    }
+    const toolResult = tryParseJson(part.text) as {
+      results?: readonly { email?: string; name?: string }[];
+    } | null;
+    const self = toolResult?.results?.[0];
+    if (self !== undefined) {
+      return self.email ?? self.name ?? null;
+    }
+  }
+  return null;
+}
+
 class NotionMcpSession extends ServiceSession {
   onResponse(_response: Response): void {
     // Not used — login detection is via OAuth callback, not response inspection.
@@ -108,7 +208,7 @@ class NotionMcpSession extends ServiceSession {
     encryptedStorage: import('../encryptedStorage.js').EncryptedStorage,
     launchOptions: import('../playwrightUtils.js').BrowserLaunchOptions = {},
     oldCredentials?: ApiCredentials
-  ): Promise<ApiCredentials> {
+  ): Promise<LoginResult> {
     const { withTempBrowserContext } = await import('../playwrightUtils.js');
 
     return withTempBrowserContext(encryptedStorage, launchOptions, async ({ context }) => {
@@ -155,7 +255,9 @@ class NotionMcpSession extends ServiceSession {
         // 5. Wait for user to authorize and callback to receive code
         const code = await codePromise;
 
-        // 6. Exchange code for tokens
+        // 6. Exchange code for tokens. Besides the tokens, Notion's MCP token
+        // endpoint reports who authorized: user_id, workspace_id and
+        // email_domain ride along in the same response.
         const tokens = exchangeCodeForTokens(
           TOKEN_ENDPOINT,
           code,
@@ -163,19 +265,31 @@ class NotionMcpSession extends ServiceSession {
           '', // public client, no secret
           redirectUri,
           codeVerifier
-        );
+        ) as ReturnType<typeof exchangeCodeForTokens> & {
+          user_id?: string;
+          workspace_id?: string;
+          email_domain?: string;
+        };
 
         const accessTokenExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
         await page.close();
 
-        return new OAuthCredentials(
+        const credentials = new OAuthCredentials(
           clientId,
           '', // public client
           tokens.access_token,
           tokens.refresh_token,
           accessTokenExpiresAt
         );
+
+        return {
+          credentials,
+          // Prefer the full e-mail resolved via the MCP get-users tool; fall
+          // back to the coarser identity riding along in the token response.
+          account:
+            (await this.service.getAccount(credentials)) ?? parseAccountFromTokenResponse(tokens),
+        };
       } catch (error: unknown) {
         if (error instanceof Error && isBrowserClosedError(error)) {
           throw new LoginCancelledError();
@@ -231,6 +345,17 @@ export class NotionMcp extends Service {
       NotionMcpPrepareInputSchema,
       parsedJson,
       ({ clientId }) => new OAuthCredentials(clientId, '')
+    );
+  }
+
+  // MCP-audienced tokens cannot call the classic REST API, but the MCP
+  // endpoint itself can reveal the identity: the `get-users` tool returns the
+  // current user's name and e-mail when asked for `self`.
+  getAccount(apiCredentials: ApiCredentials): Promise<string | null> {
+    return fetchAccountFromEndpoint(
+      apiCredentials,
+      GET_SELF_CURL_ARGUMENTS,
+      parseAccountFromGetUsersResponse
     );
   }
 

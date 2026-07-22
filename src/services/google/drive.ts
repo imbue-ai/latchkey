@@ -17,10 +17,6 @@ export class GoogleDrive extends GoogleService {
     'If needed, run "latchkey auth browser-prepare google-drive" to create an OAuth client first. ' +
     'It may take a few minutes before the OAuth client is ready to use.';
 
-  readonly credentialCheckCurlArguments = [
-    'https://www.googleapis.com/drive/v3/about?fields=user',
-  ] as const;
-
   protected readonly config = CONFIG;
 }
 

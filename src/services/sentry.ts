@@ -1,10 +1,6 @@
-import {
-  ApiCredentialStatus,
-  type ApiCredentials,
-  ApiCredentialsUsageError,
-} from '../apiCredentials/base.js';
-import { runCaptured } from '../curl.js';
+import type { ApiCredentials } from '../apiCredentials/base.js';
 import { Service } from './core/base.js';
+import { fetchAccountFromEndpoint, tryParseJson } from '../apiCredentials/account.js';
 
 export class Sentry extends Service {
   readonly name = 'sentry';
@@ -23,31 +19,27 @@ export class Sentry extends Service {
     return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
   }
 
-  override async checkApiCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentialStatus> {
-    let allCurlArgs: readonly string[];
-    try {
-      allCurlArgs = await apiCredentials.injectIntoCurlCall([
-        '-s',
-        ...this.credentialCheckCurlArguments,
-      ]);
-    } catch (error) {
-      if (error instanceof ApiCredentialsUsageError) {
-        return ApiCredentialStatus.Missing;
-      }
-      throw error;
-    }
+  // The root API endpoint responds HTTP 200 even without valid credentials;
+  // authenticated requests are recognizable by the `user` field in the body.
+  protected override isCredentialCheckResponseValid(
+    _httpStatusCode: string,
+    responseBody: string
+  ): boolean {
+    const data = tryParseJson(responseBody) as { user?: unknown } | null;
+    return data?.user !== undefined && data.user !== null && data.user !== false;
+  }
 
-    const result = runCaptured(allCurlArgs, 10);
-
-    try {
-      const data = JSON.parse(result.stdout) as { user?: unknown };
-      if (data.user) {
-        return ApiCredentialStatus.Valid;
+  override getAccount(apiCredentials: ApiCredentials): Promise<string | null> {
+    return fetchAccountFromEndpoint(
+      apiCredentials,
+      this.credentialCheckCurlArguments,
+      (responseBody) => {
+        const data = tryParseJson(responseBody) as {
+          user?: { email?: string; username?: string; id?: string };
+        } | null;
+        return data?.user?.email ?? data?.user?.username ?? data?.user?.id ?? null;
       }
-      return ApiCredentialStatus.Invalid;
-    } catch {
-      return ApiCredentialStatus.Invalid;
-    }
+    );
   }
 }
 

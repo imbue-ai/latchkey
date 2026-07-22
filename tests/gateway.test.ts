@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -21,8 +21,8 @@ import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { ApiCredentialStore } from '../src/apiCredentials/store.js';
 import { Config } from '../src/config.js';
 import { ServiceRegistry } from '../src/serviceRegistry.js';
-import { ApiCredentialStatus } from '../src/apiCredentials/base.js';
-import { NoCurlCredentialsNotSupportedError, Service } from '../src/services/core/base.js';
+import { Service } from '../src/services/core/base.js';
+import { createMockService } from './mockService.js';
 
 const TEST_ENCRYPTION_KEY = 'dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q=';
 
@@ -194,21 +194,10 @@ describe('gateway server', () => {
   let mockCurlHeaderDump: string;
   let mockPermissionResult: boolean;
 
-  const mockSlackService: Service = {
-    name: 'slack',
-    displayName: 'Slack',
-    baseApiUrls: ['https://slack.com/api/'],
-    loginUrl: 'https://slack.com/signin',
+  const mockSlackService: Service = createMockService({
     info: 'Test Slack service.',
-    credentialCheckCurlArguments: ['https://slack.com/api/auth.test'],
-    checkApiCredentials: vi.fn().mockResolvedValue(ApiCredentialStatus.Valid),
-    setCredentialsExample(serviceName: string) {
-      return `latchkey auth set ${serviceName} -H "Authorization: Bearer xoxb-your-token"`;
-    },
-    getCredentialsNoCurl() {
-      throw new NoCurlCredentialsNotSupportedError('slack');
-    },
-  };
+    getSession: undefined,
+  });
 
   function createMockConfig(configOverrides: Partial<Config> = {}): Config {
     const base = new Config((name) => {
@@ -235,7 +224,11 @@ describe('gateway server', () => {
     configOverrides: Partial<Config> = {}
   ): Promise<GatewayServer> {
     const storePath = join(tempDir, 'credentials.json');
-    writeSecureFile(storePath, JSON.stringify(credentialsData));
+    // Store credentials under the default account, matching the on-disk layout.
+    const nestedCredentials = Object.fromEntries(
+      Object.entries(credentialsData).map(([service, creds]) => [service, { '': creds }])
+    );
+    writeSecureFile(storePath, JSON.stringify({ credentials: nestedCredentials }));
 
     const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
     const apiCredentialStore = new ApiCredentialStore(storePath, encryptedStorage);

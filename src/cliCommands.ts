@@ -6,7 +6,11 @@ import type { Command } from 'commander';
 import { existsSync, statSync, unlinkSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { createInterface } from 'node:readline';
-import { ApiCredentialStore, ApiCredentialStoreError } from './apiCredentials/store.js';
+import {
+  AmbiguousAccountError,
+  ApiCredentialStore,
+  ApiCredentialStoreError,
+} from './apiCredentials/store.js';
 import {
   ApiCredentials,
   ApiCredentialsUsageError,
@@ -85,6 +89,7 @@ import {
   authBrowserPrepare,
   prepareService,
   UnknownServiceError,
+  AccountNotFoundError,
   BrowserNotConfiguredError,
   PreparationRequiredError,
 } from './sharedOperations.js';
@@ -256,7 +261,12 @@ async function createEncryptedStorageFromConfig(config: Config): Promise<Encrypt
   return new EncryptedStorage(key);
 }
 
-async function clearService(deps: CliDependencies, serviceName: string): Promise<void> {
+async function clearService(
+  deps: CliDependencies,
+  serviceName: string,
+  account: string | undefined,
+  all: boolean
+): Promise<void> {
   const service = deps.registry.getByName(serviceName);
   if (service === null) {
     deps.errorLog(`Error: Unknown service: ${serviceName}`);
@@ -269,7 +279,19 @@ async function clearService(deps: CliDependencies, serviceName: string): Promise
     deps.config.credentialStorePath,
     encryptedStorage
   );
-  const deleted = apiCredentialStore.delete(serviceName);
+
+  let deleted: boolean;
+  try {
+    deleted = all
+      ? apiCredentialStore.deleteAll(serviceName)
+      : apiCredentialStore.delete(serviceName, account);
+  } catch (error) {
+    if (error instanceof AmbiguousAccountError) {
+      deps.errorLog(`Error: ${error.message}`);
+      deps.exit(1);
+    }
+    throw error;
+  }
 
   if (deleted) {
     deps.log(`API credentials for ${serviceName} have been cleared.`);
@@ -279,9 +301,65 @@ async function clearService(deps: CliDependencies, serviceName: string): Promise
 }
 
 /**
+ * Build the "Done" message for a completed browser flow, naming the account the
+ * credentials were stored under when it is not the default (unnamed) account.
+ */
+function loginDoneMessage(account: string | undefined): string {
+  return account !== undefined && account !== ''
+    ? `Done. Stored credentials for account '${account}'.`
+    : 'Done';
+}
+
+/**
+ * Build the space-separated command path (e.g. "auth set") for a command,
+ * excluding the root program name.
+ */
+function fullCommandPath(command: Command): string {
+  const parts: string[] = [];
+  let current: Command = command;
+  while (current.parent) {
+    parts.unshift(current.name());
+    current = current.parent;
+  }
+  return parts.join(' ');
+}
+
+/**
  * Register all CLI commands on the given program.
  */
 export function registerCommands(program: Command, deps: CliDependencies): void {
+  program.option(
+    '--account <account>',
+    "Account (e.g. an e-mail) whose credentials to use. Supported by 'curl', " +
+      "'auth set', 'auth set-nocurl', 'auth clear', and 'auth browser'. Required " +
+      'when a service has more than one stored account.'
+  );
+
+  // The account is a global option; commander exposes it on the root program
+  // regardless of which subcommand is invoked.
+  const getAccount = (): string | undefined => program.opts<{ account?: string }>().account;
+
+  // Only these commands act on a specific account. Every other command must
+  // reject --account rather than silently ignore it, so users are never misled
+  // into thinking it took effect.
+  const accountAwareCommands = new Set([
+    'curl',
+    'auth set',
+    'auth set-nocurl',
+    'auth clear',
+    'auth browser',
+  ]);
+  program.hook('preAction', (_thisCommand, actionCommand) => {
+    if (getAccount() === undefined) {
+      return;
+    }
+    const commandPath = fullCommandPath(actionCommand);
+    if (!accountAwareCommands.has(commandPath)) {
+      deps.errorLog(`Error: The --account option is not supported by 'latchkey ${commandPath}'.`);
+      deps.exit(1);
+    }
+  });
+
   const servicesCommand = program
     .command('services')
     .description('Manage and inspect supported services.');
@@ -344,7 +422,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         );
         deps.log(JSON.stringify(info, null, 2));
       } catch (error) {
-        if (error instanceof UnknownServiceError) {
+        if (error instanceof UnknownServiceError || error instanceof AmbiguousAccountError) {
           deps.errorLog(`Error: ${error.message}`);
           deps.exit(1);
         }
@@ -461,11 +539,13 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         deps.config.credentialStorePath,
         encryptedStorage
       );
-      const credentials = apiCredentialStore.get(serviceName);
-      if (credentials !== null) {
+      if (
+        apiCredentialStore.listAccounts(serviceName).length > 0 ||
+        apiCredentialStore.getPreparation(serviceName) !== null
+      ) {
         deps.errorLog(
-          `Error: Credentials still exist for '${serviceName}'. ` +
-            `Run 'latchkey auth clear ${serviceName}' before deregistering.`
+          `Error: Credentials or a preparation still exist for '${serviceName}'. ` +
+            `Run 'latchkey auth clear ${serviceName} --all' before deregistering.`
         );
         deps.exit(1);
       }
@@ -482,12 +562,22 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .description('Clear stored API credentials.')
     .argument('[service_name]', 'Name of the service to clear API credentials for')
     .option('-y, --yes', 'Skip confirmation prompt when clearing all data')
-    .action(async (serviceName: string | undefined, options: { yes?: boolean }) => {
+    .option('--all', "Clear all of the service's accounts")
+    .action(async (serviceName: string | undefined, options: { yes?: boolean; all?: boolean }) => {
       refuseInGatewayMode(deps, 'auth clear');
+      const all = options.all ?? false;
+      if (all && serviceName === undefined) {
+        deps.errorLog('Error: --all requires a service name.');
+        deps.exit(1);
+      }
+      if (all && getAccount() !== undefined) {
+        deps.errorLog('Error: --all cannot be combined with --account.');
+        deps.exit(1);
+      }
       if (serviceName === undefined) {
         await clearAll(deps, options.yes ?? false);
       } else {
-        await clearService(deps, serviceName);
+        await clearService(deps, serviceName, getAccount(), all);
       }
     });
 
@@ -551,7 +641,15 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       );
 
       const credentials = new RawCurlCredentials(curlArguments);
-      apiCredentialStore.save(serviceName, credentials);
+      try {
+        apiCredentialStore.save(serviceName, credentials, getAccount());
+      } catch (error) {
+        if (error instanceof AmbiguousAccountError) {
+          deps.errorLog(`Error: ${error.message}`);
+          deps.exit(1);
+        }
+        throw error;
+      }
       deps.log('Credentials stored.');
     });
 
@@ -601,7 +699,15 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         throw error;
       }
 
-      apiCredentialStore.save(serviceName, credentials);
+      try {
+        apiCredentialStore.save(serviceName, credentials, getAccount());
+      } catch (error) {
+        if (error instanceof AmbiguousAccountError) {
+          deps.errorLog(`Error: ${error.message}`);
+          deps.exit(1);
+        }
+        throw error;
+      }
       deps.log('Credentials stored.');
     });
 
@@ -611,11 +717,11 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .argument('<service_name>', 'Name of the service to login to')
     .action(async (serviceName: string) => {
       if (deps.config.gatewayUrl !== null) {
-        await forwardToGateway(deps, {
+        const result = (await forwardToGateway(deps, {
           command: 'auth browser',
-          params: { serviceName },
-        });
-        deps.log('Done');
+          params: { serviceName, account: getAccount() },
+        })) as { account?: string } | null;
+        deps.log(loginDoneMessage(result?.account));
         return;
       }
       try {
@@ -624,16 +730,17 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           deps.config.credentialStorePath,
           encryptedStorage
         );
-        await authBrowser(
+        const { account } = await authBrowser(
           deps.registry,
           apiCredentialStore,
           encryptedStorage,
           deps.config,
-          serviceName
+          serviceName,
+          getAccount()
         );
-        deps.log('Done');
+        deps.log(loginDoneMessage(account));
       } catch (error) {
-        if (error instanceof UnknownServiceError) {
+        if (error instanceof UnknownServiceError || error instanceof AccountNotFoundError) {
           deps.errorLog(`Error: ${error.message}`);
           deps.exit(1);
         }
@@ -847,6 +954,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           permissionsDoNotUseBuiltinSchemas: deps.config.permissionsDoNotUseBuiltinSchemas,
           passthroughUnknown: deps.config.passthroughUnknown,
           credentialsRefreshDisabled: deps.config.credentialsRefreshDisabled,
+          account: getAccount(),
         });
       } catch (error) {
         if (error instanceof RequestNotPermittedError) {
@@ -862,6 +970,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           error instanceof NoServiceForUrlError ||
           error instanceof NoCredentialsForServiceError ||
           error instanceof CredentialsExpiredError ||
+          error instanceof AmbiguousAccountError ||
           error instanceof ApiCredentialsUsageError
         ) {
           deps.errorLog(error.message);
@@ -1054,7 +1163,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       const sourceStorage = new EncryptedStorage(sourceKey);
       const sourceStore = new ApiCredentialStore(deps.config.credentialStorePath, sourceStorage);
 
-      let allCredentials: ReadonlyMap<string, ApiCredentials>;
+      let allCredentials: ReadonlyMap<string, ReadonlyMap<string, ApiCredentials>>;
       try {
         allCredentials = sourceStore.getAll();
       } catch (error) {
@@ -1085,9 +1194,15 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       const destinationStorage = new EncryptedStorage(destinationKey);
       const destinationStore = new ApiCredentialStore(destination, destinationStorage);
       for (const serviceName of selectedServiceNames) {
-        const credentials = allCredentials.get(serviceName);
-        if (credentials !== undefined) {
-          destinationStore.save(serviceName, credentials);
+        const accountMap = allCredentials.get(serviceName);
+        if (accountMap !== undefined) {
+          for (const [account, credentials] of accountMap) {
+            destinationStore.save(serviceName, credentials, account);
+          }
+        }
+        const preparation = sourceStore.getPreparation(serviceName);
+        if (preparation !== null) {
+          destinationStore.savePreparation(serviceName, preparation);
         }
       }
 

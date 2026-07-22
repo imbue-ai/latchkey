@@ -162,6 +162,33 @@ code, stdout and stderr are passed back from curl to the caller
 of `latchkey`.
 
 
+### Multiple accounts
+
+Credentials for a service can be stored under several accounts.
+An account is a string that uniquely identifies the account
+behind the credentials - typically an e-mail, but for some
+services it may be an id. Use the global `--account` option to
+select one:
+
+```bash
+# Store credentials for a specific account.
+latchkey --account bob@example.com auth set slack -H "Authorization: Bearer xoxb-..."
+
+# Use them in a request.
+latchkey --account bob@example.com curl https://slack.com/api/auth.test
+```
+
+When `--account` is omitted, the single stored account is used
+automatically. If a service has more than one stored account,
+`--account` becomes required. Credentials stored without an
+account live under a "default" account (empty string, `""`).
+
+Browser logins (`latchkey auth browser`) determine the account
+automatically. The `--account` option here merely allows users
+to specify which existing OAuth client configuration to use for
+the login (selecting one associated with an existing account) if
+needed.
+
 ### Self-hosted services
 
 For services that can be self-hosted, like GitLab, first make Latchkey aware of your service instance:
@@ -226,14 +253,17 @@ calls.
 
 ### Inspecting the status of stored credentials
 
-Calling `latchkey services info <service_name>` will show information
-about the service, including the credentials status. The
-credentials status line will show one of:
+Calling `latchkey services info <service_name>` will show
+information about the service, including a `credentials` object
+keyed by account (the default account uses the empty string).
+Each entry reports a credentials status of:
 
-- `missing`
 - `invalid`
 - `valid`
 - `unknown` (for user-registered services)
+
+A service with no stored credentials shows an empty `credentials`
+object.
 
 ### Clearing credentials
 

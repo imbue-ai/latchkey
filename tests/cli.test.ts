@@ -11,8 +11,8 @@ import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { Config } from '../src/config.js';
 import { ServiceRegistry } from '../src/serviceRegistry.js';
 import { ApiCredentialStatus } from '../src/apiCredentials/base.js';
-import { SlackApiCredentials } from '../src/services/slack.js';
-import { NoCurlCredentialsNotSupportedError, Service } from '../src/services/core/base.js';
+import { Service } from '../src/services/core/base.js';
+import { createMockService, MockService } from './mockService.js';
 import { RegisteredService } from '../src/services/core/registered.js';
 import { GITLAB } from '../src/services/gitlab.js';
 import { GITHUB } from '../src/services/github.js';
@@ -43,6 +43,37 @@ function writeSecureFile(path: string, content: string): void {
 function readSecureFile(path: string): string | null {
   const storage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
   return storage.readFile(path);
+}
+
+// Wrap a flat { service: credentials } map into the on-disk layout, storing
+// everything as account-keyed credentials under the default account.
+function nestAccounts(flat: Record<string, unknown>): Record<string, unknown> {
+  return {
+    credentials: Object.fromEntries(
+      Object.entries(flat).map(([service, creds]) => [service, { '': creds }])
+    ),
+  };
+}
+
+// Read the raw account-keyed credentials section of the store.
+function readStore(path: string): Record<string, Record<string, unknown>> {
+  const parsed = JSON.parse(readSecureFile(path) ?? '{}') as {
+    credentials?: Record<string, Record<string, unknown>>;
+  };
+  return parsed.credentials ?? {};
+}
+
+// Read the raw preparations section of the store.
+function readPreparations(path: string): Record<string, unknown> {
+  const parsed = JSON.parse(readSecureFile(path) ?? '{}') as {
+    preparations?: Record<string, unknown>;
+  };
+  return parsed.preparations ?? {};
+}
+
+// Read a single service's default-account credentials from the store.
+function readDefaultCredentials(path: string, service: string): unknown {
+  return readStore(path)[service]?.[''];
 }
 
 interface CliResult {
@@ -381,24 +412,7 @@ describe('CLI commands with dependency injection', () => {
   }
 
   function createMockDependencies(overrides: Partial<CliDependencies> = {}): CliDependencies {
-    const mockSlackService: Service = {
-      name: 'slack',
-      displayName: 'Slack',
-      baseApiUrls: ['https://slack.com/api/'],
-      loginUrl: 'https://slack.com/signin',
-      info: 'Test info for Slack service.',
-      credentialCheckCurlArguments: ['https://slack.com/api/auth.test'],
-      checkApiCredentials: vi.fn().mockResolvedValue(ApiCredentialStatus.Valid),
-      setCredentialsExample(serviceName: string) {
-        return `latchkey auth set ${serviceName} -H "Authorization: Bearer xoxb-your-token"`;
-      },
-      getCredentialsNoCurl() {
-        throw new NoCurlCredentialsNotSupportedError('slack');
-      },
-      getSession: vi.fn().mockReturnValue({
-        login: vi.fn().mockResolvedValue(new SlackApiCredentials('xoxc-test-token', 'test-cookie')),
-      }),
-    };
+    const mockSlackService: Service = new MockService();
 
     const mockRegistry = new ServiceRegistry([mockSlackService]);
 
@@ -492,9 +506,11 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify({
-          slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
-        })
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
+          })
+        )
       );
 
       const deps = createMockDependencies();
@@ -533,7 +549,7 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(storePath, '{}');
 
-      const noLoginService: Service = {
+      const noLoginService: Service = createMockService({
         name: 'nologin',
         displayName: 'No Login Service',
         baseApiUrls: ['https://nologin.example.com/api/'],
@@ -541,13 +557,10 @@ describe('CLI commands with dependency injection', () => {
         info: 'A service without browser login support.',
         credentialCheckCurlArguments: [],
         checkApiCredentials: vi.fn().mockResolvedValue(ApiCredentialStatus.Missing),
-        setCredentialsExample(serviceName: string) {
-          return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
-        },
-        getCredentialsNoCurl() {
-          throw new NoCurlCredentialsNotSupportedError('nologin');
-        },
-      };
+        setCredentialsExample: (serviceName: string) =>
+          `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`,
+        getSession: undefined,
+      });
 
       const deps = createMockDependencies({
         registry: new ServiceRegistry([noLoginService]),
@@ -610,9 +623,11 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify({
-          slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
-        })
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
+          })
+        )
       );
 
       const originalPlatform = process.platform;
@@ -648,9 +663,11 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify({
-          slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
-        })
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
+          })
+        )
       );
 
       const deps = createMockDependencies({
@@ -667,12 +684,14 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify({
-          'my-gitlab': {
-            objectType: 'rawCurl',
-            curlArguments: ['-H', 'PRIVATE-TOKEN: token'],
-          },
-        })
+        JSON.stringify(
+          nestAccounts({
+            'my-gitlab': {
+              objectType: 'rawCurl',
+              curlArguments: ['-H', 'PRIVATE-TOKEN: token'],
+            },
+          })
+        )
       );
 
       // Ensure a graphical environment is available so browser auth is considered viable
@@ -713,7 +732,7 @@ describe('CLI commands with dependency injection', () => {
       expect(info.type).toBe('built-in');
       expect(info.baseApiUrls).toEqual(['https://slack.com/api/']);
       expect(info.authOptions).toEqual(['browser', 'set']);
-      expect(info.credentialStatus).toBe('missing');
+      expect(info.credentials).toEqual({});
       expect(info.setCredentialsExample).toBe(
         'latchkey auth set slack -H "Authorization: Bearer xoxb-your-token"'
       );
@@ -724,7 +743,7 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(storePath, '{}');
 
-      const noLoginService: Service = {
+      const noLoginService: Service = createMockService({
         name: 'nologin',
         displayName: 'No Login Service',
         baseApiUrls: ['https://nologin.example.com/api/'],
@@ -732,13 +751,10 @@ describe('CLI commands with dependency injection', () => {
         info: 'A service without browser login support.',
         credentialCheckCurlArguments: [],
         checkApiCredentials: vi.fn().mockResolvedValue(ApiCredentialStatus.Missing),
-        setCredentialsExample(serviceName: string) {
-          return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
-        },
-        getCredentialsNoCurl() {
-          throw new NoCurlCredentialsNotSupportedError('nologin');
-        },
-      };
+        setCredentialsExample: (serviceName: string) =>
+          `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`,
+        getSession: undefined,
+      });
 
       const deps = createMockDependencies({
         registry: new ServiceRegistry([noLoginService]),
@@ -766,8 +782,34 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
+          })
+        )
+      );
+
+      const deps = createMockDependencies();
+
+      await runCommand(['services', 'info', 'slack'], deps);
+
+      const info = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
+      expect(info.credentials).toEqual({
+        '': { credentialType: 'slack', credentialStatus: 'valid' },
+      });
+    });
+
+    it('should list credentials for each account', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(
+        storePath,
         JSON.stringify({
-          slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
+          credentials: {
+            slack: {
+              '': { objectType: 'rawCurl', curlArguments: ['-H', 'X-Token: default'] },
+              'work@example.com': { objectType: 'rawCurl', curlArguments: ['-H', 'X-Token: work'] },
+            },
+          },
         })
       );
 
@@ -776,7 +818,10 @@ describe('CLI commands with dependency injection', () => {
       await runCommand(['services', 'info', 'slack'], deps);
 
       const info = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
-      expect(info.credentialStatus).toBe('valid');
+      expect(info.credentials).toEqual({
+        '': { credentialType: 'rawCurl', credentialStatus: 'valid' },
+        'work@example.com': { credentialType: 'rawCurl', credentialStatus: 'valid' },
+      });
     });
 
     it('should return error for unknown service', async () => {
@@ -807,9 +852,11 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify({
-          slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
-        })
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
+          })
+        )
       );
 
       const deps = createMockDependencies();
@@ -833,20 +880,22 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify({
-          slack: { objectType: 'slack', token: 'slack-token', dCookie: 'slack-cookie' },
-          discord: { objectType: 'authorizationBare', token: 'discord-token' },
-        })
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'slack', token: 'slack-token', dCookie: 'slack-cookie' },
+            discord: { objectType: 'authorizationBare', token: 'discord-token' },
+          })
+        )
       );
 
       const deps = createMockDependencies();
 
       await runCommand(['auth', 'clear', 'slack'], deps);
 
-      const storedData = JSON.parse(readSecureFile(storePath) ?? '{}') as StoredCredentials;
+      const storedData = readStore(storePath);
       expect(storedData.slack).toBeUndefined();
       expect(storedData.discord).toBeDefined();
-      expect(storedData.discord?.token).toBe('discord-token');
+      expect((storedData.discord?.[''] as { token: string }).token).toBe('discord-token');
     });
 
     it('should delete both store and browser state with -y flag', async () => {
@@ -854,7 +903,9 @@ describe('CLI commands with dependency injection', () => {
       const browserStatePath = join(tempDir, 'browser_state.json');
       writeSecureFile(
         storePath,
-        JSON.stringify({ slack: { objectType: 'slack', token: 'test', dCookie: 'test' } })
+        JSON.stringify(
+          nestAccounts({ slack: { objectType: 'slack', token: 'test', dCookie: 'test' } })
+        )
       );
       writeSecureFile(browserStatePath, '{}');
 
@@ -867,14 +918,208 @@ describe('CLI commands with dependency injection', () => {
     });
   });
 
+  describe('--account option', () => {
+    const rawCurl = (token: string) => ({
+      objectType: 'rawCurl',
+      curlArguments: ['-H', `X-Token: ${token}`],
+    });
+
+    function writeMultiAccountStore(accounts: Record<string, string>): string {
+      const storePath = join(tempDir, 'credentials.json');
+      const slackAccounts = Object.fromEntries(
+        Object.entries(accounts).map(([account, token]) => [account, rawCurl(token)])
+      );
+      writeSecureFile(storePath, JSON.stringify({ credentials: { slack: slackAccounts } }));
+      return storePath;
+    }
+
+    it('auth set stores credentials under the given account', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(storePath, '{}');
+
+      const deps = createMockDependencies();
+      await runCommand(
+        ['--account', 'work@example.com', 'auth', 'set', 'slack', '-H', 'X-Token: secret'],
+        deps
+      );
+
+      expect(logs).toContain('Credentials stored.');
+      const store = readStore(storePath);
+      expect(store.slack?.['work@example.com']).toEqual(rawCurl('secret'));
+      expect(store.slack?.['']).toBeUndefined();
+    });
+
+    it('curl injects credentials for the requested account', async () => {
+      writeMultiAccountStore({ '': 'default', 'work@example.com': 'work' });
+
+      const deps = createMockDependencies();
+      await runCommand(
+        ['--account', 'work@example.com', 'curl', 'https://slack.com/api/test'],
+        deps
+      );
+
+      expect(exitCode).toBe(0);
+      expect(capturedArgs).toEqual(['-H', 'X-Token: work', 'https://slack.com/api/test']);
+    });
+
+    it('curl uses the single stored account without requiring --account', async () => {
+      writeMultiAccountStore({ 'only@example.com': 'solo' });
+
+      const deps = createMockDependencies();
+      await runCommand(['curl', 'https://slack.com/api/test'], deps);
+
+      expect(exitCode).toBe(0);
+      expect(capturedArgs).toEqual(['-H', 'X-Token: solo', 'https://slack.com/api/test']);
+    });
+
+    it('curl requires --account when multiple accounts exist', async () => {
+      writeMultiAccountStore({ 'a@example.com': 'a', 'b@example.com': 'b' });
+
+      const deps = createMockDependencies();
+      await runCommand(['curl', 'https://slack.com/api/test'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs.join('\n')).toContain('--account');
+    });
+
+    it('curl fails gracefully for a non-existing account', async () => {
+      writeMultiAccountStore({ '': 'default' });
+
+      const deps = createMockDependencies();
+      await runCommand(
+        ['--account', 'missing@example.com', 'curl', 'https://slack.com/api/test'],
+        deps
+      );
+
+      // A missing account is treated as "no credentials for this service",
+      // and the suggested commands carry the requested account.
+      expect(exitCode).toBe(1);
+      expect(capturedArgs).toEqual([]);
+      expect(errorLogs.join('\n')).toContain(
+        "No credentials found for slack (account 'missing@example.com')"
+      );
+      expect(errorLogs.join('\n')).toContain(
+        'latchkey --account missing@example.com auth browser slack'
+      );
+    });
+
+    it('auth clear keeps the preparation without --all', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(
+        storePath,
+        JSON.stringify({
+          credentials: { slack: { 'a@example.com': rawCurl('a') } },
+          preparations: {
+            slack: { objectType: 'oauth', clientId: 'cid', clientSecret: 'csecret' },
+          },
+        })
+      );
+
+      const deps = createMockDependencies();
+      await runCommand(['auth', 'clear', 'slack'], deps);
+
+      expect(readStore(storePath).slack).toBeUndefined();
+      expect(readPreparations(storePath).slack).toBeDefined();
+    });
+
+    it('auth clear --all removes all accounts and the preparation', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(
+        storePath,
+        JSON.stringify({
+          credentials: { slack: { 'a@example.com': rawCurl('a'), 'b@example.com': rawCurl('b') } },
+          preparations: {
+            slack: { objectType: 'oauth', clientId: 'cid', clientSecret: 'csecret' },
+          },
+        })
+      );
+
+      const deps = createMockDependencies();
+      await runCommand(['auth', 'clear', 'slack', '--all'], deps);
+
+      expect(logs.join('\n')).toContain('API credentials for slack have been cleared.');
+      expect(readStore(storePath).slack).toBeUndefined();
+      expect(readPreparations(storePath).slack).toBeUndefined();
+    });
+
+    it('auth clear --all rejects a missing service name', async () => {
+      const deps = createMockDependencies();
+      await runCommand(['auth', 'clear', '--all'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs.join('\n')).toContain('--all requires a service name');
+    });
+
+    it('auth clear --all rejects --account', async () => {
+      writeMultiAccountStore({ 'a@example.com': 'a' });
+
+      const deps = createMockDependencies();
+      await runCommand(['--account', 'a@example.com', 'auth', 'clear', 'slack', '--all'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs.join('\n')).toContain('--all cannot be combined with --account');
+    });
+
+    it('auth clear removes only the requested account', async () => {
+      const storePath = writeMultiAccountStore({
+        'a@example.com': 'a',
+        'b@example.com': 'b',
+      });
+
+      const deps = createMockDependencies();
+      await runCommand(['--account', 'a@example.com', 'auth', 'clear', 'slack'], deps);
+
+      const store = readStore(storePath);
+      expect(store.slack?.['a@example.com']).toBeUndefined();
+      expect(store.slack?.['b@example.com']).toBeDefined();
+    });
+
+    it('auth clear requires --account when multiple accounts exist', async () => {
+      writeMultiAccountStore({ 'a@example.com': 'a', 'b@example.com': 'b' });
+
+      const deps = createMockDependencies();
+      await runCommand(['auth', 'clear', 'slack'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs.join('\n')).toContain('--account');
+    });
+
+    it('auth clear fails gracefully for a non-existing account', async () => {
+      writeMultiAccountStore({ '': 'default' });
+
+      const deps = createMockDependencies();
+      await runCommand(['--account', 'missing@example.com', 'auth', 'clear', 'slack'], deps);
+
+      // Clearing a missing account is a no-op rather than an error.
+      expect(exitCode).toBeNull();
+      expect(logs.join('\n')).toContain('No API credentials found for slack.');
+    });
+
+    it.each([
+      ['services', 'info', 'slack'],
+      ['auth', 'browser-prepare', 'slack'],
+      ['auth', 'prepare', 'google-gmail', '{"clientId":"a","clientSecret":"b"}'],
+      ['auth', 'list'],
+      ['services', 'list'],
+    ])('rejects --account for the unsupported command: %s %s', async (...commandArgs) => {
+      const deps = createMockDependencies();
+      await runCommand(['--account', 'hola@jola.com', ...commandArgs], deps);
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs.join('\n')).toContain('--account option is not supported');
+    });
+  });
+
   describe('auth list command', () => {
     it('should list stored credentials with their status', async () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify({
-          slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
-        })
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
+          })
+        )
       );
 
       const deps = createMockDependencies();
@@ -883,8 +1128,31 @@ describe('CLI commands with dependency injection', () => {
       expect(logs).toHaveLength(1);
       const entries = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
       expect(entries.slack).toEqual({
-        credentialType: 'slack',
-        credentialStatus: 'valid',
+        '': { credentialType: 'slack', credentialStatus: 'valid' },
+      });
+    });
+
+    it('should key each service by account', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(
+        storePath,
+        JSON.stringify({
+          credentials: {
+            slack: {
+              '': { objectType: 'rawCurl', curlArguments: ['-H', 'X-Token: default'] },
+              'work@example.com': { objectType: 'rawCurl', curlArguments: ['-H', 'X-Token: work'] },
+            },
+          },
+        })
+      );
+
+      const deps = createMockDependencies();
+      await runCommand(['auth', 'list'], deps);
+
+      const entries = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
+      expect(entries.slack).toEqual({
+        '': { credentialType: 'rawCurl', credentialStatus: 'valid' },
+        'work@example.com': { credentialType: 'rawCurl', credentialStatus: 'valid' },
       });
     });
 
@@ -904,9 +1172,11 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify({
-          unknown: { objectType: 'rawCurl', curlArguments: ['-H', 'X-Token: secret'] },
-        })
+        JSON.stringify(
+          nestAccounts({
+            unknown: { objectType: 'rawCurl', curlArguments: ['-H', 'X-Token: secret'] },
+          })
+        )
       );
 
       const deps = createMockDependencies();
@@ -915,8 +1185,7 @@ describe('CLI commands with dependency injection', () => {
       expect(logs).toHaveLength(1);
       const entries = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
       expect(entries.unknown).toEqual({
-        credentialType: 'rawCurl',
-        credentialStatus: 'valid',
+        '': { credentialType: 'rawCurl', credentialStatus: 'valid' },
       });
     });
   });
@@ -935,8 +1204,7 @@ describe('CLI commands with dependency injection', () => {
 
       expect(logs).toContain('Credentials stored.');
 
-      const storedData = JSON.parse(readSecureFile(storePath) ?? '{}') as Record<string, unknown>;
-      expect(storedData.slack).toEqual({
+      expect(readDefaultCredentials(storePath, 'slack')).toEqual({
         objectType: 'rawCurl',
         curlArguments: ['-H', 'X-Token: secret', '-H', 'X-Other: value'],
       });
@@ -970,9 +1238,11 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify({
-          slack: { objectType: 'slack', token: 'old-token', dCookie: 'old-cookie' },
-        })
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'slack', token: 'old-token', dCookie: 'old-cookie' },
+          })
+        )
       );
 
       const deps = createMockDependencies();
@@ -981,8 +1251,7 @@ describe('CLI commands with dependency injection', () => {
 
       expect(logs).toContain('Credentials stored.');
 
-      const storedData = JSON.parse(readSecureFile(storePath) ?? '{}') as Record<string, unknown>;
-      expect(storedData.slack).toEqual({
+      expect(readDefaultCredentials(storePath, 'slack')).toEqual({
         objectType: 'rawCurl',
         curlArguments: ['-H', 'X-Token: new-secret'],
       });
@@ -995,7 +1264,13 @@ describe('CLI commands with dependency injection', () => {
 
     function readWithKey(path: string, key: string): Record<string, unknown> {
       const storage = new EncryptedStorage(key);
-      return JSON.parse(storage.readFile(path) ?? '{}') as Record<string, unknown>;
+      const raw = JSON.parse(storage.readFile(path) ?? '{}') as {
+        credentials?: Record<string, Record<string, unknown>>;
+      };
+      // Unwrap the default account so assertions can compare flat credentials.
+      return Object.fromEntries(
+        Object.entries(raw.credentials ?? {}).map(([service, accounts]) => [service, accounts['']])
+      );
     }
 
     function withStdinKey(key: string, overrides: Partial<CliDependencies> = {}): CliDependencies {
@@ -1006,7 +1281,7 @@ describe('CLI commands with dependency injection', () => {
     const STORE_FILENAME = 'credentials.json';
 
     function writeStore(contents: Record<string, unknown>): void {
-      writeSecureFile(join(tempDir, STORE_FILENAME), JSON.stringify(contents));
+      writeSecureFile(join(tempDir, STORE_FILENAME), JSON.stringify(nestAccounts(contents)));
     }
 
     it('re-encrypts all stored credentials with the new key', async () => {
@@ -1153,8 +1428,7 @@ describe('CLI commands with dependency injection', () => {
 
       expect(logs).toContain('Credentials stored.');
 
-      const storedData = JSON.parse(readSecureFile(storePath) ?? '{}') as Record<string, unknown>;
-      expect(storedData.telegram).toEqual({
+      expect(readDefaultCredentials(storePath, 'telegram')).toEqual({
         objectType: 'telegramBot',
         token: '123456:ABC-DEF',
       });
@@ -1198,7 +1472,7 @@ describe('CLI commands with dependency injection', () => {
   });
 
   describe('prepare command', () => {
-    it('stores an OAuth client for a Google service and reports success', async () => {
+    it("stores an OAuth client as the service's preparation and reports success", async () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(storePath, '{}');
 
@@ -1212,12 +1486,12 @@ describe('CLI commands with dependency injection', () => {
       );
 
       expect(logs).toContain('Done');
-      const storedData = JSON.parse(readSecureFile(storePath) ?? '{}') as Record<string, unknown>;
-      expect(storedData['google-gmail']).toEqual({
+      expect(readPreparations(storePath)['google-gmail']).toEqual({
         objectType: 'oauth',
         clientId: 'cid',
         clientSecret: 'csecret',
       });
+      expect(readDefaultCredentials(storePath, 'google-gmail')).toBeUndefined();
     });
 
     it('returns an error for an unknown service', async () => {
@@ -1272,9 +1546,11 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify({
-          slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
-        })
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
+          })
+        )
       );
 
       const deps = createMockDependencies();
@@ -1295,9 +1571,11 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify({
-          slack: { objectType: 'rawCurl', curlArguments: ['-H', 'X-Custom: header'] },
-        })
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'rawCurl', curlArguments: ['-H', 'X-Custom: header'] },
+          })
+        )
       );
 
       const deps = createMockDependencies();
@@ -1312,9 +1590,11 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify({
-          slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
-        })
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
+          })
+        )
       );
 
       const deps = createMockDependencies();
@@ -1344,9 +1624,11 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify({
-          slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
-        })
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
+          })
+        )
       );
 
       const deps = createMockDependencies({
@@ -1378,9 +1660,11 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify({
-          'google-gmail': { objectType: 'oauth', clientId: 'cid', clientSecret: 'csecret' },
-        })
+        JSON.stringify(
+          nestAccounts({
+            'google-gmail': { objectType: 'oauth', clientId: 'cid', clientSecret: 'csecret' },
+          })
+        )
       );
 
       const deps = createMockDependencies({
@@ -1397,14 +1681,16 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify({
-          'google-docs': {
-            objectType: 'oauth',
-            clientId: 'cid',
-            clientSecret: 'csecret',
-            accessToken: 'docs-token',
-          },
-        })
+        JSON.stringify(
+          nestAccounts({
+            'google-docs': {
+              objectType: 'oauth',
+              clientId: 'cid',
+              clientSecret: 'csecret',
+              accessToken: 'docs-token',
+            },
+          })
+        )
       );
 
       const deps = createMockDependencies({
@@ -1421,20 +1707,22 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify({
-          'google-drive': {
-            objectType: 'oauth',
-            clientId: 'cid',
-            clientSecret: 'csecret',
-            accessToken: 'drive-token',
-          },
-          'google-docs': {
-            objectType: 'oauth',
-            clientId: 'cid',
-            clientSecret: 'csecret',
-            accessToken: 'docs-token',
-          },
-        })
+        JSON.stringify(
+          nestAccounts({
+            'google-drive': {
+              objectType: 'oauth',
+              clientId: 'cid',
+              clientSecret: 'csecret',
+              accessToken: 'drive-token',
+            },
+            'google-docs': {
+              objectType: 'oauth',
+              clientId: 'cid',
+              clientSecret: 'csecret',
+              accessToken: 'docs-token',
+            },
+          })
+        )
       );
 
       const deps = createMockDependencies({
@@ -1451,21 +1739,23 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify({
-          'google-drive': {
-            objectType: 'oauth',
-            clientId: 'cid',
-            clientSecret: 'csecret',
-            accessToken: 'drive-token',
-            accessTokenExpiresAt: '2000-01-01T00:00:00.000Z',
-          },
-          'google-docs': {
-            objectType: 'oauth',
-            clientId: 'cid',
-            clientSecret: 'csecret',
-            accessToken: 'docs-token',
-          },
-        })
+        JSON.stringify(
+          nestAccounts({
+            'google-drive': {
+              objectType: 'oauth',
+              clientId: 'cid',
+              clientSecret: 'csecret',
+              accessToken: 'drive-token',
+              accessTokenExpiresAt: '2000-01-01T00:00:00.000Z',
+            },
+            'google-docs': {
+              objectType: 'oauth',
+              clientId: 'cid',
+              clientSecret: 'csecret',
+              accessToken: 'docs-token',
+            },
+          })
+        )
       );
 
       const deps = createMockDependencies({
@@ -1483,14 +1773,16 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify({
-          'google-docs': {
-            objectType: 'oauth',
-            clientId: 'cid',
-            clientSecret: 'csecret',
-            accessToken: 'docs-token',
-          },
-        })
+        JSON.stringify(
+          nestAccounts({
+            'google-docs': {
+              objectType: 'oauth',
+              clientId: 'cid',
+              clientSecret: 'csecret',
+              accessToken: 'docs-token',
+            },
+          })
+        )
       );
 
       const deps = createMockDependencies({
@@ -1534,9 +1826,11 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify({
-          slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
-        })
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
+          })
+        )
       );
 
       const deps = createMockDependencies({
@@ -1553,28 +1847,19 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify({
-          slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
-        })
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
+          })
+        )
       );
 
       const mockLogin = vi.fn();
-      const mockSlackService: Service = {
-        name: 'slack',
-        displayName: 'Slack',
-        baseApiUrls: ['https://slack.com/api/'],
-        loginUrl: 'https://slack.com/signin',
-        info: 'Test info for Slack service.',
+      const mockSlackService: Service = createMockService({
         credentialCheckCurlArguments: [],
         checkApiCredentials: vi.fn(),
-        setCredentialsExample(serviceName: string) {
-          return `latchkey auth set ${serviceName} -H "Authorization: Bearer xoxb-your-token"`;
-        },
-        getCredentialsNoCurl() {
-          throw new NoCurlCredentialsNotSupportedError('slack');
-        },
         getSession: vi.fn().mockReturnValue({ login: mockLogin }),
-      };
+      });
 
       const deps = createMockDependencies({
         registry: new ServiceRegistry([mockSlackService]),
@@ -1601,9 +1886,11 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify({
-          telegram: { objectType: 'telegramBot', token: '123456:ABC-DEF' },
-        })
+        JSON.stringify(
+          nestAccounts({
+            telegram: { objectType: 'telegramBot', token: '123456:ABC-DEF' },
+          })
+        )
       );
 
       const deps = createMockDependencies({
@@ -1620,12 +1907,14 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify({
-          nologin: { objectType: 'rawCurl', curlArguments: ['-H', 'X-API-Key: secret'] },
-        })
+        JSON.stringify(
+          nestAccounts({
+            nologin: { objectType: 'rawCurl', curlArguments: ['-H', 'X-API-Key: secret'] },
+          })
+        )
       );
 
-      const noLoginService: Service = {
+      const noLoginService: Service = createMockService({
         name: 'nologin',
         displayName: 'No Login Service',
         baseApiUrls: ['https://nologin.example.com/api/'],
@@ -1633,14 +1922,11 @@ describe('CLI commands with dependency injection', () => {
         info: 'A service without browser login support.',
         credentialCheckCurlArguments: [],
         checkApiCredentials: vi.fn().mockResolvedValue(ApiCredentialStatus.Valid),
-        setCredentialsExample(serviceName: string) {
-          return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
-        },
-        getCredentialsNoCurl() {
-          throw new NoCurlCredentialsNotSupportedError('nologin');
-        },
+        setCredentialsExample: (serviceName: string) =>
+          `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`,
         // No getSession - service doesn't support browser login
-      };
+        getSession: undefined,
+      });
 
       const deps = createMockDependencies({
         registry: new ServiceRegistry([noLoginService]),
@@ -1657,9 +1943,11 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify({
-          slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
-        })
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
+          })
+        )
       );
 
       const deps = createMockDependencies({
@@ -1677,9 +1965,11 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify({
-          slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
-        })
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
+          })
+        )
       );
 
       const deps = createMockDependencies({
@@ -1696,9 +1986,11 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify({
-          slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
-        })
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
+          })
+        )
       );
 
       const { PermissionCheckError } = await import('../src/permissions.js');
@@ -1718,7 +2010,7 @@ describe('CLI commands with dependency injection', () => {
 
   describe('auth browser command', () => {
     it('should return error when service does not support browser login', async () => {
-      const noLoginService: Service = {
+      const noLoginService: Service = createMockService({
         name: 'nologin',
         displayName: 'No Login Service',
         baseApiUrls: ['https://nologin.example.com/api/'],
@@ -1726,13 +2018,13 @@ describe('CLI commands with dependency injection', () => {
         info: 'A service without browser login support.',
         credentialCheckCurlArguments: [],
         checkApiCredentials: vi.fn(),
-        setCredentialsExample(serviceName: string) {
-          return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
-        },
+        setCredentialsExample: (serviceName: string) =>
+          `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`,
         // eslint-disable-next-line @typescript-eslint/unbound-method
         getCredentialsNoCurl: Service.prototype.getCredentialsNoCurl,
         // No getSession - service doesn't support browser login
-      };
+        getSession: undefined,
+      });
 
       const deps = createMockDependencies({
         registry: new ServiceRegistry([noLoginService]),
@@ -1776,7 +2068,7 @@ describe('CLI commands with dependency injection', () => {
     });
 
     it('should suggest set-nocurl when service supports nocurl credentials', async () => {
-      const nocurlService: Service = {
+      const nocurlService: Service = createMockService({
         name: 'nocurl-only',
         displayName: 'NoCurl Only Service',
         baseApiUrls: ['https://nocurl.example.com/api/'],
@@ -1784,9 +2076,8 @@ describe('CLI commands with dependency injection', () => {
         info: 'A service with nocurl credentials but no browser login.',
         credentialCheckCurlArguments: [],
         checkApiCredentials: vi.fn(),
-        setCredentialsExample(serviceName: string) {
-          return `latchkey auth set-nocurl ${serviceName} <some-arg>`;
-        },
+        setCredentialsExample: (serviceName: string) =>
+          `latchkey auth set-nocurl ${serviceName} <some-arg>`,
         getCredentialsNoCurl(arguments_: readonly string[]) {
           if (arguments_.length !== 1) {
             throw new Error('Expected exactly one argument');
@@ -1794,7 +2085,8 @@ describe('CLI commands with dependency injection', () => {
           return { objectType: 'test', injectIntoCurlCall: vi.fn(), isExpired: () => false };
         },
         // No getSession - service doesn't support browser login
-      };
+        getSession: undefined,
+      });
 
       const deps = createMockDependencies({
         registry: new ServiceRegistry([nocurlService]),
@@ -2186,12 +2478,14 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify({
-          'my-api': {
-            objectType: 'rawCurl',
-            curlArguments: ['-H', 'Authorization: Bearer my-token'],
-          },
-        })
+        JSON.stringify(
+          nestAccounts({
+            'my-api': {
+              objectType: 'rawCurl',
+              curlArguments: ['-H', 'Authorization: Bearer my-token'],
+            },
+          })
+        )
       );
 
       logs = [];
@@ -2265,12 +2559,14 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify({
-          'my-gitlab': {
-            objectType: 'rawCurl',
-            curlArguments: ['-H', 'PRIVATE-TOKEN: my-secret-token'],
-          },
-        })
+        JSON.stringify(
+          nestAccounts({
+            'my-gitlab': {
+              objectType: 'rawCurl',
+              curlArguments: ['-H', 'PRIVATE-TOKEN: my-secret-token'],
+            },
+          })
+        )
       );
 
       logs = [];
@@ -2379,10 +2675,56 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
+        JSON.stringify(
+          nestAccounts({
+            'my-gitlab': {
+              objectType: 'rawCurl',
+              curlArguments: ['-H', 'PRIVATE-TOKEN: my-secret-token'],
+            },
+          })
+        )
+      );
+
+      logs = [];
+      errorLogs = [];
+      exitCode = null;
+      await runCommand(['services', 'deregister', 'my-gitlab'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs[0]).toContain('Credentials or a preparation still exist');
+      expect(errorLogs[0]).toContain('latchkey auth clear my-gitlab --all');
+
+      // Service should still be in config
+      const entries = loadRegisteredServices(deps.config.configPath);
+      expect(entries.get('my-gitlab')).toBeDefined();
+    });
+
+    it('should reject deregistering when only a preparation still exists', async () => {
+      const deps = createMockDependencies({
+        registry: new ServiceRegistry([GITLAB]),
+      });
+
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-gitlab',
+          '--base-api-url',
+          'https://gitlab.mycompany.com/api/',
+          '--service-family',
+          'gitlab',
+        ],
+        deps
+      );
+
+      // Store a preparation (but no credentials) for the service
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(
+        storePath,
         JSON.stringify({
-          'my-gitlab': {
-            objectType: 'rawCurl',
-            curlArguments: ['-H', 'PRIVATE-TOKEN: my-secret-token'],
+          credentials: {},
+          preparations: {
+            'my-gitlab': { objectType: 'oauth', clientId: 'cid', clientSecret: 'csecret' },
           },
         })
       );
@@ -2393,8 +2735,8 @@ describe('CLI commands with dependency injection', () => {
       await runCommand(['services', 'deregister', 'my-gitlab'], deps);
 
       expect(exitCode).toBe(1);
-      expect(errorLogs[0]).toContain('Credentials still exist');
-      expect(errorLogs[0]).toContain('latchkey auth clear my-gitlab');
+      expect(errorLogs[0]).toContain('Credentials or a preparation still exist');
+      expect(errorLogs[0]).toContain('latchkey auth clear my-gitlab --all');
 
       // Service should still be in config
       const entries = loadRegisteredServices(deps.config.configPath);
@@ -2424,12 +2766,14 @@ describe('CLI commands with dependency injection', () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
-        JSON.stringify({
-          'my-gitlab': {
-            objectType: 'rawCurl',
-            curlArguments: ['-H', 'PRIVATE-TOKEN: my-secret-token'],
-          },
-        })
+        JSON.stringify(
+          nestAccounts({
+            'my-gitlab': {
+              objectType: 'rawCurl',
+              curlArguments: ['-H', 'PRIVATE-TOKEN: my-secret-token'],
+            },
+          })
+        )
       );
 
       logs = [];
@@ -2647,6 +2991,19 @@ describe('CLI commands with dependency injection', () => {
         params: { serviceName: 'slack' },
       });
       expect(logs).toContain('Done');
+    });
+
+    it('reports the account returned by the gateway for `auth browser`', async () => {
+      makeFetchMock(
+        new Response(JSON.stringify({ result: { account: 'user@example.com' } }), { status: 200 })
+      );
+      const deps = createMockDependencies({
+        config: createMockConfig({ gatewayUrl: GATEWAY_URL }),
+      });
+
+      await runCommand(['auth', 'browser', 'slack'], deps);
+
+      expect(logs).toContain("Done. Stored credentials for account 'user@example.com'.");
     });
 
     it('forwards `auth browser-prepare` and reports `Already prepared.` when the gateway says so', async () => {

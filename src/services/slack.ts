@@ -4,9 +4,9 @@
 
 import type { Response } from 'playwright';
 import { z } from 'zod';
-import { ApiCredentialStatus, type ApiCredentials } from '../apiCredentials/base.js';
-import { runCaptured } from '../curl.js';
+import type { ApiCredentials } from '../apiCredentials/base.js';
 import { Service, SimpleServiceSession } from './core/base.js';
+import { fetchAccountFromEndpoint, tryParseJson } from '../apiCredentials/account.js';
 
 /**
  * Slack-specific credentials (token + d cookie).
@@ -117,21 +117,38 @@ export class Slack extends Service {
     return new SlackServiceSession(this, appNamePrefix);
   }
 
-  override async checkApiCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentialStatus> {
-    const result = runCaptured(
-      await apiCredentials.injectIntoCurlCall(['-s', ...this.credentialCheckCurlArguments]),
-      10
-    );
+  // auth.test reports authentication failures as HTTP 200 with `ok: false`,
+  // so validity comes from the body rather than the status code.
+  protected override isCredentialCheckResponseValid(
+    _httpStatusCode: string,
+    responseBody: string
+  ): boolean {
+    const data = tryParseJson(responseBody) as { ok?: boolean } | null;
+    return data?.ok === true;
+  }
 
-    try {
-      const data = JSON.parse(result.stdout) as { ok?: boolean };
-      if (data.ok) {
-        return ApiCredentialStatus.Valid;
+  override getAccount(apiCredentials: ApiCredentials): Promise<string | null> {
+    return fetchAccountFromEndpoint(
+      apiCredentials,
+      this.credentialCheckCurlArguments,
+      (responseBody) => {
+        const data = tryParseJson(responseBody) as {
+          user?: string;
+          team?: string;
+          url?: string;
+        } | null;
+        if (data?.user === undefined) {
+          return null;
+        }
+        // The same user can be signed in to several workspaces, so the account
+        // includes the workspace: prefer the stable subdomain from the workspace
+        // URL, falling back to the display name.
+        const workspaceMatch =
+          data.url === undefined ? null : /^https:\/\/([^./]+)\./.exec(data.url);
+        const workspace = workspaceMatch?.[1] ?? data.team;
+        return workspace === undefined ? data.user : `${data.user}@${workspace}`;
       }
-      return ApiCredentialStatus.Invalid;
-    } catch {
-      return ApiCredentialStatus.Invalid;
-    }
+    );
   }
 }
 

@@ -11,6 +11,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { Browser, BrowserContext, Locator, Page, Response } from 'playwright';
 import { type ApiCredentials, OAuthCredentials } from '../../apiCredentials/base.js';
+import { fetchAccountFromEndpoint, tryParseJson } from '../../apiCredentials/account.js';
 import { extractUrlFromCurlArguments } from '../../curl.js';
 import {
   showSpinnerPage,
@@ -907,6 +908,30 @@ export type GooglePrepareInput = z.infer<typeof GooglePrepareInputSchema>;
  */
 export abstract class GoogleService extends Service {
   readonly loginUrl = 'https://console.cloud.google.com/';
+
+  /**
+   * All Google services share the same credential check: the OpenID userinfo
+   * endpoint. The login scopes always include userinfo.email (see
+   * COMMON_SCOPES), so a valid token always answers there, and the response
+   * reveals the signed-in e-mail — including for services whose own API
+   * carries no identity (Analytics, Docs, Sheets, Slides). Service-specific
+   * scopes are deliberately not examined — the check only decides credential
+   * validity.
+   */
+  readonly credentialCheckCurlArguments = [
+    'https://openidconnect.googleapis.com/v1/userinfo',
+  ] as const;
+
+  override getAccount(apiCredentials: ApiCredentials): Promise<string | null> {
+    return fetchAccountFromEndpoint(
+      apiCredentials,
+      this.credentialCheckCurlArguments,
+      (responseBody) => {
+        const data = tryParseJson(responseBody) as { email?: string; sub?: string } | null;
+        return data?.email ?? data?.sub ?? null;
+      }
+    );
+  }
 
   protected abstract readonly config: GoogleServiceConfig;
 

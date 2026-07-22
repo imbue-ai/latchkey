@@ -60,6 +60,7 @@ export {
   ServiceSession,
   SimpleServiceSession,
   BrowserFollowupServiceSession,
+  type LoginResult,
   LoginCancelledError,
   LoginFailedError,
   Slack,

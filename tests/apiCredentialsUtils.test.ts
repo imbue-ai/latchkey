@@ -27,7 +27,7 @@ describe('maybeRefreshCredentials', () => {
     const result = await maybeRefreshCredentials(service, expired, store, false);
 
     expect(refreshCredentials).toHaveBeenCalledOnce();
-    expect(save).toHaveBeenCalledWith('demo', refreshed);
+    expect(save).toHaveBeenCalledWith('demo', refreshed, undefined);
     expect(result).toBe(refreshed);
   });
 

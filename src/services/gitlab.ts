@@ -1,4 +1,6 @@
+import type { ApiCredentials } from '../apiCredentials/base.js';
 import { Service } from './core/base.js';
+import { fetchAccountFromEndpoint, tryParseJson } from '../apiCredentials/account.js';
 
 export class Gitlab extends Service {
   readonly name = 'gitlab';
@@ -11,6 +13,19 @@ export class Gitlab extends Service {
 
   setCredentialsExample(serviceName: string): string {
     return `latchkey auth set ${serviceName} -H "PRIVATE-TOKEN: <token>"`;
+  }
+
+  override getAccount(apiCredentials: ApiCredentials): Promise<string | null> {
+    return fetchAccountFromEndpoint(
+      apiCredentials,
+      this.credentialCheckCurlArguments,
+      (responseBody) => {
+        // Unlike lookups of other users, /user always exposes the token owner's
+        // own e-mail, so it can be preferred over the username.
+        const data = tryParseJson(responseBody) as { username?: string; email?: string } | null;
+        return data?.email ?? data?.username ?? null;
+      }
+    );
   }
 }
 

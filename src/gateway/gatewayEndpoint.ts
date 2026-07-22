@@ -10,7 +10,7 @@ import * as http from 'node:http';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import type { ApiCredentialStore } from '../apiCredentials/store.js';
+import { AmbiguousAccountError, type ApiCredentialStore } from '../apiCredentials/store.js';
 import type { AsyncCurlResult } from '../curl.js';
 import type { CliDependencies } from '../cliCommands.js';
 import {
@@ -367,7 +367,8 @@ export async function handleGatewayRequest(
       error instanceof UrlExtractionFailedError ||
       error instanceof NoServiceForUrlError ||
       error instanceof NoCredentialsForServiceError ||
-      error instanceof CredentialsExpiredError
+      error instanceof CredentialsExpiredError ||
+      error instanceof AmbiguousAccountError
     ) {
       deps.log(`${method} ${targetUrl} -> 400`);
       sendErrorResponse(response, 400, error.message);
