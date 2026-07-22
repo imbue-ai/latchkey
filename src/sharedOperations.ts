@@ -306,10 +306,9 @@ export async function authBrowserPrepare(
     return { alreadyPrepared: true };
   }
 
-  if (apiCredentialStore.getPreparation(service.name) !== null) {
-    return { alreadyPrepared: true };
-  }
-
+  // A preparation may already exist, but we still run the flow again: the
+  // multi-account flow relies on people being able to prepare repeatedly to
+  // create different OAuth clients. The new preparation overwrites the old one.
   const launchOptions = getBrowserLaunchOptions(config);
 
   let credentials: ApiCredentials;
