@@ -28,6 +28,7 @@ import { GOOGLE_GMAIL } from '../src/services/google/gmail.js';
 import { LINEAR } from '../src/services/linear.js';
 import { MAILCHIMP } from '../src/services/mailchimp.js';
 import { NOTION } from '../src/services/notion.js';
+import { NOTION_MCP } from '../src/services/notion-mcp.js';
 import { SENTRY } from '../src/services/sentry.js';
 import { SLACK } from '../src/services/slack.js';
 import { STRIPE } from '../src/services/stripe.js';
@@ -270,5 +271,53 @@ describe('account determination via a separate endpoint', () => {
     mockCurlOutput('{"id":"abc","email":"host@example.com"}');
     const account = await ZOOM.getAccount(BEARER);
     expect(account).toBe('host@example.com');
+  });
+});
+
+describe('notion-mcp account determination via the get-users MCP tool', () => {
+  // SSE-framed response as actually returned by mcp.notion.com.
+  const recordedGetSelfResponse =
+    'event: message\n' +
+    'data: {"result":{"content":[{"type":"text","text":"{\\"results\\":[{\\"type\\":\\"person\\",\\"id\\":\\"uuid-1\\",\\"name\\":\\"Jane Doe\\",\\"email\\":\\"jane@example.com\\"}],\\"has_more\\":false}"}]},"jsonrpc":"2.0","id":2}\n';
+
+  it('resolves the e-mail via a single stateless tools/call', async () => {
+    let observedArguments: readonly string[] = [];
+    setCapturingSubprocessRunner((args) => {
+      observedArguments = args;
+      return { returncode: 0, stdout: recordedGetSelfResponse, stderr: '' };
+    });
+    const account = await NOTION_MCP.getAccount(BEARER);
+    expect(account).toBe('jane@example.com');
+    expect(observedArguments[observedArguments.length - 1]).toBe('https://mcp.notion.com/mcp');
+    const payloadArgument = observedArguments[observedArguments.indexOf('-d') + 1] ?? '{}';
+    expect(JSON.parse(payloadArgument)).toMatchObject({
+      method: 'tools/call',
+      params: { name: 'notion-get-users', arguments: { user_id: 'self' } },
+    });
+  });
+
+  it('falls back to the name when the user has no e-mail (bots)', async () => {
+    const toolResultText = JSON.stringify({
+      results: [{ type: 'bot', id: 'uuid-2', name: 'My Bot' }],
+      has_more: false,
+    });
+    mockCurlOutput(
+      JSON.stringify({ result: { content: [{ type: 'text', text: toolResultText }] }, id: 2 })
+    );
+    const account = await NOTION_MCP.getAccount(BEARER);
+    expect(account).toBe('My Bot');
+  });
+
+  it('leaves the account undetermined on an error or malformed response', async () => {
+    mockCurlOutput('{"jsonrpc":"2.0","id":2,"error":{"code":-32600,"message":"unauthorized"}}');
+    expect(await NOTION_MCP.getAccount(BEARER)).toBeNull();
+    mockCurlOutput('not json at all');
+    expect(await NOTION_MCP.getAccount(BEARER)).toBeNull();
+  });
+
+  it('leaves the account undetermined for token-less prepared credentials', async () => {
+    const prepared = new OAuthCredentials('client-id', '');
+    const account = await NOTION_MCP.getAccount(prepared);
+    expect(account).toBeNull();
   });
 });
