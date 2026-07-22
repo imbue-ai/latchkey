@@ -414,6 +414,7 @@ defaults:
 - `LATCHKEY_KEYRING_SERVICE_NAME`, `LATCHKEY_KEYRING_ACCOUNT_NAME`: identifiers that are used to store the encryption password in your keyring
 - `LATCHKEY_ENCRYPTION_KEY`: override the encryption key, e.g. when a keyring is not available. Example: `export LATCHKEY_ENCRYPTION_KEY="$(openssl rand -base64 32)"`
 - `LATCHKEY_DISABLE_BROWSER`: when set to a non-empty value, disables the browser login flow; commands that would trigger a browser login (`auth browser`, `auth browser-prepare`) will fail with an error instead
+- `LATCHKEY_EPHEMERAL_BROWSER`: when set to a non-empty value, browser flows operate similarly to the browser incognito mode. Useful when logging into multiple accounts.
 - `LATCHKEY_DISABLE_COUNTING`: when set to a non-empty value, disables daily usage counting.
 - `LATCHKEY_DISABLE_CREDENTIALS_REFRESH`: when set to a non-empty value, expired credentials are never refreshed. (Useful when the credentials are shared and refreshing in one place would risk exhausting the refresh token for the other one.)
 - `LATCHKEY_PERMISSIONS_CONFIG`: override the `permissions.json` location.
@@ -441,6 +442,7 @@ override `config.json` values.
     "keyringServiceName": "latchkey",
     "keyringAccountName": "encryption-key",
     "browserDisabled": false,
+    "browserEphemeral": false,
     "countingDisabled": true,
     "permissionsConfig": "/etc/latchkey/permissions.json",
     "permissionsDoNotUseBuiltinSchemas": false,

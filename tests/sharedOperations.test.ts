@@ -314,6 +314,65 @@ describe('operations', () => {
       }
     });
 
+    it('omits the browser state path when ephemeral browser mode is enabled', async () => {
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+      try {
+        const login = vi.fn().mockResolvedValue({
+          credentials: new SlackApiCredentials('xoxc-token', 'cookie'),
+          account: 'user@example.com',
+        });
+        const service = createMockService({ getSession: vi.fn().mockReturnValue({ login }) });
+        const registry = new ServiceRegistry([service]);
+        const store = createApiCredentialStore();
+        const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
+        const config = createMockConfig({
+          directory: tempDir,
+          browserEphemeral: true,
+        } as Partial<Config>);
+        saveBrowserConfig(config.configPath, {
+          executablePath: process.execPath,
+          source: 'system',
+          discoveredAt: new Date().toISOString(),
+        });
+
+        await authBrowser(registry, store, encryptedStorage, config, 'slack');
+
+        const launchOptions = login.mock.calls[0]?.[1] as { browserStatePath?: string };
+        expect(launchOptions.browserStatePath).toBeUndefined();
+      } finally {
+        Object.defineProperty(process, 'platform', { value: originalPlatform });
+      }
+    });
+
+    it('passes the browser state path when ephemeral browser mode is disabled', async () => {
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+      try {
+        const login = vi.fn().mockResolvedValue({
+          credentials: new SlackApiCredentials('xoxc-token', 'cookie'),
+          account: 'user@example.com',
+        });
+        const service = createMockService({ getSession: vi.fn().mockReturnValue({ login }) });
+        const registry = new ServiceRegistry([service]);
+        const store = createApiCredentialStore();
+        const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
+        const config = createMockConfig({ directory: tempDir } as Partial<Config>);
+        saveBrowserConfig(config.configPath, {
+          executablePath: process.execPath,
+          source: 'system',
+          discoveredAt: new Date().toISOString(),
+        });
+
+        await authBrowser(registry, store, encryptedStorage, config, 'slack');
+
+        const launchOptions = login.mock.calls[0]?.[1] as { browserStatePath?: string };
+        expect(launchOptions.browserStatePath).toBe(config.browserStatePath);
+      } finally {
+        Object.defineProperty(process, 'platform', { value: originalPlatform });
+      }
+    });
+
     it('logs in to an additional account without ambiguity', async () => {
       const originalPlatform = process.platform;
       Object.defineProperty(process, 'platform', { value: 'darwin' });

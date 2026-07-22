@@ -395,6 +395,7 @@ describe('CLI commands with dependency injection', () => {
       serviceName: overrides.serviceName ?? defaultConfig.serviceName,
       accountName: overrides.accountName ?? defaultConfig.accountName,
       browserDisabled: overrides.browserDisabled ?? false,
+      browserEphemeral: overrides.browserEphemeral ?? false,
       countingDisabled: overrides.countingDisabled ?? false,
       credentialsRefreshDisabled: overrides.credentialsRefreshDisabled ?? false,
       permissionsDoNotUseBuiltinSchemas: overrides.permissionsDoNotUseBuiltinSchemas ?? false,
