@@ -95,6 +95,27 @@ credentials yet. `latchkey service info <service_name>` can be
 used to see how to provide credentials for a specific service.
 
 
+## Using multiple accounts
+
+It is possible to associate credentials with a specific account:
+
+```bash
+latchkey --account alice@example.com auth set ...
+```
+
+And then reference it in curl calls:
+
+```bash
+latchkey --account alice@example.com curl ...
+```
+
+The `--account` option must go right after `latchkey`.
+
+You can see the existing accounts as keys in the credential
+dictionary produced by `latchkey services info`. An empty string
+in the key means "unknown account".
+
+
 ## Notes
 
 - All curl arguments are passed through unchanged
