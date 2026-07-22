@@ -572,24 +572,40 @@ describe('operations', () => {
       expect(result.alreadyPrepared).toBe(true);
     });
 
-    it('should return alreadyPrepared true when a preparation already exists', async () => {
-      const prepare = vi.fn();
-      const service = createMockService({
-        getSession: vi.fn().mockReturnValue({
-          prepare,
-          login: vi.fn(),
-        }),
-      });
-      const registry = new ServiceRegistry([service]);
-      const store = createApiCredentialStore();
-      store.savePreparation('slack', new OAuthCredentials('client-id', 'client-secret'));
-      const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
-      const config = createMockConfig();
+    it('re-runs the prepare flow when a preparation already exists', async () => {
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+      try {
+        const prepare = vi
+          .fn()
+          .mockResolvedValue(new OAuthCredentials('new-client-id', 'new-client-secret'));
+        const service = createMockService({
+          getSession: vi.fn().mockReturnValue({
+            prepare,
+            login: vi.fn(),
+          }),
+        });
+        const registry = new ServiceRegistry([service]);
+        const store = createApiCredentialStore();
+        store.savePreparation('slack', new OAuthCredentials('client-id', 'client-secret'));
+        const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
+        const config = createMockConfig({ directory: tempDir } as Partial<Config>);
+        saveBrowserConfig(config.configPath, {
+          executablePath: process.execPath,
+          source: 'system',
+          discoveredAt: new Date().toISOString(),
+        });
 
-      const result = await authBrowserPrepare(registry, store, encryptedStorage, config, 'slack');
+        const result = await authBrowserPrepare(registry, store, encryptedStorage, config, 'slack');
 
-      expect(result.alreadyPrepared).toBe(true);
-      expect(prepare).not.toHaveBeenCalled();
+        expect(result).toEqual({ alreadyPrepared: false });
+        expect(prepare).toHaveBeenCalledOnce();
+        // The new preparation overwrites the previous one.
+        const preparation = store.getPreparation('slack') as OAuthCredentials;
+        expect(preparation.clientId).toBe('new-client-id');
+      } finally {
+        Object.defineProperty(process, 'platform', { value: originalPlatform });
+      }
     });
 
     it('should return alreadyPrepared true when service has no getSession', async () => {
