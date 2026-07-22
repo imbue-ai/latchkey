@@ -109,9 +109,11 @@ And then reference it in curl calls:
 latchkey --account alice@example.com curl ...
 ```
 
-You can see the accounts as keys in the credential dictionary
-produced by `latchkey services info`. An empty string means
-an "unknown account".
+The `--account` option must go right after `latchkey`.
+
+You can see the existing accounts as keys in the credential
+dictionary produced by `latchkey services info`. An empty string
+in the key means "unknown account".
 
 
 ## Notes
