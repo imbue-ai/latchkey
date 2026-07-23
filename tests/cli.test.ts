@@ -400,6 +400,7 @@ describe('CLI commands with dependency injection', () => {
       credentialsRefreshDisabled: overrides.credentialsRefreshDisabled ?? false,
       permissionsDoNotUseBuiltinSchemas: overrides.permissionsDoNotUseBuiltinSchemas ?? false,
       passthroughUnknown: overrides.passthroughUnknown ?? false,
+      hideBuiltinServices: overrides.hideBuiltinServices ?? [],
       gatewayUrl: overrides.gatewayUrl ?? null,
       gatewayListenHost: overrides.gatewayListenHost ?? 'localhost',
       gatewayListenPort: overrides.gatewayListenPort ?? 1989,

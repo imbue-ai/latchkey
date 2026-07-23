@@ -46,6 +46,7 @@ const LATCHKEY_PERMISSIONS_CONFIG_ENV_VAR = 'LATCHKEY_PERMISSIONS_CONFIG';
 const LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS_ENV_VAR =
   'LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS';
 const LATCHKEY_PASSTHROUGH_UNKNOWN_ENV_VAR = 'LATCHKEY_PASSTHROUGH_UNKNOWN';
+const LATCHKEY_HIDE_BUILTIN_SERVICES_ENV_VAR = 'LATCHKEY_HIDE_BUILTIN_SERVICES';
 const LATCHKEY_GATEWAY_ENV_VAR = 'LATCHKEY_GATEWAY';
 const LATCHKEY_GATEWAY_LISTEN_HOST_ENV_VAR = 'LATCHKEY_GATEWAY_LISTEN_HOST';
 const LATCHKEY_GATEWAY_LISTEN_PORT_ENV_VAR = 'LATCHKEY_GATEWAY_LISTEN_PORT';
@@ -150,6 +151,24 @@ function resolveGatewayListenPort(
 }
 
 /**
+ * Resolve a comma-separated list setting with precedence: env var > config file > empty.
+ * An unset or empty env var falls through to the config file value.
+ */
+function resolveStringList(
+  envValue: string | undefined,
+  fileValue: readonly string[] | undefined
+): readonly string[] {
+  if (envValue !== undefined && envValue !== '') {
+    return envValue
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+  }
+  if (fileValue !== undefined) return fileValue;
+  return [];
+}
+
+/**
  * Resolve a boolean flag with precedence: env var > config file > false.
  * A non-empty env var means true. An unset or empty env var falls through
  * (consistent with how the README describes LATCHKEY_DISABLE_*).
@@ -211,6 +230,13 @@ export class Config {
    * are passed through as-is instead of being rejected.
    */
   readonly passthroughUnknown: boolean;
+  /**
+   * Names of built-in services that should be treated as if they didn't exist.
+   * Sourced from the comma-separated `LATCHKEY_HIDE_BUILTIN_SERVICES` env var or
+   * the `hideBuiltinServices` config.json array. Every listed name must match an
+   * existing built-in service (enforced when the service registry is built).
+   */
+  readonly hideBuiltinServices: readonly string[];
   /**
    * When set, the CLI delegates commands to a remote latchkey gateway instead
    * of running them locally. `latchkey curl` is proxied through the gateway's
@@ -310,6 +336,10 @@ export class Config {
     this.passthroughUnknown = resolveBoolean(
       getEnv(LATCHKEY_PASSTHROUGH_UNKNOWN_ENV_VAR),
       settings.passthroughUnknown
+    );
+    this.hideBuiltinServices = resolveStringList(
+      getEnv(LATCHKEY_HIDE_BUILTIN_SERVICES_ENV_VAR),
+      settings.hideBuiltinServices
     );
 
     const permissionsConfig = resolveOptionalString(
