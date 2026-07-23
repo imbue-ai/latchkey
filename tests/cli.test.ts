@@ -1170,12 +1170,13 @@ describe('CLI commands with dependency injection', () => {
       expect(Object.keys(entries)).toHaveLength(0);
     });
 
-    it('should treat unknown services as valid', async () => {
+    it('should omit stored credentials for services not in the registry', async () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
         storePath,
         JSON.stringify(
           nestAccounts({
+            slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
             unknown: { objectType: 'rawCurl', curlArguments: ['-H', 'X-Token: secret'] },
           })
         )
@@ -1186,9 +1187,8 @@ describe('CLI commands with dependency injection', () => {
 
       expect(logs).toHaveLength(1);
       const entries = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
-      expect(entries.unknown).toEqual({
-        '': { credentialType: 'rawCurl', credentialStatus: 'valid' },
-      });
+      expect(Object.keys(entries)).toEqual(['slack']);
+      expect(entries.unknown).toBeUndefined();
     });
   });
 
