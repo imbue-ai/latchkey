@@ -505,10 +505,7 @@ describe('migrations', () => {
       await runMigrations(config, encryptedStorage);
 
       const store = JSON.parse(encryptedStorage.readFile(config.credentialStorePath)!) as {
-        credentials: Record<
-          string,
-          Record<string, { accessToken: string; refreshToken: string }>
-        >;
+        credentials: Record<string, Record<string, { accessToken: string; refreshToken: string }>>;
       };
 
       const stored = store.credentials['google-gmail']?.['alice@example.com'];
