@@ -82,6 +82,13 @@ export class ServiceRegistry {
     this._services.push(service);
   }
 
+  removeService(name: string): void {
+    const index = this._services.findIndex((service) => service.name === name);
+    if (index !== -1) {
+      this._services.splice(index, 1);
+    }
+  }
+
   getByName(name: string): Service | null {
     for (const service of this._services) {
       if (service.name === name) {
@@ -128,6 +135,20 @@ export class ServiceRegistry {
    */
   getByUrl(url: string): Service | null {
     return this.getCandidatesByUrl(url)[0] ?? null;
+  }
+}
+
+/**
+ * Remove the named services from the registry so that the rest of the
+ * application behaves as if they never existed. Names that don't match any
+ * registered service are silently ignored.
+ */
+export function hideServicesFromRegistry(
+  registry: ServiceRegistry,
+  serviceNames: readonly string[]
+): void {
+  for (const name of serviceNames) {
+    registry.removeService(name);
   }
 }
 

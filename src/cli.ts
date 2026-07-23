@@ -16,7 +16,10 @@ import {
 } from './encryption.js';
 import { KeychainTimeoutError } from './keychain.js';
 import { MigrationError, runMigrations } from './migrations.js';
-import { loadRegisteredServicesIntoServiceRegistry } from './serviceRegistry.js';
+import {
+  hideServicesFromRegistry,
+  loadRegisteredServicesIntoServiceRegistry,
+} from './serviceRegistry.js';
 import { countDailyIfNeeded } from './dailyCounting.js';
 import { VERSION } from './version.js';
 
@@ -79,6 +82,8 @@ if (!gatewayMode) {
 
   loadRegisteredServicesIntoServiceRegistry(deps.config.configPath, deps.registry);
 }
+
+hideServicesFromRegistry(deps.registry, deps.config.hideBuiltinServices);
 
 program
   .name('latchkey')

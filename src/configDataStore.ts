@@ -40,6 +40,7 @@ const SettingsSchema = z.object({
   permissionsConfig: z.string().optional(),
   permissionsDoNotUseBuiltinSchemas: z.boolean().optional(),
   passthroughUnknown: z.boolean().optional(),
+  hideBuiltinServices: z.array(z.string()).optional(),
   gateway: z.string().optional(),
   gatewayListenHost: z.string().optional(),
   gatewayListenPort: z.number().int().min(0).max(65535).optional(),

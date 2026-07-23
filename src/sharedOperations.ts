@@ -217,22 +217,25 @@ export async function servicesInfo(
 export async function authList(
   registry: ServiceRegistry,
   apiCredentialStore: ApiCredentialStore,
-  config: Config
+  config: Config,
+  offline = false
 ): Promise<Record<string, AccountCredentialStatuses>> {
   const allCredentials = apiCredentialStore.getAll();
 
   const entries = await Promise.all(
-    Array.from(allCredentials, async ([serviceName, accountMap]) => {
-      const statuses = await computeAccountStatuses(
-        registry,
-        apiCredentialStore,
-        config,
-        serviceName,
-        accountMap,
-        false
-      );
-      return [serviceName, statuses] as const;
-    })
+    Array.from(allCredentials)
+      .filter(([serviceName]) => registry.getByName(serviceName) !== null)
+      .map(async ([serviceName, accountMap]) => {
+        const statuses = await computeAccountStatuses(
+          registry,
+          apiCredentialStore,
+          config,
+          serviceName,
+          accountMap,
+          offline
+        );
+        return [serviceName, statuses] as const;
+      })
   );
 
   return Object.fromEntries(entries);

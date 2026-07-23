@@ -5,6 +5,7 @@ import {
   ServiceRegistry,
   SERVICE_REGISTRY,
   canonicalizeServiceName,
+  hideServicesFromRegistry,
 } from '../src/serviceRegistry.js';
 import { RegisteredService } from '../src/services/core/registered.js';
 import {
@@ -321,6 +322,45 @@ describe('ServiceRegistry', () => {
         'https://telegram.mycompany.com/login'
       );
       expect(registered.getSession).toBeUndefined(); // eslint-disable-line @typescript-eslint/unbound-method
+    });
+  });
+
+  describe('removeService', () => {
+    it('removes a service so it can no longer be looked up', () => {
+      const registry = new ServiceRegistry([SLACK, GITHUB]);
+      registry.removeService('slack');
+      expect(registry.getByName('slack')).toBeNull();
+      expect(registry.getByName('github')).toBe(GITHUB);
+      expect(registry.services).toHaveLength(1);
+    });
+
+    it('does nothing when the service is not present', () => {
+      const registry = new ServiceRegistry([SLACK]);
+      registry.removeService('does-not-exist');
+      expect(registry.services).toHaveLength(1);
+    });
+  });
+
+  describe('hideServicesFromRegistry', () => {
+    it('removes the named services', () => {
+      const registry = new ServiceRegistry([SLACK, GITHUB, DISCORD]);
+      hideServicesFromRegistry(registry, ['slack', 'discord']);
+      expect(registry.getByName('slack')).toBeNull();
+      expect(registry.getByName('discord')).toBeNull();
+      expect(registry.getByName('github')).toBe(GITHUB);
+    });
+
+    it('does nothing for an empty list', () => {
+      const registry = new ServiceRegistry([SLACK, GITHUB]);
+      hideServicesFromRegistry(registry, []);
+      expect(registry.services).toHaveLength(2);
+    });
+
+    it('silently ignores unknown service names', () => {
+      const registry = new ServiceRegistry([SLACK]);
+      hideServicesFromRegistry(registry, ['nope', 'slack']);
+      expect(registry.getByName('slack')).toBeNull();
+      expect(registry.services).toHaveLength(0);
     });
   });
 });

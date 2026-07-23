@@ -46,6 +46,7 @@ describe('Config with config.json settings', () => {
     expect(config.permissionsConfigOverride).toBeNull();
     expect(config.permissionsDoNotUseBuiltinSchemas).toBe(false);
     expect(config.passthroughUnknown).toBe(false);
+    expect(config.hideBuiltinServices).toEqual([]);
     expect(config.gatewayUrl).toBeNull();
     expect(config.gatewayListenHost).toBe(DEFAULT_GATEWAY_LISTEN_HOST);
     expect(config.gatewayListenPort).toBe(DEFAULT_GATEWAY_LISTEN_PORT);
@@ -64,6 +65,7 @@ describe('Config with config.json settings', () => {
       permissionsConfig: '/etc/latchkey/perm.json',
       permissionsDoNotUseBuiltinSchemas: true,
       passthroughUnknown: true,
+      hideBuiltinServices: ['slack', 'github'],
       gateway: 'http://localhost:9000/',
       gatewayListenHost: '0.0.0.0',
       gatewayListenPort: 4242,
@@ -81,6 +83,7 @@ describe('Config with config.json settings', () => {
     expect(config.permissionsConfigOverride).toBe('/etc/latchkey/perm.json');
     expect(config.permissionsDoNotUseBuiltinSchemas).toBe(true);
     expect(config.passthroughUnknown).toBe(true);
+    expect(config.hideBuiltinServices).toEqual(['slack', 'github']);
     expect(config.gatewayUrl).toBe('http://localhost:9000');
     expect(config.gatewayListenHost).toBe('0.0.0.0');
     expect(config.gatewayListenPort).toBe(4242);
@@ -119,6 +122,7 @@ describe('Config with config.json settings', () => {
       LATCHKEY_PERMISSIONS_CONFIG: '/env/perm.json',
       LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS: '1',
       LATCHKEY_PASSTHROUGH_UNKNOWN: '1',
+      LATCHKEY_HIDE_BUILTIN_SERVICES: ' slack , github ,, ',
       LATCHKEY_GATEWAY: 'http://env-gateway/',
       LATCHKEY_GATEWAY_LISTEN_HOST: '127.0.0.1',
       LATCHKEY_GATEWAY_LISTEN_PORT: '5555',
@@ -134,6 +138,7 @@ describe('Config with config.json settings', () => {
     expect(config.permissionsConfigOverride).toBe('/env/perm.json');
     expect(config.permissionsDoNotUseBuiltinSchemas).toBe(true);
     expect(config.passthroughUnknown).toBe(true);
+    expect(config.hideBuiltinServices).toEqual(['slack', 'github']);
     expect(config.gatewayUrl).toBe('http://env-gateway');
     expect(config.gatewayListenHost).toBe('127.0.0.1');
     expect(config.gatewayListenPort).toBe(5555);

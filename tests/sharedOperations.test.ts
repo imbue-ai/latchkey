@@ -223,20 +223,18 @@ describe('operations', () => {
       expect(Object.keys(result)).toHaveLength(0);
     });
 
-    it('should treat unknown services as valid', async () => {
-      const registry = new ServiceRegistry([]);
+    it('should omit stored credentials for services not in the registry', async () => {
+      const service = createMockService();
+      const registry = new ServiceRegistry([service]);
       const store = createApiCredentialStore({
+        slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
         unknown: { objectType: 'rawCurl', curlArguments: ['-H', 'X-Token: secret'] },
       });
 
       const result = await authList(registry, store, createMockConfig());
 
-      expect(result.unknown).toEqual({
-        '': {
-          credentialType: 'rawCurl',
-          credentialStatus: 'valid',
-        },
-      });
+      expect(Object.keys(result)).toEqual(['slack']);
+      expect(result.unknown).toBeUndefined();
     });
   });
 

@@ -420,6 +420,7 @@ defaults:
 - `LATCHKEY_PERMISSIONS_CONFIG`: override the `permissions.json` location.
 - `LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS`: do not use the built-in permission definitions.
 - `LATCHKEY_PASSTHROUGH_UNKNOWN`: if set, Latchkey will forward requests (via `latchkey curl` or gateway) even if no credentials are injected.
+- `LATCHKEY_HIDE_BUILTIN_SERVICES`: comma-separated list of built-in service names to disable/hide.
 - `LATCHKEY_GATEWAY`: when set to a base URL (e.g. `http://localhost:1989`), the CLI delegates commands to a remote Latchkey gateway instead of running them locally. Commands that change local state (`auth set`, `auth clear`, `auth re-encrypt`, `services register`, `ensure-browser`, `gateway`) cannot run in this mode.
 - `LATCHKEY_GATEWAY_LISTEN_HOST`, `LATCHKEY_GATEWAY_LISTEN_PORT`: default address and port the local `latchkey gateway` command binds to when `--host` / `--port` are not supplied (defaults: `localhost`, `1989`). Distinct from `LATCHKEY_GATEWAY`, which configures a *remote* gateway URL.
 - `LATCHKEY_GATEWAY_PASSWORD`: optional shared secret used by the client side. When set together with `LATCHKEY_GATEWAY`, the CLI sends the value in the `X-Latchkey-Gateway-Password` header on every outgoing gateway request.
@@ -447,6 +448,7 @@ override `config.json` values.
     "permissionsConfig": "/etc/latchkey/permissions.json",
     "permissionsDoNotUseBuiltinSchemas": false,
     "passthroughUnknown": false,
+    "hideBuiltinServices": ["telegram", "yelp"],
     "gateway": "http://localhost:1989",
     "gatewayListenHost": "localhost",
     "gatewayListenPort": 1989,
