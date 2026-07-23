@@ -111,12 +111,14 @@ describe('buildCurlArguments', () => {
       ['Content-Type', 'application/json'],
       ['X-Latchkey-Gateway-Password', 'sekret'],
       ['X-Latchkey-Gateway-Permissions-Override', 'jwt-payload'],
+      ['X-Latchkey-Gateway-Account', 'jou'],
     ]);
     const args = buildCurlArguments('GET', headers, 'https://api.example.com/test', false);
     expect(args).toContain('Content-Type: application/json');
     const joined = args.join('\n').toLowerCase();
     expect(joined).not.toContain('x-latchkey-gateway-password');
     expect(joined).not.toContain('x-latchkey-gateway-permissions-override');
+    expect(joined).not.toContain('x-latchkey-gateway-account');
     expect(joined).not.toContain('sekret');
     expect(joined).not.toContain('jwt-payload');
   });
@@ -221,12 +223,14 @@ describe('gateway server', () => {
     },
     overrides: Partial<CliDependencies> = {},
     optionOverrides: Partial<GatewayOptions> = {},
-    configOverrides: Partial<Config> = {}
+    configOverrides: Partial<Config> = {},
+    accountKey = ''
   ): Promise<GatewayServer> {
     const storePath = join(tempDir, 'credentials.json');
-    // Store credentials under the default account, matching the on-disk layout.
+    // Store credentials under the given account (default account by default),
+    // matching the on-disk layout.
     const nestedCredentials = Object.fromEntries(
-      Object.entries(credentialsData).map(([service, creds]) => [service, { '': creds }])
+      Object.entries(credentialsData).map(([service, creds]) => [service, { [accountKey]: creds }])
     );
     writeSecureFile(storePath, JSON.stringify({ credentials: nestedCredentials }));
 
@@ -473,6 +477,43 @@ describe('gateway server', () => {
       expect(response.status).toBe(400);
       const body = (await response.json()) as { error: string };
       expect(body.error).toContain('No credentials found for slack');
+    });
+
+    it('honors the account header by rejecting an account without credentials', async () => {
+      // The stored slack credentials live under the default account, so a
+      // request scoped to a different account must not silently fall back to
+      // them: it must report that the requested account has no credentials.
+      gateway = await createTestGateway();
+
+      const response = await fetch('/gateway/https://slack.com/api/auth.test', {
+        headers: { 'X-Latchkey-Gateway-Account': 'jou' },
+      });
+
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as { error: string };
+      expect(body.error).toContain("No credentials found for slack (account 'jou')");
+    });
+
+    it('honors the account header by injecting the requested account credentials', async () => {
+      gateway = await createTestGateway(
+        {
+          slack: {
+            objectType: 'rawCurl',
+            curlArguments: ['-H', 'Authorization: Bearer jou-token'],
+          },
+        },
+        {},
+        {},
+        {},
+        'jou'
+      );
+
+      const response = await fetch('/gateway/https://slack.com/api/auth.test', {
+        headers: { 'X-Latchkey-Gateway-Account': 'jou' },
+      });
+
+      expect(response.status).toBe(200);
+      expect(capturedCurlArgs).toContain('Authorization: Bearer jou-token');
     });
 
     it('should pass through unknown service when passthroughUnknown is enabled', async () => {
