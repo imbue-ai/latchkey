@@ -62,7 +62,11 @@ const ServicesInfoRequestSchema = z.object({
 
 const AuthListRequestSchema = z.object({
   command: z.literal('auth list'),
-  params: z.object({}).optional(),
+  params: z
+    .object({
+      offline: z.boolean().optional(),
+    })
+    .optional(),
 });
 
 const AuthBrowserRequestSchema = z.object({
@@ -158,7 +162,12 @@ async function dispatch(
       );
 
     case 'auth list':
-      return authList(deps.registry, apiCredentialStore, deps.config);
+      return authList(
+        deps.registry,
+        apiCredentialStore,
+        deps.config,
+        parsed.params?.offline ?? false
+      );
 
     case 'auth browser':
       return authBrowser(

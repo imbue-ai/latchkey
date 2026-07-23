@@ -217,7 +217,8 @@ export async function servicesInfo(
 export async function authList(
   registry: ServiceRegistry,
   apiCredentialStore: ApiCredentialStore,
-  config: Config
+  config: Config,
+  offline = false
 ): Promise<Record<string, AccountCredentialStatuses>> {
   const allCredentials = apiCredentialStore.getAll();
 
@@ -229,7 +230,7 @@ export async function authList(
         config,
         serviceName,
         accountMap,
-        false
+        offline
       );
       return [serviceName, statuses] as const;
     })

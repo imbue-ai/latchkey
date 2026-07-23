@@ -584,9 +584,16 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
   authCommand
     .command('list')
     .description('List all stored credentials and their status.')
-    .action(async () => {
+    .option(
+      '--offline',
+      'Do not send a request to validate credentials; report them as only "missing" or "unknown".'
+    )
+    .action(async (options: { offline?: boolean }) => {
       if (deps.config.gatewayUrl !== null) {
-        const entries = await forwardToGateway(deps, { command: 'auth list' });
+        const entries = await forwardToGateway(deps, {
+          command: 'auth list',
+          ...(options.offline ? { params: { offline: true } } : {}),
+        });
         deps.log(JSON.stringify(entries, null, 2));
         return;
       }
@@ -595,7 +602,12 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         deps.config.credentialStorePath,
         encryptedStorage
       );
-      const entries = await authList(deps.registry, apiCredentialStore, deps.config);
+      const entries = await authList(
+        deps.registry,
+        apiCredentialStore,
+        deps.config,
+        options.offline ?? false
+      );
       deps.log(JSON.stringify(entries, null, 2));
     });
 
