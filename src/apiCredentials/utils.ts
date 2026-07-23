@@ -18,14 +18,15 @@ export async function maybeRefreshCredentials(
   service: Service,
   apiCredentials: ApiCredentials,
   apiCredentialStore: ApiCredentialStore,
-  disableRefresh = false
+  disableRefresh = false,
+  account?: string
 ): Promise<ApiCredentials> {
   if (disableRefresh || apiCredentials.isExpired() !== true || !service.refreshCredentials) {
     return apiCredentials;
   }
   const refreshedCredentials = await service.refreshCredentials(apiCredentials);
   if (refreshedCredentials !== null) {
-    apiCredentialStore.save(service.name, refreshedCredentials);
+    apiCredentialStore.save(service.name, refreshedCredentials, account);
     return refreshedCredentials;
   }
   return apiCredentials;
@@ -36,7 +37,8 @@ export async function getCredentialStatus(
   credentials: ApiCredentials | null,
   apiCredentialStore: ApiCredentialStore,
   disableRefresh = false,
-  offline = false
+  offline = false,
+  account?: string
 ): Promise<ApiCredentialStatus> {
   if (credentials === null) {
     return ApiCredentialStatus.Missing;
@@ -50,7 +52,8 @@ export async function getCredentialStatus(
     service,
     credentials,
     apiCredentialStore,
-    disableRefresh
+    disableRefresh,
+    account
   );
-  return await service.checkApiCredentials(refreshed);
+  return service.checkApiCredentials(refreshed);
 }

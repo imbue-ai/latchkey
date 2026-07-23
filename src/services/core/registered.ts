@@ -46,6 +46,12 @@ export class RegisteredService extends Service {
     return Promise.resolve(ApiCredentialStatus.Unknown);
   }
 
+  // Registered services point at self-hosted instances whose API shape is
+  // unknown, so there is no endpoint to ask for an identity.
+  getAccount(): Promise<string | null> {
+    return Promise.resolve(null);
+  }
+
   setCredentialsExample(serviceName: string): string {
     if (this.familyService !== undefined) {
       return this.familyService.setCredentialsExample(serviceName);

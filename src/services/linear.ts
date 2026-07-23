@@ -6,6 +6,7 @@ import type { Response, BrowserContext } from 'playwright';
 import { ApiCredentials, AuthorizationBare } from '../apiCredentials/base.js';
 import { typeLikeHuman } from '../playwrightUtils.js';
 import { Service, BrowserFollowupServiceSession, LoginFailedError } from './core/base.js';
+import { fetchAccountFromEndpoint, tryParseJson } from '../apiCredentials/account.js';
 
 const DEFAULT_TIMEOUT_MS = 8000;
 
@@ -103,12 +104,25 @@ export class Linear extends Service {
     '-H',
     'Content-Type: application/json',
     '-d',
-    '{"query": "{ viewer { id } }"}',
+    '{"query": "{ viewer { id email } }"}',
     'https://api.linear.app/graphql',
   ] as const;
 
   setCredentialsExample(serviceName: string): string {
     return `latchkey auth set ${serviceName} -H "Authorization: <token>"`;
+  }
+
+  override getAccount(apiCredentials: ApiCredentials): Promise<string | null> {
+    return fetchAccountFromEndpoint(
+      apiCredentials,
+      this.credentialCheckCurlArguments,
+      (responseBody) => {
+        const data = tryParseJson(responseBody) as {
+          data?: { viewer?: { email?: string; id?: string } };
+        } | null;
+        return data?.data?.viewer?.email ?? data?.data?.viewer?.id ?? null;
+      }
+    );
   }
 
   override getSession(appNamePrefix: string): LinearServiceSession {

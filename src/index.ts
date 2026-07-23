@@ -41,11 +41,11 @@ export {
 
 export {
   run as runCurl,
-  runCaptured as runCurlCaptured,
+  runCapturedAsync as runCurlCapturedAsync,
   setSubprocessRunner,
   resetSubprocessRunner,
-  setCapturingSubprocessRunner,
-  resetCapturingSubprocessRunner,
+  setAsyncSubprocessRunner,
+  resetAsyncSubprocessRunner,
 } from './curl.js';
 
 export {
@@ -60,6 +60,7 @@ export {
   ServiceSession,
   SimpleServiceSession,
   BrowserFollowupServiceSession,
+  type LoginResult,
   LoginCancelledError,
   LoginFailedError,
   Slack,

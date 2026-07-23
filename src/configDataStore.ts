@@ -34,6 +34,7 @@ const SettingsSchema = z.object({
   keyringServiceName: z.string().optional(),
   keyringAccountName: z.string().optional(),
   browserDisabled: z.boolean().optional(),
+  browserEphemeral: z.boolean().optional(),
   countingDisabled: z.boolean().optional(),
   credentialsRefreshDisabled: z.boolean().optional(),
   permissionsConfig: z.string().optional(),

@@ -162,6 +162,33 @@ code, stdout and stderr are passed back from curl to the caller
 of `latchkey`.
 
 
+### Multiple accounts
+
+Credentials for a service can be stored under several accounts.
+An account is a string that uniquely identifies the account
+behind the credentials - typically an e-mail, but for some
+services it may be an id. Use the global `--account` option to
+select one:
+
+```bash
+# Store credentials for a specific account.
+latchkey --account bob@example.com auth set slack -H "Authorization: Bearer xoxb-..."
+
+# Use them in a request.
+latchkey --account bob@example.com curl https://slack.com/api/auth.test
+```
+
+When `--account` is omitted, the single stored account is used
+automatically. If a service has more than one stored account,
+`--account` becomes required. Credentials stored without an
+account live under a "default" account (empty string, `""`).
+
+Browser logins (`latchkey auth browser`) determine the account
+automatically. The `--account` option here merely allows users
+to specify which existing OAuth client configuration to use for
+the login (selecting one associated with an existing account) if
+needed.
+
 ### Self-hosted services
 
 For services that can be self-hosted, like GitLab, first make Latchkey aware of your service instance:
@@ -226,14 +253,17 @@ calls.
 
 ### Inspecting the status of stored credentials
 
-Calling `latchkey services info <service_name>` will show information
-about the service, including the credentials status. The
-credentials status line will show one of:
+Calling `latchkey services info <service_name>` will show
+information about the service, including a `credentials` object
+keyed by account (the default account uses the empty string).
+Each entry reports a credentials status of:
 
-- `missing`
 - `invalid`
 - `valid`
 - `unknown` (for user-registered services)
+
+A service with no stored credentials shows an empty `credentials`
+object.
 
 ### Clearing credentials
 
@@ -384,6 +414,7 @@ defaults:
 - `LATCHKEY_KEYRING_SERVICE_NAME`, `LATCHKEY_KEYRING_ACCOUNT_NAME`: identifiers that are used to store the encryption password in your keyring
 - `LATCHKEY_ENCRYPTION_KEY`: override the encryption key, e.g. when a keyring is not available. Example: `export LATCHKEY_ENCRYPTION_KEY="$(openssl rand -base64 32)"`
 - `LATCHKEY_DISABLE_BROWSER`: when set to a non-empty value, disables the browser login flow; commands that would trigger a browser login (`auth browser`, `auth browser-prepare`) will fail with an error instead
+- `LATCHKEY_EPHEMERAL_BROWSER`: when set to a non-empty value, browser flows operate similarly to the browser incognito mode. Useful when logging into multiple accounts.
 - `LATCHKEY_DISABLE_COUNTING`: when set to a non-empty value, disables daily usage counting.
 - `LATCHKEY_DISABLE_CREDENTIALS_REFRESH`: when set to a non-empty value, expired credentials are never refreshed. (Useful when the credentials are shared and refreshing in one place would risk exhausting the refresh token for the other one.)
 - `LATCHKEY_PERMISSIONS_CONFIG`: override the `permissions.json` location.
@@ -411,6 +442,7 @@ override `config.json` values.
     "keyringServiceName": "latchkey",
     "keyringAccountName": "encryption-key",
     "browserDisabled": false,
+    "browserEphemeral": false,
     "countingDisabled": true,
     "permissionsConfig": "/etc/latchkey/permissions.json",
     "permissionsDoNotUseBuiltinSchemas": false,

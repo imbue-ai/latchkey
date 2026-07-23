@@ -39,6 +39,7 @@ const LATCHKEY_ENCRYPTION_KEY_ENV_VAR = 'LATCHKEY_ENCRYPTION_KEY';
 const LATCHKEY_KEYRING_SERVICE_NAME_ENV_VAR = 'LATCHKEY_KEYRING_SERVICE_NAME';
 const LATCHKEY_KEYRING_ACCOUNT_NAME_ENV_VAR = 'LATCHKEY_KEYRING_ACCOUNT_NAME';
 const LATCHKEY_DISABLE_BROWSER_ENV_VAR = 'LATCHKEY_DISABLE_BROWSER';
+const LATCHKEY_EPHEMERAL_BROWSER_ENV_VAR = 'LATCHKEY_EPHEMERAL_BROWSER';
 const LATCHKEY_DISABLE_COUNTING_ENV_VAR = 'LATCHKEY_DISABLE_COUNTING';
 const LATCHKEY_DISABLE_CREDENTIALS_REFRESH_ENV_VAR = 'LATCHKEY_DISABLE_CREDENTIALS_REFRESH';
 const LATCHKEY_PERMISSIONS_CONFIG_ENV_VAR = 'LATCHKEY_PERMISSIONS_CONFIG';
@@ -181,6 +182,12 @@ export class Config {
    */
   readonly browserDisabled: boolean;
   /**
+   * When true, browser flows (auth browser, auth browser-prepare) neither load
+   * previously stored browser state nor persist their state anywhere. Useful
+   * when logging into multiple accounts.
+   */
+  readonly browserEphemeral: boolean;
+  /**
    * When true, daily counting is disabled.
    */
   readonly countingDisabled: boolean;
@@ -283,6 +290,10 @@ export class Config {
     this.browserDisabled = resolveBoolean(
       getEnv(LATCHKEY_DISABLE_BROWSER_ENV_VAR),
       settings.browserDisabled
+    );
+    this.browserEphemeral = resolveBoolean(
+      getEnv(LATCHKEY_EPHEMERAL_BROWSER_ENV_VAR),
+      settings.browserEphemeral
     );
     this.countingDisabled = resolveBoolean(
       getEnv(LATCHKEY_DISABLE_COUNTING_ENV_VAR),

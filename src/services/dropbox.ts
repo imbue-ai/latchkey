@@ -19,6 +19,7 @@ import {
   isBrowserClosedError,
   LoginCancelledError,
 } from './core/base.js';
+import { fetchAccountFromEndpoint, tryParseJson } from '../apiCredentials/account.js';
 
 const DEFAULT_TIMEOUT_MS = 8000;
 
@@ -236,7 +237,7 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
 
       const code = await codePromise;
 
-      const tokens = exchangeCodeForTokens(
+      const tokens = await exchangeCodeForTokens(
         TOKEN_ENDPOINT,
         code,
         appKey,
@@ -298,15 +299,28 @@ export class Dropbox extends Service {
     'https://www.dropbox.com/developers/documentation/http/documentation. ' +
     'Use api.dropboxapi.com for RPC-style endpoints and content.dropboxapi.com for content upload/download.';
 
+  // get_current_account both validates the token and identifies the account.
+  // The account_info.read scope it needs is always granted (it is mandatory in
+  // the Dropbox App Console and included in DROPBOX_SCOPES for browser login).
   readonly credentialCheckCurlArguments = [
     '-X',
     'POST',
-    '-H',
-    'Content-Type: application/json',
-    'https://api.dropboxapi.com/2/check/user',
-    '--data',
-    '{"query":"foo"}',
+    'https://api.dropboxapi.com/2/users/get_current_account',
   ] as const;
+
+  override getAccount(apiCredentials: ApiCredentials): Promise<string | null> {
+    return fetchAccountFromEndpoint(
+      apiCredentials,
+      this.credentialCheckCurlArguments,
+      (responseBody) => {
+        const data = tryParseJson(responseBody) as {
+          email?: string;
+          account_id?: string;
+        } | null;
+        return data?.email ?? data?.account_id ?? null;
+      }
+    );
+  }
 
   setCredentialsExample(serviceName: string): string {
     return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
@@ -316,12 +330,14 @@ export class Dropbox extends Service {
     return new DropboxServiceSession(this, appNamePrefix);
   }
 
-  override refreshCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentials | null> {
+  override async refreshCredentials(
+    apiCredentials: ApiCredentials
+  ): Promise<ApiCredentials | null> {
     if (!(apiCredentials instanceof OAuthCredentials) || !apiCredentials.refreshToken) {
-      return Promise.resolve(null);
+      return null;
     }
 
-    const tokens = refreshAccessToken(
+    const tokens = await refreshAccessToken(
       TOKEN_ENDPOINT,
       apiCredentials.refreshToken,
       apiCredentials.clientId,
@@ -329,20 +345,18 @@ export class Dropbox extends Service {
     );
 
     if (tokens === null) {
-      return Promise.resolve(null);
+      return null;
     }
 
     const accessTokenExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
-    return Promise.resolve(
-      new OAuthCredentials(
-        apiCredentials.clientId,
-        apiCredentials.clientSecret,
-        tokens.access_token,
-        tokens.refresh_token ?? apiCredentials.refreshToken,
-        accessTokenExpiresAt,
-        apiCredentials.refreshTokenExpiresAt
-      )
+    return new OAuthCredentials(
+      apiCredentials.clientId,
+      apiCredentials.clientSecret,
+      tokens.access_token,
+      tokens.refresh_token ?? apiCredentials.refreshToken,
+      accessTokenExpiresAt,
+      apiCredentials.refreshTokenExpiresAt
     );
   }
 }

@@ -16,13 +16,24 @@ import { randomUUID } from 'node:crypto';
 import type { Browser, BrowserContext, Response } from 'playwright';
 import { ApiCredentials, OAuthCredentials } from '../apiCredentials/base.js';
 import {
+  DEFAULT_ACCOUNT,
+  fetchAccountFromEndpoint,
+  tryParseJson,
+} from '../apiCredentials/account.js';
+import {
   exchangeCodeForTokens,
   generateCodeChallenge,
   generateCodeVerifier,
   refreshAccessToken,
   startOAuthCallbackServer,
 } from '../oauthUtils.js';
-import { isBrowserClosedError, LoginCancelledError, Service, ServiceSession } from './core/base.js';
+import {
+  isBrowserClosedError,
+  type LoginResult,
+  LoginCancelledError,
+  Service,
+  ServiceSession,
+} from './core/base.js';
 
 /** Ramp's public OAuth client (PKCE, no secret), from ramp-cli. */
 const RAMP_OAUTH_CLIENT_ID = 'ramp_id_6pKvd0IR3d8Kuzp82SV6YgpVCZOlz68Px6s3wVsr';
@@ -105,7 +116,7 @@ class RampOAuthServiceSession extends ServiceSession {
     encryptedStorage: import('../encryptedStorage.js').EncryptedStorage,
     launchOptions: import('../playwrightUtils.js').BrowserLaunchOptions = {},
     _oldCredentials?: ApiCredentials
-  ): Promise<ApiCredentials> {
+  ): Promise<LoginResult> {
     const { withTempBrowserContext } = await import('../playwrightUtils.js');
     const clientId = RAMP_OAUTH_CLIENT_ID;
 
@@ -151,7 +162,7 @@ class RampOAuthServiceSession extends ServiceSession {
         const code = await codePromise;
 
         // 5. Exchange the code for tokens (public client: no secret).
-        const tokens = exchangeCodeForTokens(
+        const tokens = await exchangeCodeForTokens(
           RAMP_PKCE_TOKEN_ENDPOINT,
           code,
           clientId,
@@ -164,13 +175,15 @@ class RampOAuthServiceSession extends ServiceSession {
         await page.close();
 
         // Public client: clientSecret is stored as '' so refresh sends client_id only.
-        return new OAuthCredentials(
+        const credentials = new OAuthCredentials(
           clientId,
           '',
           tokens.access_token,
           tokens.refresh_token,
           accessTokenExpiresAt
         );
+        const account = (await this.service.getAccount(credentials)) ?? DEFAULT_ACCOUNT;
+        return { credentials, account };
       } catch (error: unknown) {
         if (error instanceof Error && isBrowserClosedError(error)) {
           throw new LoginCancelledError();
@@ -213,6 +226,36 @@ export class Ramp extends Service {
   }
 
   /**
+   * The account comes from `get-simplified-user-detail` — the agent-tools
+   * endpoint that returns the caller's user — rather than the scope-less
+   * help-center endpoint used by the credential check, which carries no
+   * identity. It needs the `users:read` scope (requested during login, but
+   * granted only if the signed-in user is entitled to it), so the account may
+   * stay undetermined.
+   */
+  override getAccount(apiCredentials: ApiCredentials): Promise<string | null> {
+    return fetchAccountFromEndpoint(
+      apiCredentials,
+      [
+        '-X',
+        'POST',
+        '-H',
+        'Content-Type: application/json',
+        '-d',
+        '{"rationale":"latchkey determines which account these credentials belong to"}',
+        'https://api.ramp.com/developer/v1/agent-tools/get-simplified-user-detail',
+      ],
+      (responseBody) => {
+        const data = tryParseJson(responseBody) as {
+          users?: readonly { email?: string; id?: string }[];
+        } | null;
+        const user = data?.users?.[0];
+        return user?.email ?? user?.id ?? null;
+      }
+    );
+  }
+
+  /**
    * Browser login: run the OAuth authorization-code + PKCE flow and store the
    * resulting bearer + refresh token.
    */
@@ -220,35 +263,35 @@ export class Ramp extends Service {
     return new RampOAuthServiceSession(this, appNamePrefix);
   }
 
-  override refreshCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentials | null> {
+  override async refreshCredentials(
+    apiCredentials: ApiCredentials
+  ): Promise<ApiCredentials | null> {
     // Refresh the PKCE access token with the (rotating) refresh token against the
     // `/token/pkce` endpoint, mirroring ramp-cli.
     if (!(apiCredentials instanceof OAuthCredentials)) {
-      return Promise.resolve(null);
+      return null;
     }
     if (apiCredentials.refreshToken === undefined || apiCredentials.refreshToken === '') {
-      return Promise.resolve(null);
+      return null;
     }
-    const tokens = refreshAccessToken(
+    const tokens = await refreshAccessToken(
       RAMP_PKCE_TOKEN_ENDPOINT,
       apiCredentials.refreshToken,
       apiCredentials.clientId,
       apiCredentials.clientSecret
     );
     if (tokens === null) {
-      return Promise.resolve(null);
+      return null;
     }
     const accessTokenExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
     // Ramp rotates refresh tokens; keep the old one only if none came back.
-    return Promise.resolve(
-      new OAuthCredentials(
-        apiCredentials.clientId,
-        apiCredentials.clientSecret,
-        tokens.access_token,
-        tokens.refresh_token ?? apiCredentials.refreshToken,
-        accessTokenExpiresAt,
-        apiCredentials.refreshTokenExpiresAt
-      )
+    return new OAuthCredentials(
+      apiCredentials.clientId,
+      apiCredentials.clientSecret,
+      tokens.access_token,
+      tokens.refresh_token ?? apiCredentials.refreshToken,
+      accessTokenExpiresAt,
+      apiCredentials.refreshTokenExpiresAt
     );
   }
 }

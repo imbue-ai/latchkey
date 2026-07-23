@@ -23,11 +23,6 @@ export interface CurlResult {
 export type SubprocessRunner = (args: readonly string[]) => CurlResult;
 
 /**
- * Type for the capturing subprocess runner function (captures output).
- */
-export type CapturingSubprocessRunner = (args: readonly string[], timeout: number) => CurlResult;
-
-/**
  * Type for the detached subprocess runner function (fire-and-forget, no waiting).
  */
 export type DetachedSubprocessRunner = (args: readonly string[]) => void;
@@ -43,18 +38,6 @@ function defaultSubprocessRunner(args: readonly string[]): CurlResult {
   };
 }
 
-function defaultCapturingSubprocessRunner(args: readonly string[], timeout: number): CurlResult {
-  const result: SpawnSyncReturns<string> = spawnSync(CONFIG.curlCommand, args as string[], {
-    encoding: 'utf-8',
-    timeout: timeout * 1000,
-  });
-  return {
-    returncode: result.status ?? 1,
-    stdout: result.stdout,
-    stderr: result.stderr,
-  };
-}
-
 function defaultDetachedSubprocessRunner(args: readonly string[]): void {
   const child = spawn(CONFIG.curlCommand, args as string[], {
     stdio: 'ignore',
@@ -64,7 +47,6 @@ function defaultDetachedSubprocessRunner(args: readonly string[]): void {
 }
 
 let subprocessRunner: SubprocessRunner = defaultSubprocessRunner;
-let capturingSubprocessRunner: CapturingSubprocessRunner = defaultCapturingSubprocessRunner;
 /**
  * Result from an async curl execution that captures output as buffers.
  */
@@ -75,20 +57,32 @@ export interface AsyncCurlResult {
 }
 
 /**
+ * Options for the async subprocess runner.
+ *
+ * `timeout` is given in seconds; when the process outlives it, curl is killed
+ * and the run resolves with whatever was captured so far.
+ */
+export interface AsyncSubprocessOptions {
+  readonly stdin?: Buffer;
+  readonly timeout?: number;
+}
+
+/**
  * Type for the async subprocess runner function (captures output, non-blocking).
  */
 export type AsyncSubprocessRunner = (
   args: readonly string[],
-  options?: { stdin?: Buffer }
+  options?: AsyncSubprocessOptions
 ) => Promise<AsyncCurlResult>;
 
 function defaultAsyncSubprocessRunner(
   args: readonly string[],
-  options?: { stdin?: Buffer }
+  options?: AsyncSubprocessOptions
 ): Promise<AsyncCurlResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(CONFIG.curlCommand, args as string[], {
       stdio: ['pipe', 'pipe', 'pipe'],
+      ...(options?.timeout !== undefined ? { timeout: options.timeout * 1000 } : {}),
     });
 
     const stdoutChunks: Buffer[] = [];
@@ -132,14 +126,6 @@ export function resetSubprocessRunner(): void {
   subprocessRunner = defaultSubprocessRunner;
 }
 
-export function setCapturingSubprocessRunner(runner: CapturingSubprocessRunner): void {
-  capturingSubprocessRunner = runner;
-}
-
-export function resetCapturingSubprocessRunner(): void {
-  capturingSubprocessRunner = defaultCapturingSubprocessRunner;
-}
-
 export function setDetachedSubprocessRunner(runner: DetachedSubprocessRunner): void {
   detachedSubprocessRunner = runner;
 }
@@ -164,13 +150,6 @@ export function run(args: readonly string[]): CurlResult {
 }
 
 /**
- * Run curl with output capture (for credential checking).
- */
-export function runCaptured(args: readonly string[], timeout = 10): CurlResult {
-  return capturingSubprocessRunner(args, timeout);
-}
-
-/**
  * Spawn a detached curl process without waiting for it to complete.
  * The parent process can exit before the curl process finishes.
  */
@@ -183,9 +162,26 @@ export function runDetached(args: readonly string[]): void {
  */
 export function runAsync(
   args: readonly string[],
-  options?: { stdin?: Buffer }
+  options?: AsyncSubprocessOptions
 ): Promise<AsyncCurlResult> {
   return asyncSubprocessRunner(args, options);
+}
+
+/**
+ * Run curl asynchronously with output capture, decoding stdout to a string.
+ *
+ * Returns a string-based {@link CurlResult} but spawns curl without blocking
+ * the event loop, so callers issuing many checks concurrently (credential
+ * checks and OAuth token exchanges during `auth list` and the accounts
+ * migration) actually run in parallel.
+ */
+export async function runCapturedAsync(args: readonly string[], timeout = 10): Promise<CurlResult> {
+  const result = await asyncSubprocessRunner(args, { timeout });
+  return {
+    returncode: result.returncode,
+    stdout: result.stdout.toString(),
+    stderr: result.stderr,
+  };
 }
 
 /**

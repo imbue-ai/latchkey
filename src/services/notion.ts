@@ -5,7 +5,9 @@
  * (e.g. by creating an internal integration at the loginUrl below).
  */
 
+import type { ApiCredentials } from '../apiCredentials/base.js';
 import { Service } from './core/base.js';
+import { fetchAccountFromEndpoint, tryParseJson } from '../apiCredentials/account.js';
 
 const NOTION_INTEGRATIONS_URL =
   'https://www.notion.so/profile/integrations/internal/form/new-integration';
@@ -27,6 +29,31 @@ export class Notion extends Service {
 
   setCredentialsExample(serviceName: string): string {
     return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
+  }
+
+  override getAccount(apiCredentials: ApiCredentials): Promise<string | null> {
+    return fetchAccountFromEndpoint(
+      apiCredentials,
+      this.credentialCheckCurlArguments,
+      (responseBody) => {
+        // Internal-integration tokens authenticate as a bot user; the workspace
+        // name distinguishes tokens for different workspaces better than the
+        // per-integration bot name alone.
+        const data = tryParseJson(responseBody) as {
+          name?: string;
+          id?: string;
+          bot?: { workspace_name?: string };
+        } | null;
+        if (data === null) {
+          return null;
+        }
+        const workspaceName = data.bot?.workspace_name;
+        if (data.name !== undefined && workspaceName !== undefined) {
+          return `${data.name}@${workspaceName}`;
+        }
+        return data.name ?? workspaceName ?? data.id ?? null;
+      }
+    );
   }
 }
 
