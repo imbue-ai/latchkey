@@ -410,6 +410,115 @@ describe('migrations', () => {
       expect(store.credentials.discord).toEqual({ 'me#1234': discordCredentials });
     });
 
+    it('should persist refreshed credential data returned by the resolver', async () => {
+      // An expired-but-refreshable credential: the resolver refreshes it, reports
+      // it valid, and hands back the refreshed data. The migration must store the
+      // refreshed data, not the stale original.
+      const expiredCredentials = {
+        objectType: 'oauth',
+        clientId: 'client',
+        clientSecret: 'secret',
+        accessToken: 'stale-access-token',
+        refreshToken: 'refresh-token',
+      };
+      const refreshedCredentials = {
+        objectType: 'oauth',
+        clientId: 'client',
+        clientSecret: 'secret',
+        accessToken: 'fresh-access-token',
+        refreshToken: 'rotated-refresh-token',
+      };
+
+      encryptedStorage.writeFile(
+        config.credentialStorePath,
+        JSON.stringify({ 'google-gmail': expiredCredentials })
+      );
+
+      await runMigrations(
+        config,
+        encryptedStorage,
+        resolverFromMap({
+          'google-gmail': {
+            status: ApiCredentialStatus.Valid,
+            account: 'alice@example.com',
+            credentialData: refreshedCredentials,
+          },
+        })
+      );
+
+      const store = JSON.parse(encryptedStorage.readFile(config.credentialStorePath)!) as {
+        credentials: Record<string, unknown>;
+      };
+
+      expect(store.credentials['google-gmail']).toEqual({
+        'alice@example.com': refreshedCredentials,
+      });
+    });
+
+    it('should refresh an expired-but-refreshable credential instead of dropping it', async () => {
+      // Exercises the real registry resolver: the stored access token is expired,
+      // but the refresh token is still good. The token endpoint issues a fresh
+      // token, the credential check then succeeds, and the account is read from
+      // the userinfo endpoint. The credential must survive with its refreshed
+      // token rather than being dropped as invalid.
+      setAsyncSubprocessRunner((args: readonly string[]) => {
+        const joined = args.join(' ');
+        if (joined.includes('oauth2.googleapis.com/token')) {
+          return Promise.resolve({
+            returncode: 0,
+            stdout: Buffer.from(
+              JSON.stringify({
+                access_token: 'fresh-access-token',
+                expires_in: 3600,
+                token_type: 'Bearer',
+              })
+            ),
+            stderr: '',
+          });
+        }
+        const isCredentialCheck = args.includes('-w');
+        const body = joined.includes('openidconnect.googleapis.com')
+          ? JSON.stringify({ email: 'alice@example.com' })
+          : '{}';
+        return Promise.resolve({
+          returncode: 0,
+          stdout: Buffer.from(isCredentialCheck ? `${body}\n200` : body),
+          stderr: '',
+        });
+      });
+
+      const expiredCredentials = {
+        objectType: 'oauth',
+        clientId: 'client',
+        clientSecret: 'secret',
+        accessToken: 'expired-access-token',
+        refreshToken: 'refresh-token',
+        accessTokenExpiresAt: new Date(Date.now() - 60_000).toISOString(),
+      };
+
+      encryptedStorage.writeFile(
+        config.credentialStorePath,
+        JSON.stringify({ 'google-gmail': expiredCredentials })
+      );
+
+      // Note: no resolver is injected, so the default registry resolver runs.
+      await runMigrations(config, encryptedStorage);
+
+      const store = JSON.parse(encryptedStorage.readFile(config.credentialStorePath)!) as {
+        credentials: Record<
+          string,
+          Record<string, { accessToken: string; refreshToken: string }>
+        >;
+      };
+
+      const stored = store.credentials['google-gmail']?.['alice@example.com'];
+      expect(stored).toMatchObject({
+        objectType: 'oauth',
+        accessToken: 'fresh-access-token',
+        refreshToken: 'refresh-token',
+      });
+    });
+
     it('should key google credentials by the account from the userinfo endpoint', async () => {
       // Google services learn validity from their credential check and the
       // account from getAccount(), both against the OpenID userinfo endpoint.

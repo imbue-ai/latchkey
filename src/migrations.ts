@@ -2,10 +2,15 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { writeFileAtomic } from './atomicWrite.js';
 import { DEFAULT_ACCOUNT } from './apiCredentials/account.js';
-import { ApiCredentialStatus } from './apiCredentials/base.js';
-import { ApiCredentialsSchema, deserializeCredentials } from './apiCredentials/serialization.js';
+import { ApiCredentialStatus, type ApiCredentials } from './apiCredentials/base.js';
+import {
+  ApiCredentialsSchema,
+  deserializeCredentials,
+  serializeCredentials,
+} from './apiCredentials/serialization.js';
 import type { Config } from './config.js';
 import type { EncryptedStorage } from './encryptedStorage.js';
+import type { Service } from './services/core/base.js';
 import { SERVICE_REGISTRY } from './serviceRegistry.js';
 
 export class MigrationError extends Error {
@@ -24,6 +29,12 @@ const DATA_FORMAT_VERSION_FILENAME = 'data-format-version';
 export interface ResolvedCredential {
   readonly status: ApiCredentialStatus;
   readonly account: string | null;
+  /**
+   * The credential data that should be persisted, which may differ from the
+   * original when an expired credential was refreshed while resolving it.
+   * Undefined means the original data is kept unchanged.
+   */
+  readonly credentialData?: unknown;
 }
 
 /**
@@ -42,9 +53,33 @@ export type CredentialResolver = (
 ) => Promise<ResolvedCredential>;
 
 /**
+ * Refresh an expired credential when the service supports it, mirroring the
+ * runtime credential-status path ({@link maybeRefreshCredentials}). Returns the
+ * refreshed credentials on success and the original credentials otherwise, so a
+ * still-refreshable credential is never mistaken for a permanently invalid one.
+ */
+async function refreshIfExpired(
+  service: Service,
+  credentials: ApiCredentials
+): Promise<ApiCredentials> {
+  if (credentials.isExpired() !== true || !service.refreshCredentials) {
+    return credentials;
+  }
+  const refreshed = await service.refreshCredentials(credentials);
+  return refreshed ?? credentials;
+}
+
+/**
  * Default resolver: look the service up in the registry, ask it to check the
  * credentials and — when they are valid — which account they belong to,
  * translating every failure mode into an inconclusive result.
+ *
+ * Expired credentials are refreshed before the check (just like the runtime
+ * path), so an expired-but-refreshable credential is reported as valid rather
+ * than invalid. When a refresh happens, the refreshed data is returned so the
+ * migration persists it: some services rotate the refresh token on refresh, and
+ * keeping the original data would leave a token the service has already
+ * invalidated.
  */
 async function resolveCredentialViaServiceRegistry(
   serviceName: string,
@@ -61,12 +96,18 @@ async function resolveCredentialViaServiceRegistry(
   }
 
   try {
-    const credentials = deserializeCredentials(parsed.data);
+    const originalCredentials = deserializeCredentials(parsed.data);
+    const credentials = await refreshIfExpired(service, originalCredentials);
     const [status, account] = await Promise.all([
       service.checkApiCredentials(credentials),
       service.getAccount(credentials),
     ]);
-    return { status, account: status === ApiCredentialStatus.Valid ? account : null };
+    return {
+      status,
+      account: status === ApiCredentialStatus.Valid ? account : null,
+      credentialData:
+        credentials === originalCredentials ? undefined : serializeCredentials(credentials),
+    };
   } catch {
     return { status: ApiCredentialStatus.Unknown, account: null };
   }
@@ -152,6 +193,10 @@ function asOAuthCredentialData(credentialData: unknown): OAuthCredentialData | n
  *   - anything inconclusive (unknown service, network error, timeout) is left
  *     under the default account (best-effort).
  *
+ * Expired credentials that the service can refresh are refreshed first, so they
+ * are preserved (as valid) rather than dropped as invalid; the refreshed data
+ * is what gets stored.
+ *
  * Independently of validity, the OAuth client (id/secret) of every OAuth
  * credential entry is saved as a preparation, so that future logins — also to
  * additional accounts — can reuse the client without a fresh browser-prepare.
@@ -204,7 +249,7 @@ async function migrationIntroduceAccountsAndPreparations(
       check.account !== DEFAULT_ACCOUNT
         ? check.account
         : DEFAULT_ACCOUNT;
-    credentials[serviceName] = { [account]: credentialData };
+    credentials[serviceName] = { [account]: check.credentialData ?? credentialData };
   }
 
   encryptedStorage.writeFile(
