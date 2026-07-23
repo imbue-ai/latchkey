@@ -22,7 +22,9 @@ export class GoogleSheets extends GoogleService {
   readonly info =
     'https://developers.google.com/sheets/api/reference/rest. ' +
     'If needed, run "latchkey auth browser-prepare google-sheets" to create an OAuth client first. ' +
-    'It may take a few minutes before the OAuth client is ready to use.';
+    'It may take a few minutes before the OAuth client is ready to use. ' +
+    'Requests that end with `ACCESS_TOKEN_SCOPE_INSUFFICIENT` may be caused by some scopes not having been approved during login. ' +
+    'Logging in again and approving all the scopes might help in that case.';
 
   protected readonly config = CONFIG;
 }
