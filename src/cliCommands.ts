@@ -926,7 +926,8 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
             targetUrl,
             deps.config.gatewayUrl,
             deps.config.gatewayPassword,
-            deps.config.gatewayPermissionsOverride
+            deps.config.gatewayPermissionsOverride,
+            getAccount() ?? null
           );
         } catch (error) {
           if (error instanceof GatewayCurlRewriteError) {

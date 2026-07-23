@@ -23,6 +23,7 @@ import {
 } from '../curlInjection.js';
 import { PermissionCheckError } from '../permissions.js';
 import { ErrorMessages } from '../errorMessages.js';
+import { GATEWAY_ACCOUNT_HEADER } from './account.js';
 import { GATEWAY_PASSWORD_HEADER } from './password.js';
 import {
   InvalidPermissionsOverrideError,
@@ -51,6 +52,7 @@ export const HOP_BY_HOP_HEADERS: ReadonlySet<string> = new Set([
  * (in addition to hop-by-hop headers).
  */
 export const GATEWAY_INTERNAL_HEADERS: ReadonlySet<string> = new Set([
+  GATEWAY_ACCOUNT_HEADER,
   GATEWAY_PASSWORD_HEADER,
   PERMISSIONS_OVERRIDE_HEADER,
 ]);
@@ -333,6 +335,13 @@ export async function handleGatewayRequest(
     body !== null
   );
 
+  // Honor the account the client selected with `--account`. The CLI forwards
+  // it in a gateway-internal header (absent when no account was chosen, so
+  // the pipeline auto-resolves). Node lower-cases header names and may return
+  // an array for repeats; only a single string value is a valid account.
+  const accountHeader = request.headers[GATEWAY_ACCOUNT_HEADER];
+  const account = typeof accountHeader === 'string' ? accountHeader : undefined;
+
   let allArguments: readonly string[];
   try {
     allArguments = await prepareCurlInvocation(
@@ -345,6 +354,7 @@ export async function handleGatewayRequest(
         permissionsDoNotUseBuiltinSchemas: deps.config.permissionsDoNotUseBuiltinSchemas,
         passthroughUnknown: deps.config.passthroughUnknown,
         credentialsRefreshDisabled: deps.config.credentialsRefreshDisabled,
+        account,
       },
       // The gateway forwards the body to curl out-of-band via
       // `--data-binary @-` on stdin, so the parsed curl arguments only carry
