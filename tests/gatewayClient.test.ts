@@ -202,7 +202,7 @@ describe('callLatchkeyEndpoint', () => {
         headers: { 'Content-Type': 'application/json' },
       })
     );
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    globalThis.fetch = fetchMock;
 
     const result = await callLatchkeyEndpoint(GATEWAY_URL, {
       command: 'services list',
@@ -223,7 +223,7 @@ describe('callLatchkeyEndpoint', () => {
         status: 400,
         headers: { 'Content-Type': 'application/json' },
       })
-    ) as unknown as typeof fetch;
+    );
 
     await expect(
       callLatchkeyEndpoint(GATEWAY_URL, { command: 'services list' })
@@ -235,9 +235,7 @@ describe('callLatchkeyEndpoint', () => {
   });
 
   it('throws GatewayRequestError when the transport fails', async () => {
-    globalThis.fetch = vi
-      .fn()
-      .mockRejectedValue(new Error('connect ECONNREFUSED')) as unknown as typeof fetch;
+    globalThis.fetch = vi.fn().mockRejectedValue(new Error('connect ECONNREFUSED'));
 
     await expect(
       callLatchkeyEndpoint(GATEWAY_URL, { command: 'services list' })
@@ -251,7 +249,7 @@ describe('callLatchkeyEndpoint', () => {
         headers: { 'Content-Type': 'application/json' },
       })
     );
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    globalThis.fetch = fetchMock;
 
     await callLatchkeyEndpoint(GATEWAY_URL, { command: 'services list' }, 'top-secret');
 
@@ -267,7 +265,7 @@ describe('callLatchkeyEndpoint', () => {
         headers: { 'Content-Type': 'application/json' },
       })
     );
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    globalThis.fetch = fetchMock;
 
     await callLatchkeyEndpoint(GATEWAY_URL, { command: 'services list' });
 
@@ -283,7 +281,7 @@ describe('callLatchkeyEndpoint', () => {
         headers: { 'Content-Type': 'application/json' },
       })
     );
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    globalThis.fetch = fetchMock;
 
     await callLatchkeyEndpoint(GATEWAY_URL, { command: 'services list' }, null, 'jwt.value.here');
 
@@ -299,7 +297,7 @@ describe('callLatchkeyEndpoint', () => {
         headers: { 'Content-Type': 'application/json' },
       })
     );
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    globalThis.fetch = fetchMock;
 
     await callLatchkeyEndpoint(GATEWAY_URL, { command: 'services list' });
 

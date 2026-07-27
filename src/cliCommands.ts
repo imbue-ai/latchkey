@@ -64,7 +64,11 @@ import {
   run as curlRun,
   runAsync as curlRunAsync,
 } from './curl.js';
-import { checkPermission, PermissionCheckError } from './permissions.js';
+import {
+  checkPermission,
+  PermissionCheckError,
+  type PermissionCheckMetadata,
+} from './permissions.js';
 import { ErrorMessages } from './errorMessages.js';
 import { getSkillMdContent } from './skillMd.js';
 import { startGateway } from './gateway/server.js';
@@ -113,7 +117,8 @@ export interface CliDependencies {
   readonly checkPermission: (
     request: Request,
     configPath: string,
-    doNotUseBuiltinSchemas: boolean
+    doNotUseBuiltinSchemas: boolean,
+    metadata?: PermissionCheckMetadata
   ) => Promise<boolean>;
   readonly confirm: (message: string) => Promise<boolean>;
   readonly readStdin: () => Promise<string>;

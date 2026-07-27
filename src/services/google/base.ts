@@ -59,7 +59,7 @@ export class GoogleApiKeyCredentials implements ApiCredentials {
   }
 
   injectIntoCurlCall(curlArguments: readonly string[]): Promise<readonly string[]> {
-    const url = extractUrlFromCurlArguments(curlArguments as string[]);
+    const url = extractUrlFromCurlArguments(curlArguments);
     if (!url?.startsWith('https://') || !url.includes('.googleapis.com')) {
       return Promise.resolve(curlArguments);
     }

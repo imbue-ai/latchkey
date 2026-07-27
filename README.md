@@ -333,6 +333,9 @@ This would mean that:
 - When accessing the Gmail or the Slack API, only read actions are allowed.
 - No requests are allowed to any other domains.
 
+Rules can also depend on the used account which Latchkey injects as the
+`account` custom metadata key. See [the underlying library's docs](https://github.com/imbue-ai/detent#custom-metadata) for more details.
+
 Ideally make the file read-only: `chmod -w ~/.latchkey/permissions.json`.
 In the gateway mode, you can use [permission overrides](#permission-overrides) to let
 different callers claim different permission policies.
