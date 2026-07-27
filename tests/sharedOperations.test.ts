@@ -110,7 +110,7 @@ describe('operations', () => {
       const store = createApiCredentialStore({
         slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
       });
-      const config = createMockConfig({ browserDisabled: true } as Partial<Config>);
+      const config = createMockConfig({ browserDisabled: true });
 
       const result = servicesList(registry, store, config, { viable: true });
 
@@ -160,7 +160,7 @@ describe('operations', () => {
       const service = createMockService();
       const registry = new ServiceRegistry([service]);
       const store = createApiCredentialStore();
-      const config = createMockConfig({ browserDisabled: true } as Partial<Config>);
+      const config = createMockConfig({ browserDisabled: true });
 
       const info = await servicesInfo(registry, store, config, 'slack');
 
@@ -293,7 +293,7 @@ describe('operations', () => {
         const registry = new ServiceRegistry([service]);
         const store = createApiCredentialStore();
         const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
-        const config = createMockConfig({ directory: tempDir } as Partial<Config>);
+        const config = createMockConfig({ directory: tempDir });
         // A valid browser config is required for the login flow to start; point
         // it at any existing file.
         saveBrowserConfig(config.configPath, {
@@ -327,7 +327,7 @@ describe('operations', () => {
         const config = createMockConfig({
           directory: tempDir,
           browserEphemeral: true,
-        } as Partial<Config>);
+        });
         saveBrowserConfig(config.configPath, {
           executablePath: process.execPath,
           source: 'system',
@@ -355,7 +355,7 @@ describe('operations', () => {
         const registry = new ServiceRegistry([service]);
         const store = createApiCredentialStore();
         const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
-        const config = createMockConfig({ directory: tempDir } as Partial<Config>);
+        const config = createMockConfig({ directory: tempDir });
         saveBrowserConfig(config.configPath, {
           executablePath: process.execPath,
           source: 'system',
@@ -388,7 +388,7 @@ describe('operations', () => {
           'first@example.com'
         );
         const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
-        const config = createMockConfig({ directory: tempDir } as Partial<Config>);
+        const config = createMockConfig({ directory: tempDir });
         saveBrowserConfig(config.configPath, {
           executablePath: process.execPath,
           source: 'system',
@@ -426,7 +426,7 @@ describe('operations', () => {
         const store = createApiCredentialStore();
         store.savePreparation('slack', preparedClient);
         const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
-        const config = createMockConfig({ directory: tempDir } as Partial<Config>);
+        const config = createMockConfig({ directory: tempDir });
         saveBrowserConfig(config.configPath, {
           executablePath: process.execPath,
           source: 'system',
@@ -473,7 +473,7 @@ describe('operations', () => {
         const store = createApiCredentialStore();
         store.save('slack', existingCredentials, 'first@example.com');
         const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
-        const config = createMockConfig({ directory: tempDir } as Partial<Config>);
+        const config = createMockConfig({ directory: tempDir });
         saveBrowserConfig(config.configPath, {
           executablePath: process.execPath,
           source: 'system',
@@ -525,7 +525,7 @@ describe('operations', () => {
         const store = createApiCredentialStore();
         store.save('slack', new SlackApiCredentials('default-token', 'default-cookie'), '');
         const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
-        const config = createMockConfig({ directory: tempDir } as Partial<Config>);
+        const config = createMockConfig({ directory: tempDir });
         saveBrowserConfig(config.configPath, {
           executablePath: process.execPath,
           source: 'system',
@@ -587,7 +587,7 @@ describe('operations', () => {
         const store = createApiCredentialStore();
         store.savePreparation('slack', new OAuthCredentials('client-id', 'client-secret'));
         const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
-        const config = createMockConfig({ directory: tempDir } as Partial<Config>);
+        const config = createMockConfig({ directory: tempDir });
         saveBrowserConfig(config.configPath, {
           executablePath: process.execPath,
           source: 'system',
@@ -631,7 +631,7 @@ describe('operations', () => {
         const registry = new ServiceRegistry([service]);
         const store = createApiCredentialStore();
         const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
-        const config = createMockConfig({ directory: tempDir } as Partial<Config>);
+        const config = createMockConfig({ directory: tempDir });
         saveBrowserConfig(config.configPath, {
           executablePath: process.execPath,
           source: 'system',

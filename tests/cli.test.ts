@@ -2986,7 +2986,7 @@ describe('CLI commands with dependency injection', () => {
 
     function makeFetchMock(response: Response) {
       const fetchMock = vi.fn().mockResolvedValue(response);
-      globalThis.fetch = fetchMock as unknown as typeof fetch;
+      globalThis.fetch = fetchMock;
       return fetchMock;
     }
 
@@ -3149,7 +3149,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('rewrites the curl target URL to the gateway /gateway endpoint', async () => {
       const fetchMock = vi.fn();
-      globalThis.fetch = fetchMock as unknown as typeof fetch;
+      globalThis.fetch = fetchMock;
       const deps = createMockDependencies({
         config: createMockConfig({ gatewayUrl: GATEWAY_URL }),
       });
@@ -3166,7 +3166,7 @@ describe('CLI commands with dependency injection', () => {
 
     it('rewrites latchkey-self.invalid curl targets directly onto the gateway base URL', async () => {
       const fetchMock = vi.fn();
-      globalThis.fetch = fetchMock as unknown as typeof fetch;
+      globalThis.fetch = fetchMock;
       const deps = createMockDependencies({
         config: createMockConfig({ gatewayUrl: GATEWAY_URL }),
       });

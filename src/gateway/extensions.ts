@@ -107,7 +107,7 @@ function hasDefaultFunctionExport(value: unknown): value is { readonly default: 
     typeof value === 'object' &&
     value !== null &&
     'default' in value &&
-    typeof (value as { default: unknown }).default === 'function'
+    typeof value.default === 'function'
   );
 }
 

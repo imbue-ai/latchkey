@@ -65,12 +65,12 @@
     "zod": "^3.22.0"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.2",
+    "@eslint/js": "^10.0.1",
     "@types/node": "^20.0.0",
-    "eslint": "^9.39.2",
+    "eslint": "^10.8.0",
     "prettier": "^3.8.1",
     "typescript": "^5.3.0",
-    "typescript-eslint": "^8.53.1",
+    "typescript-eslint": "^8.65.0",
     "vitest": "^4.0.18"
   },
   "pi": {

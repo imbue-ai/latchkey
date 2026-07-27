@@ -27,7 +27,7 @@ export class TelegramBotCredentials implements ApiCredentials {
   }
 
   injectIntoCurlCall(curlArguments: readonly string[]): Promise<readonly string[]> {
-    const url = extractUrlFromCurlArguments(curlArguments as string[]);
+    const url = extractUrlFromCurlArguments(curlArguments);
     if (!url?.startsWith(BASE_API_URL)) {
       return Promise.resolve(curlArguments);
     }
