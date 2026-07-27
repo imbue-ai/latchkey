@@ -31,6 +31,7 @@ import {
 } from '../src/configDataStore.js';
 import { loadRegisteredServicesIntoServiceRegistry } from '../src/serviceRegistry.js';
 import type { CurlResult } from '../src/curl.js';
+import type { PermissionCheckMetadata } from '../src/permissions.js';
 
 // Use a fixed test key for deterministic test behavior (32 bytes = 256 bits, base64 encoded)
 const TEST_ENCRYPTION_KEY = 'dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q=';
@@ -1982,6 +1983,77 @@ describe('CLI commands with dependency injection', () => {
 
       expect(exitCode).toBe(0);
       expect(capturedArgs).toContain('https://slack.com/api/test');
+    });
+
+    it('should report the account in use to the permission check', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(
+        storePath,
+        JSON.stringify({
+          credentials: {
+            slack: {
+              'work@example.com': {
+                objectType: 'rawCurl',
+                curlArguments: ['-H', 'X-Token: work'],
+              },
+            },
+          },
+        })
+      );
+
+      const capturedMetadata: (PermissionCheckMetadata | undefined)[] = [];
+      const deps = createMockDependencies({
+        checkPermission: (_request, _configPath, _doNotUseBuiltinSchemas, metadata) => {
+          capturedMetadata.push(metadata);
+          return Promise.resolve(true);
+        },
+      });
+
+      await runCommand(['curl', 'https://slack.com/api/test'], deps);
+
+      expect(exitCode).toBe(0);
+      expect(capturedMetadata).toEqual([{ account: 'work@example.com' }]);
+    });
+
+    it('should report the default account as an empty string to the permission check', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(
+        storePath,
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
+          })
+        )
+      );
+
+      const capturedMetadata: (PermissionCheckMetadata | undefined)[] = [];
+      const deps = createMockDependencies({
+        checkPermission: (_request, _configPath, _doNotUseBuiltinSchemas, metadata) => {
+          capturedMetadata.push(metadata);
+          return Promise.resolve(true);
+        },
+      });
+
+      await runCommand(['curl', 'https://slack.com/api/test'], deps);
+
+      expect(exitCode).toBe(0);
+      expect(capturedMetadata).toEqual([{ account: '' }]);
+    });
+
+    it('should not report an account when the request is passed through', async () => {
+      const capturedMetadata: (PermissionCheckMetadata | undefined)[] = [];
+      const deps = createMockDependencies({
+        config: createMockConfig({ passthroughUnknown: true }),
+        checkPermission: (_request, _configPath, _doNotUseBuiltinSchemas, metadata) => {
+          capturedMetadata.push(metadata);
+          return Promise.resolve(true);
+        },
+      });
+
+      await runCommand(['curl', 'https://unknown-api.example.com/test'], deps);
+
+      expect(exitCode).toBe(0);
+      expect(capturedMetadata).toEqual([undefined]);
     });
 
     it('should exit with error when permission check fails', async () => {

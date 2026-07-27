@@ -3,8 +3,10 @@
  * gateway's `/gateway/<url>` proxy.
  *
  * Given the raw curl arguments of an outgoing request, this function performs
- * the permission check, URL extraction, service lookup, credential load and
- * expiry/refresh steps, and returns the final argument list to pass to curl.
+ * URL extraction, service lookup, credential load, the permission check and
+ * the expiry/refresh steps, and returns the final argument list to pass to
+ * curl. The permission check runs once the credentials (and hence the account)
+ * are known, so the account can be reported to the check as metadata.
  * Problems are reported as dedicated error subclasses. Actually invoking curl
  * is left to the caller, so the CLI can inherit stdio while the gateway can
  * stream request bodies and capture response headers.
@@ -16,6 +18,7 @@ import { maybeRefreshCredentials } from './apiCredentials/utils.js';
 import { CurlParseError, extractUrlFromCurlArguments } from './curl.js';
 import { parseCurlArgs } from '@imbue-ai/detent';
 import { ErrorMessages } from './errorMessages.js';
+import type { PermissionCheckMetadata } from './permissions.js';
 import type { ServiceRegistry } from './serviceRegistry.js';
 import type { Service } from './services/core/base.js';
 
@@ -72,7 +75,8 @@ export interface CurlInjectionDependencies {
   readonly checkPermission: (
     request: Request,
     configPath: string,
-    doNotUseBuiltinSchemas: boolean
+    doNotUseBuiltinSchemas: boolean,
+    metadata?: PermissionCheckMetadata
   ) => Promise<boolean>;
   readonly permissionsConfigPath: string;
   readonly permissionsDoNotUseBuiltinSchemas: boolean;
@@ -128,14 +132,22 @@ export async function prepareCurlInvocation(
       body: requestBodyForPermissionCheck,
     });
   }
-  const allowed = await dependencies.checkPermission(
-    parsedRequest,
-    dependencies.permissionsConfigPath,
-    dependencies.permissionsDoNotUseBuiltinSchemas
-  );
-  if (!allowed) {
-    throw new RequestNotPermittedError();
-  }
+  // The permission check is deferred until we know which account's credentials
+  // the request will use, so that the account can be reported as metadata. It
+  // is omitted when no credentials are injected at all (passthrough).
+  const ensureRequestIsPermitted = async (accountInUse?: string): Promise<void> => {
+    const metadata: PermissionCheckMetadata | undefined =
+      accountInUse === undefined ? undefined : { account: accountInUse };
+    const allowed = await dependencies.checkPermission(
+      parsedRequest,
+      dependencies.permissionsConfigPath,
+      dependencies.permissionsDoNotUseBuiltinSchemas,
+      metadata
+    );
+    if (!allowed) {
+      throw new RequestNotPermittedError();
+    }
+  };
 
   let url: string | null;
   try {
@@ -160,6 +172,7 @@ export async function prepareCurlInvocation(
   const firstCandidate = candidates[0];
   if (firstCandidate === undefined) {
     if (dependencies.passthroughUnknown) {
+      await ensureRequestIsPermitted();
       return [...curlArguments];
     }
     throw new NoServiceForUrlError(url);
@@ -168,22 +181,35 @@ export async function prepareCurlInvocation(
   interface Selection {
     service: Service;
     apiCredentials: ApiCredentials;
+    account: string;
   }
   let selection: Selection | null = null;
   let fallbackWithCredentials: Selection | null = null;
-  const account = dependencies.account;
+  const requestedAccount = dependencies.account;
   // `get` resolves the account itself: it returns null when the requested
   // account is absent (so we move on to the next candidate) and raises
   // AmbiguousAccountError when several accounts exist and none was requested,
   // which bubbles up so the caller can require --account.
   for (const candidate of candidates) {
-    const candidateCredentials = apiCredentialStore.get(candidate.name, account);
+    const candidateCredentials = apiCredentialStore.get(candidate.name, requestedAccount);
     if (candidateCredentials === null) {
       continue;
     }
-    fallbackWithCredentials ??= { service: candidate, apiCredentials: candidateCredentials };
+    // When no account was requested, a non-null result means the service has
+    // exactly one stored account, which is the one `get` just resolved to.
+    const candidateAccount =
+      requestedAccount ?? apiCredentialStore.listAccounts(candidate.name)[0]!;
+    fallbackWithCredentials ??= {
+      service: candidate,
+      apiCredentials: candidateCredentials,
+      account: candidateAccount,
+    };
     if (candidateCredentials.isExpired() !== true) {
-      selection = { service: candidate, apiCredentials: candidateCredentials };
+      selection = {
+        service: candidate,
+        apiCredentials: candidateCredentials,
+        account: candidateAccount,
+      };
       break;
     }
   }
@@ -194,13 +220,18 @@ export async function prepareCurlInvocation(
   const chosen = selection ?? fallbackWithCredentials;
   if (chosen === null) {
     if (dependencies.passthroughUnknown) {
+      await ensureRequestIsPermitted();
       return [...curlArguments];
     }
-    throw new NoCredentialsForServiceError(firstCandidate.name, account);
+    throw new NoCredentialsForServiceError(firstCandidate.name, requestedAccount);
   }
 
   const service = chosen.service;
   let apiCredentials: ApiCredentials = chosen.apiCredentials;
+
+  // Check permissions before touching the credentials, so a denied request
+  // never triggers a refresh round-trip.
+  await ensureRequestIsPermitted(chosen.account);
 
   if (apiCredentials.isExpired() === true) {
     apiCredentials = await maybeRefreshCredentials(
@@ -208,10 +239,10 @@ export async function prepareCurlInvocation(
       apiCredentials,
       apiCredentialStore,
       dependencies.credentialsRefreshDisabled,
-      account
+      requestedAccount
     );
     if (apiCredentials.isExpired() === true) {
-      throw new CredentialsExpiredError(service.name, account);
+      throw new CredentialsExpiredError(service.name, requestedAccount);
     }
   }
 

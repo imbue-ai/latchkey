@@ -182,6 +182,36 @@ describe('checkPermission', () => {
     expect(resultPost).toBe(true);
   });
 
+  it('should expose the account metadata to schemas', async () => {
+    const configPath = join(tempDir, 'permissions.json');
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        schemas: {
+          'work-account': {
+            properties: {
+              customMetadata: {
+                properties: { account: { const: 'work@example.com' } },
+                required: ['account'],
+              },
+            },
+            required: ['customMetadata'],
+          },
+        },
+        rules: [{ 'work-account': ['any'] }],
+      })
+    );
+    const request = requestFromCurl(['https://api.example.com/users']);
+
+    expect(await checkPermission(request, configPath, false, { account: 'work@example.com' })).toBe(
+      true
+    );
+    expect(await checkPermission(request, configPath, false, { account: 'home@example.com' })).toBe(
+      false
+    );
+    expect(await checkPermission(request, configPath)).toBe(false);
+  });
+
   it('should deny all requests when config has empty rules', async () => {
     const configPath = join(tempDir, 'permissions.json');
     writeFileSync(
