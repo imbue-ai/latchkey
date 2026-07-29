@@ -445,10 +445,25 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       'Name of the built-in service to use as a template, if any (e.g. gitlab)'
     )
     .option('--login-url <url>', 'Login URL for browser-based authentication, if applicable')
+    .option(
+      '--cookie-key <name>',
+      'Name of the session cookie to capture. Enables a generic browser login ' +
+        'that stores "Cookie: <name>=<value>" as the credentials. Cannot be combined with --service-family.'
+    )
+    .option(
+      '--cookie-url <url>',
+      'URL whose cookies are searched for --cookie-key, when the cookie is not set on the login URL itself (defaults to --login-url)'
+    )
     .action(
       (
         rawServiceName: string,
-        options: { baseApiUrl: string; serviceFamily?: string; loginUrl?: string }
+        options: {
+          baseApiUrl: string;
+          serviceFamily?: string;
+          loginUrl?: string;
+          cookieKey?: string;
+          cookieUrl?: string;
+        }
       ) => {
         refuseInGatewayMode(deps, 'services register');
         let serviceName: string;
@@ -474,10 +489,24 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           }
         }
 
-        if (options.loginUrl !== undefined) {
+        if (options.cookieUrl !== undefined && options.cookieKey === undefined) {
+          deps.errorLog('Error: --cookie-url requires --cookie-key.');
+          deps.exit(1);
+        }
+
+        if (options.cookieKey !== undefined) {
+          if (options.serviceFamily !== undefined) {
+            deps.errorLog('Error: --cookie-key cannot be combined with --service-family.');
+            deps.exit(1);
+          }
+          if (options.loginUrl === undefined) {
+            deps.errorLog('Error: --cookie-key requires --login-url.');
+            deps.exit(1);
+          }
+        } else if (options.loginUrl !== undefined) {
           if (familyService === undefined) {
             deps.errorLog(
-              'Error: --login-url requires a --service-family that supports browser login.'
+              'Error: --login-url requires either a --service-family that supports browser login, or --cookie-key.'
             );
             deps.exit(1);
           } else if (familyService.getSession === undefined) {
@@ -493,12 +522,12 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           deps.exit(1);
         }
 
-        const registeredService = new RegisteredService(
-          serviceName,
-          options.baseApiUrl,
+        const registeredService = new RegisteredService(serviceName, options.baseApiUrl, {
           familyService,
-          options.loginUrl
-        );
+          loginUrl: options.loginUrl,
+          cookieKey: options.cookieKey,
+          cookieUrl: options.cookieUrl,
+        });
 
         try {
           deps.registry.addService(registeredService);
@@ -514,6 +543,8 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           baseApiUrl: options.baseApiUrl,
           serviceFamily: options.serviceFamily,
           loginUrl: options.loginUrl,
+          cookieKey: options.cookieKey,
+          cookieUrl: options.cookieUrl,
         });
 
         deps.log(`Service '${serviceName}' registered.`);

@@ -168,12 +168,12 @@ export function loadRegisteredServicesIntoServiceRegistry(
     if (registry.getByName(name) !== null) {
       continue;
     }
-    const registeredService = new RegisteredService(
-      name,
-      entry.baseApiUrl,
+    const registeredService = new RegisteredService(name, entry.baseApiUrl, {
       familyService,
-      entry.loginUrl
-    );
+      loginUrl: entry.loginUrl,
+      cookieKey: entry.cookieKey,
+      cookieUrl: entry.cookieUrl,
+    });
     registry.addService(registeredService);
   }
 }

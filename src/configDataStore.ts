@@ -15,6 +15,11 @@ const RegisteredServiceEntrySchema = z.object({
   baseApiUrl: z.string(),
   serviceFamily: z.string().optional(),
   loginUrl: z.string().optional(),
+  // When set (together with loginUrl and without a service family), the
+  // service gets a generic browser login that waits for this cookie to appear.
+  cookieKey: z.string().optional(),
+  // URL whose cookies are searched for cookieKey. Defaults to loginUrl.
+  cookieUrl: z.string().optional(),
 });
 
 export type RegisteredServiceEntry = z.infer<typeof RegisteredServiceEntrySchema>;

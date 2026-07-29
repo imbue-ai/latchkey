@@ -221,7 +221,45 @@ latchkey auth set mastodon -H "Authorization: Bearer <your_access_token>"
 latchkey curl https://mastodon.social/api/v1/timelines/public?limit=2
 ```
 
-User-registered services only support authentication via static curl arguments provided through `latchkey auth set`.
+By default, user-registered services only support authentication
+via static curl arguments provided through `latchkey auth set`.
+
+#### Browser login for cookie-authenticated services
+
+Many services (especially internal or self-hosted ones) authenticate
+API calls with a plain session cookie. For those, a registered service
+can also get a browser login, by naming the login page and the cookie
+to capture:
+
+```bash
+latchkey services register my-intranet \
+  --base-api-url="https://intranet.example.com/api/" \
+  --login-url="https://intranet.example.com/login" \
+  --cookie-key="session_id"
+
+# Opens the login page in a browser window. Once the user has signed in
+# and the 'session_id' cookie appears, it is stored as the credentials.
+latchkey auth browser my-intranet
+
+# Agents can then call the API; requests carry `Cookie: session_id=<value>`.
+latchkey curl https://intranet.example.com/api/me
+```
+
+Latchkey looks for the cookie on the login URL's domain. If the
+session cookie is set on a different host than the login page (for
+example, sign-in happens on an SSO domain), name the host that owns
+the cookie with `--cookie-url`:
+
+```bash
+latchkey services register my-intranet \
+  --base-api-url="https://intranet.example.com/api/" \
+  --login-url="https://sso.example.com/login" \
+  --cookie-key="session_id" \
+  --cookie-url="https://intranet.example.com/"
+```
+
+`--cookie-key` cannot be combined with `--service-family`, since a
+service family brings its own login flow.
 
 
 ### Indirect credentials

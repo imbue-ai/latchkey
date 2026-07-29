@@ -2378,7 +2378,7 @@ describe('CLI commands with dependency injection', () => {
       expect(entries.get('my-github')?.loginUrl).toBe('https://github.mycompany.com/login');
     });
 
-    it('should reject --login-url without --service-family', async () => {
+    it('should reject --login-url without --service-family or --cookie-key', async () => {
       const deps = createMockDependencies({
         registry: new ServiceRegistry([]),
       });
@@ -2397,7 +2397,141 @@ describe('CLI commands with dependency injection', () => {
       );
 
       expect(exitCode).toBe(1);
-      expect(errorLogs[0]).toContain('--login-url requires a --service-family');
+      expect(errorLogs[0]).toContain('--login-url requires either a --service-family');
+    });
+
+    it('should register a cookie-capturing service', async () => {
+      const deps = createMockDependencies({
+        registry: new ServiceRegistry([]),
+      });
+
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-service',
+          '--base-api-url',
+          'https://example.com/api/',
+          '--login-url',
+          'https://example.com/login',
+          '--cookie-key',
+          'session_id',
+        ],
+        deps
+      );
+
+      expect(exitCode).toBeNull();
+      expect(logs).toContain("Service 'my-service' registered.");
+      expect(loadRegisteredServices(deps.config.configPath).get('my-service')).toEqual({
+        baseApiUrl: 'https://example.com/api/',
+        loginUrl: 'https://example.com/login',
+        cookieKey: 'session_id',
+      });
+
+      logs = [];
+      await runCommand(['services', 'info', 'my-service'], deps);
+      const info = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
+      expect(info.authOptions).toEqual(['browser', 'set']);
+    });
+
+    it('should persist an explicit --cookie-url', async () => {
+      const deps = createMockDependencies({
+        registry: new ServiceRegistry([]),
+      });
+
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-service',
+          '--base-api-url',
+          'https://api.example.com/',
+          '--login-url',
+          'https://login.example.com/',
+          '--cookie-key',
+          'session_id',
+          '--cookie-url',
+          'https://api.example.com/',
+        ],
+        deps
+      );
+
+      expect(exitCode).toBeNull();
+      expect(loadRegisteredServices(deps.config.configPath).get('my-service')?.cookieUrl).toBe(
+        'https://api.example.com/'
+      );
+    });
+
+    it('should reject --cookie-url without --cookie-key', async () => {
+      const deps = createMockDependencies({
+        registry: new ServiceRegistry([]),
+      });
+
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-service',
+          '--base-api-url',
+          'https://api.example.com/',
+          '--login-url',
+          'https://login.example.com/',
+          '--cookie-url',
+          'https://api.example.com/',
+        ],
+        deps
+      );
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs[0]).toContain('--cookie-url requires --cookie-key');
+    });
+
+    it('should reject --cookie-key without --login-url', async () => {
+      const deps = createMockDependencies({
+        registry: new ServiceRegistry([]),
+      });
+
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-service',
+          '--base-api-url',
+          'https://example.com/api/',
+          '--cookie-key',
+          'session_id',
+        ],
+        deps
+      );
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs[0]).toContain('--cookie-key requires --login-url');
+    });
+
+    it('should reject --cookie-key combined with --service-family', async () => {
+      const deps = createMockDependencies({
+        registry: new ServiceRegistry([GITLAB]),
+      });
+
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-gitlab',
+          '--base-api-url',
+          'https://gitlab.mycompany.com/api/',
+          '--service-family',
+          'gitlab',
+          '--login-url',
+          'https://gitlab.mycompany.com/users/sign_in',
+          '--cookie-key',
+          '_gitlab_session',
+        ],
+        deps
+      );
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs[0]).toContain('--cookie-key cannot be combined with --service-family');
     });
 
     it('should reject --login-url when service family does not support browser login', async () => {
@@ -3308,6 +3442,23 @@ describe('registeredServiceStore', () => {
     expect(service!.baseApiUrls).toEqual(['https://api.example.com/']);
     expect(service!.getSession).toBeUndefined(); // eslint-disable-line @typescript-eslint/unbound-method
     expect(service!.loginUrl).toBe('');
+  });
+
+  it('should load registered service with cookieKey into registry', () => {
+    const configPath = join(tempDir, 'config.json');
+    saveRegisteredService(configPath, 'my-api', {
+      baseApiUrl: 'https://api.example.com/',
+      loginUrl: 'https://example.com/login',
+      cookieKey: 'session_id',
+    });
+
+    const registry = new ServiceRegistry([GITLAB]);
+    loadRegisteredServicesIntoServiceRegistry(configPath, registry);
+
+    const service = registry.getByName('my-api');
+    expect(service).not.toBeNull();
+    expect(service!.getSession).toBeDefined(); // eslint-disable-line @typescript-eslint/unbound-method
+    expect(service!.loginUrl).toBe('https://example.com/login');
   });
 
   it('should skip registered services with unknown family', () => {

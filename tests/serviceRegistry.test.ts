@@ -181,11 +181,9 @@ describe('ServiceRegistry', () => {
   describe('addService', () => {
     it('should add a service to the registry', () => {
       const registry = new ServiceRegistry([SLACK]);
-      const registered = new RegisteredService(
-        'my-gitlab',
-        'https://gitlab.mycompany.com/api/',
-        GITLAB
-      );
+      const registered = new RegisteredService('my-gitlab', 'https://gitlab.mycompany.com/api/', {
+        familyService: GITLAB,
+      });
       registry.addService(registered);
 
       expect(registry.getByName('my-gitlab')).toBe(registered);
@@ -196,7 +194,9 @@ describe('ServiceRegistry', () => {
 
     it('should throw DuplicateServiceNameError for existing built-in name', () => {
       const registry = new ServiceRegistry([SLACK]);
-      const duplicate = new RegisteredService('slack', 'https://slack.mycompany.com/api/', SLACK);
+      const duplicate = new RegisteredService('slack', 'https://slack.mycompany.com/api/', {
+        familyService: SLACK,
+      });
 
       expect(() => {
         registry.addService(duplicate);
@@ -205,8 +205,12 @@ describe('ServiceRegistry', () => {
 
     it('should throw DuplicateServiceNameError for existing registered name', () => {
       const registry = new ServiceRegistry([GITLAB]);
-      const first = new RegisteredService('my-gitlab', 'https://gitlab.mycompany.com/api/', GITLAB);
-      const second = new RegisteredService('my-gitlab', 'https://gitlab.other.com/api/', GITLAB);
+      const first = new RegisteredService('my-gitlab', 'https://gitlab.mycompany.com/api/', {
+        familyService: GITLAB,
+      });
+      const second = new RegisteredService('my-gitlab', 'https://gitlab.other.com/api/', {
+        familyService: GITLAB,
+      });
 
       registry.addService(first);
       expect(() => {
@@ -275,22 +279,18 @@ describe('ServiceRegistry', () => {
 
   describe('RegisteredService', () => {
     it('should not expose getSession when no loginUrl is provided', () => {
-      const registered = new RegisteredService(
-        'my-gitlab',
-        'https://gitlab.mycompany.com/api/',
-        GITLAB
-      );
+      const registered = new RegisteredService('my-gitlab', 'https://gitlab.mycompany.com/api/', {
+        familyService: GITLAB,
+      });
       expect(registered.getSession).toBeUndefined(); // eslint-disable-line @typescript-eslint/unbound-method
       expect(registered.loginUrl).toBe('');
     });
 
     it('should expose getSession when loginUrl is provided and family supports it', () => {
-      const registered = new RegisteredService(
-        'my-slack',
-        'https://slack.mycompany.com/api/',
-        SLACK,
-        'https://slack.mycompany.com/signin'
-      );
+      const registered = new RegisteredService('my-slack', 'https://slack.mycompany.com/api/', {
+        familyService: SLACK,
+        loginUrl: 'https://slack.mycompany.com/signin',
+      });
       expect(registered.getSession).toBeDefined(); // eslint-disable-line @typescript-eslint/unbound-method
       expect(registered.loginUrl).toBe('https://slack.mycompany.com/signin');
     });
@@ -304,12 +304,9 @@ describe('ServiceRegistry', () => {
     });
 
     it('should not expose getSession when loginUrl is provided but no family', () => {
-      const registered = new RegisteredService(
-        'my-api',
-        'https://api.example.com/',
-        undefined,
-        'https://api.example.com/login'
-      );
+      const registered = new RegisteredService('my-api', 'https://api.example.com/', {
+        loginUrl: 'https://api.example.com/login',
+      });
       expect(registered.getSession).toBeUndefined(); // eslint-disable-line @typescript-eslint/unbound-method
     });
 
@@ -318,8 +315,10 @@ describe('ServiceRegistry', () => {
       const registered = new RegisteredService(
         'my-telegram',
         'https://telegram.mycompany.com/bot',
-        TELEGRAM,
-        'https://telegram.mycompany.com/login'
+        {
+          familyService: TELEGRAM,
+          loginUrl: 'https://telegram.mycompany.com/login',
+        }
       );
       expect(registered.getSession).toBeUndefined(); // eslint-disable-line @typescript-eslint/unbound-method
     });
