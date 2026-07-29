@@ -30,6 +30,15 @@ const NON_WORKSPACE_PATH_SEGMENTS = new Set([
   'magic',
 ]);
 
+// GraphQL response keys that Linear also returns while the user is still
+// anonymous or in the middle of logging in; seeing only these proves nothing.
+const ANONYMOUS_GRAPHQL_RESPONSE_KEYS = new Set([
+  'organizationMeta',
+  'trackAnonymousEvent',
+  'emailUserAccountAuthChallenge',
+  'passkeyLoginStart',
+]);
+
 function parseWorkspaceName(url: string): string | null {
   const match = /^https:\/\/linear\.app\/([^/?#]+)/.exec(url);
   if (match === null) {
@@ -81,8 +90,8 @@ class LinearServiceSession extends BrowserFollowupServiceSession {
     }
 
     const request = response.request();
-    // Empirically, when not logged in, the response only contains "data.organizationMeta" or "data.trackAnonymousEvent".
-    // Otherwise it can contain many different things.
+    // Empirically, when not logged in, the response data only contains keys from
+    // ANONYMOUS_GRAPHQL_RESPONSE_KEYS. Otherwise it can contain many different things.
     if (request.url() === 'https://client-api.linear.app/graphql' && request.method() === 'POST') {
       if (response.status() === 200) {
         try {
@@ -91,11 +100,7 @@ class LinearServiceSession extends BrowserFollowupServiceSession {
             .json()
             .then((jsonData: unknown) => {
               const data = (jsonData as { data?: Record<string, unknown> }).data ?? {};
-              if (
-                Object.keys(data).some(
-                  (key) => key !== 'organizationMeta' && key !== 'trackAnonymousEvent'
-                )
-              ) {
+              if (Object.keys(data).some((key) => !ANONYMOUS_GRAPHQL_RESPONSE_KEYS.has(key))) {
                 this.isLoggedIn = true;
               }
             })
