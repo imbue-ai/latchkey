@@ -90,12 +90,13 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
    * When more than one account is linked, Dropbox asks which account should own
    * the app before enabling the "Create app" button. Prefer the account the
    * user is currently logged in as, then the work account, then the personal
-   * account.
+   * account. With a single linked account there is no choice to make: the page
+   * only carries a hidden `_subject_uid` field, which must not be clicked.
    */
   private async selectOwningAccount(page: Page): Promise<void> {
     if (this.currentAccountUid !== undefined) {
       const currentAccount = page.locator(
-        `input[name="_subject_uid"][value="${this.currentAccountUid}"]`
+        `input[type="radio"][name="_subject_uid"][value="${this.currentAccountUid}"]`
       );
       if ((await currentAccount.count()) > 0) {
         await currentAccount.check();
@@ -103,8 +104,8 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
       }
     }
 
-    const workAccount = page.locator('input#company[name="_subject_uid"]');
-    const personalAccount = page.locator('input#personal[name="_subject_uid"]');
+    const workAccount = page.locator('input#company[type="radio"][name="_subject_uid"]');
+    const personalAccount = page.locator('input#personal[type="radio"][name="_subject_uid"]');
 
     if ((await workAccount.count()) > 0) {
       await workAccount.check();
