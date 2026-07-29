@@ -49,6 +49,9 @@ const IMPLICITLY_GRANTED_SCOPES = ['account_info.read', 'files.metadata.read'] a
 // Time allowed for the user to approve the authorization request in the browser.
 const AUTHORIZATION_TIMEOUT_MS = 120000;
 
+// Time allowed for the user to accept the Dropbox API Terms and Conditions.
+const TERMS_OF_SERVICE_USER_INTERACTION_TIMEOUT_MS = 10 * 60 * 1000;
+
 class DropboxServiceSession extends BrowserFollowupServiceSession {
   private isLoggedIn = false;
   private currentAccountUid?: string;
@@ -117,6 +120,42 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
     }
   }
 
+  /**
+   * Accounts that have not accepted the Dropbox API Terms and Conditions yet
+   * see a checkbox that keeps the "Create app" button disabled. Accepting the
+   * terms is the user's decision, so surface the page with the checkbox
+   * scrolled to the top of the viewport and wait until the user ticks it.
+   */
+  private async waitForTermsOfServiceAcceptance(page: Page): Promise<void> {
+    const termsCheckbox = page.locator('input#accept-tos[type="checkbox"]');
+    if ((await termsCheckbox.count()) === 0 || (await termsCheckbox.isChecked())) {
+      return;
+    }
+
+    try {
+      await termsCheckbox.evaluate((element) => {
+        (element as unknown as { scrollIntoView(options: { block: string }): void }).scrollIntoView({
+          block: 'start',
+        });
+      });
+      await page.bringToFront();
+
+      // The checkbox is rendered as a custom control, so wait for attachment
+      // rather than visibility of the underlying input.
+      await page.locator('input#accept-tos:checked').waitFor({
+        state: 'attached',
+        timeout: TERMS_OF_SERVICE_USER_INTERACTION_TIMEOUT_MS,
+      });
+    } catch (error: unknown) {
+      if (error instanceof Error && isBrowserClosedError(error)) {
+        throw new LoginCancelledError();
+      }
+      throw error;
+    }
+
+    await this.spinnerPage?.bringToFront();
+  }
+
   protected async performBrowserFollowup(
     context: BrowserContext,
     _oldCredentials?: ApiCredentials
@@ -142,6 +181,7 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
     await typeLikeHuman(page, appNameInput, appName);
 
     await this.selectOwningAccount(page);
+    await this.waitForTermsOfServiceAcceptance(page);
 
     const createButton = page.locator(
       '//button[@id="create-button" and @type="submit" and not(@disabled)]'

@@ -457,6 +457,18 @@ export abstract class SimpleServiceSession extends ServiceSession {
  * (e.g., navigating to settings and creating an API key).
  */
 export abstract class BrowserFollowupServiceSession extends ServiceSession {
+  private followupSpinnerPage: Page | null = null;
+
+  /**
+   * Spinner page hiding the automation from the user while the followup runs,
+   * or null when the spinner is disabled. Subclasses that temporarily surface
+   * a real page to the user (e.g. to have terms accepted) bring this page back
+   * to the front afterwards.
+   */
+  protected get spinnerPage(): Page | null {
+    return this.followupSpinnerPage;
+  }
+
   /**
    * Perform actions in the browser to finalize and extract API credentials.
    * This runs in the same browser session used for login.
@@ -473,7 +485,10 @@ export abstract class BrowserFollowupServiceSession extends ServiceSession {
     context: BrowserContext,
     oldCredentials?: ApiCredentials
   ): Promise<ApiCredentials | null> {
-    await showSpinnerPage(context, `Finalizing ${this.service.displayName} login...`);
+    this.followupSpinnerPage = await showSpinnerPage(
+      context,
+      `Finalizing ${this.service.displayName} login...`
+    );
     return this.performBrowserFollowup(context, oldCredentials);
   }
 }
