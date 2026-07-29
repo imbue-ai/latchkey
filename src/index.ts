@@ -60,6 +60,8 @@ export {
   ServiceSession,
   SimpleServiceSession,
   BrowserFollowupServiceSession,
+  FollowupWork,
+  buildFollowupSpinnerDetails,
   type LoginResult,
   LoginCancelledError,
   LoginFailedError,

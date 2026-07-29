@@ -7,6 +7,8 @@ export {
   ServiceSession,
   SimpleServiceSession,
   BrowserFollowupServiceSession,
+  FollowupWork,
+  buildFollowupSpinnerDetails,
   type LoginResult,
 } from './core/base.js';
 export {

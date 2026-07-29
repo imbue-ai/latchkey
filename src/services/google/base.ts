@@ -29,6 +29,8 @@ import {
 import {
   Service,
   BrowserFollowupServiceSession,
+  buildFollowupSpinnerDetails,
+  FollowupWork,
   buildPreparedCredentials,
   LoginFailedError,
   LoginCancelledError,
@@ -661,6 +663,9 @@ export interface GoogleServiceConfig {
 }
 
 class GoogleServiceSession extends BrowserFollowupServiceSession {
+  // The OAuth client is created during `prepare` (see below), not during login:
+  // login only runs the OAuth flow against the already prepared client.
+  protected readonly followupWork = FollowupWork.CreateApp;
   private readonly loginDetector = { isLoggedIn: false };
   private readonly config: GoogleServiceConfig;
 
@@ -749,7 +754,12 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
 
     const spinnerPage = await showSpinnerPage(
       context,
-      `Finalizing ${this.service.displayName} login by using Google Console to set up the project for custom authentication...\nThis can take a few minutes.`
+      `Finalizing ${this.service.displayName} login...`,
+      buildFollowupSpinnerDetails(
+        this.service.displayName,
+        FollowupWork.CreateApp,
+        'This can take a few minutes, as it involves setting up a project in the Google Console.'
+      )
     );
 
     // Google caps the number of projects per account, so try to reuse a

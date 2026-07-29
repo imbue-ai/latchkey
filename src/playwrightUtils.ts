@@ -216,7 +216,7 @@ export async function typeLikeHuman(page: Page, locator: Locator, text: string):
 }
 
 // Script that creates the spinner overlay, designed to run in browser context
-function createSpinnerOverlayScript(message: string): string {
+function createSpinnerOverlayScript(message: string, details: string): string {
   return `
 (() => {
   if (document.getElementById('latchkey-spinner-overlay')) return;
@@ -255,12 +255,21 @@ function createSpinnerOverlayScript(message: string): string {
         max-width: 80%;
         white-space: pre-line;
       }
+      #latchkey-spinner-overlay .details {
+        margin-top: 44px;
+        color: #8a8a8a;
+        font-size: 13px;
+        line-height: 1.6;
+        text-align: left;
+        max-width: 360px;
+      }
       @keyframes latchkey-spin {
         to { transform: rotate(360deg); }
       }
     </style>
     <div class="spinner"></div>
     <div class="message">${message}</div>
+    ${details === '' ? '' : `<div class="details">${details}</div>`}
   \`;
   document.body.appendChild(overlay);
 })()
@@ -276,16 +285,20 @@ function createSpinnerOverlayScript(message: string): string {
  * Returns the spinner page so callers can later bring it back to the
  * foreground (e.g. after temporarily surfacing another page to the user),
  * or `null` when the spinner is disabled.
+ *
+ * The optional `details` are shown below the message in smaller, left-aligned
+ * type, so longer explanations do not read like a ragged centered block.
  */
 export async function showSpinnerPage(
   context: BrowserContext,
-  message: string
+  message: string,
+  details = ''
 ): Promise<Page | null> {
   if (process.env.LATCHKEY_DISABLE_SPINNER === '1') {
     return null;
   }
   const spinnerPage = await context.newPage();
-  await spinnerPage.evaluate(createSpinnerOverlayScript(message));
+  await spinnerPage.evaluate(createSpinnerOverlayScript(message, details));
   await spinnerPage.bringToFront();
   return spinnerPage;
 }

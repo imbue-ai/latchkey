@@ -450,6 +450,35 @@ export abstract class SimpleServiceSession extends ServiceSession {
 }
 
 /**
+ * What the browser followup does in the user's account, phrased for users who
+ * do not care about the underlying mechanism (e.g. "app" rather than "OAuth
+ * client", which is also what service consoles like Dropbox's call it).
+ *
+ * Each value ends with the preposition that links it to "your <service>
+ * account", since retrieval and creation need different ones.
+ */
+export enum FollowupWork {
+  CreateApiToken = 'Creating an API token in',
+  CreateApp = 'Creating an app in',
+  RetrieveApiToken = 'Retrieving the API token from',
+}
+
+/**
+ * Build the small print shown below the spinner headline: what the automation
+ * is doing and how to recover when it fails.
+ */
+export function buildFollowupSpinnerDetails(
+  displayName: string,
+  followupWork: FollowupWork,
+  durationSentence = 'This can take a while.'
+): string {
+  return (
+    `${followupWork} your ${displayName} account. ${durationSentence} ` +
+    'If the process fails, click the first browser tab in this window to manually complete it.'
+  );
+}
+
+/**
  * Service session that requires a browser followup to finalize credentials.
  *
  * The login phase captures login state. After login completes,
@@ -457,6 +486,21 @@ export abstract class SimpleServiceSession extends ServiceSession {
  * (e.g., navigating to settings and creating an API key).
  */
 export abstract class BrowserFollowupServiceSession extends ServiceSession {
+  private followupSpinnerPage: Page | null = null;
+
+  /** What the followup does in the user's account, shown on the spinner page. */
+  protected abstract readonly followupWork: FollowupWork;
+
+  /**
+   * Spinner page hiding the automation from the user while the followup runs,
+   * or null when the spinner is disabled. Subclasses that temporarily surface
+   * a real page to the user (e.g. to have terms accepted) bring this page back
+   * to the front afterwards.
+   */
+  protected get spinnerPage(): Page | null {
+    return this.followupSpinnerPage;
+  }
+
   /**
    * Perform actions in the browser to finalize and extract API credentials.
    * This runs in the same browser session used for login.
@@ -473,7 +517,11 @@ export abstract class BrowserFollowupServiceSession extends ServiceSession {
     context: BrowserContext,
     oldCredentials?: ApiCredentials
   ): Promise<ApiCredentials | null> {
-    await showSpinnerPage(context, `Finalizing ${this.service.displayName} login...`);
+    this.followupSpinnerPage = await showSpinnerPage(
+      context,
+      `Finalizing ${this.service.displayName} login...`,
+      buildFollowupSpinnerDetails(this.service.displayName, this.followupWork)
+    );
     return this.performBrowserFollowup(context, oldCredentials);
   }
 }

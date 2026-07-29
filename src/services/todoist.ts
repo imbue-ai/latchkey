@@ -4,7 +4,12 @@
 
 import type { Response, BrowserContext } from 'playwright';
 import { ApiCredentials, AuthorizationBearer } from '../apiCredentials/base.js';
-import { Service, BrowserFollowupServiceSession, LoginFailedError } from './core/base.js';
+import {
+  Service,
+  BrowserFollowupServiceSession,
+  FollowupWork,
+  LoginFailedError,
+} from './core/base.js';
 import { fetchAccountFromEndpoint, tryParseJson } from '../apiCredentials/account.js';
 
 const DEFAULT_TIMEOUT_MS = 8000;
@@ -17,6 +22,9 @@ const TODOIST_DEVELOPER_SETTINGS_URL =
   'https://app.todoist.com/app/settings/integrations/developer';
 
 class TodoistServiceSession extends BrowserFollowupServiceSession {
+  // Todoist does not mint a new token: the personal API token already exists on
+  // the Developer settings page and is only read from there.
+  protected readonly followupWork = FollowupWork.RetrieveApiToken;
   private isLoggedIn = false;
 
   onResponse(response: Response): void {

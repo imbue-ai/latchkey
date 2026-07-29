@@ -15,6 +15,7 @@ import {
 import {
   Service,
   BrowserFollowupServiceSession,
+  FollowupWork,
   LoginFailedError,
   isBrowserClosedError,
   LoginCancelledError,
@@ -49,7 +50,30 @@ const IMPLICITLY_GRANTED_SCOPES = ['account_info.read', 'files.metadata.read'] a
 // Time allowed for the user to approve the authorization request in the browser.
 const AUTHORIZATION_TIMEOUT_MS = 120000;
 
+// Time allowed for the user to accept the Dropbox API Terms and Conditions.
+const TERMS_OF_SERVICE_USER_INTERACTION_TIMEOUT_MS = 10 * 60 * 1000;
+
+// Distance from the top of the viewport at which the terms checkbox is parked:
+// far enough to clear the Dropbox top bar, close enough that the unrelated app
+// creation fields above it stay out of sight.
+const TERMS_OF_SERVICE_VIEWPORT_TOP_MARGIN_PX = 132;
+
+// Dropbox keeps the "Create app" button disabled until the form is complete,
+// including acceptance of the terms.
+const ENABLED_CREATE_APP_BUTTON_SELECTOR =
+  '//button[@id="create-button" and @type="submit" and not(@disabled)]';
+
+// The DOM library is not enabled for this project, so browser-side callbacks
+// describe the few DOM members they actually use.
+interface ScrollableElement {
+  readonly ownerDocument: {
+    readonly defaultView: { scrollBy(options: { top: number }): void } | null;
+  };
+  getBoundingClientRect(): { readonly top: number };
+}
+
 class DropboxServiceSession extends BrowserFollowupServiceSession {
+  protected readonly followupWork = FollowupWork.CreateApp;
   private isLoggedIn = false;
   private currentAccountUid?: string;
 
@@ -90,12 +114,13 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
    * When more than one account is linked, Dropbox asks which account should own
    * the app before enabling the "Create app" button. Prefer the account the
    * user is currently logged in as, then the work account, then the personal
-   * account.
+   * account. With a single linked account there is no choice to make: the page
+   * only carries a hidden `_subject_uid` field, which must not be clicked.
    */
   private async selectOwningAccount(page: Page): Promise<void> {
     if (this.currentAccountUid !== undefined) {
       const currentAccount = page.locator(
-        `input[name="_subject_uid"][value="${this.currentAccountUid}"]`
+        `input[type="radio"][name="_subject_uid"][value="${this.currentAccountUid}"]`
       );
       if ((await currentAccount.count()) > 0) {
         await currentAccount.check();
@@ -103,8 +128,8 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
       }
     }
 
-    const workAccount = page.locator('input#company[name="_subject_uid"]');
-    const personalAccount = page.locator('input#personal[name="_subject_uid"]');
+    const workAccount = page.locator('input#company[type="radio"][name="_subject_uid"]');
+    const personalAccount = page.locator('input#personal[type="radio"][name="_subject_uid"]');
 
     if ((await workAccount.count()) > 0) {
       await workAccount.check();
@@ -114,6 +139,56 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
     if ((await personalAccount.count()) > 0) {
       await personalAccount.check();
     }
+  }
+
+  /**
+   * Accounts that have not accepted the Dropbox API Terms and Conditions yet
+   * see a checkbox that keeps the "Create app" button disabled. Accepting the
+   * terms is the user's decision, so surface the page with the checkbox parked
+   * just below the top bar and wait until the user ticks it.
+   *
+   * The checkbox is always present in the DOM; Dropbox hides its wrapper for
+   * accounts that already accepted the terms, so visibility of the wrapper —
+   * not presence of the input — decides whether the user has to act.
+   *
+   * Waiting for the "Create app" button to become enabled rather than for the
+   * checkbox state keeps the flow going even if Dropbox concludes the terms are
+   * not needed after all and hides the wrapper again.
+   */
+  private async waitForTermsOfServiceAcceptance(page: Page): Promise<void> {
+    const termsWrapper = page.locator('#accept-tos-wrapper');
+    if (!(await termsWrapper.isVisible())) {
+      return;
+    }
+
+    const termsCheckbox = page.locator('input#accept-tos[type="checkbox"]');
+    if (await termsCheckbox.isChecked()) {
+      return;
+    }
+
+    try {
+      await page.bringToFront();
+      // Scrolling by the element's own offset (instead of scrollIntoView)
+      // keeps the requested top margin: the browser clamps at the end of the
+      // document, which would otherwise hide the checkbox behind the top bar.
+      await termsWrapper.evaluate((element, topMargin: number) => {
+        const wrapper = element as unknown as ScrollableElement;
+        wrapper.ownerDocument.defaultView?.scrollBy({
+          top: wrapper.getBoundingClientRect().top - topMargin,
+        });
+      }, TERMS_OF_SERVICE_VIEWPORT_TOP_MARGIN_PX);
+
+      await page.locator(ENABLED_CREATE_APP_BUTTON_SELECTOR).waitFor({
+        timeout: TERMS_OF_SERVICE_USER_INTERACTION_TIMEOUT_MS,
+      });
+    } catch (error: unknown) {
+      if (error instanceof Error && isBrowserClosedError(error)) {
+        throw new LoginCancelledError();
+      }
+      throw error;
+    }
+
+    await this.spinnerPage?.bringToFront();
   }
 
   protected async performBrowserFollowup(
@@ -141,10 +216,9 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
     await typeLikeHuman(page, appNameInput, appName);
 
     await this.selectOwningAccount(page);
+    await this.waitForTermsOfServiceAcceptance(page);
 
-    const createButton = page.locator(
-      '//button[@id="create-button" and @type="submit" and not(@disabled)]'
-    );
+    const createButton = page.locator(ENABLED_CREATE_APP_BUTTON_SELECTOR);
     await createButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await createButton.click();
 
