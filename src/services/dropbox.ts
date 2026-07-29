@@ -57,6 +57,11 @@ const TERMS_OF_SERVICE_USER_INTERACTION_TIMEOUT_MS = 10 * 60 * 1000;
 // creation fields above it stay out of sight.
 const TERMS_OF_SERVICE_VIEWPORT_TOP_MARGIN_PX = 132;
 
+// Dropbox keeps the "Create app" button disabled until the form is complete,
+// including acceptance of the terms.
+const ENABLED_CREATE_APP_BUTTON_SELECTOR =
+  '//button[@id="create-button" and @type="submit" and not(@disabled)]';
+
 // The DOM library is not enabled for this project, so browser-side callbacks
 // describe the few DOM members they actually use.
 interface ScrollableElement {
@@ -139,10 +144,23 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
    * see a checkbox that keeps the "Create app" button disabled. Accepting the
    * terms is the user's decision, so surface the page with the checkbox parked
    * just below the top bar and wait until the user ticks it.
+   *
+   * The checkbox is always present in the DOM; Dropbox hides its wrapper for
+   * accounts that already accepted the terms, so visibility of the wrapper —
+   * not presence of the input — decides whether the user has to act.
+   *
+   * Waiting for the "Create app" button to become enabled rather than for the
+   * checkbox state keeps the flow going even if Dropbox concludes the terms are
+   * not needed after all and hides the wrapper again.
    */
   private async waitForTermsOfServiceAcceptance(page: Page): Promise<void> {
+    const termsWrapper = page.locator('#accept-tos-wrapper');
+    if (!(await termsWrapper.isVisible())) {
+      return;
+    }
+
     const termsCheckbox = page.locator('input#accept-tos[type="checkbox"]');
-    if ((await termsCheckbox.count()) === 0 || (await termsCheckbox.isChecked())) {
+    if (await termsCheckbox.isChecked()) {
       return;
     }
 
@@ -151,17 +169,14 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
       // Scrolling by the element's own offset (instead of scrollIntoView)
       // keeps the requested top margin: the browser clamps at the end of the
       // document, which would otherwise hide the checkbox behind the top bar.
-      await termsCheckbox.evaluate((element, topMargin: number) => {
-        const checkbox = element as unknown as ScrollableElement;
-        checkbox.ownerDocument.defaultView?.scrollBy({
-          top: checkbox.getBoundingClientRect().top - topMargin,
+      await termsWrapper.evaluate((element, topMargin: number) => {
+        const wrapper = element as unknown as ScrollableElement;
+        wrapper.ownerDocument.defaultView?.scrollBy({
+          top: wrapper.getBoundingClientRect().top - topMargin,
         });
       }, TERMS_OF_SERVICE_VIEWPORT_TOP_MARGIN_PX);
 
-      // The checkbox is rendered as a custom control, so wait for attachment
-      // rather than visibility of the underlying input.
-      await page.locator('input#accept-tos:checked').waitFor({
-        state: 'attached',
+      await page.locator(ENABLED_CREATE_APP_BUTTON_SELECTOR).waitFor({
         timeout: TERMS_OF_SERVICE_USER_INTERACTION_TIMEOUT_MS,
       });
     } catch (error: unknown) {
@@ -201,9 +216,7 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
     await this.selectOwningAccount(page);
     await this.waitForTermsOfServiceAcceptance(page);
 
-    const createButton = page.locator(
-      '//button[@id="create-button" and @type="submit" and not(@disabled)]'
-    );
+    const createButton = page.locator(ENABLED_CREATE_APP_BUTTON_SELECTOR);
     await createButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await createButton.click();
 
