@@ -52,6 +52,20 @@ const AUTHORIZATION_TIMEOUT_MS = 120000;
 // Time allowed for the user to accept the Dropbox API Terms and Conditions.
 const TERMS_OF_SERVICE_USER_INTERACTION_TIMEOUT_MS = 10 * 60 * 1000;
 
+// Distance from the top of the viewport at which the terms checkbox is parked:
+// far enough to clear the Dropbox top bar, close enough that the unrelated app
+// creation fields above it stay out of sight.
+const TERMS_OF_SERVICE_VIEWPORT_TOP_MARGIN_PX = 132;
+
+// The DOM library is not enabled for this project, so browser-side callbacks
+// describe the few DOM members they actually use.
+interface ScrollableElement {
+  readonly ownerDocument: {
+    readonly defaultView: { scrollBy(options: { top: number }): void } | null;
+  };
+  getBoundingClientRect(): { readonly top: number };
+}
+
 class DropboxServiceSession extends BrowserFollowupServiceSession {
   private isLoggedIn = false;
   private currentAccountUid?: string;
@@ -123,8 +137,8 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
   /**
    * Accounts that have not accepted the Dropbox API Terms and Conditions yet
    * see a checkbox that keeps the "Create app" button disabled. Accepting the
-   * terms is the user's decision, so surface the page with the checkbox
-   * scrolled to the top of the viewport and wait until the user ticks it.
+   * terms is the user's decision, so surface the page with the checkbox parked
+   * just below the top bar and wait until the user ticks it.
    */
   private async waitForTermsOfServiceAcceptance(page: Page): Promise<void> {
     const termsCheckbox = page.locator('input#accept-tos[type="checkbox"]');
@@ -133,12 +147,16 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
     }
 
     try {
-      await termsCheckbox.evaluate((element) => {
-        (element as unknown as { scrollIntoView(options: { block: string }): void }).scrollIntoView({
-          block: 'start',
-        });
-      });
       await page.bringToFront();
+      // Scrolling by the element's own offset (instead of scrollIntoView)
+      // keeps the requested top margin: the browser clamps at the end of the
+      // document, which would otherwise hide the checkbox behind the top bar.
+      await termsCheckbox.evaluate((element, topMargin: number) => {
+        const checkbox = element as unknown as ScrollableElement;
+        checkbox.ownerDocument.defaultView?.scrollBy({
+          top: checkbox.getBoundingClientRect().top - topMargin,
+        });
+      }, TERMS_OF_SERVICE_VIEWPORT_TOP_MARGIN_PX);
 
       // The checkbox is rendered as a custom control, so wait for attachment
       // rather than visibility of the underlying input.
