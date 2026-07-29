@@ -15,6 +15,7 @@ import {
 import {
   Service,
   BrowserFollowupServiceSession,
+  FollowupWork,
   LoginFailedError,
   isBrowserClosedError,
   LoginCancelledError,
@@ -72,6 +73,7 @@ interface ScrollableElement {
 }
 
 class DropboxServiceSession extends BrowserFollowupServiceSession {
+  protected readonly followupWork = FollowupWork.CreateApp;
   private isLoggedIn = false;
   private currentAccountUid?: string;
 

@@ -5,7 +5,12 @@
 import type { Response, BrowserContext, Page } from 'playwright';
 import { ApiCredentials, AuthorizationBare } from '../apiCredentials/base.js';
 import { typeLikeHuman } from '../playwrightUtils.js';
-import { Service, BrowserFollowupServiceSession, LoginFailedError } from './core/base.js';
+import {
+  Service,
+  BrowserFollowupServiceSession,
+  FollowupWork,
+  LoginFailedError,
+} from './core/base.js';
 import { fetchAccountFromEndpoint, tryParseJson } from '../apiCredentials/account.js';
 
 const DEFAULT_TIMEOUT_MS = 8000;
@@ -82,6 +87,7 @@ async function waitForWorkspaceName(page: Page): Promise<string> {
 }
 
 class LinearServiceSession extends BrowserFollowupServiceSession {
+  protected readonly followupWork = FollowupWork.CreateApiToken;
   private isLoggedIn = false;
 
   onResponse(response: Response): void {
