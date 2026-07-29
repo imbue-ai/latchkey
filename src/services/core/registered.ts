@@ -18,12 +18,12 @@ export interface RegisteredServiceOptions {
   /** Page opened by `latchkey auth browser`. */
   readonly loginUrl?: string;
   /**
-   * Name of the session cookie to capture. Together with a login URL and
-   * without a family service, this enables the generic cookie-capturing
+   * Names of the session cookies to capture. Together with a login URL and
+   * without a family service, these enable the generic cookie-capturing
    * browser login.
    */
-  readonly cookieKey?: string;
-  /** URL whose cookies are searched for the cookie key. Defaults to the login URL. */
+  readonly cookieKeys?: readonly string[];
+  /** URL whose cookies are searched for the cookie keys. Defaults to the login URL. */
   readonly cookieUrl?: string;
 }
 
@@ -39,8 +39,10 @@ export class RegisteredService extends Service {
 
   constructor(name: string, baseApiUrl: string, options: RegisteredServiceOptions = {}) {
     super();
-    const { familyService, loginUrl, cookieKey } = options;
+    const { familyService, loginUrl } = options;
+    const cookieKeys = options.cookieKeys ?? [];
     const cookieUrl = options.cookieUrl ?? loginUrl;
+    const capturesCookies = cookieKeys.length > 0 && loginUrl !== undefined;
 
     this.name = name;
     this.displayName = name;
@@ -51,10 +53,11 @@ export class RegisteredService extends Service {
 
     if (familyService !== undefined) {
       this.info = `Self-hosted ${familyService.displayName} instance. ${familyService.info}`;
-    } else if (cookieKey !== undefined && loginUrl !== undefined) {
+    } else if (capturesCookies) {
+      const quotedKeys = cookieKeys.map((cookieKey) => `'${cookieKey}'`).join(', ');
       this.info =
         `Generic service. \`latchkey auth browser\` opens ${loginUrl} and stores the ` +
-        `'${cookieKey}' cookie of ${cookieUrl!} as the credentials once it appears. ` +
+        `${quotedKeys} cookies of ${cookieUrl!} as the credentials once they appear. ` +
         'Alternatively, use `latchkey auth set` to supply credentials as curl arguments.';
     } else {
       this.info =
@@ -63,9 +66,9 @@ export class RegisteredService extends Service {
 
     if (loginUrl !== undefined && familyService?.getSession !== undefined) {
       this.getSession = (appNamePrefix: string) => familyService.getSession!(appNamePrefix);
-    } else if (loginUrl !== undefined && familyService === undefined && cookieKey !== undefined) {
+    } else if (capturesCookies && familyService === undefined) {
       this.getSession = (appNamePrefix: string) =>
-        new CookieCaptureServiceSession(this, appNamePrefix, cookieKey, cookieUrl!);
+        new CookieCaptureServiceSession(this, appNamePrefix, cookieKeys, cookieUrl!);
     }
   }
 

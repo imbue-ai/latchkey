@@ -2425,13 +2425,43 @@ describe('CLI commands with dependency injection', () => {
       expect(loadRegisteredServices(deps.config.configPath).get('my-service')).toEqual({
         baseApiUrl: 'https://example.com/api/',
         loginUrl: 'https://example.com/login',
-        cookieKey: 'session_id',
+        cookieKeys: ['session_id'],
       });
 
       logs = [];
       await runCommand(['services', 'info', 'my-service'], deps);
       const info = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
       expect(info.authOptions).toEqual(['browser', 'set']);
+    });
+
+    it('should accept a repeated --cookie-key', async () => {
+      const deps = createMockDependencies({
+        registry: new ServiceRegistry([]),
+      });
+
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-service',
+          '--base-api-url',
+          'https://example.com/api/',
+          '--login-url',
+          'https://example.com/login',
+          '--cookie-key',
+          'sessionid',
+          '--cookie-key',
+          'csrftoken',
+        ],
+        deps
+      );
+
+      expect(exitCode).toBeNull();
+      expect(loadRegisteredServices(deps.config.configPath).get('my-service')?.cookieKeys).toEqual([
+        'sessionid',
+        'csrftoken',
+      ]);
+      expect(deps.registry.getByName('my-service')?.getSession).toBeDefined(); // eslint-disable-line @typescript-eslint/unbound-method
     });
 
     it('should persist an explicit --cookie-url', async () => {
@@ -3449,7 +3479,7 @@ describe('registeredServiceStore', () => {
     saveRegisteredService(configPath, 'my-api', {
       baseApiUrl: 'https://api.example.com/',
       loginUrl: 'https://example.com/login',
-      cookieKey: 'session_id',
+      cookieKeys: ['session_id'],
     });
 
     const registry = new ServiceRegistry([GITLAB]);

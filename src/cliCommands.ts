@@ -447,12 +447,15 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .option('--login-url <url>', 'Login URL for browser-based authentication, if applicable')
     .option(
       '--cookie-key <name>',
-      'Name of the session cookie to capture. Enables a generic browser login ' +
-        'that stores "Cookie: <name>=<value>" as the credentials. Cannot be combined with --service-family.'
+      'Name of a session cookie to capture. Enables a generic browser login that stores the ' +
+        'cookies as "Cookie: <name>=<value>" credentials. Repeat for services that need several ' +
+        'cookies; the login then waits for all of them. Cannot be combined with --service-family.',
+      (cookieKey: string, previousCookieKeys: string[]) => [...previousCookieKeys, cookieKey],
+      [] as string[]
     )
     .option(
       '--cookie-url <url>',
-      'URL whose cookies are searched for --cookie-key, when the cookie is not set on the login URL itself (defaults to --login-url)'
+      'URL whose cookies are searched for --cookie-key, when the cookies are not set on the login URL itself (defaults to --login-url)'
     )
     .action(
       (
@@ -461,7 +464,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           baseApiUrl: string;
           serviceFamily?: string;
           loginUrl?: string;
-          cookieKey?: string;
+          cookieKey: string[];
           cookieUrl?: string;
         }
       ) => {
@@ -489,12 +492,14 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           }
         }
 
-        if (options.cookieUrl !== undefined && options.cookieKey === undefined) {
+        const cookieKeys = options.cookieKey;
+
+        if (options.cookieUrl !== undefined && cookieKeys.length === 0) {
           deps.errorLog('Error: --cookie-url requires --cookie-key.');
           deps.exit(1);
         }
 
-        if (options.cookieKey !== undefined) {
+        if (cookieKeys.length > 0) {
           if (options.serviceFamily !== undefined) {
             deps.errorLog('Error: --cookie-key cannot be combined with --service-family.');
             deps.exit(1);
@@ -525,7 +530,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         const registeredService = new RegisteredService(serviceName, options.baseApiUrl, {
           familyService,
           loginUrl: options.loginUrl,
-          cookieKey: options.cookieKey,
+          cookieKeys,
           cookieUrl: options.cookieUrl,
         });
 
@@ -543,7 +548,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           baseApiUrl: options.baseApiUrl,
           serviceFamily: options.serviceFamily,
           loginUrl: options.loginUrl,
-          cookieKey: options.cookieKey,
+          cookieKeys: cookieKeys.length > 0 ? cookieKeys : undefined,
           cookieUrl: options.cookieUrl,
         });
 

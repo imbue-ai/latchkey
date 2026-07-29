@@ -171,7 +171,7 @@ export function loadRegisteredServicesIntoServiceRegistry(
     const registeredService = new RegisteredService(name, entry.baseApiUrl, {
       familyService,
       loginUrl: entry.loginUrl,
-      cookieKey: entry.cookieKey,
+      cookieKeys: entry.cookieKeys,
       cookieUrl: entry.cookieUrl,
     });
     registry.addService(registeredService);

@@ -245,10 +245,22 @@ latchkey auth browser my-intranet
 latchkey curl https://intranet.example.com/api/me
 ```
 
-Latchkey looks for the cookie on the login URL's domain. If the
-session cookie is set on a different host than the login page (for
-example, sign-in happens on an SSO domain), name the host that owns
-the cookie with `--cookie-url`:
+Services that need several cookies together can repeat `--cookie-key`.
+The login then waits until all of them are present, and stores them in
+a single header, `Cookie: sessionid=<value>; csrftoken=<value>`:
+
+```bash
+latchkey services register my-intranet \
+  --base-api-url="https://intranet.example.com/api/" \
+  --login-url="https://intranet.example.com/login" \
+  --cookie-key="sessionid" \
+  --cookie-key="csrftoken"
+```
+
+Latchkey looks for the cookies on the login URL's domain. If they are
+set on a different host than the login page (for example, sign-in
+happens on an SSO domain), name the host that owns them with
+`--cookie-url`:
 
 ```bash
 latchkey services register my-intranet \
@@ -257,6 +269,12 @@ latchkey services register my-intranet \
   --cookie-key="session_id" \
   --cookie-url="https://intranet.example.com/"
 ```
+
+The cookie URL must be a full URL including the scheme
+(`https://intranet.example.com`, not `intranet.example.com`). Use
+`https://` unless the service really runs on plain HTTP: over
+`http://`, cookies marked `Secure` are invisible for any host other
+than localhost.
 
 `--cookie-key` cannot be combined with `--service-family`, since a
 service family brings its own login flow.
