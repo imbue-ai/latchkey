@@ -216,6 +216,40 @@ async function defaultConfirm(message: string): Promise<boolean> {
   });
 }
 
+/**
+ * The three shapes a `services register` call can take. Kept next to the
+ * command rather than in the README, since it is what someone reaching for
+ * `--help` is trying to decide between.
+ */
+const REGISTRATION_MODES_HELP = [
+  'Ways to register a service:',
+  '  A registered service can obtain its credentials in one of three ways.',
+  '  In all three, `latchkey auth set` can supply them by hand.',
+  '',
+  '  1. On its own, with neither --service-family nor --login-flow',
+  '     Latchkey learns only that the base API URL belongs to this service, and',
+  '     injects whatever curl arguments were stored for it. This suits any',
+  '     service whose credentials are a static header or query parameter.',
+  '       $ latchkey services register mastodon \\',
+  '           --base-api-url="https://mastodon.social/api/v1/"',
+  '       $ latchkey auth set mastodon -H "Authorization: Bearer <token>"',
+  '',
+  '  2. From a built-in service, with --service-family',
+  '     For a self-hosted instance of a service Latchkey already supports. The',
+  "     new service borrows the family's credential handling, and its browser",
+  '     login where the family has one — in which case --login-url is required,',
+  '     naming the sign-in page of your instance.',
+  '       $ latchkey services register my-gitlab --service-family=gitlab \\',
+  '           --base-api-url="https://gitlab.example.com/api/v4/"',
+  '',
+  '  3. With a generic browser login, using --login-flow',
+  '     For a service Latchkey does not know, whose credentials the user can',
+  '     only obtain by signing in. `latchkey auth browser` then runs the chosen',
+  '     flow and stores what it captures. Requires --login-url, and cannot be',
+  '     combined with --service-family, which brings a login of its own.',
+  '     The available flows are described below.',
+].join('\n');
+
 /** The login flow chosen at registration time, with the JSON it was configured from. */
 interface ChosenLoginFlow {
   readonly flow: LoginFlow;
@@ -511,7 +545,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       'JSON object with the parameters of --login-flow, ' +
         'e.g. \'{"cookieKeys": ["sessionid", "csrftoken"]}\' for cookie-capture'
     )
-    .addHelpText('after', `\n${formatLoginFlowsHelp()}`)
+    .addHelpText('after', `\n${REGISTRATION_MODES_HELP}\n\n${formatLoginFlowsHelp()}`)
     .action(
       (
         rawServiceName: string,
