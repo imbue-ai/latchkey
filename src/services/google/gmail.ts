@@ -2,12 +2,7 @@ import { GoogleService, type GoogleServiceConfig } from './base.js';
 
 const CONFIG: GoogleServiceConfig = {
   apis: ['gmail.googleapis.com'],
-  scopes: [
-    'https://www.googleapis.com/auth/gmail.readonly',
-    'https://www.googleapis.com/auth/gmail.modify',
-    'https://www.googleapis.com/auth/gmail.compose',
-    'https://www.googleapis.com/auth/gmail.send',
-  ],
+  scopes: ['https://www.googleapis.com/auth/gmail.modify'],
 };
 
 export class GoogleGmail extends GoogleService {
