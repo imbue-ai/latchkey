@@ -4,7 +4,6 @@ const CONFIG: GoogleServiceConfig = {
   apis: ['people.googleapis.com'],
   scopes: [
     'https://www.googleapis.com/auth/contacts',
-    'https://www.googleapis.com/auth/contacts.readonly',
   ],
 };
 
