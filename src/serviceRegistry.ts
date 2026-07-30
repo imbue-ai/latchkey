@@ -4,12 +4,8 @@
 
 import { loadRegisteredServices, type RegisteredServiceEntry } from './configDataStore.js';
 import { buildRegisteredServiceOptions, RegisteredService } from './services/core/registered.js';
-import {
-  LoginFlowParamsInvalidError,
-  resolveLoginFlow,
-  UnknownLoginFlowError,
-  type LoginFlow,
-} from './services/core/loginFlows.js';
+import { resolveLoginFlow, UnknownLoginFlowError } from './services/core/loginFlows.js';
+import { LoginFlowParamsInvalidError, type LoginFlow } from './services/core/base.js';
 import {
   Service,
   SLACK,

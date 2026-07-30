@@ -15,10 +15,10 @@ import {
   formatLoginFlowsHelp,
   getLoginFlow,
   LOGIN_FLOWS,
-  LoginFlowParamsInvalidError,
   resolveLoginFlow,
   UnknownLoginFlowError,
 } from '../src/services/core/loginFlows.js';
+import { LoginFlowParamsInvalidError } from '../src/services/core/base.js';
 import {
   buildRegisteredServiceOptions,
   RegisteredService,
@@ -134,16 +134,16 @@ describe('cookie capture', () => {
 
 describe('the login flow registry', () => {
   it('takes the registry entry from the class itself', () => {
-    const flow = getLoginFlow(CookieCaptureLoginFlow.flowName);
-    expect(flow?.name).toBe('cookie-capture');
-    expect(flow?.summary).toBe(CookieCaptureLoginFlow.summary);
+    const flowClass = getLoginFlow(CookieCaptureLoginFlow.flowName);
+    expect(flowClass).toBe(CookieCaptureLoginFlow);
+    expect(flowClass?.flowName).toBe('cookie-capture');
   });
 
   it('builds the register help text from the registered flows', () => {
     const help = formatLoginFlowsHelp();
     // Generated, not hand-written: a flow added later documents itself.
     for (const flow of LOGIN_FLOWS) {
-      expect(help).toContain(flow.name);
+      expect(help).toContain(flow.flowName);
       expect(help).toContain(flow.summary);
       for (const detailLine of flow.details.split('\n').filter((line) => line !== '')) {
         expect(help).toContain(detailLine);

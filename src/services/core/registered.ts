@@ -8,8 +8,7 @@
  */
 
 import { ApiCredentialStatus, type ApiCredentials } from '../../apiCredentials/base.js';
-import { Service, type ServiceSession } from './base.js';
-import type { LoginFlow } from './loginFlows.js';
+import { Service, type LoginFlow, type ServiceSession } from './base.js';
 
 /**
  * Where a registered service gets its browser login, if anywhere. The two

@@ -15,8 +15,14 @@ import type { Response } from 'playwright';
 import { z } from 'zod';
 import { type ApiCredentials, RawCurlCredentials } from '../../apiCredentials/base.js';
 import { CookieJar, formatCookieHeaderValue, type CookiePair } from '../../cookieUtils.js';
-import { Service, SimpleServiceSession, type ServiceSession } from './base.js';
-import type { LoginFlow } from './loginFlows.js';
+import {
+  parseLoginFlowParams,
+  Service,
+  SimpleServiceSession,
+  type LoginFlow,
+  type LoginFlowClass,
+  type ServiceSession,
+} from './base.js';
 
 export const CookieCaptureParamsSchema = z
   .object({
@@ -111,8 +117,8 @@ export class CookieCaptureLoginFlow implements LoginFlow {
 
   private readonly params: CookieCaptureParams;
 
-  constructor(params: CookieCaptureParams) {
-    this.params = params;
+  constructor(rawParams: unknown) {
+    this.params = parseLoginFlowParams(CookieCaptureLoginFlow, rawParams);
   }
 
   describe(loginUrl: string): string {
@@ -136,3 +142,7 @@ export class CookieCaptureLoginFlow implements LoginFlow {
     );
   }
 }
+
+// TypeScript has no `static implements`, so this is where the class side of the
+// flow is checked. The registry checks it again, but the error lands here.
+CookieCaptureLoginFlow satisfies LoginFlowClass;

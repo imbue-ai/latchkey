@@ -21,16 +21,17 @@ export {
 export { RegisteredService } from './core/registered.js';
 export {
   LOGIN_FLOWS,
-  LoginFlowParamsInvalidError,
   UnknownLoginFlowError,
-  defineLoginFlow,
   formatLoginFlowsHelp,
   getLoginFlow,
   resolveLoginFlow,
+} from './core/loginFlows.js';
+export {
+  LoginFlowParamsInvalidError,
+  parseLoginFlowParams,
   type LoginFlow,
   type LoginFlowClass,
-  type LoginFlowRegistration,
-} from './core/loginFlows.js';
+} from './core/base.js';
 export { CookieCaptureLoginFlow, buildCookieCredentials } from './core/cookieCapture.js';
 
 export { Slack, SLACK } from './slack.js';

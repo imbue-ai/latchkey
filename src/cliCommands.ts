@@ -277,7 +277,7 @@ function resolveLoginFlowOrExit(
     if (error instanceof UnknownLoginFlowError) {
       deps.errorLog(`Error: ${error.message}`);
       for (const availableFlow of LOGIN_FLOWS) {
-        deps.errorLog(`  ${availableFlow.name}: ${availableFlow.summary}`);
+        deps.errorLog(`  ${availableFlow.flowName}: ${availableFlow.summary}`);
       }
       deps.exit(1);
     }
@@ -527,7 +527,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .option(
       '--login-flow <name>',
       'Generic browser login to give this service, instead of a service family. ' +
-        `Available flows: ${LOGIN_FLOWS.map((flow) => flow.name).join(', ')}. Requires --login-url.`
+        `Available flows: ${LOGIN_FLOWS.map((flow) => flow.flowName).join(', ')}. Requires --login-url.`
     )
     .option(
       '--login-flow-params <json>',
