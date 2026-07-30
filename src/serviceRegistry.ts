@@ -3,7 +3,7 @@
  */
 
 import { loadRegisteredServices, type RegisteredServiceEntry } from './configDataStore.js';
-import { RegisteredService } from './services/core/registered.js';
+import { buildRegisteredServiceOptions, RegisteredService } from './services/core/registered.js';
 import {
   LoginFlowParamsInvalidError,
   resolveLoginFlow,
@@ -197,11 +197,15 @@ export function loadRegisteredServicesIntoServiceRegistry(
     if (registry.getByName(name) !== null) {
       continue;
     }
-    const registeredService = new RegisteredService(name, entry.baseApiUrl, {
-      familyService,
-      loginUrl: entry.loginUrl,
-      loginFlow: resolveStoredLoginFlow(entry.loginFlow),
-    });
+    const registeredService = new RegisteredService(
+      name,
+      entry.baseApiUrl,
+      buildRegisteredServiceOptions(
+        familyService,
+        entry.loginUrl,
+        resolveStoredLoginFlow(entry.loginFlow)
+      )
+    );
     registry.addService(registeredService);
   }
 }

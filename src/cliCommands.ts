@@ -49,7 +49,7 @@ import {
   SERVICE_REGISTRY,
   canonicalizeServiceName,
 } from './serviceRegistry.js';
-import { RegisteredService } from './services/core/registered.js';
+import { buildRegisteredServiceOptions, RegisteredService } from './services/core/registered.js';
 import {
   LOGIN_FLOWS,
   LoginCancelledError,
@@ -584,11 +584,11 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           deps.exit(1);
         }
 
-        const registeredService = new RegisteredService(serviceName, options.baseApiUrl, {
-          familyService,
-          loginUrl: options.loginUrl,
-          loginFlow: registeredLoginFlow?.flow,
-        });
+        const registeredService = new RegisteredService(
+          serviceName,
+          options.baseApiUrl,
+          buildRegisteredServiceOptions(familyService, options.loginUrl, registeredLoginFlow?.flow)
+        );
 
         try {
           deps.registry.addService(registeredService);

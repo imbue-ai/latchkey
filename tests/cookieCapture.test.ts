@@ -17,7 +17,10 @@ import {
   resolveLoginFlow,
   UnknownLoginFlowError,
 } from '../src/services/core/loginFlows.js';
-import { RegisteredService } from '../src/services/core/registered.js';
+import {
+  buildRegisteredServiceOptions,
+  RegisteredService,
+} from '../src/services/core/registered.js';
 import { TELEGRAM } from '../src/services/index.js';
 
 const LOGIN_URL = 'https://example.com/login';
@@ -264,19 +267,49 @@ describe('RegisteredService with a login flow', () => {
     expect(service.info).toContain('sessionid');
   });
 
-  it('does not expose a browser login without a login URL', () => {
+  // The two combinations that used to be checked at runtime — a flow without a
+  // page to open, and a flow alongside a family service — are now rejected by
+  // the options type. These assertions fail the build if that stops being true,
+  // since an unused @ts-expect-error is itself an error.
+  it('rejects a login flow without a login URL at compile time', () => {
+    // @ts-expect-error -- a login flow requires a loginUrl to start from
     const service = new RegisteredService('my-service', 'https://example.com/api/', {
       loginFlow: cookieFlow(),
     });
     expect(service.getSession).toBeUndefined(); // eslint-disable-line @typescript-eslint/unbound-method
   });
 
-  it('does not let a flow displace a family service', () => {
+  it('rejects a login flow combined with a family service at compile time', () => {
     const service = new RegisteredService('my-service', 'https://example.com/api/', {
       familyService: TELEGRAM,
       loginUrl: LOGIN_URL,
+      // @ts-expect-error -- a family service brings its own login
       loginFlow: cookieFlow(),
     });
     expect(service.getSession).toBeUndefined(); // eslint-disable-line @typescript-eslint/unbound-method
+  });
+
+  it('rejects a bare service in place of the options at compile time', () => {
+    // @ts-expect-error -- Service overlaps structurally, but is not options
+    const service = new RegisteredService('my-service', 'https://example.com/api/', TELEGRAM);
+    expect(service.getSession).toBeUndefined(); // eslint-disable-line @typescript-eslint/unbound-method
+  });
+});
+
+describe('buildRegisteredServiceOptions', () => {
+  const cookieFlow = () => resolveLoginFlow('cookie-capture', { cookieKeys: ['sessionid'] });
+
+  it('prefers the family service when both are somehow present', () => {
+    const options = buildRegisteredServiceOptions(TELEGRAM, LOGIN_URL, cookieFlow());
+    expect(options?.familyService).toBe(TELEGRAM);
+    expect(options?.loginFlow).toBeUndefined();
+  });
+
+  it('drops a login flow that has no login URL', () => {
+    expect(buildRegisteredServiceOptions(undefined, undefined, cookieFlow())).toBeUndefined();
+  });
+
+  it('returns no options when there is no login at all', () => {
+    expect(buildRegisteredServiceOptions(undefined, undefined, undefined)).toBeUndefined();
   });
 });

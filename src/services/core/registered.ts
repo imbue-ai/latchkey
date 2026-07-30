@@ -4,25 +4,61 @@
  *
  * When no family service is provided, the registered service acts as a
  * generic service that supports `latchkey auth set` for credentials, plus —
- * if a login URL and a cookie key were given — the generic cookie-capturing
- * browser login.
+ * if a login URL and a login flow were given — a browser login of its own.
  */
 
 import { ApiCredentialStatus, type ApiCredentials } from '../../apiCredentials/base.js';
 import { Service, type ServiceSession } from './base.js';
 import type { ResolvedLoginFlow } from './loginFlows.js';
 
-export interface RegisteredServiceOptions {
-  /** Built-in service to use as a template, for self-hosted instances. */
-  readonly familyService?: Service;
-  /** Page opened by `latchkey auth browser`. */
-  readonly loginUrl?: string;
-  /**
-   * Generic browser login to use, already resolved against its parameters.
-   * Together with a login URL and without a family service, this gives the
-   * service a browser login of its own.
-   */
-  readonly loginFlow?: ResolvedLoginFlow;
+/**
+ * Where a registered service gets its browser login, if anywhere. The two
+ * sources are mutually exclusive — a family service already brings its own
+ * login and credential shape — so they are alternatives rather than fields
+ * that happen not to be combined. Omitting the options entirely leaves the
+ * service with `latchkey auth set` only.
+ *
+ * The `never` markers are what make the exclusion stick: a plain union of the
+ * two shapes would still accept an object carrying both, because excess
+ * property checking against a union permits any property known to some member.
+ */
+export type RegisteredServiceOptions =
+  | {
+      /** Built-in service to use as a template, for self-hosted instances. */
+      readonly familyService: Service;
+      /** Page opened by `latchkey auth browser`, for families that support it. */
+      readonly loginUrl?: string;
+      readonly loginFlow?: never;
+    }
+  | {
+      /** Generic browser login, already resolved against its parameters. */
+      readonly loginFlow: ResolvedLoginFlow;
+      /** Page the flow starts from. A flow has nowhere to begin without one. */
+      readonly loginUrl: string;
+      readonly familyService?: never;
+    };
+
+/**
+ * Build options from values that are each independently optional, as they come
+ * out of the CLI and out of config.json.
+ *
+ * This is the one place where a family service and a login flow can meet, so it
+ * is also where their precedence is decided: the family wins, since its login
+ * and credential shape are what the rest of the service is built on. Callers
+ * that construct options directly are held to the exclusion by the type.
+ */
+export function buildRegisteredServiceOptions(
+  familyService: Service | undefined,
+  loginUrl: string | undefined,
+  loginFlow: ResolvedLoginFlow | undefined
+): RegisteredServiceOptions | undefined {
+  if (familyService !== undefined) {
+    return { familyService, loginUrl };
+  }
+  if (loginFlow !== undefined && loginUrl !== undefined) {
+    return { loginFlow, loginUrl };
+  }
+  return undefined;
 }
 
 export class RegisteredService extends Service {
@@ -35,13 +71,17 @@ export class RegisteredService extends Service {
 
   private readonly familyService: Service | undefined;
 
-  constructor(name: string, baseApiUrl: string, options: RegisteredServiceOptions = {}) {
+  constructor(name: string, baseApiUrl: string, options?: RegisteredServiceOptions) {
     super();
-    const { familyService, loginUrl, loginFlow } = options;
-    // A login flow needs a page to start from, and cannot displace the login
-    // that a family service already brings.
-    const usesLoginFlow =
-      loginFlow !== undefined && loginUrl !== undefined && familyService === undefined;
+    const familyService = options?.familyService;
+    const loginUrl = options?.loginUrl;
+    // The options type rules out a flow without a page to open, and a flow
+    // alongside a family service, for TypeScript callers. This repeats the
+    // checks because latchkey is also consumed as a library from JavaScript.
+    const usableLoginFlow =
+      options?.loginFlow !== undefined && loginUrl !== undefined && familyService === undefined
+        ? { flow: options.loginFlow, loginUrl }
+        : undefined;
 
     this.name = name;
     this.displayName = name;
@@ -52,9 +92,9 @@ export class RegisteredService extends Service {
 
     if (familyService !== undefined) {
       this.info = `Self-hosted ${familyService.displayName} instance. ${familyService.info}`;
-    } else if (usesLoginFlow) {
+    } else if (usableLoginFlow !== undefined) {
       this.info =
-        `Generic service. ${loginFlow.describe(loginUrl)} ` +
+        `Generic service. ${usableLoginFlow.flow.describe(usableLoginFlow.loginUrl)} ` +
         'Alternatively, use `latchkey auth set` to supply credentials as curl arguments.';
     } else {
       this.info =
@@ -63,8 +103,9 @@ export class RegisteredService extends Service {
 
     if (loginUrl !== undefined && familyService?.getSession !== undefined) {
       this.getSession = (appNamePrefix: string) => familyService.getSession!(appNamePrefix);
-    } else if (usesLoginFlow) {
-      this.getSession = (appNamePrefix: string) => loginFlow.createSession(this, appNamePrefix);
+    } else if (usableLoginFlow !== undefined) {
+      this.getSession = (appNamePrefix: string) =>
+        usableLoginFlow.flow.createSession(this, appNamePrefix);
     }
   }
 

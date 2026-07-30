@@ -304,6 +304,9 @@ describe('ServiceRegistry', () => {
     });
 
     it('should not expose getSession when loginUrl is provided but no family', () => {
+      // A login URL on its own is not a login: the options type requires it to
+      // come with either a family service or a login flow.
+      // @ts-expect-error -- loginUrl alone is not a valid option
       const registered = new RegisteredService('my-api', 'https://api.example.com/', {
         loginUrl: 'https://api.example.com/login',
       });
