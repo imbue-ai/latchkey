@@ -428,8 +428,14 @@ export abstract class SimpleServiceSession extends ServiceSession {
 
   /**
    * What the session has extracted so far, or null while the login phase is
-   * still going. Lets a caller feed responses in and see what came of them
-   * without running a whole login.
+   * still going.
+   *
+   * Exists for the tests, and they are its only callers: a real login goes
+   * through {@link login}, which returns the credentials once the phase
+   * completes. It is public rather than protected because the alternative is
+   * what the tests did before — casting past `protected` to read the field —
+   * which typechecks forever and quietly stops meaning anything the moment the
+   * internals change.
    */
   get capturedCredentials(): ApiCredentials | null {
     return this.apiCredentials;
