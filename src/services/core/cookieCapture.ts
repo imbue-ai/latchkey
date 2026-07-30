@@ -15,14 +15,8 @@ import type { Response } from 'playwright';
 import { z } from 'zod';
 import { type ApiCredentials, RawCurlCredentials } from '../../apiCredentials/base.js';
 import { CookieJar, formatCookieHeaderValue, type CookiePair } from '../../cookieUtils.js';
-import {
-  parseLoginFlowParams,
-  Service,
-  SimpleServiceSession,
-  type LoginFlow,
-  type LoginFlowClass,
-  type ServiceSession,
-} from './base.js';
+import { Service, SimpleServiceSession, type ServiceSession } from './base.js';
+import { parseLoginFlowParams, type LoginFlow, type LoginFlowClass } from './loginFlow.js';
 
 export const CookieCaptureParamsSchema = z
   .object({

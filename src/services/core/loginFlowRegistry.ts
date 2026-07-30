@@ -1,25 +1,14 @@
 /**
- * The registry of generic browser login flows.
+ * The list of generic browser login flows, and looking one up by the name
+ * `--login-flow` takes.
  *
- * The flows themselves, and the types they satisfy, live elsewhere: this is
- * only the list of them, and looking one up by the name `--login-flow` takes.
- *
- * Three things are involved, and they are deliberately distinct:
- *
- * - a **flow class** is a kind of automation, with a name and a parameter
- *   schema — `LoginFlowClass`;
- * - a **flow** is one configuration of that kind, holding validated parameters
- *   and able to create sessions — `LoginFlow`;
- * - a **session** is a single run of one, created per login and discarded
- *   afterwards — `ServiceSession`.
- *
- * The parameters are validated long before a login happens (when a service is
- * registered, or when config.json is read), which is why a flow rather than a
- * session is what a registered service holds on to.
+ * This is the only module that knows which flows exist. What a flow *is* lives
+ * in `loginFlow`, which the flows themselves import; keeping the list separate
+ * is what stops that from being a cycle.
  */
 
 import { CookieCaptureLoginFlow } from './cookieCapture.js';
-import type { LoginFlow, LoginFlowClass } from './base.js';
+import type { LoginFlow, LoginFlowClass } from './loginFlow.js';
 
 export const LOGIN_FLOWS: readonly LoginFlowClass[] = [CookieCaptureLoginFlow];
 

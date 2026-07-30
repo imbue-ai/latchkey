@@ -17,8 +17,8 @@ import {
   LOGIN_FLOWS,
   resolveLoginFlow,
   UnknownLoginFlowError,
-} from '../src/services/core/loginFlows.js';
-import { LoginFlowParamsInvalidError } from '../src/services/core/base.js';
+} from '../src/services/core/loginFlowRegistry.js';
+import { LoginFlowParamsInvalidError } from '../src/services/core/loginFlow.js';
 import {
   buildRegisteredServiceOptions,
   RegisteredService,

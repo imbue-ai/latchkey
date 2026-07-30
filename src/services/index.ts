@@ -25,13 +25,13 @@ export {
   formatLoginFlowsHelp,
   getLoginFlow,
   resolveLoginFlow,
-} from './core/loginFlows.js';
+} from './core/loginFlowRegistry.js';
 export {
   LoginFlowParamsInvalidError,
   parseLoginFlowParams,
   type LoginFlow,
   type LoginFlowClass,
-} from './core/base.js';
+} from './core/loginFlow.js';
 export { CookieCaptureLoginFlow, buildCookieCredentials } from './core/cookieCapture.js';
 
 export { Slack, SLACK } from './slack.js';
