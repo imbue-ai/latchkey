@@ -150,10 +150,7 @@ export function formatLoginFlowsHelp(): string {
   );
   return [
     'Login flows:',
-    '  A service registered without --service-family can be given one of the',
-    '  generic browser logins below, through --login-flow together with the',
-    "  flow's parameters as a JSON object in --login-flow-params. Both need",
-    '  --login-url, the page the flow starts from.',
+    '  Each login flow is configured by a JSON object supplied by --login-flow-params.',
     '',
     ...sections,
   ].join('\n');

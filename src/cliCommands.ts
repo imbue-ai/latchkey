@@ -217,37 +217,22 @@ async function defaultConfirm(message: string): Promise<boolean> {
 }
 
 /**
- * The three shapes a `services register` call can take. Kept next to the
+ * How a registered service can be given a browser login. Kept next to the
  * command rather than in the README, since it is what someone reaching for
  * `--help` is trying to decide between.
  */
 const REGISTRATION_MODES_HELP = [
-  'Ways to register a service:',
-  '  A registered service can obtain its credentials in one of three ways.',
-  '  In all three, `latchkey auth set` can supply them by hand.',
+  'Browser login:',
+  '  You can always use `latchkey auth set` to supply credentials for a registered service.',
+  '  But optionally, you can use one of two methods to configure a browser login flow.',
+  '  Both require --login-url to specify the URL the browser opens to log the user in.',
   '',
-  '  1. On its own, with neither --service-family nor --login-flow',
-  '     Latchkey learns only that the base API URL belongs to this service, and',
-  '     injects whatever curl arguments were stored for it. This suits any',
-  '     service whose credentials are a static header or query parameter.',
-  '       $ latchkey services register mastodon \\',
-  '           --base-api-url="https://mastodon.social/api/v1/"',
-  '       $ latchkey auth set mastodon -H "Authorization: Bearer <token>"',
+  '  1. --service-family lets the service use the same login flow as a builtin service, for example:',
   '',
-  '  2. From a built-in service, with --service-family',
-  '     For a self-hosted instance of a service Latchkey already supports. The',
-  "     new service borrows the family's credential handling, and its browser",
-  '     login where the family has one — in which case --login-url is required,',
-  '     naming the sign-in page of your instance.',
-  '       $ latchkey services register my-gitlab --service-family=gitlab \\',
-  '           --base-api-url="https://gitlab.example.com/api/v4/"',
+  '       $ latchkey services register my-github --service-family=github \\',
+  '           --base-api-url="https://github.example.com/api/v3/" --login-url="https://github.example.com/login"',
   '',
-  '  3. With a generic browser login, using --login-flow',
-  '     For a service Latchkey does not know, whose credentials the user can',
-  '     only obtain by signing in. `latchkey auth browser` then runs the chosen',
-  '     flow and stores what it captures. Requires --login-url, and cannot be',
-  '     combined with --service-family, which brings a login of its own.',
-  '     The available flows are described below.',
+  '  2. --login-flow lets the service use one of the generic login flows. See the next section for supported login flows.',
 ].join('\n');
 
 /** The login flow chosen at registration time, with the JSON it was configured from. */
@@ -1227,12 +1212,10 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
             const detail = error instanceof Error ? error.message : String(error);
             deps.errorLog(`Error: Additional claims must be valid JSON: ${detail}`);
             deps.exit(1);
-            return;
           }
           if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
             deps.errorLog('Error: Additional claims must be a JSON object.');
             deps.exit(1);
-            return;
           }
           additionalClaims = parsed as Record<string, unknown>;
         }

@@ -221,52 +221,8 @@ latchkey auth set mastodon -H "Authorization: Bearer <your_access_token>"
 latchkey curl https://mastodon.social/api/v1/timelines/public?limit=2
 ```
 
-A service can be registered in one of three ways, depending on where
-its credentials come from:
-
-- **On its own**, as above. Latchkey injects the curl arguments stored
-  by `latchkey auth set` into calls to the base API URL. Right for any
-  service whose credentials are a static header or query parameter.
-- **With `--service-family`**, for a self-hosted instance of a service
-  Latchkey already supports, as in the GitLab example above. The new
-  service borrows the family's credential handling, and its browser
-  login where the family has one.
-- **With `--login-flow`**, for a service Latchkey does not know whose
-  credentials the user can only obtain by signing in — see below.
-
-`latchkey auth set` works in all three cases;
-`latchkey services register --help` describes them in full.
-
-#### Browser login for registered services
-
-Many services (especially internal or self-hosted ones) authenticate
-API calls with a session cookie or another credential the user only
-sees in a browser. A registered service can get a browser login of its
-own by choosing one of Latchkey's generic login flows:
-
-```bash
-latchkey services register my-intranet \
-  --base-api-url="https://intranet.example.com/api/" \
-  --login-url="https://intranet.example.com/login" \
-  --login-flow=cookie-capture \
-  --login-flow-params='{"cookieKeys": ["sessionid", "csrftoken"]}'
-
-# Opens the login page. Once the user has signed in and the cookies are
-# set, they are stored as the credentials.
-latchkey auth browser my-intranet
-
-# Agents can then call the API; requests carry the Cookie header.
-latchkey curl https://intranet.example.com/api/me
-```
-
-For the available flows, their parameters and their limitations, see:
-
-```bash
-latchkey services register --help
-```
-
-A login flow cannot be combined with `--service-family`, since a
-service family brings its own login.
+You can also configure browser login flows for registered services. For details,
+see `latchkey services register --help`.
 
 
 ### Indirect credentials
