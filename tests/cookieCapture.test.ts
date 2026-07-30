@@ -1,16 +1,15 @@
 /**
  * Tests for the generic cookie-capturing browser login used by registered
- * services. No browser is launched: the login phase is driven with stub
- * responses carrying `Set-Cookie` headers.
+ * services.
+ *
+ * The capture is driven directly with `Set-Cookie` header values: no browser,
+ * and no stubbed Playwright response, since reading those headers off a
+ * response is all the session does.
  */
 
 import { describe, it, expect } from 'vitest';
-import type { Response } from 'playwright';
 import type { ApiCredentials } from '../src/apiCredentials/base.js';
-import {
-  CookieCaptureLoginFlow,
-  CookieCaptureSession,
-} from '../src/services/core/cookieCapture.js';
+import { CookieCaptureLoginFlow } from '../src/services/core/cookieCapture.js';
 import {
   formatLoginFlowsHelp,
   getLoginFlow,
@@ -23,33 +22,22 @@ import {
   buildRegisteredServiceOptions,
   RegisteredService,
 } from '../src/services/core/registered.js';
-import { TELEGRAM } from '../src/services/index.js';
+import { ServiceSession, TELEGRAM } from '../src/services/index.js';
 
 const LOGIN_URL = 'https://example.com/login';
 
-function createStubResponse(url: string, setCookieHeaders: readonly string[]): Response {
-  return {
-    url: () => url,
-    headersArray: () =>
-      Promise.resolve([
-        { name: 'Content-Type', value: 'text/html' },
-        ...setCookieHeaders.map((value) => ({ name: 'set-cookie', value })),
-      ]),
-  } as unknown as Response;
-}
-
-/** The login-phase hook, which is protected on the session. */
-interface SessionLoginPhase {
-  getApiCredentialsFromResponse(response: Response): Promise<ApiCredentials | null>;
-}
-
-function createSession(
+/** The capture a service registered with these parameters would perform. */
+function createCapture(
   cookieKeys: readonly string[],
-  cookieUrl: string = LOGIN_URL
-): CookieCaptureSession & SessionLoginPhase {
+  cookieUrl?: string
+): { accept: (headers: readonly string[], responseUrl: string) => Promise<string | null> } {
   const flow = new CookieCaptureLoginFlow({ cookieKeys: [...cookieKeys], cookieUrl });
-  const service = new RegisteredService('my-service', 'https://example.com/api/');
-  return flow.createSession(service, 'latchkey') as CookieCaptureSession & SessionLoginPhase;
+  const capture = flow.createCapture(LOGIN_URL);
+  return {
+    // Reduced to the Cookie header it would store, or null while incomplete.
+    accept: async (headers, responseUrl) =>
+      headerFrom(capture.accept(headers, new URL(responseUrl))),
+  };
 }
 
 async function headerFrom(credentials: ApiCredentials | null): Promise<string | null> {
@@ -60,104 +48,84 @@ async function headerFrom(credentials: ApiCredentials | null): Promise<string | 
   return curlArguments[1] ?? null;
 }
 
-describe('CookieCaptureSession', () => {
+describe('cookie capture', () => {
   it('is not complete before the cookie is set', async () => {
-    const session = createSession(['sessionid']);
-    const credentials = await session.getApiCredentialsFromResponse(
-      createStubResponse(LOGIN_URL, [])
-    );
-    expect(credentials).toBeNull();
+    const capture = createCapture(['sessionid']);
+    expect(await capture.accept([], LOGIN_URL)).toBeNull();
   });
 
   it('captures a cookie from a Set-Cookie header', async () => {
-    const session = createSession(['sessionid']);
-    const credentials = await session.getApiCredentialsFromResponse(
-      createStubResponse(LOGIN_URL, ['sessionid=abc123; Path=/; HttpOnly'])
+    const capture = createCapture(['sessionid']);
+    expect(await capture.accept(['sessionid=abc123; Path=/; HttpOnly'], LOGIN_URL)).toBe(
+      'Cookie: sessionid=abc123'
     );
-    expect(await headerFrom(credentials)).toBe('Cookie: sessionid=abc123');
   });
 
   it('ignores unrelated names, empty values and other domains', async () => {
-    const session = createSession(['sessionid']);
+    const capture = createCapture(['sessionid']);
     expect(
-      await session.getApiCredentialsFromResponse(
-        createStubResponse('https://identity-provider.example.net/sso', [
-          'sessionid=wrong-domain; Path=/',
-        ])
+      await capture.accept(
+        ['sessionid=wrong-domain; Path=/'],
+        'https://identity-provider.example.net/sso'
       )
     ).toBeNull();
     expect(
-      await session.getApiCredentialsFromResponse(
-        createStubResponse(LOGIN_URL, ['other=irrelevant; Path=/', 'sessionid=; Path=/'])
-      )
+      await capture.accept(['other=irrelevant; Path=/', 'sessionid=; Path=/'], LOGIN_URL)
     ).toBeNull();
   });
 
   it('waits for every requested cookie, across responses', async () => {
-    const session = createSession(['sessionid', 'csrftoken']);
-
-    expect(
-      await session.getApiCredentialsFromResponse(
-        createStubResponse(LOGIN_URL, ['sessionid=abc; Path=/'])
-      )
-    ).toBeNull();
-
-    const credentials = await session.getApiCredentialsFromResponse(
-      createStubResponse(LOGIN_URL, ['csrftoken=xyz; Path=/'])
+    const capture = createCapture(['sessionid', 'csrftoken']);
+    expect(await capture.accept(['sessionid=abc; Path=/'], LOGIN_URL)).toBeNull();
+    expect(await capture.accept(['csrftoken=xyz; Path=/'], LOGIN_URL)).toBe(
+      'Cookie: sessionid=abc; csrftoken=xyz'
     );
-    expect(await headerFrom(credentials)).toBe('Cookie: sessionid=abc; csrftoken=xyz');
   });
 
   it('keeps every scope when one name is set for several domains', async () => {
-    const session = createSession(['sessionid'], 'https://app.example.com/');
-    const credentials = await session.getApiCredentialsFromResponse(
-      createStubResponse('https://app.example.com/login', [
-        'sessionid=host-only; Path=/',
-        'sessionid=domain-wide; Domain=example.com; Path=/',
-      ])
-    );
+    const capture = createCapture(['sessionid'], 'https://app.example.com/');
     // A browser would send both, so both are kept rather than one being guessed.
-    expect(await headerFrom(credentials)).toBe(
-      'Cookie: sessionid=host-only; sessionid=domain-wide'
-    );
+    expect(
+      await capture.accept(
+        ['sessionid=host-only; Path=/', 'sessionid=domain-wide; Domain=example.com; Path=/'],
+        'https://app.example.com/login'
+      )
+    ).toBe('Cookie: sessionid=host-only; sessionid=domain-wide');
   });
 
   it('replaces a cookie that is set again in the same scope', async () => {
-    const session = createSession(['sessionid']);
-    await session.getApiCredentialsFromResponse(
-      createStubResponse(LOGIN_URL, ['sessionid=first; Path=/'])
+    const capture = createCapture(['sessionid']);
+    await capture.accept(['sessionid=first; Path=/'], LOGIN_URL);
+    expect(await capture.accept(['sessionid=second; Path=/'], LOGIN_URL)).toBe(
+      'Cookie: sessionid=second'
     );
-    const credentials = await session.getApiCredentialsFromResponse(
-      createStubResponse(LOGIN_URL, ['sessionid=second; Path=/'])
-    );
-    expect(await headerFrom(credentials)).toBe('Cookie: sessionid=second');
   });
 
   it('drops a cookie that is cleared again', async () => {
-    const session = createSession(['sessionid']);
-    await session.getApiCredentialsFromResponse(
-      createStubResponse(LOGIN_URL, ['sessionid=abc; Path=/'])
+    const capture = createCapture(['sessionid']);
+    await capture.accept(['sessionid=abc; Path=/'], LOGIN_URL);
+    expect(await capture.accept(['sessionid=abc; Max-Age=0; Path=/'], LOGIN_URL)).toBeNull();
+  });
+
+  it('looks for the cookies at the login URL when the parameters name no other', async () => {
+    const capture = createCapture(['sessionid']);
+    expect(await capture.accept(['sessionid=abc; Path=/'], LOGIN_URL)).toBe(
+      'Cookie: sessionid=abc'
     );
-    const credentials = await session.getApiCredentialsFromResponse(
-      createStubResponse(LOGIN_URL, ['sessionid=abc; Max-Age=0; Path=/'])
-    );
-    expect(credentials).toBeNull();
   });
 
   it('matches against an explicit cookie URL when given', async () => {
-    const session = createSession(['sessionid'], 'https://api.example.com/');
+    const capture = createCapture(['sessionid'], 'https://api.example.com/');
     // Set on the SSO host: applies to the API host only via the Domain attribute.
     expect(
-      await session.getApiCredentialsFromResponse(
-        createStubResponse('https://sso.example.com/login', ['sessionid=sso-only; Path=/'])
-      )
+      await capture.accept(['sessionid=sso-only; Path=/'], 'https://sso.example.com/login')
     ).toBeNull();
-    const credentials = await session.getApiCredentialsFromResponse(
-      createStubResponse('https://sso.example.com/login', [
-        'sessionid=shared; Domain=example.com; Path=/',
-      ])
-    );
-    expect(await headerFrom(credentials)).toBe('Cookie: sessionid=shared');
+    expect(
+      await capture.accept(
+        ['sessionid=shared; Domain=example.com; Path=/'],
+        'https://sso.example.com/login'
+      )
+    ).toBe('Cookie: sessionid=shared');
   });
 });
 
@@ -217,7 +185,7 @@ describe('RegisteredService with a login flow', () => {
       loginFlow: cookieFlow(),
     });
     expect(service.getSession).toBeDefined(); // eslint-disable-line @typescript-eslint/unbound-method
-    expect(service.getSession!('latchkey')).toBeInstanceOf(CookieCaptureSession);
+    expect(service.getSession!('latchkey')).toBeInstanceOf(ServiceSession);
     expect(service.info).toContain(LOGIN_URL);
     expect(service.info).toContain('sessionid');
   });

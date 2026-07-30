@@ -32,8 +32,8 @@ export {
   type LoginFlowRegistration,
 } from './core/loginFlows.js';
 export {
+  CookieCapture,
   CookieCaptureLoginFlow,
-  CookieCaptureSession,
   buildCookieCredentials,
 } from './core/cookieCapture.js';
 
