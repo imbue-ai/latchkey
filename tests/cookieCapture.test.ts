@@ -7,11 +7,7 @@
 import { describe, it, expect } from 'vitest';
 import type { Response } from 'playwright';
 import type { ApiCredentials } from '../src/apiCredentials/base.js';
-import {
-  CookieCaptureServiceSession,
-  doesCookieApplyTo,
-  parseSetCookieHeader,
-} from '../src/services/core/cookieCapture.js';
+import { CookieCaptureServiceSession } from '../src/services/core/cookieCapture.js';
 import {
   getLoginFlow,
   LoginFlowParamsInvalidError,
@@ -60,69 +56,6 @@ async function headerFrom(credentials: ApiCredentials | null): Promise<string | 
   const curlArguments = await credentials.injectIntoCurlCall([]);
   return curlArguments[1] ?? null;
 }
-
-describe('parseSetCookieHeader', () => {
-  const responseUrl = new URL('https://app.example.com/account/login');
-
-  it('takes the domain and path from the response when unspecified', () => {
-    expect(parseSetCookieHeader('sessionid=abc; HttpOnly; Secure', responseUrl)).toEqual({
-      name: 'sessionid',
-      value: 'abc',
-      domain: 'app.example.com',
-      path: '/account',
-      isDeletion: false,
-    });
-  });
-
-  it('honors explicit Domain and Path attributes and strips the leading dot', () => {
-    expect(parseSetCookieHeader('sessionid=abc; Domain=.example.com; Path=/', responseUrl)).toEqual(
-      {
-        name: 'sessionid',
-        value: 'abc',
-        domain: 'example.com',
-        path: '/',
-        isDeletion: false,
-      }
-    );
-  });
-
-  it('recognizes deletions', () => {
-    const deletions = [
-      'sessionid=; Path=/',
-      'sessionid=abc; Max-Age=0; Path=/',
-      'sessionid=abc; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/',
-    ];
-    for (const header of deletions) {
-      expect(parseSetCookieHeader(header, responseUrl)?.isDeletion).toBe(true);
-    }
-  });
-
-  it('keeps a future expiry a normal cookie', () => {
-    const expires = new Date(Date.now() + 60_000).toUTCString();
-    expect(parseSetCookieHeader(`sessionid=abc; Expires=${expires}`, responseUrl)?.isDeletion).toBe(
-      false
-    );
-  });
-
-  it('rejects header values that are not a cookie assignment', () => {
-    expect(parseSetCookieHeader('not-a-cookie', responseUrl)).toBeNull();
-    expect(parseSetCookieHeader('=orphan-value', responseUrl)).toBeNull();
-  });
-});
-
-describe('doesCookieApplyTo', () => {
-  const cookie = parseSetCookieHeader('a=1; Domain=example.com; Path=/app', new URL(LOGIN_URL))!;
-
-  it('accepts the domain itself and its subdomains', () => {
-    expect(doesCookieApplyTo(cookie, new URL('https://example.com/app'))).toBe(true);
-    expect(doesCookieApplyTo(cookie, new URL('https://api.example.com/app/x'))).toBe(true);
-  });
-
-  it('rejects unrelated hosts and paths outside the cookie path', () => {
-    expect(doesCookieApplyTo(cookie, new URL('https://notexample.com/app'))).toBe(false);
-    expect(doesCookieApplyTo(cookie, new URL('https://example.com/other'))).toBe(false);
-  });
-});
 
 describe('CookieCaptureServiceSession', () => {
   it('is not complete before the cookie is set', async () => {

@@ -30,12 +30,7 @@ export {
   type LoginFlowClass,
   type ResolvedLoginFlow,
 } from './core/loginFlows.js';
-export {
-  CookieCaptureServiceSession,
-  buildCookieCredentials,
-  doesCookieApplyTo,
-  parseSetCookieHeader,
-} from './core/cookieCapture.js';
+export { CookieCaptureServiceSession, buildCookieCredentials } from './core/cookieCapture.js';
 
 export { Slack, SLACK } from './slack.js';
 export { Discord, DISCORD } from './discord.js';
