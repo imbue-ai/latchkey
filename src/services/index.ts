@@ -23,13 +23,14 @@ export {
   LOGIN_FLOWS,
   LoginFlowParamsInvalidError,
   UnknownLoginFlowError,
+  defineLoginFlow,
   getLoginFlow,
   resolveLoginFlow,
   type LoginFlow,
+  type LoginFlowClass,
   type ResolvedLoginFlow,
 } from './core/loginFlows.js';
 export {
-  COOKIE_CAPTURE_LOGIN_FLOW,
   CookieCaptureServiceSession,
   buildCookieCredentials,
   doesCookieApplyTo,

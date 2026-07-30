@@ -7,33 +7,49 @@
  */
 
 import type { ZodType } from 'zod';
-import { COOKIE_CAPTURE_LOGIN_FLOW } from './cookieCapture.js';
+import { CookieCaptureServiceSession } from './cookieCapture.js';
 import { describeSchemaIssues, Service, type ServiceSession } from './base.js';
 
-export interface LoginFlow<Params> {
-  /** Value of `--login-flow`. */
-  readonly name: string;
+/**
+ * A login flow is defined by its session class: the name, the parameter schema
+ * and the description are statics next to the implementation they describe.
+ *
+ * This is that static side. It lives here rather than on the class because
+ * statics cannot refer to a class's own type parameters, so the parameter type
+ * has to be expressed by the type the class is checked against.
+ */
+export interface LoginFlowClass<Params> {
+  new (service: Service, appNamePrefix: string, params: Params): ServiceSession;
+  /** Value of `--login-flow`. Not `name`, which every class already has. */
+  readonly flowName: string;
   /** One-line explanation, listed by the CLI when the flow name is wrong. */
   readonly summary: string;
   readonly paramsSchema: ZodType<Params>;
-  /** Sentence describing this configuration, for `services info`. */
+  /** Sentence describing one configuration of this flow, for `services info`. */
   describe(params: Params, loginUrl: string): string;
-  createSession(service: Service, appNamePrefix: string, params: Params): ServiceSession;
 }
 
 /**
- * A login flow together with parameters already validated against its schema.
- * Only {@link resolveLoginFlow} produces these, so anything holding one can use
- * it without revalidating.
+ * A flow as the registry holds it, with its parameter type erased. The CLI and
+ * the config loader deal in flows generically; only `resolve` still knows what
+ * shape this particular flow's parameters have.
+ */
+export interface LoginFlow {
+  readonly name: string;
+  readonly summary: string;
+  /** Validate parameters for this flow. Throws {@link LoginFlowParamsInvalidError}. */
+  resolve(params: unknown): ResolvedLoginFlow;
+}
+
+/**
+ * A flow whose parameters have been validated, ready to be used without
+ * knowing (or revalidating) their type. Closing over the parameters is what
+ * erases them: everything that needs them is applied here.
  */
 export interface ResolvedLoginFlow {
   describe(loginUrl: string): string;
   createSession(service: Service, appNamePrefix: string): ServiceSession;
 }
-
-export const LOGIN_FLOWS: readonly LoginFlow<never>[] = [
-  COOKIE_CAPTURE_LOGIN_FLOW as LoginFlow<never>,
-];
 
 export class UnknownLoginFlowError extends Error {
   constructor(name: string) {
@@ -52,7 +68,36 @@ export class LoginFlowParamsInvalidError extends Error {
   }
 }
 
-export function getLoginFlow(name: string): LoginFlow<never> | null {
+/**
+ * Register a flow class, erasing its parameter type. Inference ties the schema,
+ * the description and the constructor to one parameter type, so a class whose
+ * statics disagree with its constructor does not compile.
+ */
+export function defineLoginFlow<Params>(flowClass: LoginFlowClass<Params>): LoginFlow {
+  return {
+    name: flowClass.flowName,
+    summary: flowClass.summary,
+    resolve(params: unknown): ResolvedLoginFlow {
+      const result = flowClass.paramsSchema.safeParse(params ?? {});
+      if (!result.success) {
+        throw new LoginFlowParamsInvalidError(
+          flowClass.flowName,
+          describeSchemaIssues(result.error)
+        );
+      }
+      const validatedParams = result.data;
+      return {
+        describe: (loginUrl: string) => flowClass.describe(validatedParams, loginUrl),
+        createSession: (service: Service, appNamePrefix: string) =>
+          new flowClass(service, appNamePrefix, validatedParams),
+      };
+    },
+  };
+}
+
+export const LOGIN_FLOWS: readonly LoginFlow[] = [defineLoginFlow(CookieCaptureServiceSession)];
+
+export function getLoginFlow(name: string): LoginFlow | null {
   return LOGIN_FLOWS.find((flow) => flow.name === name) ?? null;
 }
 
@@ -68,14 +113,5 @@ export function resolveLoginFlow(name: string, params: unknown): ResolvedLoginFl
   if (flow === null) {
     throw new UnknownLoginFlowError(name);
   }
-  const result = flow.paramsSchema.safeParse(params ?? {});
-  if (!result.success) {
-    throw new LoginFlowParamsInvalidError(name, describeSchemaIssues(result.error));
-  }
-  const validatedParams = result.data;
-  return {
-    describe: (loginUrl: string) => flow.describe(validatedParams, loginUrl),
-    createSession: (service: Service, appNamePrefix: string) =>
-      flow.createSession(service, appNamePrefix, validatedParams),
-  };
+  return flow.resolve(params);
 }

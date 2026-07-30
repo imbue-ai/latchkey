@@ -11,7 +11,6 @@ import type { Response } from 'playwright';
 import { z } from 'zod';
 import { type ApiCredentials, RawCurlCredentials } from '../../apiCredentials/base.js';
 import { Service, SimpleServiceSession } from './base.js';
-import type { LoginFlow } from './loginFlows.js';
 
 export const CookieCaptureParamsSchema = z
   .object({
@@ -143,20 +142,37 @@ function cookieScopeKey(cookie: ParsedSetCookie): string {
   return `${cookie.name}\n${cookie.domain}\n${cookie.path}`;
 }
 
+/**
+ * The login flow itself. The class is its own definition: `flowName`,
+ * `summary`, `paramsSchema` and `describe` are the static side that
+ * `defineLoginFlow` registers, and instances are the sessions it creates.
+ */
 export class CookieCaptureServiceSession extends SimpleServiceSession {
+  /** Value of `--login-flow`. Not `name`, which every class already has. */
+  static readonly flowName = 'cookie-capture';
+
+  static readonly summary =
+    'Open the login URL and capture named session cookies as they are set. ' +
+    'Parameters: {"cookieKeys": ["<name>", ...], "cookieUrl": "<url>" (optional)}.';
+
+  static readonly paramsSchema = CookieCaptureParamsSchema;
+
+  static describe(params: CookieCaptureParams, loginUrl: string): string {
+    const quotedKeys = params.cookieKeys.map((cookieKey) => `'${cookieKey}'`).join(', ');
+    return (
+      `\`latchkey auth browser\` opens ${loginUrl} and stores the ${quotedKeys} ` +
+      `cookies of ${params.cookieUrl ?? loginUrl} as the credentials once they are set.`
+    );
+  }
+
   private readonly cookieKeys: readonly string[];
   private readonly cookieUrl: URL;
   private readonly capturedCookies = new Map<string, ParsedSetCookie>();
 
-  constructor(
-    service: Service,
-    appNamePrefix: string,
-    cookieUrl: URL,
-    cookieKeys: readonly string[]
-  ) {
+  constructor(service: Service, appNamePrefix: string, params: CookieCaptureParams) {
     super(service, appNamePrefix);
-    this.cookieUrl = cookieUrl;
-    this.cookieKeys = cookieKeys;
+    this.cookieKeys = params.cookieKeys;
+    this.cookieUrl = new URL(params.cookieUrl ?? service.loginUrl);
   }
 
   /**
@@ -197,25 +213,3 @@ export class CookieCaptureServiceSession extends SimpleServiceSession {
     return buildCookieCredentials(captured);
   }
 }
-
-export const COOKIE_CAPTURE_LOGIN_FLOW: LoginFlow<CookieCaptureParams> = {
-  name: 'cookie-capture',
-  summary:
-    'Open the login URL and capture named session cookies as they are set. ' +
-    'Parameters: {"cookieKeys": ["<name>", ...], "cookieUrl": "<url>" (optional)}.',
-  paramsSchema: CookieCaptureParamsSchema,
-  describe: (params, loginUrl) => {
-    const quotedKeys = params.cookieKeys.map((cookieKey) => `'${cookieKey}'`).join(', ');
-    return (
-      `\`latchkey auth browser\` opens ${loginUrl} and stores the ${quotedKeys} ` +
-      `cookies of ${params.cookieUrl ?? loginUrl} as the credentials once they are set.`
-    );
-  },
-  createSession: (service, appNamePrefix, params) =>
-    new CookieCaptureServiceSession(
-      service,
-      appNamePrefix,
-      new URL(params.cookieUrl ?? service.loginUrl),
-      params.cookieKeys
-    ),
-};

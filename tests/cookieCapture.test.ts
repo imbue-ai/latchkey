@@ -13,6 +13,7 @@ import {
   parseSetCookieHeader,
 } from '../src/services/core/cookieCapture.js';
 import {
+  getLoginFlow,
   LoginFlowParamsInvalidError,
   resolveLoginFlow,
   UnknownLoginFlowError,
@@ -48,8 +49,7 @@ function createSession(
   return new CookieCaptureServiceSession(
     new RegisteredService('my-service', 'https://example.com/api/'),
     'latchkey',
-    new URL(cookieUrl),
-    cookieKeys
+    { cookieKeys: [...cookieKeys], cookieUrl }
   ) as CookieCaptureServiceSession & SessionLoginPhase;
 }
 
@@ -225,7 +225,13 @@ describe('CookieCaptureServiceSession', () => {
   });
 });
 
-describe('resolveLoginFlow', () => {
+describe('the login flow registry', () => {
+  it('takes the registry entry from the class itself', () => {
+    const flow = getLoginFlow(CookieCaptureServiceSession.flowName);
+    expect(flow?.name).toBe('cookie-capture');
+    expect(flow?.summary).toBe(CookieCaptureServiceSession.summary);
+  });
+
   it('rejects an unknown flow', () => {
     expect(() => resolveLoginFlow('nonexistent', {})).toThrow(UnknownLoginFlowError);
   });
