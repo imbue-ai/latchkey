@@ -8,7 +8,7 @@ import {
   LoginFlowParamsInvalidError,
   resolveLoginFlow,
   UnknownLoginFlowError,
-  type ResolvedLoginFlow,
+  type LoginFlow,
 } from './services/core/loginFlows.js';
 import {
   Service,
@@ -167,7 +167,7 @@ export function hideServicesFromRegistry(
  */
 function resolveStoredLoginFlow(
   storedLoginFlow: RegisteredServiceEntry['loginFlow']
-): ResolvedLoginFlow | undefined {
+): LoginFlow | undefined {
   if (storedLoginFlow === undefined) {
     return undefined;
   }

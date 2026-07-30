@@ -61,7 +61,7 @@ import {
   resolveLoginFlow,
   Service,
   UnknownLoginFlowError,
-  type ResolvedLoginFlow,
+  type LoginFlow,
 } from './services/index.js';
 import {
   CurlParseError,
@@ -215,9 +215,9 @@ async function defaultConfirm(message: string): Promise<boolean> {
   });
 }
 
-/** A login flow chosen at registration time, with the JSON it was configured from. */
-interface RegisteredLoginFlow {
-  readonly flow: ResolvedLoginFlow;
+/** The login flow chosen at registration time, with the JSON it was configured from. */
+interface ChosenLoginFlow {
+  readonly flow: LoginFlow;
   readonly params: Record<string, unknown> | undefined;
 }
 
@@ -230,7 +230,7 @@ function resolveLoginFlowOrExit(
   deps: CliDependencies,
   flowName: string,
   paramsJson: string | undefined
-): RegisteredLoginFlow {
+): ChosenLoginFlow {
   let params: Record<string, unknown> | undefined;
   if (paramsJson !== undefined) {
     let parsedJson: unknown;
@@ -550,7 +550,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           deps.exit(1);
         }
 
-        let registeredLoginFlow: RegisteredLoginFlow | undefined;
+        let chosenLoginFlow: ChosenLoginFlow | undefined;
         if (options.loginFlow !== undefined) {
           if (options.serviceFamily !== undefined) {
             deps.errorLog('Error: --login-flow cannot be combined with --service-family.');
@@ -560,7 +560,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
             deps.errorLog('Error: --login-flow requires --login-url.');
             deps.exit(1);
           }
-          registeredLoginFlow = resolveLoginFlowOrExit(
+          chosenLoginFlow = resolveLoginFlowOrExit(
             deps,
             options.loginFlow,
             options.loginFlowParams
@@ -587,7 +587,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         const registeredService = new RegisteredService(
           serviceName,
           options.baseApiUrl,
-          buildRegisteredServiceOptions(familyService, options.loginUrl, registeredLoginFlow?.flow)
+          buildRegisteredServiceOptions(familyService, options.loginUrl, chosenLoginFlow?.flow)
         );
 
         try {
@@ -607,7 +607,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           loginFlow:
             options.loginFlow === undefined
               ? undefined
-              : { name: options.loginFlow, params: registeredLoginFlow?.params },
+              : { name: options.loginFlow, params: chosenLoginFlow?.params },
         });
 
         deps.log(`Service '${serviceName}' registered.`);

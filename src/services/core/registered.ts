@@ -9,7 +9,7 @@
 
 import { ApiCredentialStatus, type ApiCredentials } from '../../apiCredentials/base.js';
 import { Service, type ServiceSession } from './base.js';
-import type { ResolvedLoginFlow } from './loginFlows.js';
+import type { LoginFlow } from './loginFlows.js';
 
 /**
  * Where a registered service gets its browser login, if anywhere. The two
@@ -31,8 +31,8 @@ export type RegisteredServiceOptions =
       readonly loginFlow?: never;
     }
   | {
-      /** Generic browser login, already resolved against its parameters. */
-      readonly loginFlow: ResolvedLoginFlow;
+      /** Generic browser login, already configured with its parameters. */
+      readonly loginFlow: LoginFlow;
       /** Page the flow starts from. A flow has nowhere to begin without one. */
       readonly loginUrl: string;
       readonly familyService?: never;
@@ -50,7 +50,7 @@ export type RegisteredServiceOptions =
 export function buildRegisteredServiceOptions(
   familyService: Service | undefined,
   loginUrl: string | undefined,
-  loginFlow: ResolvedLoginFlow | undefined
+  loginFlow: LoginFlow | undefined
 ): RegisteredServiceOptions | undefined {
   if (familyService !== undefined) {
     return { familyService, loginUrl };

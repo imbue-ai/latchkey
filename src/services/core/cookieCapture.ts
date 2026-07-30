@@ -4,6 +4,9 @@
  * capture named cookies as the credentials. The cookie mechanics themselves
  * live in `cookieUtils`.
  *
+ * The flow interprets the registered parameters; the session it creates carries
+ * out one login.
+ *
  * Nothing here is service-specific — the cookie names come from whoever
  * registered the service, as the parameters of the `cookie-capture` login flow.
  */
@@ -20,6 +23,7 @@ import {
   type ParsedSetCookie,
 } from '../../cookieUtils.js';
 import { Service, SimpleServiceSession } from './base.js';
+import type { LoginFlow } from './loginFlows.js';
 
 export const CookieCaptureParamsSchema = z
   .object({
@@ -41,36 +45,24 @@ export function buildCookieCredentials(cookies: readonly CookiePair[]): ApiCrede
 }
 
 /**
- * The login flow itself. The class is its own definition: `flowName`,
- * `summary`, `paramsSchema` and `describe` are the static side that
- * `defineLoginFlow` registers, and instances are the sessions it creates.
+ * One run of the flow: it watches the responses of a single login and
+ * accumulates the cookies it was asked for. The flow above interprets the
+ * parameters; this only deals in concrete names and a URL.
  */
-export class CookieCaptureServiceSession extends SimpleServiceSession {
-  /** Value of `--login-flow`. Not `name`, which every class already has. */
-  static readonly flowName = 'cookie-capture';
-
-  static readonly summary =
-    'Open the login URL and capture named session cookies as they are set. ' +
-    'Parameters: {"cookieKeys": ["<name>", ...], "cookieUrl": "<url>" (optional)}.';
-
-  static readonly paramsSchema = CookieCaptureParamsSchema;
-
-  static describe(params: CookieCaptureParams, loginUrl: string): string {
-    const quotedKeys = params.cookieKeys.map((cookieKey) => `'${cookieKey}'`).join(', ');
-    return (
-      `\`latchkey auth browser\` opens ${loginUrl} and stores the ${quotedKeys} ` +
-      `cookies of ${params.cookieUrl ?? loginUrl} as the credentials once they are set.`
-    );
-  }
-
-  private readonly cookieKeys: readonly string[];
+export class CookieCaptureSession extends SimpleServiceSession {
   private readonly cookieUrl: URL;
+  private readonly cookieKeys: readonly string[];
   private readonly capturedCookies = new Map<string, ParsedSetCookie>();
 
-  constructor(service: Service, appNamePrefix: string, params: CookieCaptureParams) {
+  constructor(
+    service: Service,
+    appNamePrefix: string,
+    cookieUrl: URL,
+    cookieKeys: readonly string[]
+  ) {
     super(service, appNamePrefix);
-    this.cookieKeys = params.cookieKeys;
-    this.cookieUrl = new URL(params.cookieUrl ?? service.loginUrl);
+    this.cookieUrl = cookieUrl;
+    this.cookieKeys = cookieKeys;
   }
 
   /**
@@ -109,5 +101,45 @@ export class CookieCaptureServiceSession extends SimpleServiceSession {
       return null;
     }
     return buildCookieCredentials(captured);
+  }
+}
+
+/**
+ * The flow. Its statics are the kind of automation — what `--login-flow`
+ * selects — and an instance is that kind configured with one service's
+ * parameters, ready to create a session per login.
+ */
+export class CookieCaptureLoginFlow implements LoginFlow {
+  /** Value of `--login-flow`. Not `name`, which every class already has. */
+  static readonly flowName = 'cookie-capture';
+
+  static readonly summary =
+    'Open the login URL and capture named session cookies as they are set. ' +
+    'Parameters: {"cookieKeys": ["<name>", ...], "cookieUrl": "<url>" (optional)}.';
+
+  static readonly paramsSchema = CookieCaptureParamsSchema;
+
+  private readonly params: CookieCaptureParams;
+
+  constructor(params: CookieCaptureParams) {
+    this.params = params;
+  }
+
+  describe(loginUrl: string): string {
+    const quotedKeys = this.params.cookieKeys.map((cookieKey) => `'${cookieKey}'`).join(', ');
+    return (
+      `\`latchkey auth browser\` opens ${loginUrl} and stores the ${quotedKeys} ` +
+      `cookies of ${this.params.cookieUrl ?? loginUrl} as the credentials once they are set.`
+    );
+  }
+
+  /** The cookies are looked for wherever they would be sent, defaulting to the login page. */
+  createSession(service: Service, appNamePrefix: string): CookieCaptureSession {
+    return new CookieCaptureSession(
+      service,
+      appNamePrefix,
+      new URL(this.params.cookieUrl ?? service.loginUrl),
+      this.params.cookieKeys
+    );
   }
 }

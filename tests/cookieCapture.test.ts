@@ -7,7 +7,10 @@
 import { describe, it, expect } from 'vitest';
 import type { Response } from 'playwright';
 import type { ApiCredentials } from '../src/apiCredentials/base.js';
-import { CookieCaptureServiceSession } from '../src/services/core/cookieCapture.js';
+import {
+  CookieCaptureLoginFlow,
+  CookieCaptureSession,
+} from '../src/services/core/cookieCapture.js';
 import {
   getLoginFlow,
   LoginFlowParamsInvalidError,
@@ -41,12 +44,10 @@ interface SessionLoginPhase {
 function createSession(
   cookieKeys: readonly string[],
   cookieUrl: string = LOGIN_URL
-): CookieCaptureServiceSession & SessionLoginPhase {
-  return new CookieCaptureServiceSession(
-    new RegisteredService('my-service', 'https://example.com/api/'),
-    'latchkey',
-    { cookieKeys: [...cookieKeys], cookieUrl }
-  ) as CookieCaptureServiceSession & SessionLoginPhase;
+): CookieCaptureSession & SessionLoginPhase {
+  const flow = new CookieCaptureLoginFlow({ cookieKeys: [...cookieKeys], cookieUrl });
+  const service = new RegisteredService('my-service', 'https://example.com/api/');
+  return flow.createSession(service, 'latchkey') as CookieCaptureSession & SessionLoginPhase;
 }
 
 async function headerFrom(credentials: ApiCredentials | null): Promise<string | null> {
@@ -57,7 +58,7 @@ async function headerFrom(credentials: ApiCredentials | null): Promise<string | 
   return curlArguments[1] ?? null;
 }
 
-describe('CookieCaptureServiceSession', () => {
+describe('CookieCaptureSession', () => {
   it('is not complete before the cookie is set', async () => {
     const session = createSession(['sessionid']);
     const credentials = await session.getApiCredentialsFromResponse(
@@ -160,9 +161,9 @@ describe('CookieCaptureServiceSession', () => {
 
 describe('the login flow registry', () => {
   it('takes the registry entry from the class itself', () => {
-    const flow = getLoginFlow(CookieCaptureServiceSession.flowName);
+    const flow = getLoginFlow(CookieCaptureLoginFlow.flowName);
     expect(flow?.name).toBe('cookie-capture');
-    expect(flow?.summary).toBe(CookieCaptureServiceSession.summary);
+    expect(flow?.summary).toBe(CookieCaptureLoginFlow.summary);
   });
 
   it('rejects an unknown flow', () => {
@@ -201,7 +202,7 @@ describe('RegisteredService with a login flow', () => {
       loginFlow: cookieFlow(),
     });
     expect(service.getSession).toBeDefined(); // eslint-disable-line @typescript-eslint/unbound-method
-    expect(service.getSession!('latchkey')).toBeInstanceOf(CookieCaptureServiceSession);
+    expect(service.getSession!('latchkey')).toBeInstanceOf(CookieCaptureSession);
     expect(service.info).toContain(LOGIN_URL);
     expect(service.info).toContain('sessionid');
   });
