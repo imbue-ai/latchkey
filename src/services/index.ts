@@ -23,7 +23,6 @@ export {
   LOGIN_FLOWS,
   UnknownLoginFlowError,
   formatLoginFlowsHelp,
-  getLoginFlow,
   resolveLoginFlow,
 } from './core/loginFlowRegistry.js';
 export {

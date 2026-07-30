@@ -22,12 +22,9 @@ export class UnknownLoginFlowError extends Error {
   }
 }
 
-export function getLoginFlow(name: string): LoginFlowClass | null {
-  return LOGIN_FLOWS.find((flowClass) => flowClass.flowName === name) ?? null;
-}
-
 /**
- * Look up a flow class by name and configure it with the given parameters.
+ * Look up a flow class by the name `--login-flow` takes, and configure it with
+ * the given parameters.
  *
  * Throws {@link UnknownLoginFlowError}, or `LoginFlowParamsInvalidError` from
  * the flow's own validation; callers decide what an unusable flow means for
@@ -35,8 +32,8 @@ export function getLoginFlow(name: string): LoginFlowClass | null {
  * the flow).
  */
 export function resolveLoginFlow(name: string, params: unknown): LoginFlow {
-  const flowClass = getLoginFlow(name);
-  if (flowClass === null) {
+  const flowClass = LOGIN_FLOWS.find((candidate) => candidate.flowName === name);
+  if (flowClass === undefined) {
     throw new UnknownLoginFlowError(name);
   }
   return new flowClass(params);

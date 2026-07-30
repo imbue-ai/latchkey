@@ -13,7 +13,6 @@ import type { ApiCredentials } from '../src/apiCredentials/base.js';
 import { CookieCaptureLoginFlow } from '../src/services/core/cookieCapture.js';
 import {
   formatLoginFlowsHelp,
-  getLoginFlow,
   LOGIN_FLOWS,
   resolveLoginFlow,
   UnknownLoginFlowError,
@@ -133,12 +132,6 @@ describe('cookie capture', () => {
 });
 
 describe('the login flow registry', () => {
-  it('takes the registry entry from the class itself', () => {
-    const flowClass = getLoginFlow(CookieCaptureLoginFlow.flowName);
-    expect(flowClass).toBe(CookieCaptureLoginFlow);
-    expect(flowClass?.flowName).toBe('cookie-capture');
-  });
-
   it('builds the register help text from the registered flows', () => {
     const help = formatLoginFlowsHelp();
     // Generated, not hand-written: a flow added later documents itself.
