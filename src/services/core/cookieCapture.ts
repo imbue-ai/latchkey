@@ -113,9 +113,29 @@ export class CookieCaptureLoginFlow implements LoginFlow {
   /** Value of `--login-flow`. Not `name`, which every class already has. */
   static readonly flowName = 'cookie-capture';
 
-  static readonly summary =
-    'Open the login URL and capture named session cookies as they are set. ' +
-    'Parameters: {"cookieKeys": ["<name>", ...], "cookieUrl": "<url>" (optional)}.';
+  static readonly summary = 'Open the login URL and capture named session cookies as they are set.';
+
+  static readonly details = [
+    'Parameters:',
+    '  cookieKeys  Names of the cookies to capture. Required, at least one. The',
+    '              login finishes once every one of them has been set, and they',
+    '              are stored together as a single "Cookie: a=1; b=2" header.',
+    '  cookieUrl   Full URL, including the scheme, that the cookies must apply',
+    '              to. Defaults to the login URL. Set it when signing in happens',
+    '              on a different host than the API.',
+    '',
+    'The cookies are read from the Set-Cookie headers of the responses that',
+    'arrive while the user signs in, so a cookie that only a page script sets is',
+    'not seen, and neither is one that an already signed-in session never sends',
+    'again.',
+    '',
+    'Example:',
+    '  $ latchkey services register my-intranet \\',
+    '      --base-api-url="https://intranet.example.com/api/" \\',
+    '      --login-url="https://intranet.example.com/login" \\',
+    '      --login-flow=cookie-capture \\',
+    '      --login-flow-params=\'{"cookieKeys": ["sessionid", "csrftoken"]}\'',
+  ].join('\n');
 
   static readonly paramsSchema = CookieCaptureParamsSchema;
 

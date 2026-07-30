@@ -47,6 +47,12 @@ export interface LoginFlowClass<Params> {
   readonly flowName: string;
   /** One-line explanation, listed by the CLI when the flow name is wrong. */
   readonly summary: string;
+  /**
+   * The flow's reference documentation — its parameters, its caveats and an
+   * example — shown by `latchkey services register --help`. Written unindented
+   * and in whole lines; {@link formatLoginFlowsHelp} indents it.
+   */
+  readonly details: string;
   readonly paramsSchema: ZodType<Params>;
 }
 
@@ -58,6 +64,7 @@ export interface LoginFlowClass<Params> {
 export interface LoginFlowRegistration {
   readonly name: string;
   readonly summary: string;
+  readonly details: string;
   /** Validate parameters and configure the flow with them. */
   configure(params: unknown): LoginFlow;
 }
@@ -88,6 +95,7 @@ export function defineLoginFlow<Params>(flowClass: LoginFlowClass<Params>): Logi
   return {
     name: flowClass.flowName,
     summary: flowClass.summary,
+    details: flowClass.details,
     configure(params: unknown): LoginFlow {
       const result = flowClass.paramsSchema.safeParse(params ?? {});
       if (!result.success) {
@@ -122,4 +130,31 @@ export function resolveLoginFlow(name: string, params: unknown): LoginFlow {
     throw new UnknownLoginFlowError(name);
   }
   return registration.configure(params);
+}
+
+function indent(text: string, spaces: string): string {
+  return text
+    .split('\n')
+    .map((line) => (line === '' ? '' : `${spaces}${line}`))
+    .join('\n');
+}
+
+/**
+ * The reference documentation for every registered flow, for
+ * `latchkey services register --help`. Generated from the registry, so a flow
+ * added later documents itself without the CLI knowing anything about it.
+ */
+export function formatLoginFlowsHelp(): string {
+  const sections = LOGIN_FLOWS.map(
+    (flow) => `  ${flow.name}\n${indent(flow.summary, '    ')}\n\n${indent(flow.details, '    ')}`
+  );
+  return [
+    'Login flows:',
+    '  A service registered without --service-family can be given one of the',
+    '  generic browser logins below, through --login-flow together with the',
+    "  flow's parameters as a JSON object in --login-flow-params. Both need",
+    '  --login-url, the page the flow starts from.',
+    '',
+    ...sections,
+  ].join('\n');
 }

@@ -12,7 +12,9 @@ import {
   CookieCaptureSession,
 } from '../src/services/core/cookieCapture.js';
 import {
+  formatLoginFlowsHelp,
   getLoginFlow,
+  LOGIN_FLOWS,
   LoginFlowParamsInvalidError,
   resolveLoginFlow,
   UnknownLoginFlowError,
@@ -164,6 +166,19 @@ describe('the login flow registry', () => {
     const flow = getLoginFlow(CookieCaptureLoginFlow.flowName);
     expect(flow?.name).toBe('cookie-capture');
     expect(flow?.summary).toBe(CookieCaptureLoginFlow.summary);
+  });
+
+  it('builds the register help text from the registered flows', () => {
+    const help = formatLoginFlowsHelp();
+    // Generated, not hand-written: a flow added later documents itself.
+    for (const flow of LOGIN_FLOWS) {
+      expect(help).toContain(flow.name);
+      expect(help).toContain(flow.summary);
+      for (const detailLine of flow.details.split('\n').filter((line) => line !== '')) {
+        expect(help).toContain(detailLine);
+      }
+    }
+    expect(help).toContain('--login-flow-params');
   });
 
   it('rejects an unknown flow', () => {

@@ -24,6 +24,7 @@ export {
   LoginFlowParamsInvalidError,
   UnknownLoginFlowError,
   defineLoginFlow,
+  formatLoginFlowsHelp,
   getLoginFlow,
   resolveLoginFlow,
   type LoginFlow,

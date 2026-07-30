@@ -224,44 +224,12 @@ latchkey curl https://mastodon.social/api/v1/timelines/public?limit=2
 By default, user-registered services only support authentication
 via static curl arguments provided through `latchkey auth set`.
 
-#### Browser login for cookie-authenticated services
+#### Browser login for registered services
 
 Many services (especially internal or self-hosted ones) authenticate
-API calls with a plain session cookie. A registered service can get a
-browser login of its own by choosing one of Latchkey's generic login
-flows with `--login-flow`, configured through `--login-flow-params`:
-
-```bash
-latchkey services register my-intranet \
-  --base-api-url="https://intranet.example.com/api/" \
-  --login-url="https://intranet.example.com/login" \
-  --login-flow=cookie-capture \
-  --login-flow-params='{"cookieKeys": ["session_id"]}'
-
-# Opens the login page in a browser window. Once the user has signed in
-# and the server sets the 'session_id' cookie, it becomes the credentials.
-latchkey auth browser my-intranet
-
-# Agents can then call the API; requests carry `Cookie: session_id=<value>`.
-latchkey curl https://intranet.example.com/api/me
-```
-
-The `cookie-capture` flow watches the `Set-Cookie` headers of the
-responses that arrive while the user signs in. Note that it therefore
-cannot see cookies a page sets purely from JavaScript
-(`document.cookie`), nor a cookie that a still-valid browser session
-never re-issues.
-
-Its parameters are:
-
-| Parameter | Meaning |
-| --- | --- |
-| `cookieKeys` | Names of the cookies to capture. Required, at least one. |
-| `cookieUrl` | Full URL (including scheme) the cookies must apply to. Defaults to the login URL. |
-
-Services that need several cookies together list them all; the login
-waits until every one has been set, and stores them in a single header,
-`Cookie: sessionid=<value>; csrftoken=<value>`:
+API calls with a session cookie or another credential the user only
+sees in a browser. A registered service can get a browser login of its
+own by choosing one of Latchkey's generic login flows:
 
 ```bash
 latchkey services register my-intranet \
@@ -269,22 +237,23 @@ latchkey services register my-intranet \
   --login-url="https://intranet.example.com/login" \
   --login-flow=cookie-capture \
   --login-flow-params='{"cookieKeys": ["sessionid", "csrftoken"]}'
+
+# Opens the login page. Once the user has signed in and the cookies are
+# set, they are stored as the credentials.
+latchkey auth browser my-intranet
+
+# Agents can then call the API; requests carry the Cookie header.
+latchkey curl https://intranet.example.com/api/me
 ```
 
-By default a cookie is kept when it would be sent to the login URL. If
-sign-in happens on a different host than the API (an SSO domain, say),
-name the URL the cookies have to apply to with `cookieUrl`:
+For the available flows, their parameters and their limitations, see:
 
 ```bash
-latchkey services register my-intranet \
-  --base-api-url="https://intranet.example.com/api/" \
-  --login-url="https://sso.example.com/login" \
-  --login-flow=cookie-capture \
-  --login-flow-params='{"cookieKeys": ["session_id"], "cookieUrl": "https://intranet.example.com/"}'
+latchkey services register --help
 ```
 
-`--login-flow` cannot be combined with `--service-family`, since a
-service family brings its own login flow.
+A login flow cannot be combined with `--service-family`, since a
+service family brings its own login.
 
 
 ### Indirect credentials

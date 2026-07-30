@@ -61,6 +61,7 @@ import {
   resolveLoginFlow,
   Service,
   UnknownLoginFlowError,
+  formatLoginFlowsHelp,
   type LoginFlow,
 } from './services/index.js';
 import {
@@ -510,6 +511,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       'JSON object with the parameters of --login-flow, ' +
         'e.g. \'{"cookieKeys": ["sessionid", "csrftoken"]}\' for cookie-capture'
     )
+    .addHelpText('after', `\n${formatLoginFlowsHelp()}`)
     .action(
       (
         rawServiceName: string,
