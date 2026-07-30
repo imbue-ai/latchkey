@@ -15,11 +15,16 @@ const RegisteredServiceEntrySchema = z.object({
   baseApiUrl: z.string(),
   serviceFamily: z.string().optional(),
   loginUrl: z.string().optional(),
-  // When set (together with loginUrl and without a service family), the
-  // service gets a generic browser login that waits for these cookies to appear.
-  cookieKeys: z.array(z.string()).optional(),
-  // URL whose cookies are searched for cookieKeys. Defaults to loginUrl.
-  cookieUrl: z.string().optional(),
+  // When set (together with loginUrl and without a service family), the service
+  // gets one of the generic browser logins. The parameters are only checked
+  // against the named flow's schema when the flow is resolved, so that a config
+  // written by a newer Latchkey does not make the whole entry unreadable.
+  loginFlow: z
+    .object({
+      name: z.string(),
+      params: z.record(z.string(), z.unknown()).optional(),
+    })
+    .optional(),
 });
 
 export type RegisteredServiceEntry = z.infer<typeof RegisteredServiceEntrySchema>;

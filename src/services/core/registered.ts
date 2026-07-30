@@ -10,7 +10,7 @@
 
 import { ApiCredentialStatus, type ApiCredentials } from '../../apiCredentials/base.js';
 import { Service, type ServiceSession } from './base.js';
-import { CookieCaptureServiceSession } from './cookieCapture.js';
+import type { ResolvedLoginFlow } from './loginFlows.js';
 
 export interface RegisteredServiceOptions {
   /** Built-in service to use as a template, for self-hosted instances. */
@@ -18,13 +18,11 @@ export interface RegisteredServiceOptions {
   /** Page opened by `latchkey auth browser`. */
   readonly loginUrl?: string;
   /**
-   * Names of the session cookies to capture. Together with a login URL and
-   * without a family service, these enable the generic cookie-capturing
-   * browser login.
+   * Generic browser login to use, already resolved against its parameters.
+   * Together with a login URL and without a family service, this gives the
+   * service a browser login of its own.
    */
-  readonly cookieKeys?: readonly string[];
-  /** URL whose cookies are searched for the cookie keys. Defaults to the login URL. */
-  readonly cookieUrl?: string;
+  readonly loginFlow?: ResolvedLoginFlow;
 }
 
 export class RegisteredService extends Service {
@@ -39,10 +37,11 @@ export class RegisteredService extends Service {
 
   constructor(name: string, baseApiUrl: string, options: RegisteredServiceOptions = {}) {
     super();
-    const { familyService, loginUrl } = options;
-    const cookieKeys = options.cookieKeys ?? [];
-    const cookieUrl = options.cookieUrl ?? loginUrl;
-    const capturesCookies = cookieKeys.length > 0 && loginUrl !== undefined;
+    const { familyService, loginUrl, loginFlow } = options;
+    // A login flow needs a page to start from, and cannot displace the login
+    // that a family service already brings.
+    const usesLoginFlow =
+      loginFlow !== undefined && loginUrl !== undefined && familyService === undefined;
 
     this.name = name;
     this.displayName = name;
@@ -53,11 +52,9 @@ export class RegisteredService extends Service {
 
     if (familyService !== undefined) {
       this.info = `Self-hosted ${familyService.displayName} instance. ${familyService.info}`;
-    } else if (capturesCookies) {
-      const quotedKeys = cookieKeys.map((cookieKey) => `'${cookieKey}'`).join(', ');
+    } else if (usesLoginFlow) {
       this.info =
-        `Generic service. \`latchkey auth browser\` opens ${loginUrl} and stores the ` +
-        `${quotedKeys} cookies of ${cookieUrl!} as the credentials once they appear. ` +
+        `Generic service. ${loginFlow.describe(loginUrl)} ` +
         'Alternatively, use `latchkey auth set` to supply credentials as curl arguments.';
     } else {
       this.info =
@@ -66,9 +63,8 @@ export class RegisteredService extends Service {
 
     if (loginUrl !== undefined && familyService?.getSession !== undefined) {
       this.getSession = (appNamePrefix: string) => familyService.getSession!(appNamePrefix);
-    } else if (capturesCookies && familyService === undefined) {
-      this.getSession = (appNamePrefix: string) =>
-        new CookieCaptureServiceSession(this, appNamePrefix, cookieKeys, cookieUrl!);
+    } else if (usesLoginFlow) {
+      this.getSession = (appNamePrefix: string) => loginFlow.createSession(this, appNamePrefix);
     }
   }
 

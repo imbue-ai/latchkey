@@ -2,8 +2,14 @@
  * Service registry for looking up services by name or URL.
  */
 
-import { loadRegisteredServices } from './configDataStore.js';
+import { loadRegisteredServices, type RegisteredServiceEntry } from './configDataStore.js';
 import { RegisteredService } from './services/core/registered.js';
+import {
+  LoginFlowParamsInvalidError,
+  resolveLoginFlow,
+  UnknownLoginFlowError,
+  type ResolvedLoginFlow,
+} from './services/core/loginFlows.js';
 import {
   Service,
   SLACK,
@@ -152,6 +158,29 @@ export function hideServicesFromRegistry(
   }
 }
 
+/**
+ * Resolve a stored login flow, dropping it if it no longer resolves.
+ *
+ * A flow that is unknown or misconfigured (hand-edited config, or one written
+ * by a newer Latchkey) costs the service its browser login, but the service
+ * itself stays usable with `latchkey auth set`.
+ */
+function resolveStoredLoginFlow(
+  storedLoginFlow: RegisteredServiceEntry['loginFlow']
+): ResolvedLoginFlow | undefined {
+  if (storedLoginFlow === undefined) {
+    return undefined;
+  }
+  try {
+    return resolveLoginFlow(storedLoginFlow.name, storedLoginFlow.params);
+  } catch (error) {
+    if (error instanceof UnknownLoginFlowError || error instanceof LoginFlowParamsInvalidError) {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
 export function loadRegisteredServicesIntoServiceRegistry(
   configPath: string,
   registry: ServiceRegistry
@@ -171,8 +200,7 @@ export function loadRegisteredServicesIntoServiceRegistry(
     const registeredService = new RegisteredService(name, entry.baseApiUrl, {
       familyService,
       loginUrl: entry.loginUrl,
-      cookieKeys: entry.cookieKeys,
-      cookieUrl: entry.cookieUrl,
+      loginFlow: resolveStoredLoginFlow(entry.loginFlow),
     });
     registry.addService(registeredService);
   }

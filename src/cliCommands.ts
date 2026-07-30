@@ -51,12 +51,17 @@ import {
 } from './serviceRegistry.js';
 import { RegisteredService } from './services/core/registered.js';
 import {
+  LOGIN_FLOWS,
   LoginCancelledError,
   LoginFailedError,
+  LoginFlowParamsInvalidError,
   NoCurlCredentialsNotSupportedError,
   PrepareInputInvalidError,
   PrepareNotSupportedError,
+  resolveLoginFlow,
   Service,
+  UnknownLoginFlowError,
+  type ResolvedLoginFlow,
 } from './services/index.js';
 import {
   CurlParseError,
@@ -208,6 +213,56 @@ async function defaultConfirm(message: string): Promise<boolean> {
       resolve(answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes');
     });
   });
+}
+
+/** A login flow chosen at registration time, with the JSON it was configured from. */
+interface RegisteredLoginFlow {
+  readonly flow: ResolvedLoginFlow;
+  readonly params: Record<string, unknown> | undefined;
+}
+
+/**
+ * Parse `--login-flow-params` and resolve the named flow against it, reporting
+ * anything unusable and exiting. Returns the parameters alongside the flow so
+ * they can be stored exactly as validated.
+ */
+function resolveLoginFlowOrExit(
+  deps: CliDependencies,
+  flowName: string,
+  paramsJson: string | undefined
+): RegisteredLoginFlow {
+  let params: Record<string, unknown> | undefined;
+  if (paramsJson !== undefined) {
+    let parsedJson: unknown;
+    try {
+      parsedJson = JSON.parse(paramsJson);
+    } catch {
+      deps.errorLog('Error: --login-flow-params must be valid JSON.');
+      deps.exit(1);
+    }
+    if (typeof parsedJson !== 'object' || parsedJson === null || Array.isArray(parsedJson)) {
+      deps.errorLog('Error: --login-flow-params must be a JSON object.');
+      deps.exit(1);
+    }
+    params = parsedJson as Record<string, unknown>;
+  }
+
+  try {
+    return { flow: resolveLoginFlow(flowName, params), params };
+  } catch (error) {
+    if (error instanceof UnknownLoginFlowError) {
+      deps.errorLog(`Error: ${error.message}`);
+      for (const availableFlow of LOGIN_FLOWS) {
+        deps.errorLog(`  ${availableFlow.name}: ${availableFlow.summary}`);
+      }
+      deps.exit(1);
+    }
+    if (error instanceof LoginFlowParamsInvalidError) {
+      deps.errorLog(`Error: ${error.message}`);
+      deps.exit(1);
+    }
+    throw error;
+  }
 }
 
 async function clearAll(deps: CliDependencies, yes: boolean): Promise<void> {
@@ -446,16 +501,14 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     )
     .option('--login-url <url>', 'Login URL for browser-based authentication, if applicable')
     .option(
-      '--cookie-key <name>',
-      'Name of a session cookie to capture. Enables a generic browser login that stores the ' +
-        'cookies as "Cookie: <name>=<value>" credentials. Repeat for services that need several ' +
-        'cookies; the login then waits for all of them. Cannot be combined with --service-family.',
-      (cookieKey: string, previousCookieKeys: string[]) => [...previousCookieKeys, cookieKey],
-      [] as string[]
+      '--login-flow <name>',
+      'Generic browser login to give this service, instead of a service family. ' +
+        `Available flows: ${LOGIN_FLOWS.map((flow) => flow.name).join(', ')}. Requires --login-url.`
     )
     .option(
-      '--cookie-url <url>',
-      'URL whose cookies are searched for --cookie-key, when the cookies are not set on the login URL itself (defaults to --login-url)'
+      '--login-flow-params <json>',
+      'JSON object with the parameters of --login-flow, ' +
+        'e.g. \'{"cookieKeys": ["sessionid", "csrftoken"]}\' for cookie-capture'
     )
     .action(
       (
@@ -464,8 +517,8 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           baseApiUrl: string;
           serviceFamily?: string;
           loginUrl?: string;
-          cookieKey: string[];
-          cookieUrl?: string;
+          loginFlow?: string;
+          loginFlowParams?: string;
         }
       ) => {
         refuseInGatewayMode(deps, 'services register');
@@ -492,26 +545,30 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           }
         }
 
-        const cookieKeys = options.cookieKey;
-
-        if (options.cookieUrl !== undefined && cookieKeys.length === 0) {
-          deps.errorLog('Error: --cookie-url requires --cookie-key.');
+        if (options.loginFlowParams !== undefined && options.loginFlow === undefined) {
+          deps.errorLog('Error: --login-flow-params requires --login-flow.');
           deps.exit(1);
         }
 
-        if (cookieKeys.length > 0) {
+        let registeredLoginFlow: RegisteredLoginFlow | undefined;
+        if (options.loginFlow !== undefined) {
           if (options.serviceFamily !== undefined) {
-            deps.errorLog('Error: --cookie-key cannot be combined with --service-family.');
+            deps.errorLog('Error: --login-flow cannot be combined with --service-family.');
             deps.exit(1);
           }
           if (options.loginUrl === undefined) {
-            deps.errorLog('Error: --cookie-key requires --login-url.');
+            deps.errorLog('Error: --login-flow requires --login-url.');
             deps.exit(1);
           }
+          registeredLoginFlow = resolveLoginFlowOrExit(
+            deps,
+            options.loginFlow,
+            options.loginFlowParams
+          );
         } else if (options.loginUrl !== undefined) {
           if (familyService === undefined) {
             deps.errorLog(
-              'Error: --login-url requires either a --service-family that supports browser login, or --cookie-key.'
+              'Error: --login-url requires either a --service-family that supports browser login, or --login-flow.'
             );
             deps.exit(1);
           } else if (familyService.getSession === undefined) {
@@ -530,8 +587,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         const registeredService = new RegisteredService(serviceName, options.baseApiUrl, {
           familyService,
           loginUrl: options.loginUrl,
-          cookieKeys,
-          cookieUrl: options.cookieUrl,
+          loginFlow: registeredLoginFlow?.flow,
         });
 
         try {
@@ -548,8 +604,10 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           baseApiUrl: options.baseApiUrl,
           serviceFamily: options.serviceFamily,
           loginUrl: options.loginUrl,
-          cookieKeys: cookieKeys.length > 0 ? cookieKeys : undefined,
-          cookieUrl: options.cookieUrl,
+          loginFlow:
+            options.loginFlow === undefined
+              ? undefined
+              : { name: options.loginFlow, params: registeredLoginFlow?.params },
         });
 
         deps.log(`Service '${serviceName}' registered.`);

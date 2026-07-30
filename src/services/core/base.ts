@@ -3,7 +3,7 @@
  */
 
 import type { Browser, BrowserContext, Page, Response } from 'playwright';
-import type { z, ZodTypeAny } from 'zod';
+import type { z, ZodError, ZodTypeAny } from 'zod';
 import {
   ApiCredentialStatus,
   ApiCredentials,
@@ -81,15 +81,22 @@ export function buildPreparedCredentials<Schema extends ZodTypeAny>(
 ): ApiCredentials {
   const result = schema.safeParse(parsedJson);
   if (!result.success) {
-    const detail = result.error.issues
-      .map((issue) => {
-        const path = issue.path.join('.');
-        return path ? `${path}: ${issue.message}` : issue.message;
-      })
-      .join('; ');
-    throw new PrepareInputInvalidError(serviceName, detail);
+    throw new PrepareInputInvalidError(serviceName, describeSchemaIssues(result.error));
   }
   return build(result.data as z.infer<Schema>);
+}
+
+/**
+ * Render the failing fields of a schema mismatch as a single line, so every
+ * command that validates JSON input reports problems the same way.
+ */
+export function describeSchemaIssues(error: ZodError): string {
+  return error.issues
+    .map((issue) => {
+      const path = issue.path.join('.');
+      return path ? `${path}: ${issue.message}` : issue.message;
+    })
+    .join('; ');
 }
 
 /**
@@ -315,19 +322,10 @@ export abstract class ServiceSession {
   ): Promise<ApiCredentials | null>;
 
   /**
-   * Optional check run on every poll of the login phase, before
-   * {@link isLoginComplete} is consulted. Sessions whose completion signal
-   * lives in browser state (e.g. a cookie) rather than in a response
-   * implement this to inspect the live page.
-   */
-  protected checkLoginProgress?(page: Page): Promise<void>;
-
-  /**
    * Wait until the browser login phase is complete.
    */
   private async waitForLoginComplete(page: Page): Promise<void> {
     while (!this.isLoginComplete()) {
-      await this.checkLoginProgress?.(page);
       await page.waitForTimeout(100);
     }
   }

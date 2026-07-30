@@ -227,56 +227,63 @@ via static curl arguments provided through `latchkey auth set`.
 #### Browser login for cookie-authenticated services
 
 Many services (especially internal or self-hosted ones) authenticate
-API calls with a plain session cookie. For those, a registered service
-can also get a browser login, by naming the login page and the cookie
-to capture:
+API calls with a plain session cookie. A registered service can get a
+browser login of its own by choosing one of Latchkey's generic login
+flows with `--login-flow`, configured through `--login-flow-params`:
 
 ```bash
 latchkey services register my-intranet \
   --base-api-url="https://intranet.example.com/api/" \
   --login-url="https://intranet.example.com/login" \
-  --cookie-key="session_id"
+  --login-flow=cookie-capture \
+  --login-flow-params='{"cookieKeys": ["session_id"]}'
 
 # Opens the login page in a browser window. Once the user has signed in
-# and the 'session_id' cookie appears, it is stored as the credentials.
+# and the server sets the 'session_id' cookie, it becomes the credentials.
 latchkey auth browser my-intranet
 
 # Agents can then call the API; requests carry `Cookie: session_id=<value>`.
 latchkey curl https://intranet.example.com/api/me
 ```
 
-Services that need several cookies together can repeat `--cookie-key`.
-The login then waits until all of them are present, and stores them in
-a single header, `Cookie: sessionid=<value>; csrftoken=<value>`:
+The `cookie-capture` flow watches the `Set-Cookie` headers of the
+responses that arrive while the user signs in. Note that it therefore
+cannot see cookies a page sets purely from JavaScript
+(`document.cookie`), nor a cookie that a still-valid browser session
+never re-issues.
+
+Its parameters are:
+
+| Parameter | Meaning |
+| --- | --- |
+| `cookieKeys` | Names of the cookies to capture. Required, at least one. |
+| `cookieUrl` | Full URL (including scheme) the cookies must apply to. Defaults to the login URL. |
+
+Services that need several cookies together list them all; the login
+waits until every one has been set, and stores them in a single header,
+`Cookie: sessionid=<value>; csrftoken=<value>`:
 
 ```bash
 latchkey services register my-intranet \
   --base-api-url="https://intranet.example.com/api/" \
   --login-url="https://intranet.example.com/login" \
-  --cookie-key="sessionid" \
-  --cookie-key="csrftoken"
+  --login-flow=cookie-capture \
+  --login-flow-params='{"cookieKeys": ["sessionid", "csrftoken"]}'
 ```
 
-Latchkey looks for the cookies on the login URL's domain. If they are
-set on a different host than the login page (for example, sign-in
-happens on an SSO domain), name the host that owns them with
-`--cookie-url`:
+By default a cookie is kept when it would be sent to the login URL. If
+sign-in happens on a different host than the API (an SSO domain, say),
+name the URL the cookies have to apply to with `cookieUrl`:
 
 ```bash
 latchkey services register my-intranet \
   --base-api-url="https://intranet.example.com/api/" \
   --login-url="https://sso.example.com/login" \
-  --cookie-key="session_id" \
-  --cookie-url="https://intranet.example.com/"
+  --login-flow=cookie-capture \
+  --login-flow-params='{"cookieKeys": ["session_id"], "cookieUrl": "https://intranet.example.com/"}'
 ```
 
-The cookie URL must be a full URL including the scheme
-(`https://intranet.example.com`, not `intranet.example.com`). Use
-`https://` unless the service really runs on plain HTTP: over
-`http://`, cookies marked `Secure` are invisible for any host other
-than localhost.
-
-`--cookie-key` cannot be combined with `--service-family`, since a
+`--login-flow` cannot be combined with `--service-family`, since a
 service family brings its own login flow.
 
 
