@@ -31,11 +31,7 @@ export {
   type LoginFlowClass,
   type LoginFlowRegistration,
 } from './core/loginFlows.js';
-export {
-  CookieCapture,
-  CookieCaptureLoginFlow,
-  buildCookieCredentials,
-} from './core/cookieCapture.js';
+export { CookieCaptureLoginFlow, buildCookieCredentials } from './core/cookieCapture.js';
 
 export { Slack, SLACK } from './slack.js';
 export { Discord, DISCORD } from './discord.js';

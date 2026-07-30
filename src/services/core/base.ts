@@ -300,8 +300,13 @@ export abstract class ServiceSession {
 
   /**
    * Handle a response during the headful login phase.
+   *
+   * Sessions that do asynchronous work here return a promise, so that a caller
+   * driving responses in on its own — replaying a recording, say — can wait for
+   * one to be processed before sending the next. The login itself does not
+   * wait: it polls {@link isLoginComplete} instead.
    */
-  abstract onResponse(response: Response): void;
+  abstract onResponse(response: Response): void | Promise<void>;
 
   /**
    * Check if the login phase is complete.
@@ -373,7 +378,7 @@ export abstract class ServiceSession {
       const page = await context.newPage();
 
       context.on('response', (response) => {
-        this.onResponse(response);
+        void this.onResponse(response);
       });
 
       try {
@@ -422,18 +427,29 @@ export abstract class SimpleServiceSession extends ServiceSession {
   protected apiCredentials: ApiCredentials | null = null;
 
   /**
+   * What the session has extracted so far, or null while the login phase is
+   * still going. Lets a caller feed responses in and see what came of them
+   * without running a whole login.
+   */
+  get capturedCredentials(): ApiCredentials | null {
+    return this.apiCredentials;
+  }
+
+  /**
    * Extract API credentials from a response during the headful login phase.
    */
   protected abstract getApiCredentialsFromResponse(
     response: Response
   ): Promise<ApiCredentials | null>;
 
-  onResponse(response: Response): void {
+  onResponse(response: Response): Promise<void> {
     if (this.apiCredentials !== null) {
-      return;
+      return Promise.resolve();
     }
-    this.getApiCredentialsFromResponse(response)
+    return this.getApiCredentialsFromResponse(response)
       .then((credentials) => {
+        // Another response may have produced credentials while this one was
+        // being read.
         if (this.apiCredentials === null && credentials !== null) {
           this.apiCredentials = credentials;
         }

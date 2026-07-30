@@ -4,7 +4,7 @@
  * capture named cookies as the credentials. The cookie mechanics themselves
  * live in `cookieUtils`.
  *
- * The flow interprets the registered parameters; the capture it creates holds
+ * The flow interprets the registered parameters; the session it creates holds
  * the cookies of one login.
  *
  * Nothing here is service-specific — the cookie names come from whoever
@@ -37,37 +37,6 @@ export function buildCookieCredentials(cookies: readonly CookiePair[]): ApiCrede
   return new RawCurlCredentials(['-H', `Cookie: ${formatCookieHeaderValue(cookies)}`]);
 }
 
-/**
- * The cookies accumulated during one login, and the decision of when enough of
- * them have been seen. A jar does the remembering; this only knows which names
- * the service asked for.
- *
- * Separate from the session so that the behaviour can be exercised with header
- * strings instead of a browser, leaving the session a few lines of glue.
- */
-export class CookieCapture {
-  private readonly jar: CookieJar;
-  private readonly cookieKeys: readonly string[];
-
-  constructor(cookieUrl: URL, cookieKeys: readonly string[]) {
-    this.jar = new CookieJar(cookieUrl);
-    this.cookieKeys = cookieKeys;
-  }
-
-  /**
-   * Take in the `Set-Cookie` headers of one response, returning the credentials
-   * once every requested cookie is present and null until then: cookies
-   * typically arrive across several responses.
-   */
-  accept(setCookieHeaderValues: readonly string[], responseUrl: URL): ApiCredentials | null {
-    this.jar.accept(setCookieHeaderValues, responseUrl);
-    if (!this.cookieKeys.every((cookieKey) => this.jar.has(cookieKey))) {
-      return null;
-    }
-    return buildCookieCredentials(this.jar.cookiesNamed(this.cookieKeys));
-  }
-}
-
 function setCookieHeaderValues(headers: readonly { name: string; value: string }[]): string[] {
   return headers
     .filter((header) => header.name.toLowerCase() === 'set-cookie')
@@ -75,25 +44,33 @@ function setCookieHeaderValues(headers: readonly { name: string; value: string }
 }
 
 /**
- * One run of the flow. Everything it knows how to do is read `Set-Cookie` off a
- * response and pass it to the capture, so it is not exported: the capture is
- * what there is to test.
+ * One run of the flow. A jar remembers the cookies as responses arrive; all
+ * this adds is which names the service asked for, and the rule that the login
+ * is done once every one of them has turned up.
  */
 class CookieCaptureSession extends SimpleServiceSession {
-  private readonly capture: CookieCapture;
+  private readonly jar: CookieJar;
+  private readonly cookieKeys: readonly string[];
 
-  constructor(service: Service, appNamePrefix: string, capture: CookieCapture) {
+  constructor(
+    service: Service,
+    appNamePrefix: string,
+    cookieUrl: URL,
+    cookieKeys: readonly string[]
+  ) {
     super(service, appNamePrefix);
-    this.capture = capture;
+    this.jar = new CookieJar(cookieUrl);
+    this.cookieKeys = cookieKeys;
   }
 
   protected async getApiCredentialsFromResponse(
     response: Response
   ): Promise<ApiCredentials | null> {
-    return this.capture.accept(
-      setCookieHeaderValues(await response.headersArray()),
-      new URL(response.url())
-    );
+    this.jar.accept(setCookieHeaderValues(await response.headersArray()), new URL(response.url()));
+    if (!this.cookieKeys.every((cookieKey) => this.jar.has(cookieKey))) {
+      return null;
+    }
+    return buildCookieCredentials(this.jar.cookiesNamed(this.cookieKeys));
   }
 }
 
@@ -147,15 +124,15 @@ export class CookieCaptureLoginFlow implements LoginFlow {
   }
 
   /**
-   * The capture this flow performs, given the page the login starts from. The
-   * cookies are looked for wherever they would be sent, which is that page
-   * unless the parameters name somewhere else.
+   * The cookies are looked for wherever they would be sent: the page the login
+   * starts from, unless the parameters name somewhere else.
    */
-  createCapture(loginUrl: string): CookieCapture {
-    return new CookieCapture(new URL(this.params.cookieUrl ?? loginUrl), this.params.cookieKeys);
-  }
-
   createSession(service: Service, appNamePrefix: string): ServiceSession {
-    return new CookieCaptureSession(service, appNamePrefix, this.createCapture(service.loginUrl));
+    return new CookieCaptureSession(
+      service,
+      appNamePrefix,
+      new URL(this.params.cookieUrl ?? service.loginUrl),
+      this.params.cookieKeys
+    );
   }
 }
