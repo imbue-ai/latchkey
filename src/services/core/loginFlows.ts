@@ -150,7 +150,8 @@ export function formatLoginFlowsHelp(): string {
   );
   return [
     'Login flows:',
-    '  Each login flow is configured by a JSON object supplied by --login-flow-params.',
+    '  Each login flow is configured by a JSON object supplied by',
+    '  --login-flow-params.',
     '',
     ...sections,
   ].join('\n');

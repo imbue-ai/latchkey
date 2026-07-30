@@ -223,16 +223,20 @@ async function defaultConfirm(message: string): Promise<boolean> {
  */
 const REGISTRATION_MODES_HELP = [
   'Browser login:',
-  '  You can always use `latchkey auth set` to supply credentials for a registered service.',
-  '  But optionally, you can use one of two methods to configure a browser login flow.',
-  '  Both require --login-url to specify the URL the browser opens to log the user in.',
+  '  You can always use `latchkey auth set` to supply credentials for a',
+  '  registered service. But optionally, you can use one of two methods to',
+  '  configure a browser login flow. Both require --login-url to specify the',
+  '  URL the browser opens to log the user in.',
   '',
-  '  1. --service-family lets the service use the same login flow as a builtin service, for example:',
+  '  1. --service-family lets the service use the same login flow as a builtin',
+  '     service, for example:',
   '',
   '       $ latchkey services register my-github --service-family=github \\',
-  '           --base-api-url="https://github.example.com/api/v3/" --login-url="https://github.example.com/login"',
+  '           --base-api-url="https://github.example.com/api/v3/" \\',
+  '           --login-url="https://github.example.com/login"',
   '',
-  '  2. --login-flow lets the service use one of the generic login flows. See the next section for supported login flows.',
+  '  2. --login-flow lets the service use one of the generic login flows. See',
+  '     the next section for supported login flows.',
 ].join('\n');
 
 /** The login flow chosen at registration time, with the JSON it was configured from. */
