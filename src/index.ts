@@ -30,14 +30,7 @@ export {
 
 export { EncryptedStorage, EncryptedStorageError } from './encryptedStorage.js';
 
-export {
-  cookieScopeKey,
-  doesCookieApplyTo,
-  formatCookieHeaderValue,
-  parseSetCookieHeader,
-  type CookiePair,
-  type ParsedSetCookie,
-} from './cookieUtils.js';
+export { CookieJar, formatCookieHeaderValue, type CookiePair } from './cookieUtils.js';
 
 export {
   storeInKeychain,

@@ -14,14 +14,7 @@
 import type { Response } from 'playwright';
 import { z } from 'zod';
 import { type ApiCredentials, RawCurlCredentials } from '../../apiCredentials/base.js';
-import {
-  cookieScopeKey,
-  doesCookieApplyTo,
-  formatCookieHeaderValue,
-  parseSetCookieHeader,
-  type CookiePair,
-  type ParsedSetCookie,
-} from '../../cookieUtils.js';
+import { CookieJar, formatCookieHeaderValue, type CookiePair } from '../../cookieUtils.js';
 import { Service, SimpleServiceSession, type ServiceSession } from './base.js';
 import type { LoginFlow } from './loginFlows.js';
 
@@ -46,54 +39,32 @@ export function buildCookieCredentials(cookies: readonly CookiePair[]): ApiCrede
 
 /**
  * The cookies accumulated during one login, and the decision of when enough of
- * them have been seen.
+ * them have been seen. A jar does the remembering; this only knows which names
+ * the service asked for.
  *
- * This is where the capture actually happens; the session below only reads the
- * `Set-Cookie` headers off each response and hands them here. Keeping the two
- * apart means the behaviour can be exercised with header strings instead of a
- * browser, and the session stays a few lines of glue.
+ * Separate from the session so that the behaviour can be exercised with header
+ * strings instead of a browser, leaving the session a few lines of glue.
  */
 export class CookieCapture {
-  private readonly cookieUrl: URL;
+  private readonly jar: CookieJar;
   private readonly cookieKeys: readonly string[];
-  private readonly capturedCookies = new Map<string, ParsedSetCookie>();
 
   constructor(cookieUrl: URL, cookieKeys: readonly string[]) {
-    this.cookieUrl = cookieUrl;
+    this.jar = new CookieJar(cookieUrl);
     this.cookieKeys = cookieKeys;
   }
 
   /**
-   * Fold in the cookies one response sets, and drop the ones it clears.
-   *
-   * Returns the credentials once every requested cookie is present, and null
-   * until then: cookies typically arrive across several responses.
+   * Take in the `Set-Cookie` headers of one response, returning the credentials
+   * once every requested cookie is present and null until then: cookies
+   * typically arrive across several responses.
    */
   accept(setCookieHeaderValues: readonly string[], responseUrl: URL): ApiCredentials | null {
-    for (const headerValue of setCookieHeaderValues) {
-      const cookie = parseSetCookieHeader(headerValue, responseUrl);
-      if (
-        cookie === null ||
-        !this.cookieKeys.includes(cookie.name) ||
-        !doesCookieApplyTo(cookie, this.cookieUrl)
-      ) {
-        continue;
-      }
-      if (cookie.isDeletion) {
-        this.capturedCookies.delete(cookieScopeKey(cookie));
-      } else {
-        this.capturedCookies.set(cookieScopeKey(cookie), cookie);
-      }
-    }
-
-    const captured = [...this.capturedCookies.values()];
-    const everyKeyPresent = this.cookieKeys.every((cookieKey) =>
-      captured.some((cookie) => cookie.name === cookieKey)
-    );
-    if (!everyKeyPresent) {
+    this.jar.accept(setCookieHeaderValues, responseUrl);
+    if (!this.cookieKeys.every((cookieKey) => this.jar.has(cookieKey))) {
       return null;
     }
-    return buildCookieCredentials(captured);
+    return buildCookieCredentials(this.jar.cookiesNamed(this.cookieKeys));
   }
 }
 

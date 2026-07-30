@@ -1,6 +1,6 @@
 /**
- * HTTP cookie mechanics, following RFC 6265: reading `Set-Cookie` headers,
- * deciding which URLs a cookie applies to, and writing a `Cookie` header.
+ * HTTP cookie mechanics, following RFC 6265: a jar that takes in `Set-Cookie`
+ * headers and answers which cookies a browser would send back.
  *
  * Nothing here knows about latchkey's services or credentials. The browser
  * itself does all of this internally, and Playwright exposes the result via
@@ -15,7 +15,7 @@ export interface CookiePair {
 }
 
 /** A `Set-Cookie` header, reduced to what decides where a cookie applies. */
-export interface ParsedSetCookie {
+interface ParsedSetCookie {
   readonly name: string;
   readonly value: string;
   /**
@@ -50,10 +50,7 @@ function isExpired(expiresAttribute: string): boolean {
  * Parse one `Set-Cookie` header value, as sent by the response at
  * `responseUrl`. Returns null when it is not a usable cookie definition at all.
  */
-export function parseSetCookieHeader(
-  headerValue: string,
-  responseUrl: URL
-): ParsedSetCookie | null {
+function parseSetCookieHeader(headerValue: string, responseUrl: URL): ParsedSetCookie | null {
   const [nameValuePair = '', ...attributeParts] = headerValue.split(';');
   const separatorIndex = nameValuePair.indexOf('=');
   if (separatorIndex <= 0) {
@@ -97,7 +94,7 @@ export function parseSetCookieHeader(
  * Whether a browser would send this cookie to the given URL: the URL's host is
  * the cookie's domain or below it, and its path is under the cookie's path.
  */
-export function doesCookieApplyTo(cookie: ParsedSetCookie, url: URL): boolean {
+function doesCookieApplyTo(cookie: ParsedSetCookie, url: URL): boolean {
   const host = url.hostname.toLowerCase();
   if (host !== cookie.domain && !host.endsWith(`.${cookie.domain}`)) {
     return false;
@@ -111,8 +108,57 @@ export function doesCookieApplyTo(cookie: ParsedSetCookie, url: URL): boolean {
  * under different scopes, and a browser then sends all of them, so a cookie is
  * only superseded by one of matching name, domain and path.
  */
-export function cookieScopeKey(cookie: ParsedSetCookie): string {
+function cookieScopeKey(cookie: ParsedSetCookie): string {
   return `${cookie.name}\n${cookie.domain}\n${cookie.path}`;
+}
+
+/**
+ * The cookies that would be sent to one URL, built up from the `Set-Cookie`
+ * headers of the responses observed so far.
+ *
+ * Only cookies that apply to the jar's URL are kept, so cookies picked up along
+ * the way — from an identity provider on another domain, say — are discarded as
+ * they arrive.
+ */
+export class CookieJar {
+  private readonly url: URL;
+  private readonly cookiesByScope = new Map<string, ParsedSetCookie>();
+
+  constructor(url: URL) {
+    this.url = url;
+  }
+
+  /**
+   * Take in the `Set-Cookie` headers of one response: cookies it sets are
+   * recorded, and cookies it clears are dropped.
+   */
+  accept(setCookieHeaderValues: readonly string[], responseUrl: URL): void {
+    for (const headerValue of setCookieHeaderValues) {
+      const cookie = parseSetCookieHeader(headerValue, responseUrl);
+      if (cookie === null || !doesCookieApplyTo(cookie, this.url)) {
+        continue;
+      }
+      if (cookie.isDeletion) {
+        this.cookiesByScope.delete(cookieScopeKey(cookie));
+      } else {
+        this.cookiesByScope.set(cookieScopeKey(cookie), cookie);
+      }
+    }
+  }
+
+  has(name: string): boolean {
+    return [...this.cookiesByScope.values()].some((cookie) => cookie.name === name);
+  }
+
+  /**
+   * The cookies of the given names. A name can appear more than once — set both
+   * host-only and domain-wide, say — and a browser sends every one of them.
+   */
+  cookiesNamed(names: readonly string[]): readonly CookiePair[] {
+    return [...this.cookiesByScope.values()]
+      .filter((cookie) => names.includes(cookie.name))
+      .map((cookie) => ({ name: cookie.name, value: cookie.value }));
+  }
 }
 
 /**
