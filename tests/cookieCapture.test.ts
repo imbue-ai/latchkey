@@ -10,14 +10,14 @@
 import { describe, it, expect } from 'vitest';
 import type { Response } from 'playwright';
 import type { ApiCredentials } from '../src/apiCredentials/base.js';
-import { CookieCaptureLoginFlow } from '../src/services/core/cookieCapture.js';
+import { CookieCaptureLoginFlow } from '../src/services/core/loginFlows/cookieCapture.js';
 import {
   formatLoginFlowsHelp,
   LOGIN_FLOWS,
   resolveLoginFlow,
   UnknownLoginFlowError,
-} from '../src/services/core/loginFlowRegistry.js';
-import { LoginFlowParamsInvalidError } from '../src/services/core/loginFlow.js';
+} from '../src/services/core/loginFlows/registry.js';
+import { LoginFlowParamsInvalidError } from '../src/services/core/loginFlows/base.js';
 import {
   buildRegisteredServiceOptions,
   RegisteredService,
@@ -121,6 +121,60 @@ describe('cookie capture', () => {
         'https://sso.example.com/login'
       )
     ).toBe('Cookie: sessionid=shared');
+  });
+
+  it('defaults a cookie without Path to the directory that set it', async () => {
+    const setAtLoginPage = ['sessionid=abc'];
+    // The login page is /login, so a cookie without Path applies to / only
+    // because that is its directory; one set deeper does not reach the root.
+    expect(await startLogin(['sessionid'])(setAtLoginPage)).toBe('Cookie: sessionid=abc');
+    expect(
+      await startLogin(['sessionid'])(setAtLoginPage, 'https://example.com/account/settings')
+    ).toBeNull();
+  });
+
+  it('applies a Domain cookie to subdomains, with or without the leading dot', async () => {
+    for (const domainAttribute of ['Domain=example.com', 'Domain=.example.com']) {
+      const respond = startLogin(['sessionid'], 'https://api.example.com/');
+      expect(
+        await respond([`sessionid=abc; ${domainAttribute}; Path=/`], 'https://sso.example.com/in')
+      ).toBe('Cookie: sessionid=abc');
+    }
+  });
+
+  it('ignores header values that are not a cookie assignment', async () => {
+    const respond = startLogin(['sessionid']);
+    expect(await respond(['not-a-cookie', '=orphan-value'])).toBeNull();
+  });
+
+  it('replaces a cookie set again before the login finishes', async () => {
+    const respond = startLogin(['sessionid', 'csrftoken']);
+    expect(await respond(['sessionid=first; Path=/'])).toBeNull();
+    expect(await respond(['sessionid=second; Path=/'])).toBeNull();
+    expect(await respond(['csrftoken=xyz; Path=/'])).toBe(
+      'Cookie: sessionid=second; csrftoken=xyz'
+    );
+  });
+
+  it('drops a cookie that is cleared again', async () => {
+    for (const clearingHeader of [
+      'sessionid=; Path=/',
+      'sessionid=abc; Max-Age=0; Path=/',
+      'sessionid=abc; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/',
+    ]) {
+      const respond = startLogin(['sessionid', 'csrftoken']);
+      await respond(['sessionid=abc; Path=/']);
+      await respond([clearingHeader]);
+      expect(await respond(['csrftoken=xyz; Path=/'])).toBeNull();
+    }
+  });
+
+  it('keeps a cookie whose expiry is still in the future', async () => {
+    const expires = new Date(Date.now() + 60_000).toUTCString();
+    const respond = startLogin(['sessionid']);
+    expect(await respond([`sessionid=abc; Expires=${expires}; Path=/`])).toBe(
+      'Cookie: sessionid=abc'
+    );
   });
 
   it('stops capturing once the login is complete', async () => {

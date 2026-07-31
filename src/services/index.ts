@@ -24,14 +24,14 @@ export {
   UnknownLoginFlowError,
   formatLoginFlowsHelp,
   resolveLoginFlow,
-} from './core/loginFlowRegistry.js';
+} from './core/loginFlows/registry.js';
 export {
   LoginFlowParamsInvalidError,
   parseLoginFlowParams,
   type LoginFlow,
   type LoginFlowClass,
-} from './core/loginFlow.js';
-export { CookieCaptureLoginFlow, buildCookieCredentials } from './core/cookieCapture.js';
+} from './core/loginFlows/base.js';
+export { CookieCaptureLoginFlow } from './core/loginFlows/cookieCapture.js';
 
 export { Slack, SLACK } from './slack.js';
 export { Discord, DISCORD } from './discord.js';

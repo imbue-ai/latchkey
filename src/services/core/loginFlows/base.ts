@@ -18,13 +18,13 @@
  * registered, or when config.json is read), which is why a flow rather than a
  * session is what a registered service holds on to.
  *
- * The flows themselves are listed in `loginFlowRegistry`, which imports them.
+ * The flows themselves are listed in `registry`, which imports them.
  * Keeping that list out of this module is what lets a flow import from here
  * without the two forming a cycle.
  */
 
 import type { ZodType, ZodTypeAny } from 'zod';
-import { describeSchemaIssues, Service, type ServiceSession } from './base.js';
+import { describeSchemaIssues, Service, type ServiceSession } from '../base.js';
 
 /**
  * Thrown when the parameters stored for a login flow do not match its schema.

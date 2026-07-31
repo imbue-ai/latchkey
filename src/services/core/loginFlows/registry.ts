@@ -3,12 +3,12 @@
  * `--login-flow` takes.
  *
  * This is the only module that knows which flows exist. What a flow *is* lives
- * in `loginFlow`, which the flows themselves import; keeping the list separate
- * is what stops that from being a cycle.
+ * in `base`, which the flows themselves import; keeping the list separate is
+ * what stops that from being a cycle.
  */
 
 import { CookieCaptureLoginFlow } from './cookieCapture.js';
-import type { LoginFlow, LoginFlowClass } from './loginFlow.js';
+import type { LoginFlow, LoginFlowClass } from './base.js';
 
 export const LOGIN_FLOWS: readonly LoginFlowClass[] = [CookieCaptureLoginFlow];
 
