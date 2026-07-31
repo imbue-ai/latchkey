@@ -221,7 +221,8 @@ latchkey auth set mastodon -H "Authorization: Bearer <your_access_token>"
 latchkey curl https://mastodon.social/api/v1/timelines/public?limit=2
 ```
 
-User-registered services only support authentication via static curl arguments provided through `latchkey auth set`.
+You can also configure browser login flows for registered services. For details,
+see `latchkey services register --help`.
 
 
 ### Indirect credentials

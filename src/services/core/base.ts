@@ -3,7 +3,7 @@
  */
 
 import type { Browser, BrowserContext, Page, Response } from 'playwright';
-import type { z, ZodTypeAny } from 'zod';
+import type { z, ZodError, ZodTypeAny } from 'zod';
 import {
   ApiCredentialStatus,
   ApiCredentials,
@@ -81,15 +81,22 @@ export function buildPreparedCredentials<Schema extends ZodTypeAny>(
 ): ApiCredentials {
   const result = schema.safeParse(parsedJson);
   if (!result.success) {
-    const detail = result.error.issues
-      .map((issue) => {
-        const path = issue.path.join('.');
-        return path ? `${path}: ${issue.message}` : issue.message;
-      })
-      .join('; ');
-    throw new PrepareInputInvalidError(serviceName, detail);
+    throw new PrepareInputInvalidError(serviceName, describeSchemaIssues(result.error));
   }
   return build(result.data as z.infer<Schema>);
+}
+
+/**
+ * Render the failing fields of a schema mismatch as a single line, so every
+ * command that validates JSON input reports problems the same way.
+ */
+export function describeSchemaIssues(error: ZodError): string {
+  return error.issues
+    .map((issue) => {
+      const path = issue.path.join('.');
+      return path ? `${path}: ${issue.message}` : issue.message;
+    })
+    .join('; ');
 }
 
 /**
@@ -293,8 +300,13 @@ export abstract class ServiceSession {
 
   /**
    * Handle a response during the headful login phase.
+   *
+   * Sessions that do asynchronous work here return a promise, so that a caller
+   * driving responses in on its own — replaying a recording, say — can wait for
+   * one to be processed before sending the next. The login itself does not
+   * wait: it polls {@link isLoginComplete} instead.
    */
-  abstract onResponse(response: Response): void;
+  abstract onResponse(response: Response): void | Promise<void>;
 
   /**
    * Check if the login phase is complete.
@@ -366,7 +378,7 @@ export abstract class ServiceSession {
       const page = await context.newPage();
 
       context.on('response', (response) => {
-        this.onResponse(response);
+        void this.onResponse(response);
       });
 
       try {
@@ -415,18 +427,35 @@ export abstract class SimpleServiceSession extends ServiceSession {
   protected apiCredentials: ApiCredentials | null = null;
 
   /**
+   * What the session has extracted so far, or null while the login phase is
+   * still going.
+   *
+   * Exists for the tests, and they are its only callers: a real login goes
+   * through {@link login}, which returns the credentials once the phase
+   * completes. It is public rather than protected because the alternative is
+   * what the tests did before — casting past `protected` to read the field —
+   * which typechecks forever and quietly stops meaning anything the moment the
+   * internals change.
+   */
+  get capturedCredentials(): ApiCredentials | null {
+    return this.apiCredentials;
+  }
+
+  /**
    * Extract API credentials from a response during the headful login phase.
    */
   protected abstract getApiCredentialsFromResponse(
     response: Response
   ): Promise<ApiCredentials | null>;
 
-  onResponse(response: Response): void {
+  onResponse(response: Response): Promise<void> {
     if (this.apiCredentials !== null) {
-      return;
+      return Promise.resolve();
     }
-    this.getApiCredentialsFromResponse(response)
+    return this.getApiCredentialsFromResponse(response)
       .then((credentials) => {
+        // Another response may have produced credentials while this one was
+        // being read.
         if (this.apiCredentials === null && credentials !== null) {
           this.apiCredentials = credentials;
         }

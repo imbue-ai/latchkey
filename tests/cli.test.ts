@@ -2378,7 +2378,7 @@ describe('CLI commands with dependency injection', () => {
       expect(entries.get('my-github')?.loginUrl).toBe('https://github.mycompany.com/login');
     });
 
-    it('should reject --login-url without --service-family', async () => {
+    it('should reject --login-url without --service-family or --login-flow', async () => {
       const deps = createMockDependencies({
         registry: new ServiceRegistry([]),
       });
@@ -2397,7 +2397,197 @@ describe('CLI commands with dependency injection', () => {
       );
 
       expect(exitCode).toBe(1);
-      expect(errorLogs[0]).toContain('--login-url requires a --service-family');
+      expect(errorLogs[0]).toContain('--login-url requires either a --service-family');
+    });
+
+    it('should register a service with the cookie-capture login flow', async () => {
+      const deps = createMockDependencies({
+        registry: new ServiceRegistry([]),
+      });
+
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-service',
+          '--base-api-url',
+          'https://example.com/api/',
+          '--login-url',
+          'https://example.com/login',
+          '--login-flow',
+          'cookie-capture',
+          '--login-flow-params',
+          '{"cookieKeys": ["sessionid", "csrftoken"]}',
+        ],
+        deps
+      );
+
+      expect(exitCode).toBeNull();
+      expect(logs).toContain("Service 'my-service' registered.");
+      expect(loadRegisteredServices(deps.config.configPath).get('my-service')).toEqual({
+        baseApiUrl: 'https://example.com/api/',
+        loginUrl: 'https://example.com/login',
+        loginFlow: {
+          name: 'cookie-capture',
+          params: { cookieKeys: ['sessionid', 'csrftoken'] },
+        },
+      });
+
+      logs = [];
+      await runCommand(['services', 'info', 'my-service'], deps);
+      const info = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
+      expect(info.authOptions).toEqual(['browser', 'set']);
+    });
+
+    it('should reject an unknown login flow and list the available ones', async () => {
+      const deps = createMockDependencies({
+        registry: new ServiceRegistry([]),
+      });
+
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-service',
+          '--base-api-url',
+          'https://example.com/api/',
+          '--login-url',
+          'https://example.com/login',
+          '--login-flow',
+          'nonexistent',
+        ],
+        deps
+      );
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs[0]).toContain("Unknown login flow 'nonexistent'");
+      expect(errorLogs.join('\n')).toContain('cookie-capture');
+    });
+
+    it('should reject login flow parameters that are not valid JSON', async () => {
+      const deps = createMockDependencies({
+        registry: new ServiceRegistry([]),
+      });
+
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-service',
+          '--base-api-url',
+          'https://example.com/api/',
+          '--login-url',
+          'https://example.com/login',
+          '--login-flow',
+          'cookie-capture',
+          '--login-flow-params',
+          '{not json}',
+        ],
+        deps
+      );
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs[0]).toContain('--login-flow-params must be valid JSON');
+    });
+
+    it('should reject login flow parameters that do not match the flow schema', async () => {
+      const deps = createMockDependencies({
+        registry: new ServiceRegistry([]),
+      });
+
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-service',
+          '--base-api-url',
+          'https://example.com/api/',
+          '--login-url',
+          'https://example.com/login',
+          '--login-flow',
+          'cookie-capture',
+          '--login-flow-params',
+          '{"cookieKeys": []}',
+        ],
+        deps
+      );
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs[0]).toContain("Invalid parameters for login flow 'cookie-capture'");
+    });
+
+    it('should reject --login-flow-params without --login-flow', async () => {
+      const deps = createMockDependencies({
+        registry: new ServiceRegistry([]),
+      });
+
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-service',
+          '--base-api-url',
+          'https://example.com/api/',
+          '--login-url',
+          'https://example.com/login',
+          '--login-flow-params',
+          '{"cookieKeys": ["sessionid"]}',
+        ],
+        deps
+      );
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs[0]).toContain('--login-flow-params requires --login-flow');
+    });
+
+    it('should reject --login-flow without --login-url', async () => {
+      const deps = createMockDependencies({
+        registry: new ServiceRegistry([]),
+      });
+
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-service',
+          '--base-api-url',
+          'https://example.com/api/',
+          '--login-flow',
+          'cookie-capture',
+          '--login-flow-params',
+          '{"cookieKeys": ["sessionid"]}',
+        ],
+        deps
+      );
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs[0]).toContain('--login-flow requires --login-url');
+    });
+
+    it('should reject --login-flow combined with --service-family', async () => {
+      const deps = createMockDependencies({
+        registry: new ServiceRegistry([GITLAB]),
+      });
+
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-gitlab',
+          '--base-api-url',
+          'https://gitlab.mycompany.com/api/',
+          '--service-family',
+          'gitlab',
+          '--login-url',
+          'https://gitlab.mycompany.com/users/sign_in',
+          '--login-flow',
+          'cookie-capture',
+        ],
+        deps
+      );
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs[0]).toContain('--login-flow cannot be combined with --service-family');
     });
 
     it('should reject --login-url when service family does not support browser login', async () => {
@@ -3308,6 +3498,41 @@ describe('registeredServiceStore', () => {
     expect(service!.baseApiUrls).toEqual(['https://api.example.com/']);
     expect(service!.getSession).toBeUndefined(); // eslint-disable-line @typescript-eslint/unbound-method
     expect(service!.loginUrl).toBe('');
+  });
+
+  it('should load registered service with a login flow into registry', () => {
+    const configPath = join(tempDir, 'config.json');
+    saveRegisteredService(configPath, 'my-api', {
+      baseApiUrl: 'https://api.example.com/',
+      loginUrl: 'https://example.com/login',
+      loginFlow: { name: 'cookie-capture', params: { cookieKeys: ['session_id'] } },
+    });
+
+    const registry = new ServiceRegistry([GITLAB]);
+    loadRegisteredServicesIntoServiceRegistry(configPath, registry);
+
+    const service = registry.getByName('my-api');
+    expect(service).not.toBeNull();
+    expect(service!.getSession).toBeDefined(); // eslint-disable-line @typescript-eslint/unbound-method
+    expect(service!.loginUrl).toBe('https://example.com/login');
+  });
+
+  it('should keep a service whose stored login flow no longer resolves', () => {
+    const configPath = join(tempDir, 'config.json');
+    saveRegisteredService(configPath, 'my-api', {
+      baseApiUrl: 'https://api.example.com/',
+      loginUrl: 'https://example.com/login',
+      // Written by a newer Latchkey, or hand-edited: the service stays usable
+      // with `auth set`, it just loses the browser login.
+      loginFlow: { name: 'flow-from-the-future', params: { anything: true } },
+    });
+
+    const registry = new ServiceRegistry([GITLAB]);
+    loadRegisteredServicesIntoServiceRegistry(configPath, registry);
+
+    const service = registry.getByName('my-api');
+    expect(service).not.toBeNull();
+    expect(service!.getSession).toBeUndefined(); // eslint-disable-line @typescript-eslint/unbound-method
   });
 
   it('should skip registered services with unknown family', () => {

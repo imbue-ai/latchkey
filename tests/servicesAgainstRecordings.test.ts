@@ -150,19 +150,13 @@ async function testServiceWithRecording(
     const mockRequest = createMockRequest(entry.request);
     const mockResponse = createMockResponse(entry.response, mockRequest);
 
-    // Call onResponse which internally calls getApiCredentialsFromResponse
-    session.onResponse(mockResponse);
-
-    // Give async operations time to complete (e.g., Slack reads response body)
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    // Call onResponse which internally calls getApiCredentialsFromResponse.
+    // Awaiting it means no sleeping: the session is done with this entry before
+    // the next one goes in.
+    await session.onResponse(mockResponse);
   }
 
-  // Give additional time for any async operations to complete
-  await new Promise((resolve) => setTimeout(resolve, 50));
-
-  // Access the apiCredentials via the session (it's protected but accessible for testing)
-  const apiCredentials = (session as unknown as { apiCredentials: ApiCredentials | null })
-    .apiCredentials;
+  const apiCredentials = session.capturedCredentials;
 
   if (apiCredentials !== null) {
     return apiCredentials;

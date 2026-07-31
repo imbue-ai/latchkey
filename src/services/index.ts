@@ -19,6 +19,19 @@ export {
   PrepareInputInvalidError,
 } from './core/base.js';
 export { RegisteredService } from './core/registered.js';
+export {
+  LOGIN_FLOWS,
+  UnknownLoginFlowError,
+  formatLoginFlowsHelp,
+  resolveLoginFlow,
+} from './core/loginFlows/registry.js';
+export {
+  LoginFlowParamsInvalidError,
+  parseLoginFlowParams,
+  type LoginFlow,
+  type LoginFlowClass,
+} from './core/loginFlows/base.js';
+export { CookieCaptureLoginFlow } from './core/loginFlows/cookieCapture.js';
 
 export { Slack, SLACK } from './slack.js';
 export { Discord, DISCORD } from './discord.js';

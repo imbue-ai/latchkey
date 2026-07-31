@@ -49,14 +49,20 @@ import {
   SERVICE_REGISTRY,
   canonicalizeServiceName,
 } from './serviceRegistry.js';
-import { RegisteredService } from './services/core/registered.js';
+import { buildRegisteredServiceOptions, RegisteredService } from './services/core/registered.js';
 import {
+  LOGIN_FLOWS,
   LoginCancelledError,
   LoginFailedError,
+  LoginFlowParamsInvalidError,
   NoCurlCredentialsNotSupportedError,
   PrepareInputInvalidError,
   PrepareNotSupportedError,
+  resolveLoginFlow,
   Service,
+  UnknownLoginFlowError,
+  formatLoginFlowsHelp,
+  type LoginFlow,
 } from './services/index.js';
 import {
   CurlParseError,
@@ -208,6 +214,79 @@ async function defaultConfirm(message: string): Promise<boolean> {
       resolve(answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes');
     });
   });
+}
+
+/**
+ * How a registered service can be given a browser login. Kept next to the
+ * command rather than in the README, since it is what someone reaching for
+ * `--help` is trying to decide between.
+ */
+const REGISTRATION_MODES_HELP = [
+  'Browser login:',
+  '  You can always use `latchkey auth set` to supply credentials for a',
+  '  registered service. But optionally, you can use one of two methods to',
+  '  configure a browser login flow. Both require --login-url to specify the',
+  '  URL the browser opens to log the user in.',
+  '',
+  '  1. --service-family lets the service use the same login flow as a builtin',
+  '     service, for example:',
+  '',
+  '       $ latchkey services register my-github --service-family=github \\',
+  '           --base-api-url="https://github.example.com/api/v3/" \\',
+  '           --login-url="https://github.example.com/login"',
+  '',
+  '  2. --login-flow lets the service use one of the generic login flows. See',
+  '     the next section for supported login flows.',
+].join('\n');
+
+/** The login flow chosen at registration time, with the JSON it was configured from. */
+interface ChosenLoginFlow {
+  readonly flow: LoginFlow;
+  readonly params: Record<string, unknown> | undefined;
+}
+
+/**
+ * Parse `--login-flow-params` and resolve the named flow against it, reporting
+ * anything unusable and exiting. Returns the parameters alongside the flow so
+ * they can be stored exactly as validated.
+ */
+function resolveLoginFlowOrExit(
+  deps: CliDependencies,
+  flowName: string,
+  paramsJson: string | undefined
+): ChosenLoginFlow {
+  let params: Record<string, unknown> | undefined;
+  if (paramsJson !== undefined) {
+    let parsedJson: unknown;
+    try {
+      parsedJson = JSON.parse(paramsJson);
+    } catch {
+      deps.errorLog('Error: --login-flow-params must be valid JSON.');
+      deps.exit(1);
+    }
+    if (typeof parsedJson !== 'object' || parsedJson === null || Array.isArray(parsedJson)) {
+      deps.errorLog('Error: --login-flow-params must be a JSON object.');
+      deps.exit(1);
+    }
+    params = parsedJson as Record<string, unknown>;
+  }
+
+  try {
+    return { flow: resolveLoginFlow(flowName, params), params };
+  } catch (error) {
+    if (error instanceof UnknownLoginFlowError) {
+      deps.errorLog(`Error: ${error.message}`);
+      for (const availableFlow of LOGIN_FLOWS) {
+        deps.errorLog(`  ${availableFlow.flowName}: ${availableFlow.summary}`);
+      }
+      deps.exit(1);
+    }
+    if (error instanceof LoginFlowParamsInvalidError) {
+      deps.errorLog(`Error: ${error.message}`);
+      deps.exit(1);
+    }
+    throw error;
+  }
 }
 
 async function clearAll(deps: CliDependencies, yes: boolean): Promise<void> {
@@ -445,10 +524,27 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       'Name of the built-in service to use as a template, if any (e.g. gitlab)'
     )
     .option('--login-url <url>', 'Login URL for browser-based authentication, if applicable')
+    .option(
+      '--login-flow <name>',
+      'Generic browser login to give this service, instead of a service family. ' +
+        `Available flows: ${LOGIN_FLOWS.map((flow) => flow.flowName).join(', ')}. Requires --login-url.`
+    )
+    .option(
+      '--login-flow-params <json>',
+      'JSON object with the parameters of --login-flow, ' +
+        'e.g. \'{"cookieKeys": ["sessionid", "csrftoken"]}\' for cookie-capture'
+    )
+    .addHelpText('after', `\n${REGISTRATION_MODES_HELP}\n\n${formatLoginFlowsHelp()}`)
     .action(
       (
         rawServiceName: string,
-        options: { baseApiUrl: string; serviceFamily?: string; loginUrl?: string }
+        options: {
+          baseApiUrl: string;
+          serviceFamily?: string;
+          loginUrl?: string;
+          loginFlow?: string;
+          loginFlowParams?: string;
+        }
       ) => {
         refuseInGatewayMode(deps, 'services register');
         let serviceName: string;
@@ -474,10 +570,30 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           }
         }
 
-        if (options.loginUrl !== undefined) {
+        if (options.loginFlowParams !== undefined && options.loginFlow === undefined) {
+          deps.errorLog('Error: --login-flow-params requires --login-flow.');
+          deps.exit(1);
+        }
+
+        let chosenLoginFlow: ChosenLoginFlow | undefined;
+        if (options.loginFlow !== undefined) {
+          if (options.serviceFamily !== undefined) {
+            deps.errorLog('Error: --login-flow cannot be combined with --service-family.');
+            deps.exit(1);
+          }
+          if (options.loginUrl === undefined) {
+            deps.errorLog('Error: --login-flow requires --login-url.');
+            deps.exit(1);
+          }
+          chosenLoginFlow = resolveLoginFlowOrExit(
+            deps,
+            options.loginFlow,
+            options.loginFlowParams
+          );
+        } else if (options.loginUrl !== undefined) {
           if (familyService === undefined) {
             deps.errorLog(
-              'Error: --login-url requires a --service-family that supports browser login.'
+              'Error: --login-url requires either a --service-family that supports browser login, or --login-flow.'
             );
             deps.exit(1);
           } else if (familyService.getSession === undefined) {
@@ -496,8 +612,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         const registeredService = new RegisteredService(
           serviceName,
           options.baseApiUrl,
-          familyService,
-          options.loginUrl
+          buildRegisteredServiceOptions(familyService, options.loginUrl, chosenLoginFlow?.flow)
         );
 
         try {
@@ -514,6 +629,10 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           baseApiUrl: options.baseApiUrl,
           serviceFamily: options.serviceFamily,
           loginUrl: options.loginUrl,
+          loginFlow:
+            options.loginFlow === undefined
+              ? undefined
+              : { name: options.loginFlow, params: chosenLoginFlow?.params },
         });
 
         deps.log(`Service '${serviceName}' registered.`);
@@ -1097,12 +1216,10 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
             const detail = error instanceof Error ? error.message : String(error);
             deps.errorLog(`Error: Additional claims must be valid JSON: ${detail}`);
             deps.exit(1);
-            return;
           }
           if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
             deps.errorLog('Error: Additional claims must be a JSON object.');
             deps.exit(1);
-            return;
           }
           additionalClaims = parsed as Record<string, unknown>;
         }
