@@ -37,7 +37,7 @@ const RECORDINGS_DIRECTORY = resolve(__dirname, '..', 'scripts', 'recordings');
 const DEFAULT_RECORDING_NAME = 'login_session.json';
 
 // Do not test services that require special followup steps.
-const BLACKLIST = new Set(['dropbox', 'github', 'linear', 'ngrok']);
+const BLACKLIST = new Set(['dropbox', 'github', 'linear']);
 
 class InvalidRecordingError extends Error {
   constructor(message: string) {
