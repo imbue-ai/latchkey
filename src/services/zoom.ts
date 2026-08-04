@@ -96,19 +96,22 @@ export class ZoomServerToServerCredentials implements ApiCredentials {
   readonly clientSecret: string;
   readonly accessToken?: string;
   readonly accessTokenExpiresAt?: string;
+  readonly accountEmail?: string;
 
   constructor(
     accountId: string,
     clientId: string,
     clientSecret: string,
     accessToken?: string,
-    accessTokenExpiresAt?: string
+    accessTokenExpiresAt?: string,
+    accountEmail?: string
   ) {
     this.accountId = accountId;
     this.clientId = clientId;
     this.clientSecret = clientSecret;
     this.accessToken = accessToken;
     this.accessTokenExpiresAt = accessTokenExpiresAt;
+    this.accountEmail = accountEmail;
   }
 
   withAccessToken(
@@ -120,7 +123,8 @@ export class ZoomServerToServerCredentials implements ApiCredentials {
       this.clientId,
       this.clientSecret,
       accessToken,
-      accessTokenExpiresAt
+      accessTokenExpiresAt,
+      this.accountEmail
     );
   }
 
@@ -277,9 +281,33 @@ const SELECT_ALL_SCOPES_GLYPH = '\u25be';
 // The dialogs of the two design systems Zoom's Marketplace mixes mark their
 // confirming button ("Create", "Done") as the primary one, which avoids having
 // to match its label.
-const ENABLED_PRIMARY_DIALOG_BUTTON_SELECTOR =
-  '[role="dialog"]:visible button:is(.MuiButton-primary, .ui-Button-primary)' +
-  ':not([disabled]):not([aria-disabled="true"])';
+const ENABLED_PRIMARY_BUTTON_SELECTOR =
+  'button:is(.MuiButton-primary, .ui-Button-primary):not([disabled]):not([aria-disabled="true"])';
+const ENABLED_PRIMARY_DIALOG_BUTTON_SELECTOR = `[role="dialog"]:visible ${ENABLED_PRIMARY_BUTTON_SELECTOR}`;
+
+// The scope dialog counts the selection next to the button that confirms it;
+// only the number is read, so the wording does not matter.
+const SELECTED_SCOPE_COUNT_PATTERN = /\d+/;
+
+// How long to give the dialog to work a group's scopes into the selection.
+const SCOPE_SELECTION_TIMEOUT_MS = 5000;
+
+// The scope dialog groups the scopes by product, one tab each, and its "Select
+// All" only ever reaches the group on display — so every group worth having is
+// visited in turn. The tabs are named after Zoom's products, which is all there
+// is to tell them apart; anchoring the names keeps "Contacts" from picking
+// "Contact Center". Groups an account does not have are simply absent.
+const SCOPE_GROUP_PATTERNS = [
+  /^Team Chat$/i,
+  /^Meetings$/i,
+  /^Recording$/i,
+  /^User$/i,
+  /^Calendar$/i,
+  /^ZOOM$/i,
+  /^Dashboard$/i,
+  /^Contacts$/i,
+  /^Message$/i,
+] as const;
 
 const DEVELOP_MENU_BUTTON_SELECTOR = 'button[data-ta="develop"]';
 
@@ -288,9 +316,11 @@ const DEVELOP_MENU_BUTTON_SELECTOR = 'button[data-ta="develop"]';
 const OPEN_MENU_BACKDROP_SELECTOR = '.MuiMenu-root .MuiModal-backdrop:visible';
 
 // The API terms dialog is recognized by its link to the license document, which
-// does not depend on the interface language.
+// does not depend on the interface language. The app kind dialog is the one
+// asking to pick between radio buttons.
 const API_TERMS_DIALOG_SELECTOR =
   '[role="dialog"]:visible:has(a[href*="zoom_api_license_and_tou"])';
+const APP_KIND_DIALOG_SELECTOR = '[role="dialog"]:visible:has(input[type="radio"])';
 
 // The inputs of the app information page are named after the fields of Zoom's
 // app model (as are those of the credentials page). Matching the name as a
@@ -374,16 +404,36 @@ async function dismissOpenMenu(page: Page): Promise<void> {
   await menuBackdrop.waitFor({ state: 'hidden', timeout: DEFAULT_TIMEOUT_MS });
 }
 
-async function clickDevelopBuildApp(page: Page): Promise<void> {
+/**
+ * Ask for the app creation dialog through the header's "Develop" menu.
+ *
+ * The menu opens on hover, so the button is hovered rather than clicked: a click
+ * arrives at a menu that is already open and closes it again, which is why
+ * clicking here gets nowhere. Its entry is then chosen with Enter, since the
+ * menu takes the focus as it opens — that is what leaves its first entry
+ * highlighted — and a keypress needs no coordinates, unlike a click, which the
+ * invisible backdrop MUI spreads beside the menu can swallow.
+ */
+async function chooseDevelopBuildApp(page: Page): Promise<void> {
   await dismissOpenMenu(page);
 
-  await clickControl(page.locator(DEVELOP_MENU_BUTTON_SELECTOR));
-  await clickControl(page.getByRole('menuitem', { name: BUILD_APP_MENU_ITEM_PATTERN }).first());
+  const developMenuButton = page.locator(DEVELOP_MENU_BUTTON_SELECTOR);
+  await developMenuButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+  await developMenuButton.hover({ force: true });
 
-  // Choosing an item normally closes the menu; when it does not (the header
-  // re-rendering while the menu is open leaves it behind), its backdrop would
-  // block every later click.
-  await dismissOpenMenu(page);
+  const buildAppEntry = page.getByRole('menuitem', { name: BUILD_APP_MENU_ITEM_PATTERN }).first();
+  await buildAppEntry.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+  // Let the menu settle and take the focus before the keypress.
+  await page.waitForTimeout(ANIMATION_SETTLE_MS);
+  await page.keyboard.press('Enter');
+
+  await page.waitForTimeout(ANIMATION_SETTLE_MS);
+  if (await buildAppEntry.isVisible()) {
+    // The menu stayed open, so the focus was elsewhere: click the entry after
+    // all, and clear the menu if that leaves it behind.
+    await clickControl(buildAppEntry);
+    await dismissOpenMenu(page);
+  }
 }
 
 async function selectServerToServerAppKind(appKindDialog: Locator): Promise<void> {
@@ -443,11 +493,17 @@ async function readCredentialField(page: Page, fieldName: string): Promise<strin
   return value;
 }
 
-async function readAppCredentials(page: Page): Promise<ZoomServerToServerCredentials> {
+async function readAppCredentials(
+  page: Page,
+  accountEmail?: string
+): Promise<ZoomServerToServerCredentials> {
   return new ZoomServerToServerCredentials(
     await readCredentialField(page, 'devAccountId'),
     await readCredentialField(page, 'devClientId'),
-    await readCredentialField(page, 'devClientSecret')
+    await readCredentialField(page, 'devClientSecret'),
+    undefined,
+    undefined,
+    accountEmail
   );
 }
 
@@ -469,24 +525,21 @@ async function fillEmptyInputs(page: Page, selector: string, value: string): Pro
 }
 
 /**
- * Fill the developer contact details Zoom requires before an app can go live,
- * using the signed-in user's own name and e-mail address. The company is taken
- * from the e-mail domain, the only company-like information the Marketplace
- * exposes about the account.
+ * Fill the developer contact details Zoom requires before an app can go live:
+ * the signed-in user's own name and e-mail address, and as the company the name
+ * the app is created under, which says where the app came from.
  */
 async function fillDeveloperInformation(
   page: Page,
-  userInfo: ZoomMarketplaceUserInfo
+  userInfo: ZoomMarketplaceUserInfo,
+  companyName: string
 ): Promise<void> {
+  await fillEmptyInputs(page, COMPANY_NAME_INPUT_SELECTOR, companyName);
   if (userInfo.userName !== undefined) {
     await fillEmptyInputs(page, DEVELOPER_NAME_INPUT_SELECTOR, userInfo.userName);
   }
   if (userInfo.email !== undefined) {
     await fillEmptyInputs(page, DEVELOPER_EMAIL_INPUT_SELECTOR, userInfo.email);
-    const emailDomain = userInfo.email.split('@')[1];
-    if (emailDomain !== undefined) {
-      await fillEmptyInputs(page, COMPANY_NAME_INPUT_SELECTOR, emailDomain);
-    }
   }
 }
 
@@ -503,14 +556,15 @@ async function clickContinueButton(page: Page): Promise<void> {
 async function continueToScopesPage(
   page: Page,
   appId: string,
-  userInfo: ZoomMarketplaceUserInfo
+  userInfo: ZoomMarketplaceUserInfo,
+  companyName: string
 ): Promise<void> {
   const scopesPath = `/develop/apps/${appId}/scope`;
   for (let attempt = 0; attempt < MAX_CONTINUE_CLICKS; attempt++) {
     if (new URL(page.url()).pathname === scopesPath) {
       return;
     }
-    await fillDeveloperInformation(page, userInfo);
+    await fillDeveloperInformation(page, userInfo, companyName);
     await clickContinueButton(page);
     await page.waitForTimeout(PAGE_SETTLE_MS);
   }
@@ -524,18 +578,83 @@ async function continueToScopesPage(
  * Grant the app every admin scope its account offers, so a single set of
  * credentials can serve any Zoom API call the account is entitled to.
  */
-async function addAllAdminScopes(page: Page): Promise<void> {
-  await clickControl(page.locator(ADD_SCOPES_BUTTON_SELECTOR).first());
+/**
+ * How many scopes the dialog reports as selected, or null when it shows no
+ * count at all.
+ */
+async function readSelectedScopeCount(scopesDialog: Locator): Promise<number | null> {
+  // The count sits beside the confirming button, in the footer of the dialog.
+  const footer = scopesDialog.locator(ENABLED_PRIMARY_BUTTON_SELECTOR).last().locator('xpath=..');
+  const countMatch = SELECTED_SCOPE_COUNT_PATTERN.exec((await footer.textContent()) ?? '');
+  return countMatch === null ? null : Number(countMatch[0]);
+}
 
-  const scopesDialog = visibleDialog(page);
+/**
+ * Wait for the dialog's count of selected scopes to move on from what it was,
+ * which working a group into the selection takes it a moment to do. A group
+ * that holds no scopes for this account never moves it, so running out of time
+ * is not an error.
+ */
+async function waitForSelectedScopeCountChange(
+  page: Page,
+  scopesDialog: Locator,
+  previousCount: number | null
+): Promise<void> {
+  const deadline = Date.now() + SCOPE_SELECTION_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    if ((await readSelectedScopeCount(scopesDialog)) !== previousCount) {
+      return;
+    }
+    await page.waitForTimeout(URL_POLL_INTERVAL_MS);
+  }
+}
+
+/**
+ * Add every scope of the group on display to the selection. The entries of the
+ * "Select All" menu widen from account level outwards ("Select All (Admin)",
+ * then "(Master)", then "(All)"), so the account-level one is the first.
+ */
+async function selectAllScopesOfGroup(page: Page, scopesDialog: Locator): Promise<void> {
+  const previousCount = await readSelectedScopeCount(scopesDialog);
+
   await clickControl(scopesDialog.getByText(SELECT_ALL_SCOPES_GLYPH).first());
-
-  // The menu opens outside the dialog, so it is looked up on the page. Its
-  // entries widen from account level outwards ("Select All (Admin)", then
-  // "(Master)", then "(All)"), so the account-level one is the first.
+  // The menu opens outside the dialog, so it is looked up on the page. Unlike
+  // the header's, this menu opens on click and its entries take one.
   await clickControl(
     page.locator('[role="menu"]:visible').last().locator('[role="menuitem"]').first()
   );
+
+  await waitForSelectedScopeCountChange(page, scopesDialog, previousCount);
+}
+
+/**
+ * Grant the app the scopes of every product group worth having, so a single set
+ * of credentials can serve the Zoom APIs an account is entitled to.
+ *
+ * Confirming a selection that stayed empty would leave the app created,
+ * activated and unable to call a single API, so that is refused outright.
+ */
+async function addAllScopes(page: Page): Promise<void> {
+  await clickControl(page.locator(ADD_SCOPES_BUTTON_SELECTOR).first());
+  const scopesDialog = visibleDialog(page);
+
+  for (const groupPattern of SCOPE_GROUP_PATTERNS) {
+    const groupTab = scopesDialog.getByRole('tab', { name: groupPattern }).first();
+    if ((await groupTab.count()) === 0) {
+      continue;
+    }
+    await clickControl(groupTab);
+    await selectAllScopesOfGroup(page, scopesDialog);
+  }
+
+  const selectedCount = await readSelectedScopeCount(scopesDialog);
+  if (selectedCount === 0) {
+    throw new LoginFailedError(
+      'Zoom selected no scopes for the app, which would leave it unable to call ' +
+        'any API. Add the scopes in the browser window, or ask an administrator of ' +
+        'your Zoom account for the privileges to do so.'
+    );
+  }
 
   // Confirm the selection ("Done").
   await clickEnabledPrimaryDialogButton(page);
@@ -642,18 +761,24 @@ class ZoomServiceSession extends BrowserFollowupServiceSession {
    * yet.
    */
   private async openAppKindDialog(page: Page): Promise<Locator> {
-    const appKindDialog = page
-      .locator('[role="dialog"]:visible')
-      .filter({ has: page.locator('input[type="radio"]') })
-      .last();
+    const appKindDialog = page.locator(APP_KIND_DIALOG_SELECTOR).last();
 
     for (let attempt = 0; attempt < BUILD_APP_ATTEMPTS; attempt++) {
       await this.waitForApiTermsOfUseDecision(page);
       if (await appKindDialog.isVisible()) {
         return appKindDialog;
       }
-      await clickDevelopBuildApp(page);
-      await page.waitForTimeout(PAGE_SETTLE_MS);
+      await chooseDevelopBuildApp(page);
+      // Zoom fetches the dialog rather than having it ready, so wait for
+      // whichever it puts up: the app kinds, or the terms of use that have to
+      // be accepted first.
+      await page
+        .locator(`${APP_KIND_DIALOG_SELECTOR}, ${API_TERMS_DIALOG_SELECTOR}`)
+        .first()
+        .waitFor({ timeout: DEFAULT_TIMEOUT_MS })
+        .catch(() => {
+          // Neither showed up; the next attempt asks for the dialog again.
+        });
     }
 
     throw new LoginFailedError(
@@ -700,10 +825,10 @@ class ZoomServiceSession extends BrowserFollowupServiceSession {
     await nameAndCreateApp(page, this.generateAppName());
 
     const appId = await waitForCreatedAppId(page);
-    const credentials = await readAppCredentials(page);
+    const credentials = await readAppCredentials(page, userInfo.email);
 
-    await continueToScopesPage(page, appId, userInfo);
-    await addAllAdminScopes(page);
+    await continueToScopesPage(page, appId, userInfo, this.appNamePrefix);
+    await addAllScopes(page);
     await clickContinueButton(page);
     await activateApp(page);
 
@@ -762,7 +887,8 @@ export class Zoom extends Service {
    * The account comes from /users/me rather than the user-list endpoint used
    * by the credential check, which carries no identity. Server-to-server
    * tokens have no user context and error on /users/me, in which case the
-   * app's Zoom account id identifies the account instead.
+   * account is named after the user the app was created by, and failing that
+   * by the app's (opaque) Zoom account id.
    */
   override async getAccount(apiCredentials: ApiCredentials): Promise<string | null> {
     const account = await fetchAccountFromEndpoint(
@@ -783,9 +909,10 @@ export class Zoom extends Service {
     if (account !== null) {
       return account;
     }
-    return apiCredentials instanceof ZoomServerToServerCredentials
-      ? apiCredentials.accountId
-      : null;
+    if (!(apiCredentials instanceof ZoomServerToServerCredentials)) {
+      return null;
+    }
+    return apiCredentials.accountEmail ?? apiCredentials.accountId;
   }
 
   /**

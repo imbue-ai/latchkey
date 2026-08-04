@@ -118,7 +118,7 @@ describe('isZoomSignedInHomeUrl', () => {
 });
 
 describe('Zoom.getAccount', () => {
-  it('falls back to the app account id when /users/me has no user context', async () => {
+  function mockNoUserContext(): void {
     setAsyncSubprocessRunner(() =>
       Promise.resolve({
         returncode: 0,
@@ -126,7 +126,38 @@ describe('Zoom.getAccount', () => {
         stderr: '',
       })
     );
+  }
+
+  it('names the account by the user the app was created by', async () => {
+    mockNoUserContext();
+    const credentials = new ZoomServerToServerCredentials(
+      'account-id',
+      'client-id',
+      'client-secret',
+      'minted-token',
+      inOneHour(),
+      'admin@example.com'
+    );
+    await expect(ZOOM.getAccount(credentials)).resolves.toBe('admin@example.com');
+  });
+
+  it('falls back to the app account id when no user is known', async () => {
+    mockNoUserContext();
     const credentials = APP_CREDENTIALS.withAccessToken('minted-token', inOneHour());
     await expect(ZOOM.getAccount(credentials)).resolves.toBe('account-id');
+  });
+
+  it('keeps the account across a token refresh', () => {
+    const credentials = new ZoomServerToServerCredentials(
+      'account-id',
+      'client-id',
+      'client-secret',
+      undefined,
+      undefined,
+      'admin@example.com'
+    );
+    expect(credentials.withAccessToken('minted-token', inOneHour()).accountEmail).toBe(
+      'admin@example.com'
+    );
   });
 });
