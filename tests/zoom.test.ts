@@ -1,7 +1,12 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { ApiCredentialsUsageError, AuthorizationBearer } from '../src/apiCredentials/base.js';
 import { resetAsyncSubprocessRunner, setAsyncSubprocessRunner } from '../src/curl.js';
-import { ZOOM, ZoomCredentialError, ZoomServerToServerCredentials } from '../src/services/zoom.js';
+import {
+  isZoomSignedInHomeUrl,
+  ZOOM,
+  ZoomCredentialError,
+  ZoomServerToServerCredentials,
+} from '../src/services/zoom.js';
 
 const APP_CREDENTIALS = new ZoomServerToServerCredentials(
   'account-id',
@@ -92,6 +97,23 @@ describe('Zoom.getCredentialsNoCurl', () => {
     expect(() => ZOOM.getCredentialsNoCurl(['account-id', 'client-id'])).toThrow(
       ZoomCredentialError
     );
+  });
+});
+
+describe('isZoomSignedInHomeUrl', () => {
+  it('accepts the home page on any regional host, and as a bare redirect path', () => {
+    expect(isZoomSignedInHomeUrl('https://zoom.us/myhome')).toBe(true);
+    expect(isZoomSignedInHomeUrl('https://us05web.zoom.us/myhome')).toBe(true);
+    expect(isZoomSignedInHomeUrl('https://us05web.zoom.us/myhome?from=signin')).toBe(true);
+    expect(isZoomSignedInHomeUrl('https://us05web.zoom.us/myhome/setting')).toBe(true);
+    expect(isZoomSignedInHomeUrl('/myhome')).toBe(true);
+  });
+
+  it('rejects other pages, and other hosts borrowing the path', () => {
+    expect(isZoomSignedInHomeUrl('https://zoom.us/signin#/login')).toBe(false);
+    expect(isZoomSignedInHomeUrl('https://us05web.zoom.us/myhomepage')).toBe(false);
+    expect(isZoomSignedInHomeUrl('https://marketplace.zoom.us/user/build')).toBe(false);
+    expect(isZoomSignedInHomeUrl('https://not-zoom.example.com/myhome')).toBe(false);
   });
 });
 

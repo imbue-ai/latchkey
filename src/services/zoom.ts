@@ -29,8 +29,19 @@ const ZOOM_TOKEN_ENDPOINT = 'https://zoom.us/oauth/token';
 // bounces visitors through a less predictable chain of pages.
 const ZOOM_SIGN_IN_URL = 'https://zoom.us/signin#/login';
 
-// Where Zoom sends the user once signed in; the path may carry more behind it.
-const ZOOM_SIGNED_IN_HOME_URL_PREFIX = 'https://zoom.us/myhome';
+// Where Zoom sends the user once signed in: their home page, served by whichever
+// regional host runs their account (https://us05web.zoom.us/myhome, ...) and
+// possibly with a query or a subpath behind it. The redirect there names the
+// page either as an absolute URL or as a path.
+const SIGNED_IN_HOME_URL_PATTERN = /^(https:\/\/([\w-]+\.)*zoom\.us)?\/myhome\b/i;
+
+/**
+ * Whether a URL names the home page Zoom sends a user to once they are signed
+ * in. Also accepts the bare path, the form a redirect to it may take.
+ */
+export function isZoomSignedInHomeUrl(url: string): boolean {
+  return SIGNED_IN_HOME_URL_PATTERN.test(url);
+}
 
 // The Marketplace page that lists the user's apps and carries the "Develop"
 // menu the app creation flow starts from.
@@ -566,19 +577,24 @@ class ZoomServiceSession extends BrowserFollowupServiceSession {
   private isSignedIn = false;
 
   /**
-   * Sign-in is over once Zoom serves the user their home page, which is where
-   * it sends them after the last step of the sign-in (including any two-factor
-   * or consent step in between).
+   * Sign-in is over once Zoom sends the user to their home page, which it does
+   * after the last step of the sign-in (whatever two-factor or consent steps
+   * came before). Being sent there is enough — waiting for the home page to
+   * answer, let alone to render, would only cost a round trip, since the flow
+   * navigates away from it to the Marketplace anyway.
    */
   onResponse(response: Response): void {
     if (this.isSignedIn) {
       return;
     }
-    const request = response.request();
-    if (!request.isNavigationRequest() || response.status() !== 200) {
+    if (!response.request().isNavigationRequest()) {
       return;
     }
-    if (request.url().startsWith(ZOOM_SIGNED_IN_HOME_URL_PREFIX)) {
+    const redirectTarget = response.headers().location;
+    if (
+      isZoomSignedInHomeUrl(response.request().url()) ||
+      (redirectTarget !== undefined && isZoomSignedInHomeUrl(redirectTarget))
+    ) {
       this.isSignedIn = true;
     }
   }
