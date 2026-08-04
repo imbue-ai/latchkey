@@ -22,6 +22,10 @@ import { AwsCredentials, AwsCredentialsSchema } from '../services/aws.js';
 import { GoogleApiKeyCredentials, GoogleApiKeyCredentialsSchema } from '../services/google/base.js';
 import { SlackApiCredentials, SlackApiCredentialsSchema } from '../services/slack.js';
 import { TelegramBotCredentials, TelegramBotCredentialsSchema } from '../services/telegram.js';
+import {
+  ZoomServerToServerCredentials,
+  ZoomServerToServerCredentialsSchema,
+} from '../services/zoom.js';
 
 /**
  * Union schema for all credential types.
@@ -35,6 +39,7 @@ export const ApiCredentialsSchema = z.discriminatedUnion('objectType', [
   TelegramBotCredentialsSchema,
   AwsCredentialsSchema,
   GoogleApiKeyCredentialsSchema,
+  ZoomServerToServerCredentialsSchema,
 ]);
 
 export type ApiCredentialsData = z.infer<typeof ApiCredentialsSchema>;
@@ -60,6 +65,8 @@ export function deserializeCredentials(data: ApiCredentialsData): ApiCredentials
       return AwsCredentials.fromJSON(data);
     case 'googleApiKey':
       return GoogleApiKeyCredentials.fromJSON(data);
+    case 'zoomServerToServer':
+      return ZoomServerToServerCredentials.fromJSON(data);
     default: {
       const exhaustiveCheck: never = data;
       throw new ApiCredentialsSerializationError(
@@ -95,6 +102,9 @@ export function serializeCredentials(credentials: ApiCredentials): ApiCredential
     return credentials.toJSON();
   }
   if (credentials instanceof GoogleApiKeyCredentials) {
+    return credentials.toJSON();
+  }
+  if (credentials instanceof ZoomServerToServerCredentials) {
     return credentials.toJSON();
   }
   throw new ApiCredentialsSerializationError(`Unknown credential type: ${credentials.objectType}`);
