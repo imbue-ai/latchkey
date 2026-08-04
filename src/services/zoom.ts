@@ -49,12 +49,8 @@ export class ZoomCredentialError extends Error {
 export class ZoomAppCreationNotPermittedError extends LoginFailedError {
   constructor() {
     super(
-      'Your Zoom user is not allowed to create apps in the Zoom App Marketplace: ' +
-        'every app type is disabled in the "Build app" dialog. Ask an administrator ' +
-        'of your Zoom account to grant you the developer privilege (or to create a ' +
-        'Server-to-Server OAuth app and hand you its credentials), then try again. ' +
-        'Credentials can also be set manually with ' +
-        "'latchkey auth set-nocurl zoom <account-id> <client-id> <client-secret>'."
+      'Your Zoom user is not allowed to create apps in the Zoom App Marketplace. Ask an administrator ' +
+        'of your Zoom account to grant you the developer privilege, then try again.'
     );
     this.name = 'ZoomAppCreationNotPermittedError';
   }
@@ -246,13 +242,19 @@ const SIGNED_IN_MARKETPLACE_PAGE_PATTERN = /window\.appConf\.userInfo = \{[^\n]*
 
 const APP_CREDENTIALS_URL_PATTERN = /\/develop\/apps\/([^/?#]+)\/credentials/;
 
-// The app kind ("General app", "Server to Server OAuth app", ...) is chosen in a
-// dialog of radio buttons whose only distinguishing feature is their label.
+// The two controls that carry nothing but their label: the app kind radio
+// buttons all have an empty value, and the "Build app" menu item has neither an
+// id nor a test attribute. Everything else is addressed through `data-ta`
+// attributes, input names, icons or structural classes, none of which depend on
+// the interface language.
 const SERVER_TO_SERVER_APP_KIND_PATTERN = /server\s*to\s*server/i;
 const BUILD_APP_MENU_ITEM_PATTERN = /build\s*app/i;
-const ADD_SCOPES_BUTTON_PATTERN = /add\s*scopes?/i;
-const SELECT_ALL_SCOPES_PATTERN = /^select all/i;
-const SELECT_ALL_ADMIN_SCOPES_PATTERN = /\(admin\)/i;
+
+// The "Add Scopes" button and the "Select All" menu of the scope dialog have no
+// attributes to go by either, but they are the only elements on their page drawn
+// with a plus icon respectively a drop-down triangle.
+const ADD_SCOPES_BUTTON_SELECTOR = 'button:has(svg mask[id^="icon_PlusSmallOutline"])';
+const SELECT_ALL_SCOPES_GLYPH = '\u25be';
 
 // The dialogs of the two design systems Zoom's Marketplace mixes mark their
 // confirming button ("Create", "Done") as the primary one, which avoids having
@@ -261,22 +263,40 @@ const ENABLED_PRIMARY_DIALOG_BUTTON_SELECTOR =
   '[role="dialog"]:visible button:is(.MuiButton-primary, .ui-Button-primary)' +
   ':not([disabled]):not([aria-disabled="true"])';
 
+const DEVELOP_MENU_BUTTON_SELECTOR = 'button[data-ta="develop"]';
+
+// Menus are modals: they cover the page with an invisible backdrop that
+// swallows pointer events until the menu is dismissed.
+const OPEN_MENU_BACKDROP_SELECTOR = '.MuiMenu-root .MuiModal-backdrop:visible';
+
 // The API terms dialog is recognized by its link to the license document, which
 // does not depend on the interface language.
 const API_TERMS_DIALOG_SELECTOR =
   '[role="dialog"]:visible:has(a[href*="zoom_api_license_and_tou"])';
 
-// Labels of the fields the app information page requires, most likely first.
-// Zoom has renamed them across versions of the page, and which ones are shown
-// depends on the app, so every candidate is tried and missing ones are skipped.
-const COMPANY_NAME_LABELS = ['Company Name', 'Company'] as const;
-const DEVELOPER_NAME_LABELS = ['Developer Name', 'Name'] as const;
-const DEVELOPER_EMAIL_LABELS = ['Developer Email', 'Email Address', 'Email'] as const;
+// The inputs of the app information page are named after the fields of Zoom's
+// app model (as are those of the credentials page). Matching the name as a
+// substring absorbs the spellings Zoom uses for the developer contact across
+// versions of the page, and covers pages that ask for a second contact.
+const COMPANY_NAME_INPUT_SELECTOR = 'input[name*="company" i]';
+const DEVELOPER_NAME_INPUT_SELECTOR =
+  'input[name*="developername" i], input[name*="contactname" i], input[name*="supportname" i]';
+const DEVELOPER_EMAIL_INPUT_SELECTOR = 'input[name*="email" i]';
 
 function visibleDialog(page: Page): Locator {
   // The Marketplace keeps dialogs of pages already visited in the DOM, so the
   // one to act on is the last visible one.
   return page.locator('[role="dialog"]:visible').last();
+}
+
+/**
+ * Wait for the Marketplace header to be there and settle: it hydrates after the
+ * page load and re-renders shortly after. Clicking into it before that opens a
+ * menu whose backdrop then stays behind, blocking every later click.
+ */
+async function waitForMarketplaceHeader(page: Page): Promise<void> {
+  await page.locator(DEVELOP_MENU_BUTTON_SELECTOR).waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+  await page.waitForTimeout(PAGE_SETTLE_MS);
 }
 
 async function readMarketplaceUserInfo(page: Page): Promise<ZoomMarketplaceUserInfo> {
@@ -294,8 +314,25 @@ async function clickEnabledPrimaryDialogButton(page: Page): Promise<void> {
   await button.click();
 }
 
+/**
+ * Close a menu that is (still) open. A menu covers the whole page with an
+ * invisible backdrop that swallows every click, so one left open blocks the
+ * rest of the flow — including a second attempt at opening it. Clicking that
+ * backdrop is how a menu is dismissed.
+ */
+async function dismissOpenMenu(page: Page): Promise<void> {
+  const menuBackdrop = page.locator(OPEN_MENU_BACKDROP_SELECTOR).first();
+  if ((await menuBackdrop.count()) === 0) {
+    return;
+  }
+  await menuBackdrop.click();
+  await menuBackdrop.waitFor({ state: 'hidden', timeout: DEFAULT_TIMEOUT_MS });
+}
+
 async function clickDevelopBuildApp(page: Page): Promise<void> {
-  const developMenuButton = page.locator('button[data-ta="develop"]');
+  await dismissOpenMenu(page);
+
+  const developMenuButton = page.locator(DEVELOP_MENU_BUTTON_SELECTOR);
   await developMenuButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
   await developMenuButton.click();
 
@@ -304,6 +341,11 @@ async function clickDevelopBuildApp(page: Page): Promise<void> {
     .first();
   await buildAppMenuItem.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
   await buildAppMenuItem.click();
+
+  // Choosing an item normally closes the menu; when it does not (the header
+  // re-rendering while the menu is open leaves it behind), its backdrop would
+  // block every later click.
+  await dismissOpenMenu(page);
 }
 
 async function selectServerToServerAppKind(appKindDialog: Locator): Promise<void> {
@@ -372,40 +414,19 @@ async function readAppCredentials(page: Page): Promise<ZoomServerToServerCredent
 }
 
 /**
- * Locate the input belonging to a label, in both the current form layout (which
- * pairs a label box with the input inside a shared group) and the older one
- * (which uses a plain `<label for=...>`). Returns null when the page has no
- * such field.
+ * Type the value into every input the selector matches that is still empty and
+ * open for editing, so fields Zoom prefilled (or the user filled) are left as
+ * they are. Matching nothing is fine: which fields a page asks for varies.
  */
-async function findLabeledInput(page: Page, labelText: string): Promise<Locator | null> {
-  const groupedInput = page
-    .locator(`div[type="layout"]:has(div[variant="label"]:text-is("${labelText}")) input`)
-    .first();
-  if ((await groupedInput.count()) > 0) {
-    return groupedInput;
-  }
-  const labelledInput = page.getByLabel(labelText, { exact: true }).first();
-  return (await labelledInput.count()) > 0 ? labelledInput : null;
-}
-
-/**
- * Fill the first of the candidate fields that the page actually has, leaving
- * fields that already carry a value alone.
- */
-async function fillLabeledInput(
-  page: Page,
-  labelCandidates: readonly string[],
-  value: string
-): Promise<void> {
-  for (const labelText of labelCandidates) {
-    const input = await findLabeledInput(page, labelText);
-    if (input === null) {
+async function fillEmptyInputs(page: Page, selector: string, value: string): Promise<void> {
+  for (const input of await page.locator(selector).all()) {
+    if (!(await input.isVisible()) || !(await input.isEditable())) {
       continue;
     }
-    if ((await input.inputValue()) === '') {
-      await typeLikeHuman(page, input, value);
+    if ((await input.inputValue()) !== '') {
+      continue;
     }
-    return;
+    await typeLikeHuman(page, input, value);
   }
 }
 
@@ -420,13 +441,13 @@ async function fillDeveloperInformation(
   userInfo: ZoomMarketplaceUserInfo
 ): Promise<void> {
   if (userInfo.userName !== undefined) {
-    await fillLabeledInput(page, DEVELOPER_NAME_LABELS, userInfo.userName);
+    await fillEmptyInputs(page, DEVELOPER_NAME_INPUT_SELECTOR, userInfo.userName);
   }
   if (userInfo.email !== undefined) {
-    await fillLabeledInput(page, DEVELOPER_EMAIL_LABELS, userInfo.email);
+    await fillEmptyInputs(page, DEVELOPER_EMAIL_INPUT_SELECTOR, userInfo.email);
     const emailDomain = userInfo.email.split('@')[1];
     if (emailDomain !== undefined) {
-      await fillLabeledInput(page, COMPANY_NAME_LABELS, emailDomain);
+      await fillEmptyInputs(page, COMPANY_NAME_INPUT_SELECTOR, emailDomain);
     }
   }
 }
@@ -468,18 +489,22 @@ async function continueToScopesPage(
  * credentials can serve any Zoom API call the account is entitled to.
  */
 async function addAllAdminScopes(page: Page): Promise<void> {
-  const addScopesButton = page.getByRole('button', { name: ADD_SCOPES_BUTTON_PATTERN }).first();
+  const addScopesButton = page.locator(ADD_SCOPES_BUTTON_SELECTOR).first();
   await addScopesButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
   await addScopesButton.click();
 
   const scopesDialog = visibleDialog(page);
-  const selectAllMenu = scopesDialog.getByText(SELECT_ALL_SCOPES_PATTERN).first();
+  const selectAllMenu = scopesDialog.getByText(SELECT_ALL_SCOPES_GLYPH).first();
   await selectAllMenu.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
   await selectAllMenu.click();
 
-  // The menu opens outside the dialog, so it is looked up on the page.
+  // The menu opens outside the dialog, so it is looked up on the page. Its
+  // entries widen from account level outwards ("Select All (Admin)", then
+  // "(Master)", then "(All)"), so the account-level one is the first.
   const selectAllAdminItem = page
-    .getByRole('menuitem', { name: SELECT_ALL_ADMIN_SCOPES_PATTERN })
+    .locator('[role="menu"]:visible')
+    .last()
+    .locator('[role="menuitem"]')
     .first();
   await selectAllAdminItem.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
   await selectAllAdminItem.click();
@@ -620,7 +645,13 @@ class ZoomServiceSession extends BrowserFollowupServiceSession {
       throw new LoginFailedError('No page available in browser context.');
     }
 
+    // Fail fast on anything unreachable: without this, a click blocked by a
+    // leftover modal backdrop retries for Playwright's default half minute
+    // before it reports a timeout.
+    page.setDefaultTimeout(DEFAULT_TIMEOUT_MS);
+
     await page.goto(ZOOM_MARKETPLACE_BUILD_URL);
+    await waitForMarketplaceHeader(page);
 
     const userInfo = await readMarketplaceUserInfo(page);
     if (userInfo.canBuildServerToServerOAuthApp === false) {
