@@ -227,6 +227,9 @@ const APP_CREATION_TIMEOUT_MS = 30_000;
 // Time given to a dialog or page to render after a click.
 const PAGE_SETTLE_MS = 1000;
 
+// Time given to a dialog or menu to finish animating into place.
+const ANIMATION_SETTLE_MS = 300;
+
 // The "Build app" dialog may be preceded by the API terms of use, which the
 // user has to accept before Zoom lets the flow continue, so the click may have
 // to be repeated.
@@ -333,38 +336,49 @@ async function readMarketplaceUserInfo(page: Page): Promise<ZoomMarketplaceUserI
 }
 
 async function clickEnabledPrimaryDialogButton(page: Page): Promise<void> {
-  const button = page.locator(ENABLED_PRIMARY_DIALOG_BUTTON_SELECTOR).last();
-  await button.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-  await button.click();
+  await clickControl(page.locator(ENABLED_PRIMARY_DIALOG_BUTTON_SELECTOR).last());
+}
+
+/**
+ * Click a control of the Marketplace's interface.
+ *
+ * Its buttons and menu entries swap modal layers in and out, and a backdrop
+ * appearing while the mouse button is still down is what Playwright reads as
+ * its own click having been intercepted: it discards the click and retries —
+ * only now the backdrop that the first click brought up blocks every attempt,
+ * until the action times out with a menu or dialog sitting open. Forcing the
+ * click sends the same mouse events without that hit-target check, which is
+ * why every click of this flow goes through here.
+ */
+async function clickControl(locator: Locator): Promise<void> {
+  await locator.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+  // A forced click skips the wait for the element to stop moving, so a dialog
+  // or menu still animating into place gets its time here instead.
+  await locator.page().waitForTimeout(ANIMATION_SETTLE_MS);
+  await locator.click({ force: true });
 }
 
 /**
  * Close a menu that is (still) open. A menu covers the whole page with an
  * invisible backdrop that swallows every click, so one left open blocks the
- * rest of the flow — including a second attempt at opening it. Clicking that
- * backdrop is how a menu is dismissed.
+ * rest of the flow — including a second attempt at opening it.
  */
 async function dismissOpenMenu(page: Page): Promise<void> {
   const menuBackdrop = page.locator(OPEN_MENU_BACKDROP_SELECTOR).first();
   if ((await menuBackdrop.count()) === 0) {
     return;
   }
-  await menuBackdrop.click();
+  // Escape rather than a click on the backdrop, which would land on whatever is
+  // underneath should the menu close on its own in the meantime.
+  await page.keyboard.press('Escape');
   await menuBackdrop.waitFor({ state: 'hidden', timeout: DEFAULT_TIMEOUT_MS });
 }
 
 async function clickDevelopBuildApp(page: Page): Promise<void> {
   await dismissOpenMenu(page);
 
-  const developMenuButton = page.locator(DEVELOP_MENU_BUTTON_SELECTOR);
-  await developMenuButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-  await developMenuButton.click();
-
-  const buildAppMenuItem = page
-    .getByRole('menuitem', { name: BUILD_APP_MENU_ITEM_PATTERN })
-    .first();
-  await buildAppMenuItem.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-  await buildAppMenuItem.click();
+  await clickControl(page.locator(DEVELOP_MENU_BUTTON_SELECTOR));
+  await clickControl(page.getByRole('menuitem', { name: BUILD_APP_MENU_ITEM_PATTERN }).first());
 
   // Choosing an item normally closes the menu; when it does not (the header
   // re-rendering while the menu is open leaves it behind), its backdrop would
@@ -477,9 +491,7 @@ async function fillDeveloperInformation(
 }
 
 async function clickContinueButton(page: Page): Promise<void> {
-  const continueButton = page.locator('button[data-ta="continue-button"]');
-  await continueButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-  await continueButton.click();
+  await clickControl(page.locator('button[data-ta="continue-button"]'));
 }
 
 /**
@@ -513,25 +525,17 @@ async function continueToScopesPage(
  * credentials can serve any Zoom API call the account is entitled to.
  */
 async function addAllAdminScopes(page: Page): Promise<void> {
-  const addScopesButton = page.locator(ADD_SCOPES_BUTTON_SELECTOR).first();
-  await addScopesButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-  await addScopesButton.click();
+  await clickControl(page.locator(ADD_SCOPES_BUTTON_SELECTOR).first());
 
   const scopesDialog = visibleDialog(page);
-  const selectAllMenu = scopesDialog.getByText(SELECT_ALL_SCOPES_GLYPH).first();
-  await selectAllMenu.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-  await selectAllMenu.click();
+  await clickControl(scopesDialog.getByText(SELECT_ALL_SCOPES_GLYPH).first());
 
   // The menu opens outside the dialog, so it is looked up on the page. Its
   // entries widen from account level outwards ("Select All (Admin)", then
   // "(Master)", then "(All)"), so the account-level one is the first.
-  const selectAllAdminItem = page
-    .locator('[role="menu"]:visible')
-    .last()
-    .locator('[role="menuitem"]')
-    .first();
-  await selectAllAdminItem.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-  await selectAllAdminItem.click();
+  await clickControl(
+    page.locator('[role="menu"]:visible').last().locator('[role="menuitem"]').first()
+  );
 
   // Confirm the selection ("Done").
   await clickEnabledPrimaryDialogButton(page);
@@ -539,9 +543,7 @@ async function addAllAdminScopes(page: Page): Promise<void> {
 }
 
 async function activateApp(page: Page): Promise<void> {
-  const activateButton = page.locator('button[data-ta="activeAppBtn"]');
-  await activateButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-  await activateButton.click();
+  await clickControl(page.locator('button[data-ta="activeAppBtn"]'));
   await page.waitForTimeout(PAGE_SETTLE_MS);
 
   // Some accounts have to confirm the activation in a dialog.
