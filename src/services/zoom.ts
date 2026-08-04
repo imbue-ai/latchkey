@@ -25,6 +25,13 @@ import {
 
 const ZOOM_TOKEN_ENDPOINT = 'https://zoom.us/oauth/token';
 
+// Sign-in happens on Zoom itself rather than on the App Marketplace, which
+// bounces visitors through a less predictable chain of pages.
+const ZOOM_SIGN_IN_URL = 'https://zoom.us/signin#/login';
+
+// Where Zoom sends the user once signed in; the path may carry more behind it.
+const ZOOM_SIGNED_IN_HOME_URL_PREFIX = 'https://zoom.us/myhome';
+
 // The Marketplace page that lists the user's apps and carries the "Develop"
 // menu the app creation flow starts from.
 const ZOOM_MARKETPLACE_BUILD_URL = 'https://marketplace.zoom.us/user/build';
@@ -237,9 +244,6 @@ const ZoomMarketplaceUserInfoSchema = z.object({
 
 type ZoomMarketplaceUserInfo = z.infer<typeof ZoomMarketplaceUserInfoSchema>;
 
-// Marker of a Marketplace page rendered for a signed-in user.
-const SIGNED_IN_MARKETPLACE_PAGE_PATTERN = /window\.appConf\.userInfo = \{[^\n]*"email":"[^"]+"/;
-
 const APP_CREDENTIALS_URL_PATTERN = /\/develop\/apps\/([^/?#]+)\/credentials/;
 
 // The two controls that carry nothing but their label: the app kind radio
@@ -299,13 +303,22 @@ async function waitForMarketplaceHeader(page: Page): Promise<void> {
   await page.waitForTimeout(PAGE_SETTLE_MS);
 }
 
-async function readMarketplaceUserInfo(page: Page): Promise<ZoomMarketplaceUserInfo> {
+/**
+ * Read the signed-in user, their privileges and their account off a Marketplace
+ * page. Returns null when the page carries no user, which is how a Marketplace
+ * page rendered for a visitor who is not (or no longer) signed in looks.
+ */
+async function readMarketplaceUserInfo(page: Page): Promise<ZoomMarketplaceUserInfo | null> {
   const rawUserInfo: unknown = await page.evaluate(() => {
     const appConf = (globalThis as { appConf?: { userInfo?: unknown } }).appConf;
     return appConf?.userInfo ?? null;
   });
   const parsed = ZoomMarketplaceUserInfoSchema.safeParse(rawUserInfo);
-  return parsed.success ? parsed.data : {};
+  if (!parsed.success) {
+    return null;
+  }
+  const userInfo = parsed.data;
+  return userInfo.email === undefined && userInfo.userName === undefined ? null : userInfo;
 }
 
 async function clickEnabledPrimaryDialogButton(page: Page): Promise<void> {
@@ -552,26 +565,22 @@ class ZoomServiceSession extends BrowserFollowupServiceSession {
   protected readonly followupWork = FollowupWork.CreateApp;
   private isSignedIn = false;
 
+  /**
+   * Sign-in is over once Zoom serves the user their home page, which is where
+   * it sends them after the last step of the sign-in (including any two-factor
+   * or consent step in between).
+   */
   onResponse(response: Response): void {
     if (this.isSignedIn) {
       return;
     }
-    if (!response.request().url().startsWith('https://marketplace.zoom.us/')) {
+    const request = response.request();
+    if (!request.isNavigationRequest() || response.status() !== 200) {
       return;
     }
-    if (response.status() !== 200) {
-      return;
+    if (request.url().startsWith(ZOOM_SIGNED_IN_HOME_URL_PREFIX)) {
+      this.isSignedIn = true;
     }
-    void response
-      .text()
-      .then((body) => {
-        if (SIGNED_IN_MARKETPLACE_PAGE_PATTERN.test(body)) {
-          this.isSignedIn = true;
-        }
-      })
-      .catch(() => {
-        // Bodies that can no longer be read prove nothing either way.
-      });
   }
 
   protected isLoginComplete(): boolean {
@@ -650,10 +659,18 @@ class ZoomServiceSession extends BrowserFollowupServiceSession {
     // before it reports a timeout.
     page.setDefaultTimeout(DEFAULT_TIMEOUT_MS);
 
+    // Sign-in happened on Zoom itself; the app is created on the Marketplace,
+    // which the same session carries over to.
     await page.goto(ZOOM_MARKETPLACE_BUILD_URL);
     await waitForMarketplaceHeader(page);
 
     const userInfo = await readMarketplaceUserInfo(page);
+    if (userInfo === null) {
+      throw new LoginFailedError(
+        'The Zoom App Marketplace did not recognize the signed-in user. ' +
+          'Sign in to https://marketplace.zoom.us/ in the browser window and try again.'
+      );
+    }
     if (userInfo.canBuildServerToServerOAuthApp === false) {
       throw new ZoomAppCreationNotPermittedError();
     }
@@ -682,7 +699,7 @@ export class Zoom extends Service {
   readonly name = 'zoom';
   readonly displayName = 'Zoom';
   readonly baseApiUrls = ['https://api.zoom.us/v2/'] as const;
-  readonly loginUrl = ZOOM_MARKETPLACE_BUILD_URL;
+  readonly loginUrl = ZOOM_SIGN_IN_URL;
   readonly info =
     'https://developers.zoom.us/docs/api/. ' +
     'Browser login creates a Server-to-Server OAuth app with all admin scopes; ' +
