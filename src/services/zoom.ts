@@ -17,6 +17,8 @@ import { typeLikeHuman } from '../playwrightUtils.js';
 import {
   BrowserFollowupServiceSession,
   FollowupWork,
+  isBrowserClosedError,
+  LoginCancelledError,
   LoginFailedError,
   Service,
 } from './core/base.js';
@@ -211,9 +213,13 @@ const APP_CREATION_TIMEOUT_MS = 30_000;
 // Time given to a dialog or page to render after a click.
 const PAGE_SETTLE_MS = 1000;
 
-// The "Build app" dialog may be preceded by the API terms of use, which reload
-// the page when accepted, so the click may have to be repeated.
+// The "Build app" dialog may be preceded by the API terms of use, which the
+// user has to accept before Zoom lets the flow continue, so the click may have
+// to be repeated.
 const BUILD_APP_ATTEMPTS = 4;
+
+// Time allowed for the user to accept Zoom's API License and Terms of Use.
+const TERMS_OF_USE_USER_INTERACTION_TIMEOUT_MS = 10 * 60 * 1000;
 
 // Zoom walks the app setup through several pages (credentials, information,
 // feature, scopes), each behind its own "Continue" button, and rejects
@@ -288,24 +294,6 @@ async function clickEnabledPrimaryDialogButton(page: Page): Promise<void> {
   await button.click();
 }
 
-/**
- * Accept Zoom's API License and Terms of Use, which are shown once per account
- * before the first app can be created. Reports whether the dialog was there.
- */
-async function acceptApiTermsOfUseIfPresent(page: Page): Promise<boolean> {
-  const dialog = page.locator(API_TERMS_DIALOG_SELECTOR);
-  if ((await dialog.count()) === 0) {
-    return false;
-  }
-  // The dialog has no primary-button class, but its actions are ordered with
-  // the accepting button ("Agree") first.
-  const agreeButton = dialog.locator('.MuiDialogActions-root button').first();
-  await agreeButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-  await agreeButton.click();
-  await page.waitForTimeout(PAGE_SETTLE_MS);
-  return true;
-}
-
 async function clickDevelopBuildApp(page: Page): Promise<void> {
   const developMenuButton = page.locator('button[data-ta="develop"]');
   await developMenuButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
@@ -316,30 +304,6 @@ async function clickDevelopBuildApp(page: Page): Promise<void> {
     .first();
   await buildAppMenuItem.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
   await buildAppMenuItem.click();
-}
-
-/**
- * Open the dialog that asks what kind of app to create, accepting the API terms
- * of use on the way if the account has not signed them yet.
- */
-async function openAppKindDialog(page: Page): Promise<Locator> {
-  const appKindDialog = page
-    .locator('[role="dialog"]:visible')
-    .filter({ has: page.locator('input[type="radio"]') })
-    .last();
-
-  for (let attempt = 0; attempt < BUILD_APP_ATTEMPTS; attempt++) {
-    await acceptApiTermsOfUseIfPresent(page);
-    if (await appKindDialog.isVisible()) {
-      return appKindDialog;
-    }
-    await clickDevelopBuildApp(page);
-    await page.waitForTimeout(PAGE_SETTLE_MS);
-  }
-
-  throw new LoginFailedError(
-    'Zoom\'s "Build app" dialog did not open; the App Marketplace may have changed.'
-  );
 }
 
 async function selectServerToServerAppKind(appKindDialog: Locator): Promise<void> {
@@ -589,6 +553,64 @@ class ZoomServiceSession extends BrowserFollowupServiceSession {
     return this.isSignedIn;
   }
 
+  /**
+   * Accounts that have not accepted Zoom's API License and Terms of Use yet see
+   * a dialog blocking the app creation. Accepting the terms is the user's
+   * decision, so the page is surfaced and the flow waits until the dialog is
+   * gone rather than clicking "Agree" on the user's behalf.
+   */
+  private async waitForApiTermsOfUseDecision(page: Page): Promise<void> {
+    const termsDialog = page.locator(API_TERMS_DIALOG_SELECTOR).first();
+    if ((await termsDialog.count()) === 0) {
+      return;
+    }
+
+    try {
+      await page.bringToFront();
+      // Either button of the dialog closes it: declining leaves the terms
+      // unsigned, which shows the dialog again on the next attempt.
+      await termsDialog.waitFor({
+        state: 'hidden',
+        timeout: TERMS_OF_USE_USER_INTERACTION_TIMEOUT_MS,
+      });
+    } catch (error: unknown) {
+      if (error instanceof Error && isBrowserClosedError(error)) {
+        throw new LoginCancelledError();
+      }
+      throw error;
+    }
+
+    await this.spinnerPage?.bringToFront();
+    await page.waitForTimeout(PAGE_SETTLE_MS);
+  }
+
+  /**
+   * Open the dialog that asks what kind of app to create, letting the user
+   * accept the API terms of use on the way if the account has not signed them
+   * yet.
+   */
+  private async openAppKindDialog(page: Page): Promise<Locator> {
+    const appKindDialog = page
+      .locator('[role="dialog"]:visible')
+      .filter({ has: page.locator('input[type="radio"]') })
+      .last();
+
+    for (let attempt = 0; attempt < BUILD_APP_ATTEMPTS; attempt++) {
+      await this.waitForApiTermsOfUseDecision(page);
+      if (await appKindDialog.isVisible()) {
+        return appKindDialog;
+      }
+      await clickDevelopBuildApp(page);
+      await page.waitForTimeout(PAGE_SETTLE_MS);
+    }
+
+    throw new LoginFailedError(
+      'Zoom\'s "Build app" dialog did not open. Zoom asks for its API License ' +
+        'and Terms of Use to be accepted before an app can be created; without ' +
+        'that, the app has to be created manually.'
+    );
+  }
+
   protected async performBrowserFollowup(
     context: BrowserContext,
     _oldCredentials?: ApiCredentials
@@ -605,7 +627,7 @@ class ZoomServiceSession extends BrowserFollowupServiceSession {
       throw new ZoomAppCreationNotPermittedError();
     }
 
-    const appKindDialog = await openAppKindDialog(page);
+    const appKindDialog = await this.openAppKindDialog(page);
     await selectServerToServerAppKind(appKindDialog);
     await clickEnabledPrimaryDialogButton(page);
 
