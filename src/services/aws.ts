@@ -293,8 +293,7 @@ export class Aws extends Service {
     if (!accessKeyId.startsWith('AKIA') && !accessKeyId.startsWith('ASIA')) {
       throw new AwsCredentialError(
         "The provided access key ID doesn't look like an AWS access key ID " +
-          '(expected to start with AKIA or ASIA).\n' +
-          'Example: <access-key-id>'
+          '(expected to start with AKIA or ASIA).'
       );
     }
     return new AwsCredentials(accessKeyId, secretAccessKey);

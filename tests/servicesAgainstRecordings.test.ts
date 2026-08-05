@@ -36,8 +36,14 @@ const RECORDINGS_DIRECTORY = resolve(__dirname, '..', 'scripts', 'recordings');
 // Default recording filename (matches recordBrowserSession.ts)
 const DEFAULT_RECORDING_NAME = 'login_session.json';
 
-// Do not test services that require special followup steps.
-const BLACKLIST = new Set(['dropbox', 'github', 'linear']);
+// Do not test services that require special followup steps: their credential is
+// minted by an interactive browser action (a BrowserFollowupServiceSession) and
+// is not present in the recorded login network traffic, so replaying a recording
+// cannot reconstruct it. ngrok is such a service (its API key is created and read
+// from the dashboard's "New API Key" dialog, exactly like linear).
+// NOTE: todoist is also a BrowserFollowupServiceSession and arguably belongs here
+// too; it predates this list and is left as-is to keep this change scoped.
+const BLACKLIST = new Set(['dropbox', 'github', 'linear', 'ngrok']);
 
 class InvalidRecordingError extends Error {
   constructor(message: string) {
