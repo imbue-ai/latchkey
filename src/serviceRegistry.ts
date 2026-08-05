@@ -38,6 +38,7 @@ import {
   UMAMI,
   RAMP,
   TODOIST,
+  NGROK,
 } from './services/index.js';
 
 export class DuplicateServiceNameError extends Error {
@@ -237,4 +238,5 @@ export const SERVICE_REGISTRY = new ServiceRegistry([
   UMAMI,
   RAMP,
   TODOIST,
+  NGROK,
 ]);

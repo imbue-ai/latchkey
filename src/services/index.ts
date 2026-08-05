@@ -64,3 +64,4 @@ export { Coolify, COOLIFY } from './coolify.js';
 export { Umami, UMAMI } from './umami.js';
 export { Ramp, RAMP } from './ramp.js';
 export { Todoist, TODOIST } from './todoist.js';
+export { Ngrok, NGROK } from './ngrok.js';
