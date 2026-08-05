@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { ApiCredentialsUsageError, AuthorizationBearer } from '../src/apiCredentials/base.js';
 import { resetAsyncSubprocessRunner, setAsyncSubprocessRunner } from '../src/curl.js';
 import {
-  isZoomSignedInHomeUrl,
+  isZoomSignedInLandingUrl,
   ZOOM,
   ZoomCredentialError,
   ZoomServerToServerCredentials,
@@ -100,20 +100,24 @@ describe('Zoom.getCredentialsNoCurl', () => {
   });
 });
 
-describe('isZoomSignedInHomeUrl', () => {
-  it('accepts the home page on any regional host, and as a bare redirect path', () => {
-    expect(isZoomSignedInHomeUrl('https://zoom.us/myhome')).toBe(true);
-    expect(isZoomSignedInHomeUrl('https://us05web.zoom.us/myhome')).toBe(true);
-    expect(isZoomSignedInHomeUrl('https://us05web.zoom.us/myhome?from=signin')).toBe(true);
-    expect(isZoomSignedInHomeUrl('https://us05web.zoom.us/myhome/setting')).toBe(true);
-    expect(isZoomSignedInHomeUrl('/myhome')).toBe(true);
+describe('isZoomSignedInLandingUrl', () => {
+  it('accepts the pages Zoom lands on, on any regional host and as a bare path', () => {
+    expect(isZoomSignedInLandingUrl('https://zoom.us/myhome')).toBe(true);
+    expect(isZoomSignedInLandingUrl('https://us05web.zoom.us/myhome')).toBe(true);
+    expect(isZoomSignedInLandingUrl('https://us05web.zoom.us/myhome?from=signin')).toBe(true);
+    expect(isZoomSignedInLandingUrl('https://us05web.zoom.us/myhome/setting')).toBe(true);
+    expect(isZoomSignedInLandingUrl('https://us06web.zoom.us/profile')).toBe(true);
+    expect(isZoomSignedInLandingUrl('https://us06web.zoom.us/profile/setting')).toBe(true);
+    expect(isZoomSignedInLandingUrl('/myhome')).toBe(true);
+    expect(isZoomSignedInLandingUrl('/profile')).toBe(true);
   });
 
   it('rejects other pages, and other hosts borrowing the path', () => {
-    expect(isZoomSignedInHomeUrl('https://zoom.us/signin#/login')).toBe(false);
-    expect(isZoomSignedInHomeUrl('https://us05web.zoom.us/myhomepage')).toBe(false);
-    expect(isZoomSignedInHomeUrl('https://marketplace.zoom.us/user/build')).toBe(false);
-    expect(isZoomSignedInHomeUrl('https://not-zoom.example.com/myhome')).toBe(false);
+    expect(isZoomSignedInLandingUrl('https://zoom.us/signin#/login')).toBe(false);
+    expect(isZoomSignedInLandingUrl('https://us05web.zoom.us/myhomepage')).toBe(false);
+    expect(isZoomSignedInLandingUrl('https://us06web.zoom.us/profiles')).toBe(false);
+    expect(isZoomSignedInLandingUrl('https://marketplace.zoom.us/user/build')).toBe(false);
+    expect(isZoomSignedInLandingUrl('https://not-zoom.example.com/profile')).toBe(false);
   });
 });
 

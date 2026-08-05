@@ -29,18 +29,19 @@ const ZOOM_TOKEN_ENDPOINT = 'https://zoom.us/oauth/token';
 // bounces visitors through a less predictable chain of pages.
 const ZOOM_SIGN_IN_URL = 'https://zoom.us/signin#/login';
 
-// Where Zoom sends the user once signed in: their home page, served by whichever
-// regional host runs their account (https://us05web.zoom.us/myhome, ...) and
-// possibly with a query or a subpath behind it. The redirect there names the
-// page either as an absolute URL or as a path.
-const SIGNED_IN_HOME_URL_PATTERN = /^(https:\/\/([\w-]+\.)*zoom\.us)?\/myhome\b/i;
+// Where Zoom lands a user once signed in: their home page or their profile,
+// depending on the account, served by whichever regional host runs it
+// (https://us06web.zoom.us/profile, ...) and possibly with a query or a subpath
+// behind it. The redirect there names the page either as an absolute URL or as
+// a path.
+const SIGNED_IN_LANDING_URL_PATTERN = /^(https:\/\/([\w-]+\.)*zoom\.us)?\/(myhome|profile)\b/i;
 
 /**
- * Whether a URL names the home page Zoom sends a user to once they are signed
- * in. Also accepts the bare path, the form a redirect to it may take.
+ * Whether a URL names a page Zoom lands a user on once they are signed in. Also
+ * accepts the bare path, the form a redirect to it may take.
  */
-export function isZoomSignedInHomeUrl(url: string): boolean {
-  return SIGNED_IN_HOME_URL_PATTERN.test(url);
+export function isZoomSignedInLandingUrl(url: string): boolean {
+  return SIGNED_IN_LANDING_URL_PATTERN.test(url);
 }
 
 // The Marketplace page that lists the user's apps and carries the "Develop"
@@ -698,11 +699,11 @@ class ZoomServiceSession extends BrowserFollowupServiceSession {
   private isSignedIn = false;
 
   /**
-   * Sign-in is over once Zoom sends the user to their home page, which it does
-   * after the last step of the sign-in (whatever two-factor or consent steps
-   * came before). Being sent there is enough — waiting for the home page to
-   * answer, let alone to render, would only cost a round trip, since the flow
-   * navigates away from it to the Marketplace anyway.
+   * Sign-in is over once Zoom sends the user on to their home page or profile,
+   * which it does after the last step of the sign-in (whatever two-factor or
+   * consent steps came before). Being sent there is enough — waiting for that
+   * page to answer, let alone to render, would only cost a round trip, since
+   * the flow navigates away from it to the Marketplace anyway.
    */
   onResponse(response: Response): void {
     if (this.isSignedIn) {
@@ -713,8 +714,8 @@ class ZoomServiceSession extends BrowserFollowupServiceSession {
     }
     const redirectTarget = response.headers().location;
     if (
-      isZoomSignedInHomeUrl(response.request().url()) ||
-      (redirectTarget !== undefined && isZoomSignedInHomeUrl(redirectTarget))
+      isZoomSignedInLandingUrl(response.request().url()) ||
+      (redirectTarget !== undefined && isZoomSignedInLandingUrl(redirectTarget))
     ) {
       this.isSignedIn = true;
     }
