@@ -16,7 +16,10 @@ import { RegisteredService } from '../src/services/core/registered.js';
 import { ServiceSession } from '../src/services/index.js';
 import { SERVICE_REGISTRY } from '../src/serviceRegistry.js';
 
-const INSTANCE_BASE = 'https://oh.example.com/api/';
+const INSTANCE_ORIGIN = 'https://oh.example.com';
+// The instance is registered with its root as the base API URL (OpenHost serves
+// owner endpoints outside /api/ too), not an /api/-scoped base.
+const INSTANCE_BASE = 'https://oh.example.com/';
 const INSTANCE_LOGIN = 'https://oh.example.com/login';
 
 async function headerFrom(credentials: ApiCredentials): Promise<string | null> {
@@ -60,7 +63,7 @@ describe('setsCookie', () => {
 describe('mintOpenhostToken', () => {
   it('mints a never-expiring token and stores it as a bearer credential', async () => {
     const { calls } = stubMint({ stdout: JSON.stringify({ token: 'secret-token' }) });
-    const credentials = await mintOpenhostToken(INSTANCE_BASE, 'session_token=abc', 'my-app');
+    const credentials = await mintOpenhostToken(INSTANCE_ORIGIN, 'session_token=abc', 'my-app');
     expect(await headerFrom(credentials)).toBe('Authorization: Bearer secret-token');
 
     const args = calls[0]!;
@@ -76,17 +79,17 @@ describe('mintOpenhostToken', () => {
 
   it('fails when curl fails, the body is not JSON, or the token is absent', async () => {
     stubMint({ returncode: 7, stderr: 'connection refused' });
-    await expect(mintOpenhostToken(INSTANCE_BASE, 'session_token=abc', 'app')).rejects.toThrow(
+    await expect(mintOpenhostToken(INSTANCE_ORIGIN, 'session_token=abc', 'app')).rejects.toThrow(
       /Minting an OpenHost API token failed/
     );
 
     stubMint({ stdout: '<html>login</html>' });
-    await expect(mintOpenhostToken(INSTANCE_BASE, 'session_token=abc', 'app')).rejects.toThrow(
+    await expect(mintOpenhostToken(INSTANCE_ORIGIN, 'session_token=abc', 'app')).rejects.toThrow(
       /did not return JSON/
     );
 
     stubMint({ stdout: JSON.stringify({ nope: 1 }) });
-    await expect(mintOpenhostToken(INSTANCE_BASE, 'session_token=abc', 'app')).rejects.toThrow(
+    await expect(mintOpenhostToken(INSTANCE_ORIGIN, 'session_token=abc', 'app')).rejects.toThrow(
       /returned no token/
     );
   });

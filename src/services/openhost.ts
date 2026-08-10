@@ -9,17 +9,23 @@
  *
  *   latchkey services register my-openhost \
  *     --service-family openhost \
- *     --base-api-url "https://oh.example.com/api/" \
+ *     --base-api-url "https://oh.example.com/" \
  *     --login-url "https://oh.example.com/login"
+ *
+ * Register the instance's **root** as the base API URL, not `.../api/`:
+ * OpenHost's owner API is not confined to `/api/` -- app controls such as
+ * `/stop_app/<id>`, `/reload_app/<id>` and `/app_logs/<id>` are served at the
+ * root -- so a `/api/`-scoped base would leave the token uninjected on those.
  *
  * The registered instance supplies the login and API URLs, and the login below
  * reads them from `this.service`, so the same connector works for any instance.
  *
  * Auth: the owner signs in with a password at the instance's `/login`, which
  * sets a `session_token` cookie. The connector then spends that session once to
- * mint a never-expiring personal API token (`POST <base>tokens`, whose value is
- * returned in the response) and stores it as an `Authorization: Bearer`
- * credential -- durable, unlike the session cookie itself.
+ * mint a never-expiring personal API token (`POST <origin>/api/tokens`, whose
+ * value is returned in the response) and stores it as an `Authorization: Bearer`
+ * credential -- durable, unlike the session cookie itself. The mint endpoint is
+ * a fixed absolute path on the instance origin, independent of the base above.
  */
 
 import type { Browser, BrowserContext, Response } from 'playwright';
@@ -31,9 +37,10 @@ import { LoginFailedError, Service, ServiceSession } from './core/base.js';
 // it authenticates the mint request.
 const OPENHOST_SESSION_COOKIE = 'session_token';
 
-// The owner API path, relative to the instance's base API URL, that mints a
-// personal access token. OpenHost returns the token's value once in the body.
-const OPENHOST_TOKEN_PATH = 'tokens';
+// The owner API endpoint that mints a personal access token: an absolute path
+// on the instance origin (OpenHost's owner API lives under `/api/`, even when
+// the injection base is the root). OpenHost returns the token once in the body.
+const OPENHOST_TOKEN_ENDPOINT = '/api/tokens';
 
 /**
  * Whether a `Set-Cookie` header assigns a non-empty value to `name`.
@@ -57,16 +64,16 @@ export function setsCookie(setCookieHeaderValue: string, name: string): boolean 
  * and read the token out of the JSON response.
  *
  * Separated from the session so the network step is testable with the async
- * subprocess runner swapped out. `baseApiUrl` is the instance's base API URL
- * (e.g. `https://oh.example.com/api/`); `tokenName` is a recognizable label the
+ * subprocess runner swapped out. `instanceOrigin` is the instance's scheme +
+ * host (e.g. `https://oh.example.com`); `tokenName` is a recognizable label the
  * user can find and revoke.
  */
 export async function mintOpenhostToken(
-  baseApiUrl: string,
+  instanceOrigin: string,
   cookieHeader: string,
   tokenName: string
 ): Promise<ApiCredentials> {
-  const mintUrl = new URL(OPENHOST_TOKEN_PATH, baseApiUrl).toString();
+  const mintUrl = new URL(OPENHOST_TOKEN_ENDPOINT, instanceOrigin).toString();
   const origin = new URL(mintUrl).origin;
   const result = await runCapturedAsync([
     '-sS',
@@ -138,13 +145,16 @@ class OpenhostServiceSession extends ServiceSession {
     context: BrowserContext,
     _oldCredentials?: ApiCredentials
   ): Promise<ApiCredentials | null> {
-    const baseApiUrl = this.service.baseApiUrls[0];
-    if (typeof baseApiUrl !== 'string') {
-      throw new LoginFailedError(
-        'OpenHost must be registered with a base API URL for its instance.'
-      );
+    // The instance origin comes from the login URL the instance was registered
+    // with -- not the injection base, which is the root and would otherwise put
+    // the mint endpoint at `/tokens` rather than `/api/tokens`.
+    let instanceOrigin: string;
+    try {
+      instanceOrigin = new URL(this.service.loginUrl).origin;
+    } catch {
+      throw new LoginFailedError('OpenHost must be registered with a login URL for its instance.');
     }
-    const mintUrl = new URL(OPENHOST_TOKEN_PATH, baseApiUrl).toString();
+    const mintUrl = new URL(OPENHOST_TOKEN_ENDPOINT, instanceOrigin).toString();
     // Send what the browser holds for the mint URL -- the session cookie the
     // sign-in set, plus any others (a CSRF cookie, say) scoped to it.
     const cookies = await context.cookies(mintUrl);
@@ -152,7 +162,7 @@ class OpenhostServiceSession extends ServiceSession {
       throw new LoginFailedError('No OpenHost session cookies were available to mint a token.');
     }
     const cookieHeader = cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join('; ');
-    return mintOpenhostToken(baseApiUrl, cookieHeader, this.generateAppName());
+    return mintOpenhostToken(instanceOrigin, cookieHeader, this.generateAppName());
   }
 }
 
@@ -173,7 +183,8 @@ export class Openhost extends Service {
   readonly info =
     'Self-hosted OpenHost (https://github.com/imbue-openhost/openhost). Register an instance: ' +
     'latchkey services register <name> --service-family openhost ' +
-    '--base-api-url "https://<host>/api/" --login-url "https://<host>/login". ' +
+    '--base-api-url "https://<host>/" --login-url "https://<host>/login". ' +
+    'Use the instance root as the base URL (OpenHost serves owner endpoints outside /api/ too). ' +
     'Signing in mints a personal API token and stores it as a bearer credential.';
   // No fixed host to check against; a registered instance reports its own status.
   readonly credentialCheckCurlArguments = [] as const;
