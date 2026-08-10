@@ -38,7 +38,9 @@ import {
   UMAMI,
   RAMP,
   TODOIST,
-  NGROK, HUGGINGFACE } from './services/index.js';
+  NGROK,
+  HUGGINGFACE,
+} from './services/index.js';
 
 export class DuplicateServiceNameError extends Error {
   constructor(name: string) {

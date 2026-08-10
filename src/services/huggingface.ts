@@ -123,9 +123,10 @@ export class Huggingface extends Service {
   // (add `huggingface-read` to list/download models & datasets; `huggingface-write`
   // covers creating repos and uploading).
   readonly info =
-    'Hugging Face Hub + Inference. Signing in mints a read-only token. To mint and run ' +
-    'hosted inference, request the huggingface-api scope with huggingface-inference (add ' +
-    'huggingface-read to download models/datasets). Docs: https://huggingface.co/docs/hub/en/api';
+    'Hugging Face Hub + Inference. Signing in mints a read-only token. Request the ' +
+    'huggingface-api scope with huggingface-read (list and download models/datasets), ' +
+    'huggingface-write (create repos, upload), or huggingface-inference (run hosted ' +
+    'inference). Docs: https://huggingface.co/docs/hub/en/api';
 
   // whoami-v2 returns 200 for any valid token; the stored bearer header is
   // added by the credential before the request is sent.
