@@ -43,7 +43,7 @@ const DEFAULT_RECORDING_NAME = 'login_session.json';
 // from the dashboard's "New API Key" dialog, exactly like linear).
 // NOTE: todoist is also a BrowserFollowupServiceSession and arguably belongs here
 // too; it predates this list and is left as-is to keep this change scoped.
-const BLACKLIST = new Set(['dropbox', 'github', 'linear', 'ngrok']);
+const BLACKLIST = new Set(['dropbox', 'github', 'linear', 'ngrok', 'huggingface']);
 
 class InvalidRecordingError extends Error {
   constructor(message: string) {

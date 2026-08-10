@@ -94,7 +94,8 @@ class HuggingfaceServiceSession extends BrowserFollowupServiceSession {
     await nameInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await typeLikeHuman(page, nameInput, tokenName);
 
-    const createButton = page.locator('button[type="submit"]', { hasText: 'Create token' });
+    // Locale-independent: the create button is the submit inside the token-name form.
+    const createButton = page.locator('form:has(input[name="displayName"]) button[type="submit"]');
     await createButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await createButton.click();
 
@@ -117,7 +118,14 @@ export class Huggingface extends Service {
   readonly displayName = 'Hugging Face';
   readonly baseApiUrls = [HF_HUB_BASE_URL, HF_ROUTER_BASE_URL] as const;
   readonly loginUrl = HF_LOGIN_URL;
-  readonly info = 'https://huggingface.co/docs/hub/en/api';
+  // Signing in mints a read-only User Access Token. To mint and run hosted
+  // inference, request the `huggingface-api` scope with `huggingface-inference`
+  // (add `huggingface-read` to list/download models & datasets; `huggingface-write`
+  // covers creating repos and uploading).
+  readonly info =
+    'Hugging Face Hub + Inference. Signing in mints a read-only token. To mint and run ' +
+    'hosted inference, request the huggingface-api scope with huggingface-inference (add ' +
+    'huggingface-read to download models/datasets). Docs: https://huggingface.co/docs/hub/en/api';
 
   // whoami-v2 returns 200 for any valid token; the stored bearer header is
   // added by the credential before the request is sent.
