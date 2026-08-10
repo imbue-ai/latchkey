@@ -102,7 +102,14 @@ export class RegisteredService extends Service {
     }
 
     if (loginUrl !== undefined && familyService?.getSession !== undefined) {
-      this.getSession = (appNamePrefix: string) => familyService.getSession!(appNamePrefix);
+      // Run the family's login bound to *this* registered service, not the
+      // family, so the session reads the instance's loginUrl and baseApiUrls
+      // (the self-hosted URL the user registered) rather than the family
+      // template's. A family session builds itself from `this.service`, so
+      // binding `this` here is what makes a self-hosted instance sign in at its
+      // own login page instead of the family's canonical one.
+      this.getSession = (appNamePrefix: string) =>
+        familyService.getSession!.call(this, appNamePrefix);
     } else if (usableLoginFlow !== undefined) {
       this.getSession = (appNamePrefix: string) =>
         usableLoginFlow.flow.createSession(this, appNamePrefix);

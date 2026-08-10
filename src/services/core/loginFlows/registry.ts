@@ -8,10 +8,9 @@
  */
 
 import { CookieCaptureLoginFlow } from './cookieCapture.js';
-import { TokenMintLoginFlow } from './tokenMint.js';
 import type { LoginFlow, LoginFlowClass } from './base.js';
 
-export const LOGIN_FLOWS: readonly LoginFlowClass[] = [CookieCaptureLoginFlow, TokenMintLoginFlow];
+export const LOGIN_FLOWS: readonly LoginFlowClass[] = [CookieCaptureLoginFlow];
 
 export class UnknownLoginFlowError extends Error {
   constructor(name: string) {
