@@ -212,6 +212,18 @@ export class Openhost extends Service {
     return [new RegExp(`^https?://([a-z0-9-]+\\.)*${escapedHost}(:\\d+)?/`, 'i')];
   }
 
+  // `/dashboard` is owner-guarded: a valid owner credential gets 200, anything
+  // else a redirect to /login. curl doesn't follow redirects and the default
+  // check accepts only 200, so this reports valid vs. invalid correctly. (The
+  // official `oh` CLI validates a token exactly this way.)
+  override registeredCredentialCheckCurlArguments(baseApiUrl: string): readonly string[] {
+    try {
+      return [`${new URL(baseApiUrl).origin}/dashboard`];
+    } catch {
+      return [];
+    }
+  }
+
   setCredentialsExample(serviceName: string): string {
     return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
   }

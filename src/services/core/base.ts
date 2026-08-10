@@ -180,6 +180,19 @@ export abstract class Service {
   }
 
   /**
+   * Credential-check curl arguments for a self-hosted instance registered at
+   * `baseApiUrl` (see {@link credentialCheckCurlArguments}). Defaults to none,
+   * so a registered service whose family provides nothing reports an unknown
+   * status rather than guessing. A family overrides this with a check endpoint
+   * on the instance -- OpenHost validates against the instance's `/dashboard`,
+   * which its own CLI uses the same way -- so the instance can report valid or
+   * invalid instead of unknown.
+   */
+  registeredCredentialCheckCurlArguments(_baseApiUrl: string): readonly string[] {
+    return [];
+  }
+
+  /**
    * Optionally transform the stored credentials before they are injected into a
    * curl call, based on the request URL. Services can override this to use a
    * different credential form for different kinds of URLs (e.g. API access vs.

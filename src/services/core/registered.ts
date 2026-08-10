@@ -91,7 +91,13 @@ export class RegisteredService extends Service {
     this.baseApiUrls =
       familyService !== undefined ? familyService.registeredBaseApiUrls(baseApiUrl) : [baseApiUrl];
     this.loginUrl = loginUrl ?? '';
-    this.credentialCheckCurlArguments = [];
+    // A family may know an endpoint on the instance that validates a credential
+    // (OpenHost's `/dashboard`); when it does, this instance can report a real
+    // status instead of an unknown one.
+    this.credentialCheckCurlArguments =
+      familyService !== undefined
+        ? familyService.registeredCredentialCheckCurlArguments(baseApiUrl)
+        : [];
     this.familyService = familyService;
 
     if (familyService !== undefined) {
@@ -122,8 +128,14 @@ export class RegisteredService extends Service {
 
   override getSession?(appNamePrefix: string): ServiceSession;
 
-  override checkApiCredentials(): Promise<ApiCredentialStatus> {
-    return Promise.resolve(ApiCredentialStatus.Unknown);
+  override checkApiCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentialStatus> {
+    // With a check endpoint from the family, verify for real (200 vs. a
+    // redirect / auth failure); otherwise a self-hosted instance's API shape is
+    // unknown, so the status is too.
+    if (this.credentialCheckCurlArguments.length === 0) {
+      return Promise.resolve(ApiCredentialStatus.Unknown);
+    }
+    return super.checkApiCredentials(apiCredentials);
   }
 
   // Registered services point at self-hosted instances whose API shape is

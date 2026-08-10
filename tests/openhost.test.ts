@@ -9,6 +9,7 @@
  */
 
 import { afterEach, describe, expect, it } from 'vitest';
+import { ApiCredentialStatus, AuthorizationBearer } from '../src/apiCredentials/base.js';
 import type { ApiCredentials } from '../src/apiCredentials/base.js';
 import { resetAsyncSubprocessRunner, setAsyncSubprocessRunner } from '../src/curl.js';
 import { mintOpenhostToken, Openhost, OPENHOST, setsCookie } from '../src/services/openhost.js';
@@ -141,5 +142,38 @@ describe('the OpenHost family', () => {
     // Not a different domain that merely ends with the host's text.
     expect(matches('https://oh.example.com.evil.com/')).toBe(false);
     expect(matches('https://notoh.example.com/')).toBe(false);
+  });
+});
+
+describe('registered instance credential status', () => {
+  const creds = new AuthorizationBearer('tok');
+
+  /** Answer the credential check with a body + status code, the way curl's -w does. */
+  function stubCheck(status: string): void {
+    setAsyncSubprocessRunner(() =>
+      Promise.resolve({ returncode: 0, stdout: Buffer.from(`<html>\n${status}`), stderr: '' })
+    );
+  }
+
+  it('checks an OpenHost instance against its own /dashboard', () => {
+    expect(OPENHOST.registeredCredentialCheckCurlArguments('https://oh.example.com/')).toEqual([
+      'https://oh.example.com/dashboard',
+    ]);
+  });
+
+  it('reports valid on 200 and invalid on the /login redirect', async () => {
+    const instance = new RegisteredService('openhost-mine', INSTANCE_BASE, {
+      familyService: OPENHOST,
+      loginUrl: INSTANCE_LOGIN,
+    });
+    stubCheck('200');
+    expect(await instance.checkApiCredentials(creds)).toBe(ApiCredentialStatus.Valid);
+    stubCheck('302');
+    expect(await instance.checkApiCredentials(creds)).toBe(ApiCredentialStatus.Invalid);
+  });
+
+  it('stays unknown for a generic registered service with no family check', async () => {
+    const generic = new RegisteredService('intranet', 'https://intranet.example.com/api/');
+    expect(await generic.checkApiCredentials(creds)).toBe(ApiCredentialStatus.Unknown);
   });
 });
