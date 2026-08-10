@@ -16,6 +16,9 @@
  * OpenHost's owner API is not confined to `/api/` -- app controls such as
  * `/stop_app/<id>`, `/reload_app/<id>` and `/app_logs/<id>` are served at the
  * root -- so a `/api/`-scoped base would leave the token uninjected on those.
+ * The registration also matches subdomains of the instance host: OpenHost
+ * serves its client apps at `<app>.<host>`, gated by the same owner auth, so
+ * the token is what signs the agent into those apps (see `registeredBaseApiUrls`).
  *
  * The registered instance supplies the login and API URLs, and the login below
  * reads them from `this.service`, so the same connector works for any instance.
@@ -184,10 +187,30 @@ export class Openhost extends Service {
     'Self-hosted OpenHost (https://github.com/imbue-openhost/openhost). Register an instance: ' +
     'latchkey services register <name> --service-family openhost ' +
     '--base-api-url "https://<host>/" --login-url "https://<host>/login". ' +
-    'Use the instance root as the base URL (OpenHost serves owner endpoints outside /api/ too). ' +
+    'Use the instance root as the base URL (OpenHost serves owner endpoints outside /api/ too); ' +
+    'the token is injected for the host and its app subdomains (<app>.<host>) alike. ' +
     'Signing in mints a personal API token and stores it as a bearer credential.';
   // No fixed host to check against; a registered instance reports its own status.
   readonly credentialCheckCurlArguments = [] as const;
+
+  // OpenHost serves the owner API on the instance host and its client apps on
+  // subdomains of it (`<app>.<host>`). The owner token authenticates into those
+  // apps too -- signing into an app is the point of the token -- so a registered
+  // instance matches the host and any subdomain of it, not just the bare host.
+  override registeredBaseApiUrls(baseApiUrl: string): readonly (string | RegExp)[] {
+    let hostname: string;
+    try {
+      hostname = new URL(baseApiUrl).hostname;
+    } catch {
+      // A base that does not parse can't be widened; match it literally.
+      return [baseApiUrl];
+    }
+    const escapedHost = hostname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // `([a-z0-9-]+\.)*` matches zero labels (the bare host) or any number of
+    // subdomain labels; the optional port and required `/` keep a lookalike
+    // domain (`<host>.evil.com`) from matching.
+    return [new RegExp(`^https?://([a-z0-9-]+\\.)*${escapedHost}(:\\d+)?/`, 'i')];
+  }
 
   setCredentialsExample(serviceName: string): string {
     return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;

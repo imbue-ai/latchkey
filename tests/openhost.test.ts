@@ -119,6 +119,27 @@ describe('the OpenHost family', () => {
     // instance that must be the instance's URLs (this is the family-binding fix),
     // not the empty family template.
     expect(session.service.loginUrl).toBe(INSTANCE_LOGIN);
-    expect(session.service.baseApiUrls).toEqual([INSTANCE_BASE]);
+  });
+
+  it('matches the instance host and its app subdomains, but not lookalikes', () => {
+    const instance = new RegisteredService('openhost-mine', INSTANCE_BASE, {
+      familyService: OPENHOST,
+      loginUrl: INSTANCE_LOGIN,
+    });
+    const pattern = instance.baseApiUrls[0];
+    expect(pattern).toBeInstanceOf(RegExp);
+    const matches = (url: string): boolean =>
+      instance.baseApiUrls.some((base) =>
+        base instanceof RegExp ? base.test(url) : url.startsWith(base)
+      );
+
+    // The owner API on the host, and any client app on a subdomain of it.
+    expect(matches('https://oh.example.com/api/apps')).toBe(true);
+    expect(matches('https://oh.example.com/stop_app/abc')).toBe(true);
+    expect(matches('https://my-app.oh.example.com/')).toBe(true);
+    expect(matches('https://deep.nested.oh.example.com/x')).toBe(true);
+    // Not a different domain that merely ends with the host's text.
+    expect(matches('https://oh.example.com.evil.com/')).toBe(false);
+    expect(matches('https://notoh.example.com/')).toBe(false);
   });
 });

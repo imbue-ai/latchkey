@@ -64,7 +64,7 @@ export function buildRegisteredServiceOptions(
 export class RegisteredService extends Service {
   readonly name: string;
   readonly displayName: string;
-  readonly baseApiUrls: readonly string[];
+  readonly baseApiUrls: readonly (string | RegExp)[];
   readonly loginUrl: string;
   readonly info: string;
   readonly credentialCheckCurlArguments: readonly string[];
@@ -85,7 +85,11 @@ export class RegisteredService extends Service {
 
     this.name = name;
     this.displayName = name;
-    this.baseApiUrls = [baseApiUrl];
+    // A family decides what a self-hosted instance matches (OpenHost widens it
+    // to the instance host's subdomains, where its client apps are served);
+    // without a family the match is exactly the registered base.
+    this.baseApiUrls =
+      familyService !== undefined ? familyService.registeredBaseApiUrls(baseApiUrl) : [baseApiUrl];
     this.loginUrl = loginUrl ?? '';
     this.credentialCheckCurlArguments = [];
     this.familyService = familyService;
