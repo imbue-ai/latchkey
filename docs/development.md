@@ -22,12 +22,14 @@ then use the version you just built.
 ### Dev shim: run from source, no rebuild
 
 Alternatively, put the dev shim on your PATH (ahead of any
-npm-linked or globally installed `latchkey`). From the repository
-root:
+npm-linked or globally installed `latchkey`):
 
 ```bash
-mkdir -p ~/.local/bin && ln -sfn "$PWD/scripts/latchkey" ~/.local/bin/latchkey
+npm run install-dev-shim
 ```
+
+This symlinks `~/.local/bin/latchkey` to `scripts/latchkey` and
+warns if something else on your PATH still shadows it.
 
 The shim runs `src/cli.ts` directly under [bun](https://bun.sh),
 so edits take effect immediately with no build step. It resolves

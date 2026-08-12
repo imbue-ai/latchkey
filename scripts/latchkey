@@ -10,8 +10,8 @@
 # Without bun on PATH -- or with LATCHKEY_DEV_SHIM_USE_DIST=1 -- runs the
 # compiled dist/src/cli.js under node instead, which requires `npm run build`.
 #
-# Install onto PATH from the repository root with:
-#   mkdir -p ~/.local/bin && ln -sfn "$PWD/scripts/latchkey" ~/.local/bin/latchkey
+# Install onto PATH with `npm run install-dev-shim` (symlinks
+# ~/.local/bin/latchkey here).
 set -euo pipefail
 
 _resolve() {

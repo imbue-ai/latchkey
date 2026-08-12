@@ -6,6 +6,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readlinkSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -265,5 +266,51 @@ describe('dev shim (scripts/latchkey)', () => {
 
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain('npm install');
+  });
+
+  describe('installer (scripts/installDevShim.sh)', () => {
+    const installerPath = join(projectRoot, 'scripts', 'installDevShim.sh');
+
+    function runInstaller(pathValue: string, home: string): ShimResult {
+      return runShim([], {
+        cwd: projectRoot,
+        command: installerPath,
+        env: { HOME: home, PATH: pathValue },
+      });
+    }
+
+    it('symlinks the shim into ~/.local/bin and confirms it wins on PATH', () => {
+      const fakeHome = join(tempDir, 'fake-home');
+      mkdirSync(fakeHome);
+      const binDirectory = join(fakeHome, '.local', 'bin');
+
+      const result = runInstaller([binDirectory, pathWithoutBun].join(':'), fakeHome);
+
+      expect(result.stderr).toBe('');
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('installed latchkey dev shim');
+      expect(readlinkSync(join(binDirectory, 'latchkey'))).toBe(shimPath);
+    });
+
+    it('warns when something else on PATH shadows the shim', () => {
+      const fakeHome = join(tempDir, 'fake-home');
+      mkdirSync(fakeHome);
+      const shadowDirectory = join(tempDir, 'shadow-bin');
+      mkdirSync(shadowDirectory);
+      writeFileSync(
+        join(shadowDirectory, 'latchkey'),
+        "#!/usr/bin/env bash\necho 'stale global'\n"
+      );
+      chmodSync(join(shadowDirectory, 'latchkey'), 0o755);
+
+      const result = runInstaller(
+        [shadowDirectory, join(fakeHome, '.local', 'bin'), pathWithoutBun].join(':'),
+        fakeHome
+      );
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('instead of the dev shim');
+      expect(readlinkSync(join(fakeHome, '.local', 'bin', 'latchkey'))).toBe(shimPath);
+    });
   });
 });
