@@ -148,15 +148,8 @@ export class Openrouter extends Service {
   readonly displayName = 'OpenRouter';
   readonly baseApiUrls = [OPENROUTER_API_BASE_URL] as const;
   readonly loginUrl = OPENROUTER_LOGIN_URL;
-  // Signing in mints an OpenRouter API key. To run models, request the
-  // `openrouter-api` scope with `openrouter-inference` (POST chat/completions and
-  // completions, which consume credits); add `openrouter-read` to list models and
-  // read key/credit info, and `openrouter-write` to manage keys and settings.
   readonly info =
-    'OpenRouter unified LLM API (OpenAI-compatible). Signing in mints an API key. ' +
-    'To run models, request the openrouter-api scope with openrouter-inference (POST ' +
-    'chat/completions; consumes credits). Add openrouter-read to list models and read ' +
-    'key/credit info. Docs: https://openrouter.ai/docs/api-reference/overview';
+    'OpenRouter unified LLM API (OpenAI-compatible). Docs: https://openrouter.ai/docs/llms.txt';
 
   // GET /api/v1/key returns 200 for any valid key; the stored bearer header is
   // added by the credential before the request is sent.
