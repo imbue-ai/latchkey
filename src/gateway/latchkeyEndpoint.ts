@@ -17,7 +17,9 @@ import {
   authList,
   authBrowser,
   authBrowserPrepare,
+  prepareService,
   UnknownServiceError,
+  AccountNotFoundError,
   BrowserNotConfiguredError,
   PreparationRequiredError,
 } from '../sharedOperations.js';
@@ -26,7 +28,12 @@ import {
   BrowserFlowsNotSupportedError,
   GraphicalEnvironmentNotFoundError,
 } from '../playwrightUtils.js';
-import { LoginCancelledError, LoginFailedError } from '../services/index.js';
+import {
+  LoginCancelledError,
+  LoginFailedError,
+  PrepareInputInvalidError,
+  PrepareNotSupportedError,
+} from '../services/index.js';
 
 const serviceNameParamsMessage = "missing required argument 'service_name'";
 const serviceNameParams = z.object(
@@ -48,22 +55,37 @@ const ServicesListRequestSchema = z.object({
 
 const ServicesInfoRequestSchema = z.object({
   command: z.literal('services info'),
-  params: serviceNameParams,
+  params: serviceNameParams.extend({
+    offline: z.boolean().optional(),
+  }),
 });
 
 const AuthListRequestSchema = z.object({
   command: z.literal('auth list'),
-  params: z.object({}).optional(),
+  params: z
+    .object({
+      offline: z.boolean().optional(),
+    })
+    .optional(),
 });
 
 const AuthBrowserRequestSchema = z.object({
   command: z.literal('auth browser'),
-  params: serviceNameParams,
+  params: serviceNameParams.extend({
+    account: z.string().optional(),
+  }),
 });
 
 const AuthBrowserPrepareRequestSchema = z.object({
   command: z.literal('auth browser-prepare'),
   params: serviceNameParams,
+});
+
+const PrepareRequestSchema = z.object({
+  command: z.literal('auth prepare'),
+  params: serviceNameParams.extend({
+    json: z.string(),
+  }),
 });
 
 export const LatchkeyRequestSchema = z.discriminatedUnion('command', [
@@ -72,12 +94,14 @@ export const LatchkeyRequestSchema = z.discriminatedUnion('command', [
   AuthListRequestSchema,
   AuthBrowserRequestSchema,
   AuthBrowserPrepareRequestSchema,
+  PrepareRequestSchema,
 ]);
 
 export type LatchkeyRequest = z.infer<typeof LatchkeyRequestSchema>;
 
 const KNOWN_ERROR_CLASSES: readonly (abstract new (...args: never[]) => Error)[] = [
   UnknownServiceError,
+  AccountNotFoundError,
   BrowserDisabledError,
   GraphicalEnvironmentNotFoundError,
   BrowserNotConfiguredError,
@@ -85,6 +109,8 @@ const KNOWN_ERROR_CLASSES: readonly (abstract new (...args: never[]) => Error)[]
   PreparationRequiredError,
   LoginCancelledError,
   LoginFailedError,
+  PrepareNotSupportedError,
+  PrepareInputInvalidError,
 ];
 
 function isKnownError(error: unknown): error is Error {
@@ -131,21 +157,27 @@ async function dispatch(
         deps.registry,
         apiCredentialStore,
         deps.config,
-        parsed.params.serviceName
+        parsed.params.serviceName,
+        parsed.params.offline ?? false
       );
 
     case 'auth list':
-      return authList(deps.registry, apiCredentialStore);
+      return authList(
+        deps.registry,
+        apiCredentialStore,
+        deps.config,
+        parsed.params?.offline ?? false
+      );
 
     case 'auth browser':
-      await authBrowser(
+      return authBrowser(
         deps.registry,
         apiCredentialStore,
         encryptedStorage,
         deps.config,
-        parsed.params.serviceName
+        parsed.params.serviceName,
+        parsed.params.account
       );
-      return null;
 
     case 'auth browser-prepare':
       return authBrowserPrepare(
@@ -154,6 +186,14 @@ async function dispatch(
         encryptedStorage,
         deps.config,
         parsed.params.serviceName
+      );
+
+    case 'auth prepare':
+      return prepareService(
+        deps.registry,
+        apiCredentialStore,
+        parsed.params.serviceName,
+        parsed.params.json
       );
   }
 }

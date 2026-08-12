@@ -5,6 +5,7 @@
  * `latchkey curl` has its target URL rewritten to route through `/gateway/`.
  */
 
+import { GATEWAY_ACCOUNT_HEADER } from './account.js';
 import { EXTENSION_PLACEHOLDER_HOST } from './extensions.js';
 import type { LatchkeyRequest } from './latchkeyEndpoint.js';
 import { GATEWAY_PASSWORD_HEADER } from './password.js';
@@ -142,14 +143,17 @@ export function buildGatewayProxyUrl(gatewayUrl: string, targetUrl: string): str
  * password header is prepended so the rewritten curl call can authenticate
  * against a password-protected gateway. When `permissionsOverride` is
  * provided, an `-H` argument carrying the permissions-override JWT is also
- * prepended.
+ * prepended. When `account` is a non-empty string, an `-H` argument carrying
+ * the account header is prepended so the gateway injects credentials for that
+ * account instead of auto-resolving one.
  */
 export function rewriteCurlArgumentsForGateway(
   curlArguments: readonly string[],
   targetUrl: string,
   gatewayUrl: string,
   password: string | null = null,
-  permissionsOverride: string | null = null
+  permissionsOverride: string | null = null,
+  account: string | null = null
 ): readonly string[] {
   const occurrences = curlArguments.reduce(
     (count, argument) => (argument === targetUrl ? count + 1 : count),
@@ -174,6 +178,13 @@ export function rewriteCurlArgumentsForGateway(
   }
   if (permissionsOverride !== null) {
     extraHeaders.push('-H', `${PERMISSIONS_OVERRIDE_HEADER}: ${permissionsOverride}`);
+  }
+  // A non-empty account is forwarded so the gateway honors the client's
+  // `--account` choice. An empty account (the default account) is left off:
+  // curl drops empty-valued `-H` headers anyway, and its absence makes the
+  // gateway auto-resolve, which already selects the default account.
+  if (account !== null && account !== '') {
+    extraHeaders.push('-H', `${GATEWAY_ACCOUNT_HEADER}: ${account}`);
   }
   return [...extraHeaders, ...rewritten];
 }

@@ -7,13 +7,31 @@ export {
   ServiceSession,
   SimpleServiceSession,
   BrowserFollowupServiceSession,
+  FollowupWork,
+  buildFollowupSpinnerDetails,
+  type LoginResult,
 } from './core/base.js';
 export {
   LoginCancelledError,
   LoginFailedError,
   NoCurlCredentialsNotSupportedError,
+  PrepareNotSupportedError,
+  PrepareInputInvalidError,
 } from './core/base.js';
 export { RegisteredService } from './core/registered.js';
+export {
+  LOGIN_FLOWS,
+  UnknownLoginFlowError,
+  formatLoginFlowsHelp,
+  resolveLoginFlow,
+} from './core/loginFlows/registry.js';
+export {
+  LoginFlowParamsInvalidError,
+  parseLoginFlowParams,
+  type LoginFlow,
+  type LoginFlowClass,
+} from './core/loginFlows/base.js';
+export { CookieCaptureLoginFlow } from './core/loginFlows/cookieCapture.js';
 
 export { Slack, SLACK } from './slack.js';
 export { Discord, DISCORD } from './discord.js';
@@ -26,6 +44,7 @@ export { GoogleCalendar, GOOGLE_CALENDAR } from './google/calendar.js';
 export { GoogleDrive, GOOGLE_DRIVE } from './google/drive.js';
 export { GoogleSheets, GOOGLE_SHEETS } from './google/sheets.js';
 export { GoogleDocs, GOOGLE_DOCS } from './google/docs.js';
+export { GoogleSlides, GOOGLE_SLIDES } from './google/slides.js';
 export { GooglePeople, GOOGLE_PEOPLE } from './google/people.js';
 export { Notion, NOTION } from './notion.js';
 export { NotionMcp, NOTION_MCP } from './notion-mcp.js';
@@ -43,3 +62,6 @@ export { GoogleDirections, GOOGLE_DIRECTIONS } from './google/directions.js';
 export { Yelp, YELP } from './yelp.js';
 export { Coolify, COOLIFY } from './coolify.js';
 export { Umami, UMAMI } from './umami.js';
+export { Ramp, RAMP } from './ramp.js';
+export { Todoist, TODOIST } from './todoist.js';
+export { Ngrok, NGROK } from './ngrok.js';

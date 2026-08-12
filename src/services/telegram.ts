@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { type ApiCredentials } from '../apiCredentials/base.js';
 import { extractUrlFromCurlArguments } from '../curl.js';
 import { NoCurlCredentialsNotSupportedError, Service } from './core/base.js';
+import { fetchAccountFromEndpoint, tryParseJson } from '../apiCredentials/account.js';
 
 const BASE_API_URL = 'https://api.telegram.org/';
 
@@ -26,7 +27,7 @@ export class TelegramBotCredentials implements ApiCredentials {
   }
 
   injectIntoCurlCall(curlArguments: readonly string[]): Promise<readonly string[]> {
-    const url = extractUrlFromCurlArguments(curlArguments as string[]);
+    const url = extractUrlFromCurlArguments(curlArguments);
     if (!url?.startsWith(BASE_API_URL)) {
       return Promise.resolve(curlArguments);
     }
@@ -84,6 +85,19 @@ export class Telegram extends Service {
       );
     }
     return new TelegramBotCredentials(token);
+  }
+
+  override getAccount(apiCredentials: ApiCredentials): Promise<string | null> {
+    return fetchAccountFromEndpoint(
+      apiCredentials,
+      this.credentialCheckCurlArguments,
+      (responseBody) => {
+        const data = tryParseJson(responseBody) as {
+          result?: { username?: string; id?: number };
+        } | null;
+        return data?.result?.username ?? data?.result?.id?.toString() ?? null;
+      }
+    );
   }
 }
 

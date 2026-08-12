@@ -156,6 +156,36 @@ describe('rewriteCurlArgumentsForGateway', () => {
       'http://localhost:8000/gateway/https://api.example.com',
     ]);
   });
+
+  it('prepends the account header when a non-empty account is provided', () => {
+    const rewritten = rewriteCurlArgumentsForGateway(
+      ['https://api.example.com'],
+      'https://api.example.com',
+      GATEWAY_URL,
+      null,
+      null,
+      'jou'
+    );
+    expect(rewritten).toEqual([
+      '-H',
+      'x-latchkey-gateway-account: jou',
+      'http://localhost:8000/gateway/https://api.example.com',
+    ]);
+  });
+
+  it('does not add an account header when the account is null or empty', () => {
+    for (const account of [null, '']) {
+      const rewritten = rewriteCurlArgumentsForGateway(
+        ['https://api.example.com'],
+        'https://api.example.com',
+        GATEWAY_URL,
+        null,
+        null,
+        account
+      );
+      expect(rewritten).toEqual(['http://localhost:8000/gateway/https://api.example.com']);
+    }
+  });
 });
 
 describe('callLatchkeyEndpoint', () => {
@@ -172,7 +202,7 @@ describe('callLatchkeyEndpoint', () => {
         headers: { 'Content-Type': 'application/json' },
       })
     );
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    globalThis.fetch = fetchMock;
 
     const result = await callLatchkeyEndpoint(GATEWAY_URL, {
       command: 'services list',
@@ -193,7 +223,7 @@ describe('callLatchkeyEndpoint', () => {
         status: 400,
         headers: { 'Content-Type': 'application/json' },
       })
-    ) as unknown as typeof fetch;
+    );
 
     await expect(
       callLatchkeyEndpoint(GATEWAY_URL, { command: 'services list' })
@@ -205,9 +235,7 @@ describe('callLatchkeyEndpoint', () => {
   });
 
   it('throws GatewayRequestError when the transport fails', async () => {
-    globalThis.fetch = vi
-      .fn()
-      .mockRejectedValue(new Error('connect ECONNREFUSED')) as unknown as typeof fetch;
+    globalThis.fetch = vi.fn().mockRejectedValue(new Error('connect ECONNREFUSED'));
 
     await expect(
       callLatchkeyEndpoint(GATEWAY_URL, { command: 'services list' })
@@ -221,7 +249,7 @@ describe('callLatchkeyEndpoint', () => {
         headers: { 'Content-Type': 'application/json' },
       })
     );
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    globalThis.fetch = fetchMock;
 
     await callLatchkeyEndpoint(GATEWAY_URL, { command: 'services list' }, 'top-secret');
 
@@ -237,7 +265,7 @@ describe('callLatchkeyEndpoint', () => {
         headers: { 'Content-Type': 'application/json' },
       })
     );
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    globalThis.fetch = fetchMock;
 
     await callLatchkeyEndpoint(GATEWAY_URL, { command: 'services list' });
 
@@ -253,7 +281,7 @@ describe('callLatchkeyEndpoint', () => {
         headers: { 'Content-Type': 'application/json' },
       })
     );
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    globalThis.fetch = fetchMock;
 
     await callLatchkeyEndpoint(GATEWAY_URL, { command: 'services list' }, null, 'jwt.value.here');
 
@@ -269,7 +297,7 @@ describe('callLatchkeyEndpoint', () => {
         headers: { 'Content-Type': 'application/json' },
       })
     );
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    globalThis.fetch = fetchMock;
 
     await callLatchkeyEndpoint(GATEWAY_URL, { command: 'services list' });
 

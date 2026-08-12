@@ -6,7 +6,9 @@ import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { derivePermissionsOverrideSigningKey } from '../src/gateway/permissionsOverride.js';
 import { ApiCredentialStore } from '../src/apiCredentials/store.js';
 import { ApiCredentialStatus } from '../src/apiCredentials/base.js';
-import { NoCurlCredentialsNotSupportedError, Service } from '../src/services/core/base.js';
+import { Service } from '../src/services/core/base.js';
+import { createMockService } from './mockService.js';
+import { GOOGLE_GMAIL } from '../src/services/google/gmail.js';
 import { ServiceRegistry } from '../src/serviceRegistry.js';
 import { Config } from '../src/config.js';
 import type { CliDependencies } from '../src/cliCommands.js';
@@ -22,21 +24,10 @@ function writeSecureFile(path: string, content: string): void {
   storage.writeFile(path, content);
 }
 
-const mockSlackService: Service = {
-  name: 'slack',
-  displayName: 'Slack',
-  baseApiUrls: ['https://slack.com/api/'],
-  loginUrl: 'https://slack.com/signin',
+const mockSlackService: Service = createMockService({
   info: 'Test Slack service.',
-  credentialCheckCurlArguments: ['https://slack.com/api/auth.test'],
-  checkApiCredentials: vi.fn().mockResolvedValue(ApiCredentialStatus.Valid),
-  setCredentialsExample(serviceName: string) {
-    return `latchkey auth set ${serviceName} -H "Authorization: Bearer xoxb-your-token"`;
-  },
-  getCredentialsNoCurl() {
-    throw new NoCurlCredentialsNotSupportedError('slack');
-  },
-};
+  getSession: undefined,
+});
 
 // ─── Schema validation tests ──────────────────────────────────────────────────
 
@@ -91,6 +82,30 @@ describe('LatchkeyRequestSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('should validate prepare with serviceName and json', () => {
+    const result = LatchkeyRequestSchema.safeParse({
+      command: 'auth prepare',
+      params: { serviceName: 'google-gmail', json: '{"clientId":"a","clientSecret":"b"}' },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('should reject prepare without json', () => {
+    const result = LatchkeyRequestSchema.safeParse({
+      command: 'auth prepare',
+      params: { serviceName: 'google-gmail' },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('should reject prepare without serviceName', () => {
+    const result = LatchkeyRequestSchema.safeParse({
+      command: 'auth prepare',
+      params: { json: '{}' },
+    });
+    expect(result.success).toBe(false);
+  });
+
   it('should reject unknown command', () => {
     const result = LatchkeyRequestSchema.safeParse({
       command: 'unknown command',
@@ -134,7 +149,11 @@ describe('/latchkey/ endpoint', () => {
     configOverrides: Partial<Config> = {}
   ): Promise<GatewayServer> {
     const storePath = join(tempDir, 'credentials.json');
-    writeSecureFile(storePath, JSON.stringify(credentialsData));
+    // Store credentials under the default account, matching the on-disk layout.
+    const nestedCredentials = Object.fromEntries(
+      Object.entries(credentialsData).map(([service, creds]) => [service, { '': creds }])
+    );
+    writeSecureFile(storePath, JSON.stringify({ credentials: nestedCredentials }));
 
     const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
     const apiCredentialStore = new ApiCredentialStore(storePath, encryptedStorage);
@@ -146,6 +165,7 @@ describe('/latchkey/ endpoint', () => {
       runCurlAsync: () => Promise.resolve({ returncode: 0, stdout: Buffer.from(''), stderr: '' }),
       checkPermission: () => Promise.resolve(true),
       confirm: () => Promise.resolve(true),
+      readStdin: () => Promise.resolve(''),
       exit: (code: number): never => {
         throw new Error(`process.exit(${String(code)})`);
       },
@@ -299,10 +319,10 @@ describe('/latchkey/ endpoint', () => {
 
       expect(response.status).toBe(200);
       const body = (await response.json()) as {
-        result: { type: string; credentialStatus: string };
+        result: { type: string; credentials: Record<string, unknown> };
       };
       expect(body.result.type).toBe('built-in');
-      expect(body.result.credentialStatus).toBe('missing');
+      expect(body.result.credentials).toEqual({});
     });
 
     it('should return error for unknown service', async () => {
@@ -315,6 +335,49 @@ describe('/latchkey/ endpoint', () => {
       expect(response.status).toBe(400);
       const body = (await response.json()) as { error: string };
       expect(body.error).toContain('Unknown service');
+    });
+  });
+
+  describe('prepare', () => {
+    it('stores OAuth client credentials for a Google service', async () => {
+      gateway = await createTestGateway({}, { registry: new ServiceRegistry([GOOGLE_GMAIL]) });
+      const response = await postLatchkey({
+        command: 'auth prepare',
+        params: {
+          serviceName: 'google-gmail',
+          json: '{"clientId":"cid","clientSecret":"csecret"}',
+        },
+      });
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        result: { serviceName: string; credentialType: string };
+      };
+      expect(body.result).toEqual({ serviceName: 'google-gmail', credentialType: 'oauth' });
+    });
+
+    it('returns 400 when the service does not support prepare', async () => {
+      gateway = await createTestGateway();
+      const response = await postLatchkey({
+        command: 'auth prepare',
+        params: { serviceName: 'slack', json: '{"clientId":"a","clientSecret":"b"}' },
+      });
+
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as { error: string };
+      expect(body.error).toContain('does not support');
+    });
+
+    it('returns 400 for malformed prepare JSON', async () => {
+      gateway = await createTestGateway({}, { registry: new ServiceRegistry([GOOGLE_GMAIL]) });
+      const response = await postLatchkey({
+        command: 'auth prepare',
+        params: { serviceName: 'google-gmail', json: '{not valid' },
+      });
+
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as { error: string };
+      expect(body.error).toContain('Invalid prepare input');
     });
   });
 
@@ -336,11 +399,16 @@ describe('/latchkey/ endpoint', () => {
 
       expect(response.status).toBe(200);
       const body = (await response.json()) as {
-        result: Record<string, { credentialType: string; credentialStatus: string }>;
+        result: Record<
+          string,
+          Record<string, { credentialType: string; credentialStatus: string }>
+        >;
       };
       expect(body.result.slack).toEqual({
-        credentialType: 'slack',
-        credentialStatus: 'valid',
+        '': {
+          credentialType: 'slack',
+          credentialStatus: 'valid',
+        },
       });
     });
   });
@@ -359,7 +427,8 @@ describe('/latchkey/ endpoint', () => {
     });
 
     it('should return error when browser is disabled', async () => {
-      const browserSlack: Service = Object.assign({}, mockSlackService, {
+      const browserSlack: Service = createMockService({
+        info: 'Test Slack service.',
         getSession: vi.fn().mockReturnValue({
           login: vi.fn(),
         }),
@@ -380,7 +449,7 @@ describe('/latchkey/ endpoint', () => {
     });
 
     it('should return error for service without browser support', async () => {
-      const noLoginService: Service = {
+      const noLoginService: Service = createMockService({
         name: 'nologin',
         displayName: 'No Login Service',
         baseApiUrls: ['https://nologin.example.com/api/'],
@@ -388,13 +457,10 @@ describe('/latchkey/ endpoint', () => {
         info: 'No browser login support.',
         credentialCheckCurlArguments: [],
         checkApiCredentials: vi.fn().mockResolvedValue(ApiCredentialStatus.Missing),
-        setCredentialsExample(serviceName: string) {
-          return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
-        },
-        getCredentialsNoCurl() {
-          throw new NoCurlCredentialsNotSupportedError('nologin');
-        },
-      };
+        setCredentialsExample: (serviceName: string) =>
+          `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`,
+        getSession: undefined,
+      });
 
       gateway = await createTestGateway({}, { registry: new ServiceRegistry([noLoginService]) });
       const response = await postLatchkey({

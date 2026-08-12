@@ -1,6 +1,7 @@
 import { createHash, createHmac } from 'node:crypto';
 import { z } from 'zod';
 import { type ApiCredentials } from '../apiCredentials/base.js';
+import { fetchAccountFromEndpoint } from '../apiCredentials/account.js';
 import { CurlParseError, parseCurlArgs } from '../curl.js';
 import { NoCurlCredentialsNotSupportedError, Service } from './core/base.js';
 
@@ -292,11 +293,27 @@ export class Aws extends Service {
     if (!accessKeyId.startsWith('AKIA') && !accessKeyId.startsWith('ASIA')) {
       throw new AwsCredentialError(
         "The provided access key ID doesn't look like an AWS access key ID " +
-          '(expected to start with AKIA or ASIA).\n' +
-          'Example: <access-key-id>'
+          '(expected to start with AKIA or ASIA).'
       );
     }
     return new AwsCredentials(accessKeyId, secretAccessKey);
+  }
+
+  override getAccount(apiCredentials: ApiCredentials): Promise<string | null> {
+    return fetchAccountFromEndpoint(
+      apiCredentials,
+      this.credentialCheckCurlArguments,
+      (responseBody) => {
+        // GetCallerIdentity responds with XML; the ARN identifies both the AWS
+        // account and the IAM user behind the access key.
+        const arnMatch = /<Arn>([^<]+)<\/Arn>/.exec(responseBody);
+        if (arnMatch?.[1] !== undefined) {
+          return arnMatch[1];
+        }
+        const accountMatch = /<Account>([^<]+)<\/Account>/.exec(responseBody);
+        return accountMatch?.[1] ?? null;
+      }
+    );
   }
 }
 

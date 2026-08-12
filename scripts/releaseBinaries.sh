@@ -37,40 +37,11 @@ tag="${1:-$(version_from_package_json)}"
 log "repository: $github_repository"
 log "release tag: $tag"
 
-# Keep the compiled binaries in a dedicated directory so we don't clobber the
-# `latchkey` file at the repository root (which is gitignored and used for
-# local development). Deliberately NOT under `dist/` so these large binaries
-# never get swept up by `npm publish` (see the `files` field in package.json).
-output_directory="$repository_root/release-binaries"
-mkdir -p "$output_directory"
-
-# (bun --target, friendly suffix) pairs.
-# `bun build --compile` understands these cross-compilation targets natively,
-# see https://bun.sh/docs/bundler/executables#cross-compile-to-other-platforms
-# Reuse the `bun-compile` npm script so that the list of externals (and its
-# prebuild step that regenerates src/version.ts) stays defined in exactly one
-# place. We append our own `--target` and `--outfile` after `--`; when these
-# flags appear twice on the bun command line, the last occurrence wins.
-targets=(
-    "bun-linux-x64         linux-x64"
-    "bun-linux-arm64       linux-arm64"
-    "bun-darwin-x64        darwin-x64"
-    "bun-darwin-arm64      darwin-arm64"
-)
-
+# Build the binaries (shared with CI via scripts/buildBinaries.sh).
 declare -a built_files=()
-
-for entry in "${targets[@]}"; do
-    read -r bun_target suffix <<<"$entry"
-    output_file="$output_directory/latchkey-$tag-$suffix"
-    log "compiling $bun_target -> $output_file"
-    npm run --silent bun-compile -- \
-        --target "$bun_target" \
-        --outfile "$output_file"
-    built_files+=("$output_file")
-done
-
-log "built ${#built_files[@]} binaries in $output_directory"
+while IFS= read -r line; do
+    built_files+=("$line")
+done < <("$repository_root/scripts/buildBinaries.sh" "$tag")
 
 # --- GitHub release upload --------------------------------------------------
 

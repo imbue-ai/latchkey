@@ -36,8 +36,14 @@ const RECORDINGS_DIRECTORY = resolve(__dirname, '..', 'scripts', 'recordings');
 // Default recording filename (matches recordBrowserSession.ts)
 const DEFAULT_RECORDING_NAME = 'login_session.json';
 
-// Do not test services that require special followup steps.
-const BLACKLIST = new Set(['dropbox', 'github', 'linear']);
+// Do not test services that require special followup steps: their credential is
+// minted by an interactive browser action (a BrowserFollowupServiceSession) and
+// is not present in the recorded login network traffic, so replaying a recording
+// cannot reconstruct it. ngrok is such a service (its API key is created and read
+// from the dashboard's "New API Key" dialog, exactly like linear).
+// NOTE: todoist is also a BrowserFollowupServiceSession and arguably belongs here
+// too; it predates this list and is left as-is to keep this change scoped.
+const BLACKLIST = new Set(['dropbox', 'github', 'linear', 'ngrok']);
 
 class InvalidRecordingError extends Error {
   constructor(message: string) {
@@ -150,19 +156,13 @@ async function testServiceWithRecording(
     const mockRequest = createMockRequest(entry.request);
     const mockResponse = createMockResponse(entry.response, mockRequest);
 
-    // Call onResponse which internally calls getApiCredentialsFromResponse
-    session.onResponse(mockResponse);
-
-    // Give async operations time to complete (e.g., Slack reads response body)
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    // Call onResponse which internally calls getApiCredentialsFromResponse.
+    // Awaiting it means no sleeping: the session is done with this entry before
+    // the next one goes in.
+    await session.onResponse(mockResponse);
   }
 
-  // Give additional time for any async operations to complete
-  await new Promise((resolve) => setTimeout(resolve, 50));
-
-  // Access the apiCredentials via the session (it's protected but accessible for testing)
-  const apiCredentials = (session as unknown as { apiCredentials: ApiCredentials | null })
-    .apiCredentials;
+  const apiCredentials = session.capturedCredentials;
 
   if (apiCredentials !== null) {
     return apiCredentials;

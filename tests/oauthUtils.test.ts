@@ -23,24 +23,39 @@ describe('startOAuthCallbackServer', () => {
 });
 
 describe('generateCodeVerifier', () => {
-  it('just runs', () => {
-    generateCodeVerifier();
+  it('produces a URL-safe base64 verifier with no padding', () => {
+    // 32 random bytes base64url-encoded -> 43 chars, [A-Za-z0-9_-], no '='.
+    const verifier = generateCodeVerifier();
+    expect(verifier).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(verifier).toHaveLength(43);
+  });
+
+  it('returns a different value on each call', () => {
+    expect(generateCodeVerifier()).not.toBe(generateCodeVerifier());
   });
 });
 
 describe('generateCodeChallenge', () => {
-  it('just runs', () => {
-    generateCodeChallenge('dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk');
+  it('derives the S256 challenge from the RFC 7636 test vector', () => {
+    // RFC 7636 Appendix B known-answer pair.
+    expect(generateCodeChallenge('dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk')).toBe(
+      'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM'
+    );
+  });
+
+  it('produces a URL-safe base64 challenge with no padding', () => {
+    const challenge = generateCodeChallenge(generateCodeVerifier());
+    expect(challenge).toMatch(/^[A-Za-z0-9_-]+$/);
   });
 });
 
 describe('exchangeCodeForTokens', () => {
-  it('with PKCE: includes code_verifier in body', () => {
-    const spy = vi.spyOn(curl, 'runCaptured').mockImplementation(() => {
+  it('with PKCE: includes code_verifier in body', async () => {
+    const spy = vi.spyOn(curl, 'runCapturedAsync').mockImplementation(() => {
       throw new Error('STOP');
     });
 
-    expect(() =>
+    await expect(
       exchangeCodeForTokens(
         'https://api.notion.com/v1/oauth/token',
         'auth-code-abc123',
@@ -49,7 +64,7 @@ describe('exchangeCodeForTokens', () => {
         'http://localhost:12345/oauth2callback',
         'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk'
       )
-    ).toThrow('STOP');
+    ).rejects.toThrow('STOP');
 
     const args = spy.mock.calls[0]![0];
     const body = args[args.indexOf('-d') + 1]!;
@@ -58,12 +73,12 @@ describe('exchangeCodeForTokens', () => {
     );
   });
 
-  it('without PKCE: omits code_verifier from body', () => {
-    const spy = vi.spyOn(curl, 'runCaptured').mockImplementation(() => {
+  it('without PKCE: omits code_verifier from body', async () => {
+    const spy = vi.spyOn(curl, 'runCapturedAsync').mockImplementation(() => {
       throw new Error('STOP');
     });
 
-    expect(() =>
+    await expect(
       exchangeCodeForTokens(
         'https://api.notion.com/v1/oauth/token',
         'auth-code-abc123',
@@ -71,7 +86,7 @@ describe('exchangeCodeForTokens', () => {
         'test-client-secret',
         'http://localhost:12345/oauth2callback'
       )
-    ).toThrow('STOP');
+    ).rejects.toThrow('STOP');
 
     const args = spy.mock.calls[0]![0];
     const body = args[args.indexOf('-d') + 1]!;
@@ -82,19 +97,19 @@ describe('exchangeCodeForTokens', () => {
 });
 
 describe('refreshAccessToken', () => {
-  it('confidential client: includes client_secret in body', () => {
-    const spy = vi.spyOn(curl, 'runCaptured').mockImplementation(() => {
+  it('confidential client: includes client_secret in body', async () => {
+    const spy = vi.spyOn(curl, 'runCapturedAsync').mockImplementation(() => {
       throw new Error('STOP');
     });
 
-    expect(() =>
+    await expect(
       refreshAccessToken(
         'https://api.notion.com/v1/oauth/token',
         'refresh-token-xyz789',
         'test-client-id',
         'test-client-secret'
       )
-    ).toThrow('STOP');
+    ).rejects.toThrow('STOP');
 
     const args = spy.mock.calls[0]![0];
     const body = args[args.indexOf('-d') + 1]!;
@@ -103,19 +118,19 @@ describe('refreshAccessToken', () => {
     );
   });
 
-  it('public client: omits client_secret from body', () => {
-    const spy = vi.spyOn(curl, 'runCaptured').mockImplementation(() => {
+  it('public client: omits client_secret from body', async () => {
+    const spy = vi.spyOn(curl, 'runCapturedAsync').mockImplementation(() => {
       throw new Error('STOP');
     });
 
-    expect(() =>
+    await expect(
       refreshAccessToken(
         'https://api.notion.com/v1/oauth/token',
         'refresh-token-xyz789',
         'test-client-id',
         ''
       )
-    ).toThrow('STOP');
+    ).rejects.toThrow('STOP');
 
     const args = spy.mock.calls[0]![0];
     const body = args[args.indexOf('-d') + 1]!;

@@ -15,6 +15,16 @@ const RegisteredServiceEntrySchema = z.object({
   baseApiUrl: z.string(),
   serviceFamily: z.string().optional(),
   loginUrl: z.string().optional(),
+  // When set (together with loginUrl and without a service family), the service
+  // gets one of the generic browser logins. The parameters are only checked
+  // against the named flow's schema when the flow is resolved, so that a config
+  // written by a newer Latchkey does not make the whole entry unreadable.
+  loginFlow: z
+    .object({
+      name: z.string(),
+      params: z.record(z.string(), z.unknown()).optional(),
+    })
+    .optional(),
 });
 
 export type RegisteredServiceEntry = z.infer<typeof RegisteredServiceEntrySchema>;
@@ -34,10 +44,13 @@ const SettingsSchema = z.object({
   keyringServiceName: z.string().optional(),
   keyringAccountName: z.string().optional(),
   browserDisabled: z.boolean().optional(),
+  browserEphemeral: z.boolean().optional(),
   countingDisabled: z.boolean().optional(),
+  credentialsRefreshDisabled: z.boolean().optional(),
   permissionsConfig: z.string().optional(),
   permissionsDoNotUseBuiltinSchemas: z.boolean().optional(),
   passthroughUnknown: z.boolean().optional(),
+  hideBuiltinServices: z.array(z.string()).optional(),
   gateway: z.string().optional(),
   gatewayListenHost: z.string().optional(),
   gatewayListenPort: z.number().int().min(0).max(65535).optional(),

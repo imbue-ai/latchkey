@@ -1,4 +1,6 @@
+import type { ApiCredentials } from '../apiCredentials/base.js';
 import { Service } from './core/base.js';
+import { fetchAccountFromEndpoint, tryParseJson } from '../apiCredentials/account.js';
 
 export class Mailchimp extends Service {
   readonly name = 'mailchimp';
@@ -14,6 +16,20 @@ export class Mailchimp extends Service {
 
   setCredentialsExample(serviceName: string): string {
     return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
+  }
+
+  override getAccount(apiCredentials: ApiCredentials): Promise<string | null> {
+    return fetchAccountFromEndpoint(
+      apiCredentials,
+      this.credentialCheckCurlArguments,
+      (responseBody) => {
+        const data = tryParseJson(responseBody) as {
+          login?: { email?: string; login_email?: string };
+          accountname?: string;
+        } | null;
+        return data?.login?.email ?? data?.login?.login_email ?? data?.accountname ?? null;
+      }
+    );
   }
 }
 

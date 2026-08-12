@@ -5,6 +5,7 @@
 import type { Response } from 'playwright';
 import { ApiCredentials, AuthorizationBare } from '../apiCredentials/base.js';
 import { Service, SimpleServiceSession } from './core/base.js';
+import { fetchAccountFromEndpoint, tryParseJson } from '../apiCredentials/account.js';
 
 class DiscordServiceSession extends SimpleServiceSession {
   protected async getApiCredentialsFromResponse(
@@ -50,6 +51,23 @@ export class Discord extends Service {
 
   override getSession(appNamePrefix: string): DiscordServiceSession {
     return new DiscordServiceSession(this, appNamePrefix);
+  }
+
+  override getAccount(apiCredentials: ApiCredentials): Promise<string | null> {
+    return fetchAccountFromEndpoint(
+      apiCredentials,
+      this.credentialCheckCurlArguments,
+      (responseBody) => {
+        // The e-mail is present for user-session credentials; bot tokens only
+        // carry the bot's username.
+        const data = tryParseJson(responseBody) as {
+          email?: string | null;
+          username?: string;
+          id?: string;
+        } | null;
+        return data?.email ?? data?.username ?? data?.id ?? null;
+      }
+    );
   }
 }
 

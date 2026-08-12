@@ -5,6 +5,7 @@ import {
   ServiceRegistry,
   SERVICE_REGISTRY,
   canonicalizeServiceName,
+  hideServicesFromRegistry,
 } from '../src/serviceRegistry.js';
 import { RegisteredService } from '../src/services/core/registered.js';
 import {
@@ -19,12 +20,24 @@ import {
   GOOGLE_DRIVE,
   GOOGLE_SHEETS,
   GOOGLE_DOCS,
+  GOOGLE_SLIDES,
   GOOGLE_PEOPLE,
   MAILCHIMP,
   GITLAB,
   AWS,
   TELEGRAM,
+  RAMP,
+  TODOIST,
 } from '../src/services/index.js';
+import type { Service } from '../src/services/core/base.js';
+
+/**
+ * The primary (first-registered) service that matches a URL. Mirrors how the
+ * injection pipeline treats registration order as the tie-breaker.
+ */
+function primaryServiceForUrl(registry: ServiceRegistry, url: string): Service | null {
+  return registry.getByUrl(url);
+}
 
 describe('ServiceRegistry', () => {
   describe('getByName', () => {
@@ -40,10 +53,13 @@ describe('ServiceRegistry', () => {
       ['google-drive', GOOGLE_DRIVE],
       ['google-sheets', GOOGLE_SHEETS],
       ['google-docs', GOOGLE_DOCS],
+      ['google-slides', GOOGLE_SLIDES],
       ['google-people', GOOGLE_PEOPLE],
       ['mailchimp', MAILCHIMP],
       ['aws', AWS],
       ['telegram', TELEGRAM],
+      ['ramp', RAMP],
+      ['todoist', TODOIST],
     ] as const;
 
     for (const [name, service] of namedServices) {
@@ -61,7 +77,7 @@ describe('ServiceRegistry', () => {
     });
   });
 
-  describe('getByUrl', () => {
+  describe('primary service resolution', () => {
     const urlMappings = [
       ['https://slack.com/api/auth.test', SLACK],
       ['https://discord.com/api/v9/users/@me', DISCORD],
@@ -73,42 +89,73 @@ describe('ServiceRegistry', () => {
       ['https://www.googleapis.com/drive/v3/files', GOOGLE_DRIVE],
       ['https://sheets.googleapis.com/v4/spreadsheets', GOOGLE_SHEETS],
       ['https://docs.googleapis.com/v1/documents/abc', GOOGLE_DOCS],
+      ['https://slides.googleapis.com/v1/presentations/abc', GOOGLE_SLIDES],
       ['https://people.googleapis.com/v1/people/me', GOOGLE_PEOPLE],
       ['https://api.notion.com/v1/users/me', NOTION],
       ['https://api.mailchimp.com/3.0/ping', MAILCHIMP],
       ['https://us1.api.mailchimp.com/3.0/lists', MAILCHIMP],
       ['https://sts.amazonaws.com/?Action=GetCallerIdentity', AWS],
       ['https://s3.us-east-1.amazonaws.com/my-bucket', AWS],
+      ['https://api.ramp.com/developer/v1/transactions', RAMP],
+      ['https://api.todoist.com/api/v1/projects', TODOIST],
     ] as const;
 
     for (const [url, service] of urlMappings) {
       it(`should find ${service.name} by URL ${url}`, () => {
-        expect(SERVICE_REGISTRY.getByUrl(url)).toBe(service);
+        expect(primaryServiceForUrl(SERVICE_REGISTRY, url)).toBe(service);
       });
     }
 
     it('should return null for unknown URL', () => {
-      expect(SERVICE_REGISTRY.getByUrl('https://example.com/api')).toBeNull();
+      expect(primaryServiceForUrl(SERVICE_REGISTRY, 'https://example.com/api')).toBeNull();
     });
 
     it('should not match partial URLs', () => {
-      expect(SERVICE_REGISTRY.getByUrl('https://slack.com/')).toBeNull();
+      expect(primaryServiceForUrl(SERVICE_REGISTRY, 'https://slack.com/')).toBeNull();
     });
 
     it('should match GitHub git smart-HTTP operation URLs', () => {
       expect(
-        SERVICE_REGISTRY.getByUrl(
+        primaryServiceForUrl(
+          SERVICE_REGISTRY,
           'https://github.com/owner/repo.git/info/refs?service=git-upload-pack'
         )
       ).toBe(GITHUB);
-      expect(SERVICE_REGISTRY.getByUrl('https://github.com/owner/repo/git-upload-pack')).toBe(
-        GITHUB
-      );
+      expect(
+        primaryServiceForUrl(SERVICE_REGISTRY, 'https://github.com/owner/repo/git-upload-pack')
+      ).toBe(GITHUB);
     });
 
     it('should not match GitHub web pages as git operations', () => {
-      expect(SERVICE_REGISTRY.getByUrl('https://github.com/owner/repo')).toBeNull();
-      expect(SERVICE_REGISTRY.getByUrl('https://github.com/settings/tokens')).toBeNull();
+      expect(primaryServiceForUrl(SERVICE_REGISTRY, 'https://github.com/owner/repo')).toBeNull();
+      expect(
+        primaryServiceForUrl(SERVICE_REGISTRY, 'https://github.com/settings/tokens')
+      ).toBeNull();
+    });
+  });
+
+  describe('getCandidatesByUrl', () => {
+    it('should return every service matching a shared Drive files URL', () => {
+      const candidates = SERVICE_REGISTRY.getCandidatesByUrl(
+        'https://www.googleapis.com/drive/v3/files?pageSize=1'
+      );
+      expect(candidates).toContain(GOOGLE_DRIVE);
+      expect(candidates).toContain(GOOGLE_DOCS);
+      expect(candidates).toContain(GOOGLE_SHEETS);
+      expect(candidates).toContain(GOOGLE_SLIDES);
+      // Drive is the canonical owner and is registered first, so it wins ties.
+      expect(candidates[0]).toBe(GOOGLE_DRIVE);
+    });
+
+    it('should only match Drive itself for non-files Drive URLs', () => {
+      const candidates = SERVICE_REGISTRY.getCandidatesByUrl(
+        'https://www.googleapis.com/drive/v3/about?fields=user'
+      );
+      expect(candidates).toEqual([GOOGLE_DRIVE]);
+    });
+
+    it('should return an empty list for unknown URLs', () => {
+      expect(SERVICE_REGISTRY.getCandidatesByUrl('https://example.com/api')).toEqual([]);
     });
   });
 
@@ -134,20 +181,22 @@ describe('ServiceRegistry', () => {
   describe('addService', () => {
     it('should add a service to the registry', () => {
       const registry = new ServiceRegistry([SLACK]);
-      const registered = new RegisteredService(
-        'my-gitlab',
-        'https://gitlab.mycompany.com/api/',
-        GITLAB
-      );
+      const registered = new RegisteredService('my-gitlab', 'https://gitlab.mycompany.com/api/', {
+        familyService: GITLAB,
+      });
       registry.addService(registered);
 
       expect(registry.getByName('my-gitlab')).toBe(registered);
-      expect(registry.getByUrl('https://gitlab.mycompany.com/api/v4/user')).toBe(registered);
+      expect(primaryServiceForUrl(registry, 'https://gitlab.mycompany.com/api/v4/user')).toBe(
+        registered
+      );
     });
 
     it('should throw DuplicateServiceNameError for existing built-in name', () => {
       const registry = new ServiceRegistry([SLACK]);
-      const duplicate = new RegisteredService('slack', 'https://slack.mycompany.com/api/', SLACK);
+      const duplicate = new RegisteredService('slack', 'https://slack.mycompany.com/api/', {
+        familyService: SLACK,
+      });
 
       expect(() => {
         registry.addService(duplicate);
@@ -156,8 +205,12 @@ describe('ServiceRegistry', () => {
 
     it('should throw DuplicateServiceNameError for existing registered name', () => {
       const registry = new ServiceRegistry([GITLAB]);
-      const first = new RegisteredService('my-gitlab', 'https://gitlab.mycompany.com/api/', GITLAB);
-      const second = new RegisteredService('my-gitlab', 'https://gitlab.other.com/api/', GITLAB);
+      const first = new RegisteredService('my-gitlab', 'https://gitlab.mycompany.com/api/', {
+        familyService: GITLAB,
+      });
+      const second = new RegisteredService('my-gitlab', 'https://gitlab.other.com/api/', {
+        familyService: GITLAB,
+      });
 
       registry.addService(first);
       expect(() => {
@@ -226,22 +279,18 @@ describe('ServiceRegistry', () => {
 
   describe('RegisteredService', () => {
     it('should not expose getSession when no loginUrl is provided', () => {
-      const registered = new RegisteredService(
-        'my-gitlab',
-        'https://gitlab.mycompany.com/api/',
-        GITLAB
-      );
+      const registered = new RegisteredService('my-gitlab', 'https://gitlab.mycompany.com/api/', {
+        familyService: GITLAB,
+      });
       expect(registered.getSession).toBeUndefined(); // eslint-disable-line @typescript-eslint/unbound-method
       expect(registered.loginUrl).toBe('');
     });
 
     it('should expose getSession when loginUrl is provided and family supports it', () => {
-      const registered = new RegisteredService(
-        'my-slack',
-        'https://slack.mycompany.com/api/',
-        SLACK,
-        'https://slack.mycompany.com/signin'
-      );
+      const registered = new RegisteredService('my-slack', 'https://slack.mycompany.com/api/', {
+        familyService: SLACK,
+        loginUrl: 'https://slack.mycompany.com/signin',
+      });
       expect(registered.getSession).toBeDefined(); // eslint-disable-line @typescript-eslint/unbound-method
       expect(registered.loginUrl).toBe('https://slack.mycompany.com/signin');
     });
@@ -255,12 +304,12 @@ describe('ServiceRegistry', () => {
     });
 
     it('should not expose getSession when loginUrl is provided but no family', () => {
-      const registered = new RegisteredService(
-        'my-api',
-        'https://api.example.com/',
-        undefined,
-        'https://api.example.com/login'
-      );
+      // A login URL on its own is not a login: the options type requires it to
+      // come with either a family service or a login flow.
+      // @ts-expect-error -- loginUrl alone is not a valid option
+      const registered = new RegisteredService('my-api', 'https://api.example.com/', {
+        loginUrl: 'https://api.example.com/login',
+      });
       expect(registered.getSession).toBeUndefined(); // eslint-disable-line @typescript-eslint/unbound-method
     });
 
@@ -269,10 +318,51 @@ describe('ServiceRegistry', () => {
       const registered = new RegisteredService(
         'my-telegram',
         'https://telegram.mycompany.com/bot',
-        TELEGRAM,
-        'https://telegram.mycompany.com/login'
+        {
+          familyService: TELEGRAM,
+          loginUrl: 'https://telegram.mycompany.com/login',
+        }
       );
       expect(registered.getSession).toBeUndefined(); // eslint-disable-line @typescript-eslint/unbound-method
+    });
+  });
+
+  describe('removeService', () => {
+    it('removes a service so it can no longer be looked up', () => {
+      const registry = new ServiceRegistry([SLACK, GITHUB]);
+      registry.removeService('slack');
+      expect(registry.getByName('slack')).toBeNull();
+      expect(registry.getByName('github')).toBe(GITHUB);
+      expect(registry.services).toHaveLength(1);
+    });
+
+    it('does nothing when the service is not present', () => {
+      const registry = new ServiceRegistry([SLACK]);
+      registry.removeService('does-not-exist');
+      expect(registry.services).toHaveLength(1);
+    });
+  });
+
+  describe('hideServicesFromRegistry', () => {
+    it('removes the named services', () => {
+      const registry = new ServiceRegistry([SLACK, GITHUB, DISCORD]);
+      hideServicesFromRegistry(registry, ['slack', 'discord']);
+      expect(registry.getByName('slack')).toBeNull();
+      expect(registry.getByName('discord')).toBeNull();
+      expect(registry.getByName('github')).toBe(GITHUB);
+    });
+
+    it('does nothing for an empty list', () => {
+      const registry = new ServiceRegistry([SLACK, GITHUB]);
+      hideServicesFromRegistry(registry, []);
+      expect(registry.services).toHaveLength(2);
+    });
+
+    it('silently ignores unknown service names', () => {
+      const registry = new ServiceRegistry([SLACK]);
+      hideServicesFromRegistry(registry, ['nope', 'slack']);
+      expect(registry.getByName('slack')).toBeNull();
+      expect(registry.services).toHaveLength(0);
     });
   });
 });

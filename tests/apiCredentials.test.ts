@@ -13,6 +13,7 @@ import { SlackApiCredentials } from '../src/services/slack.js';
 import { TelegramBotCredentials } from '../src/services/telegram.js';
 import { AwsCredentials } from '../src/services/aws.js';
 import { GoogleApiKeyCredentials } from '../src/services/google/base.js';
+import { ZoomServerToServerCredentials } from '../src/services/zoom.js';
 
 describe('AuthorizationBearer', () => {
   it('should inject Bearer token header', async () => {
@@ -203,6 +204,17 @@ describe('serialization roundtrip', () => {
     {
       name: 'GoogleApiKeyCredentials',
       credentials: () => new GoogleApiKeyCredentials('AIzaSyTestKey123'),
+    },
+    {
+      name: 'ZoomServerToServerCredentials',
+      credentials: () =>
+        new ZoomServerToServerCredentials(
+          'account-id',
+          'client-id',
+          'client-secret',
+          'access-token',
+          new Date(Date.now() + 3600_000).toISOString()
+        ),
     },
   ];
 

@@ -3,10 +3,19 @@
  */
 
 import type { Command } from 'commander';
-import { existsSync, unlinkSync } from 'node:fs';
+import { existsSync, statSync, unlinkSync } from 'node:fs';
+import { basename, join } from 'node:path';
 import { createInterface } from 'node:readline';
-import { ApiCredentialStore } from './apiCredentials/store.js';
-import { ApiCredentials, RawCurlCredentials } from './apiCredentials/base.js';
+import {
+  AmbiguousAccountError,
+  ApiCredentialStore,
+  ApiCredentialStoreError,
+} from './apiCredentials/store.js';
+import {
+  ApiCredentials,
+  ApiCredentialsUsageError,
+  RawCurlCredentials,
+} from './apiCredentials/base.js';
 import {
   CredentialsExpiredError,
   NoCredentialsForServiceError,
@@ -31,8 +40,8 @@ import {
 } from './playwrightUtils.js';
 import { BrowserFeaturesUnavailableError, loadPlaywright } from './playwrightLoader.js';
 import type { CurlResult } from './curl.js';
-import { EncryptedStorage } from './encryptedStorage.js';
-import { resolveEncryptionKey } from './encryption.js';
+import { EncryptedStorage, EncryptedStorageError } from './encryptedStorage.js';
+import { encrypt, EncryptionError, resolveEncryptionKey } from './encryption.js';
 import {
   DuplicateServiceNameError,
   InvalidServiceNameError,
@@ -40,12 +49,20 @@ import {
   SERVICE_REGISTRY,
   canonicalizeServiceName,
 } from './serviceRegistry.js';
-import { RegisteredService } from './services/core/registered.js';
+import { buildRegisteredServiceOptions, RegisteredService } from './services/core/registered.js';
 import {
+  LOGIN_FLOWS,
   LoginCancelledError,
   LoginFailedError,
+  LoginFlowParamsInvalidError,
   NoCurlCredentialsNotSupportedError,
+  PrepareInputInvalidError,
+  PrepareNotSupportedError,
+  resolveLoginFlow,
   Service,
+  UnknownLoginFlowError,
+  formatLoginFlowsHelp,
+  type LoginFlow,
 } from './services/index.js';
 import {
   CurlParseError,
@@ -53,7 +70,11 @@ import {
   run as curlRun,
   runAsync as curlRunAsync,
 } from './curl.js';
-import { checkPermission, PermissionCheckError } from './permissions.js';
+import {
+  checkPermission,
+  PermissionCheckError,
+  type PermissionCheckMetadata,
+} from './permissions.js';
 import { ErrorMessages } from './errorMessages.js';
 import { getSkillMdContent } from './skillMd.js';
 import { startGateway } from './gateway/server.js';
@@ -76,7 +97,9 @@ import {
   authList,
   authBrowser,
   authBrowserPrepare,
+  prepareService,
   UnknownServiceError,
+  AccountNotFoundError,
   BrowserNotConfiguredError,
   PreparationRequiredError,
 } from './sharedOperations.js';
@@ -100,9 +123,11 @@ export interface CliDependencies {
   readonly checkPermission: (
     request: Request,
     configPath: string,
-    doNotUseBuiltinSchemas: boolean
+    doNotUseBuiltinSchemas: boolean,
+    metadata?: PermissionCheckMetadata
   ) => Promise<boolean>;
   readonly confirm: (message: string) => Promise<boolean>;
+  readonly readStdin: () => Promise<string>;
   readonly exit: (code: number) => never;
   readonly log: (message: string) => void;
   readonly errorLog: (message: string) => void;
@@ -120,6 +145,7 @@ export function createDefaultDependencies(): CliDependencies {
     runCurlAsync: curlRunAsync,
     checkPermission: checkPermission,
     confirm: defaultConfirm,
+    readStdin: defaultReadStdin,
     exit: (code: number) => process.exit(code),
     log: (message: string) => {
       console.log(message);
@@ -168,6 +194,14 @@ function refuseInGatewayMode(deps: CliDependencies, commandName: string): void {
   }
 }
 
+async function defaultReadStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+  }
+  return Buffer.concat(chunks).toString('utf-8');
+}
+
 async function defaultConfirm(message: string): Promise<boolean> {
   const readline = createInterface({
     input: process.stdin,
@@ -180,6 +214,79 @@ async function defaultConfirm(message: string): Promise<boolean> {
       resolve(answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes');
     });
   });
+}
+
+/**
+ * How a registered service can be given a browser login. Kept next to the
+ * command rather than in the README, since it is what someone reaching for
+ * `--help` is trying to decide between.
+ */
+const REGISTRATION_MODES_HELP = [
+  'Browser login:',
+  '  You can always use `latchkey auth set` to supply credentials for a',
+  '  registered service. But optionally, you can use one of two methods to',
+  '  configure a browser login flow. Both require --login-url to specify the',
+  '  URL the browser opens to log the user in.',
+  '',
+  '  1. --service-family lets the service use the same login flow as a builtin',
+  '     service, for example:',
+  '',
+  '       $ latchkey services register my-github --service-family=github \\',
+  '           --base-api-url="https://github.example.com/api/v3/" \\',
+  '           --login-url="https://github.example.com/login"',
+  '',
+  '  2. --login-flow lets the service use one of the generic login flows. See',
+  '     the next section for supported login flows.',
+].join('\n');
+
+/** The login flow chosen at registration time, with the JSON it was configured from. */
+interface ChosenLoginFlow {
+  readonly flow: LoginFlow;
+  readonly params: Record<string, unknown> | undefined;
+}
+
+/**
+ * Parse `--login-flow-params` and resolve the named flow against it, reporting
+ * anything unusable and exiting. Returns the parameters alongside the flow so
+ * they can be stored exactly as validated.
+ */
+function resolveLoginFlowOrExit(
+  deps: CliDependencies,
+  flowName: string,
+  paramsJson: string | undefined
+): ChosenLoginFlow {
+  let params: Record<string, unknown> | undefined;
+  if (paramsJson !== undefined) {
+    let parsedJson: unknown;
+    try {
+      parsedJson = JSON.parse(paramsJson);
+    } catch {
+      deps.errorLog('Error: --login-flow-params must be valid JSON.');
+      deps.exit(1);
+    }
+    if (typeof parsedJson !== 'object' || parsedJson === null || Array.isArray(parsedJson)) {
+      deps.errorLog('Error: --login-flow-params must be a JSON object.');
+      deps.exit(1);
+    }
+    params = parsedJson as Record<string, unknown>;
+  }
+
+  try {
+    return { flow: resolveLoginFlow(flowName, params), params };
+  } catch (error) {
+    if (error instanceof UnknownLoginFlowError) {
+      deps.errorLog(`Error: ${error.message}`);
+      for (const availableFlow of LOGIN_FLOWS) {
+        deps.errorLog(`  ${availableFlow.flowName}: ${availableFlow.summary}`);
+      }
+      deps.exit(1);
+    }
+    if (error instanceof LoginFlowParamsInvalidError) {
+      deps.errorLog(`Error: ${error.message}`);
+      deps.exit(1);
+    }
+    throw error;
+  }
 }
 
 async function clearAll(deps: CliDependencies, yes: boolean): Promise<void> {
@@ -238,7 +345,12 @@ async function createEncryptedStorageFromConfig(config: Config): Promise<Encrypt
   return new EncryptedStorage(key);
 }
 
-async function clearService(deps: CliDependencies, serviceName: string): Promise<void> {
+async function clearService(
+  deps: CliDependencies,
+  serviceName: string,
+  account: string | undefined,
+  all: boolean
+): Promise<void> {
   const service = deps.registry.getByName(serviceName);
   if (service === null) {
     deps.errorLog(`Error: Unknown service: ${serviceName}`);
@@ -251,7 +363,19 @@ async function clearService(deps: CliDependencies, serviceName: string): Promise
     deps.config.credentialStorePath,
     encryptedStorage
   );
-  const deleted = apiCredentialStore.delete(serviceName);
+
+  let deleted: boolean;
+  try {
+    deleted = all
+      ? apiCredentialStore.deleteAll(serviceName)
+      : apiCredentialStore.delete(serviceName, account);
+  } catch (error) {
+    if (error instanceof AmbiguousAccountError) {
+      deps.errorLog(`Error: ${error.message}`);
+      deps.exit(1);
+    }
+    throw error;
+  }
 
   if (deleted) {
     deps.log(`API credentials for ${serviceName} have been cleared.`);
@@ -261,9 +385,65 @@ async function clearService(deps: CliDependencies, serviceName: string): Promise
 }
 
 /**
+ * Build the "Done" message for a completed browser flow, naming the account the
+ * credentials were stored under when it is not the default (unnamed) account.
+ */
+function loginDoneMessage(account: string | undefined): string {
+  return account !== undefined && account !== ''
+    ? `Done. Stored credentials for account '${account}'.`
+    : 'Done';
+}
+
+/**
+ * Build the space-separated command path (e.g. "auth set") for a command,
+ * excluding the root program name.
+ */
+function fullCommandPath(command: Command): string {
+  const parts: string[] = [];
+  let current: Command = command;
+  while (current.parent) {
+    parts.unshift(current.name());
+    current = current.parent;
+  }
+  return parts.join(' ');
+}
+
+/**
  * Register all CLI commands on the given program.
  */
 export function registerCommands(program: Command, deps: CliDependencies): void {
+  program.option(
+    '--account <account>',
+    "Account (e.g. an e-mail) whose credentials to use. Supported by 'curl', " +
+      "'auth set', 'auth set-nocurl', 'auth clear', and 'auth browser'. Required " +
+      'when a service has more than one stored account.'
+  );
+
+  // The account is a global option; commander exposes it on the root program
+  // regardless of which subcommand is invoked.
+  const getAccount = (): string | undefined => program.opts<{ account?: string }>().account;
+
+  // Only these commands act on a specific account. Every other command must
+  // reject --account rather than silently ignore it, so users are never misled
+  // into thinking it took effect.
+  const accountAwareCommands = new Set([
+    'curl',
+    'auth set',
+    'auth set-nocurl',
+    'auth clear',
+    'auth browser',
+  ]);
+  program.hook('preAction', (_thisCommand, actionCommand) => {
+    if (getAccount() === undefined) {
+      return;
+    }
+    const commandPath = fullCommandPath(actionCommand);
+    if (!accountAwareCommands.has(commandPath)) {
+      deps.errorLog(`Error: The --account option is not supported by 'latchkey ${commandPath}'.`);
+      deps.exit(1);
+    }
+  });
+
   const servicesCommand = program
     .command('services')
     .description('Manage and inspect supported services.');
@@ -298,11 +478,15 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .command('info')
     .description('Show information about a service.')
     .argument('<service_name>', 'Name of the service to get info for')
-    .action(async (serviceName: string) => {
+    .option(
+      '--offline',
+      'Do not send a request to validate credentials; report them as only "missing" or "unknown".'
+    )
+    .action(async (serviceName: string, options: { offline?: boolean }) => {
       if (deps.config.gatewayUrl !== null) {
         const info = await forwardToGateway(deps, {
           command: 'services info',
-          params: { serviceName },
+          params: { serviceName, offline: options.offline },
         });
         deps.log(JSON.stringify(info, null, 2));
         return;
@@ -317,11 +501,12 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           deps.registry,
           apiCredentialStore,
           deps.config,
-          serviceName
+          serviceName,
+          options.offline ?? false
         );
         deps.log(JSON.stringify(info, null, 2));
       } catch (error) {
-        if (error instanceof UnknownServiceError) {
+        if (error instanceof UnknownServiceError || error instanceof AmbiguousAccountError) {
           deps.errorLog(`Error: ${error.message}`);
           deps.exit(1);
         }
@@ -339,10 +524,27 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       'Name of the built-in service to use as a template, if any (e.g. gitlab)'
     )
     .option('--login-url <url>', 'Login URL for browser-based authentication, if applicable')
+    .option(
+      '--login-flow <name>',
+      'Generic browser login to give this service, instead of a service family. ' +
+        `Available flows: ${LOGIN_FLOWS.map((flow) => flow.flowName).join(', ')}. Requires --login-url.`
+    )
+    .option(
+      '--login-flow-params <json>',
+      'JSON object with the parameters of --login-flow, ' +
+        'e.g. \'{"cookieKeys": ["sessionid", "csrftoken"]}\' for cookie-capture'
+    )
+    .addHelpText('after', `\n${REGISTRATION_MODES_HELP}\n\n${formatLoginFlowsHelp()}`)
     .action(
       (
         rawServiceName: string,
-        options: { baseApiUrl: string; serviceFamily?: string; loginUrl?: string }
+        options: {
+          baseApiUrl: string;
+          serviceFamily?: string;
+          loginUrl?: string;
+          loginFlow?: string;
+          loginFlowParams?: string;
+        }
       ) => {
         refuseInGatewayMode(deps, 'services register');
         let serviceName: string;
@@ -368,10 +570,30 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           }
         }
 
-        if (options.loginUrl !== undefined) {
+        if (options.loginFlowParams !== undefined && options.loginFlow === undefined) {
+          deps.errorLog('Error: --login-flow-params requires --login-flow.');
+          deps.exit(1);
+        }
+
+        let chosenLoginFlow: ChosenLoginFlow | undefined;
+        if (options.loginFlow !== undefined) {
+          if (options.serviceFamily !== undefined) {
+            deps.errorLog('Error: --login-flow cannot be combined with --service-family.');
+            deps.exit(1);
+          }
+          if (options.loginUrl === undefined) {
+            deps.errorLog('Error: --login-flow requires --login-url.');
+            deps.exit(1);
+          }
+          chosenLoginFlow = resolveLoginFlowOrExit(
+            deps,
+            options.loginFlow,
+            options.loginFlowParams
+          );
+        } else if (options.loginUrl !== undefined) {
           if (familyService === undefined) {
             deps.errorLog(
-              'Error: --login-url requires a --service-family that supports browser login.'
+              'Error: --login-url requires either a --service-family that supports browser login, or --login-flow.'
             );
             deps.exit(1);
           } else if (familyService.getSession === undefined) {
@@ -390,8 +612,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         const registeredService = new RegisteredService(
           serviceName,
           options.baseApiUrl,
-          familyService,
-          options.loginUrl
+          buildRegisteredServiceOptions(familyService, options.loginUrl, chosenLoginFlow?.flow)
         );
 
         try {
@@ -408,6 +629,10 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           baseApiUrl: options.baseApiUrl,
           serviceFamily: options.serviceFamily,
           loginUrl: options.loginUrl,
+          loginFlow:
+            options.loginFlow === undefined
+              ? undefined
+              : { name: options.loginFlow, params: chosenLoginFlow?.params },
         });
 
         deps.log(`Service '${serviceName}' registered.`);
@@ -438,11 +663,13 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         deps.config.credentialStorePath,
         encryptedStorage
       );
-      const credentials = apiCredentialStore.get(serviceName);
-      if (credentials !== null) {
+      if (
+        apiCredentialStore.listAccounts(serviceName).length > 0 ||
+        apiCredentialStore.getPreparation(serviceName) !== null
+      ) {
         deps.errorLog(
-          `Error: Credentials still exist for '${serviceName}'. ` +
-            `Run 'latchkey auth clear ${serviceName}' before deregistering.`
+          `Error: Credentials or a preparation still exist for '${serviceName}'. ` +
+            `Run 'latchkey auth clear ${serviceName} --all' before deregistering.`
         );
         deps.exit(1);
       }
@@ -459,21 +686,38 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .description('Clear stored API credentials.')
     .argument('[service_name]', 'Name of the service to clear API credentials for')
     .option('-y, --yes', 'Skip confirmation prompt when clearing all data')
-    .action(async (serviceName: string | undefined, options: { yes?: boolean }) => {
+    .option('--all', "Clear all of the service's accounts")
+    .action(async (serviceName: string | undefined, options: { yes?: boolean; all?: boolean }) => {
       refuseInGatewayMode(deps, 'auth clear');
+      const all = options.all ?? false;
+      if (all && serviceName === undefined) {
+        deps.errorLog('Error: --all requires a service name.');
+        deps.exit(1);
+      }
+      if (all && getAccount() !== undefined) {
+        deps.errorLog('Error: --all cannot be combined with --account.');
+        deps.exit(1);
+      }
       if (serviceName === undefined) {
         await clearAll(deps, options.yes ?? false);
       } else {
-        await clearService(deps, serviceName);
+        await clearService(deps, serviceName, getAccount(), all);
       }
     });
 
   authCommand
     .command('list')
     .description('List all stored credentials and their status.')
-    .action(async () => {
+    .option(
+      '--offline',
+      'Do not send a request to validate credentials; report them as only "missing" or "unknown".'
+    )
+    .action(async (options: { offline?: boolean }) => {
       if (deps.config.gatewayUrl !== null) {
-        const entries = await forwardToGateway(deps, { command: 'auth list' });
+        const entries = await forwardToGateway(deps, {
+          command: 'auth list',
+          ...(options.offline ? { params: { offline: true } } : {}),
+        });
         deps.log(JSON.stringify(entries, null, 2));
         return;
       }
@@ -482,7 +726,12 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         deps.config.credentialStorePath,
         encryptedStorage
       );
-      const entries = await authList(deps.registry, apiCredentialStore);
+      const entries = await authList(
+        deps.registry,
+        apiCredentialStore,
+        deps.config,
+        options.offline ?? false
+      );
       deps.log(JSON.stringify(entries, null, 2));
     });
 
@@ -528,7 +777,15 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       );
 
       const credentials = new RawCurlCredentials(curlArguments);
-      apiCredentialStore.save(serviceName, credentials);
+      try {
+        apiCredentialStore.save(serviceName, credentials, getAccount());
+      } catch (error) {
+        if (error instanceof AmbiguousAccountError) {
+          deps.errorLog(`Error: ${error.message}`);
+          deps.exit(1);
+        }
+        throw error;
+      }
       deps.log('Credentials stored.');
     });
 
@@ -578,7 +835,15 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         throw error;
       }
 
-      apiCredentialStore.save(serviceName, credentials);
+      try {
+        apiCredentialStore.save(serviceName, credentials, getAccount());
+      } catch (error) {
+        if (error instanceof AmbiguousAccountError) {
+          deps.errorLog(`Error: ${error.message}`);
+          deps.exit(1);
+        }
+        throw error;
+      }
       deps.log('Credentials stored.');
     });
 
@@ -588,11 +853,11 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .argument('<service_name>', 'Name of the service to login to')
     .action(async (serviceName: string) => {
       if (deps.config.gatewayUrl !== null) {
-        await forwardToGateway(deps, {
+        const result = (await forwardToGateway(deps, {
           command: 'auth browser',
-          params: { serviceName },
-        });
-        deps.log('Done');
+          params: { serviceName, account: getAccount() },
+        })) as { account?: string } | null;
+        deps.log(loginDoneMessage(result?.account));
         return;
       }
       try {
@@ -601,16 +866,17 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           deps.config.credentialStorePath,
           encryptedStorage
         );
-        await authBrowser(
+        const { account } = await authBrowser(
           deps.registry,
           apiCredentialStore,
           encryptedStorage,
           deps.config,
-          serviceName
+          serviceName,
+          getAccount()
         );
-        deps.log('Done');
+        deps.log(loginDoneMessage(account));
       } catch (error) {
-        if (error instanceof UnknownServiceError) {
+        if (error instanceof UnknownServiceError || error instanceof AccountNotFoundError) {
           deps.errorLog(`Error: ${error.message}`);
           deps.exit(1);
         }
@@ -718,6 +984,50 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       }
     });
 
+  authCommand
+    .command('prepare')
+    .description(
+      "Register a service's client details (e.g. an OAuth client id/secret) from a JSON payload, for use during login."
+    )
+    .argument('<service_name>', 'Name of the service to prepare')
+    .argument(
+      '<json>',
+      'Service-specific registration JSON, e.g. \'{"clientId":"...","clientSecret":"..."}\''
+    )
+    .addHelpText(
+      'after',
+      `\nExample:\n  $ latchkey auth prepare google-gmail '{"clientId":"<id>","clientSecret":"<secret>"}'`
+    )
+    .action(async (serviceName: string, json: string) => {
+      if (deps.config.gatewayUrl !== null) {
+        await forwardToGateway(deps, {
+          command: 'auth prepare',
+          params: { serviceName, json },
+        });
+        deps.log(`Done`);
+        return;
+      }
+      try {
+        const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
+        const apiCredentialStore = new ApiCredentialStore(
+          deps.config.credentialStorePath,
+          encryptedStorage
+        );
+        prepareService(deps.registry, apiCredentialStore, serviceName, json);
+        deps.log(`Done`);
+      } catch (error) {
+        if (
+          error instanceof UnknownServiceError ||
+          error instanceof PrepareNotSupportedError ||
+          error instanceof PrepareInputInvalidError
+        ) {
+          deps.errorLog(`Error: ${error.message}`);
+          deps.exit(1);
+        }
+        throw error;
+      }
+    });
+
   program
     .command('curl')
     .description('Run curl with API credential injection.')
@@ -752,7 +1062,8 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
             targetUrl,
             deps.config.gatewayUrl,
             deps.config.gatewayPassword,
-            deps.config.gatewayPermissionsOverride
+            deps.config.gatewayPermissionsOverride,
+            getAccount() ?? null
           );
         } catch (error) {
           if (error instanceof GatewayCurlRewriteError) {
@@ -779,6 +1090,8 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           permissionsConfigPath: deps.config.permissionsConfigPath,
           permissionsDoNotUseBuiltinSchemas: deps.config.permissionsDoNotUseBuiltinSchemas,
           passthroughUnknown: deps.config.passthroughUnknown,
+          credentialsRefreshDisabled: deps.config.credentialsRefreshDisabled,
+          account: getAccount(),
         });
       } catch (error) {
         if (error instanceof RequestNotPermittedError) {
@@ -793,7 +1106,9 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           error instanceof UrlExtractionFailedError ||
           error instanceof NoServiceForUrlError ||
           error instanceof NoCredentialsForServiceError ||
-          error instanceof CredentialsExpiredError
+          error instanceof CredentialsExpiredError ||
+          error instanceof AmbiguousAccountError ||
+          error instanceof ApiCredentialsUsageError
         ) {
           deps.errorLog(error.message);
           deps.exit(1);
@@ -901,12 +1216,10 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
             const detail = error instanceof Error ? error.message : String(error);
             deps.errorLog(`Error: Additional claims must be valid JSON: ${detail}`);
             deps.exit(1);
-            return;
           }
           if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
             deps.errorLog('Error: Additional claims must be a JSON object.');
             deps.exit(1);
-            return;
           }
           additionalClaims = parsed as Record<string, unknown>;
         }
@@ -927,6 +1240,109 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         }
       }
     );
+
+  authCommand
+    .command('re-encrypt')
+    .description(
+      'Re-encrypt stored credentials with a new key and write them into a ' +
+        'destination directory, using the same filename Latchkey itself expects. ' +
+        'The new key is read from stdin so that it does not appear in the process ' +
+        'arguments or shell history. When stdin is empty, the existing encryption ' +
+        'key is reused.'
+    )
+    .argument(
+      '<destination_directory>',
+      'Directory to write the re-encrypted credential store into'
+    )
+    .option(
+      '--services <services...>',
+      'Only include these services in the new encrypted store (default: all stored services)'
+    )
+    .addHelpText(
+      'after',
+      `\nExamples:\n  $ openssl rand -base64 32 | latchkey auth re-encrypt ~/latchkey-export` +
+        `\n  $ echo "" | latchkey auth re-encrypt ~/latchkey-export --services gitlab slack`
+    )
+    .action(async (destinationDirectory: string, options: { services?: string[] }) => {
+      refuseInGatewayMode(deps, 'auth re-encrypt');
+
+      if (existsSync(destinationDirectory) && !statSync(destinationDirectory).isDirectory()) {
+        deps.errorLog(`Error: Destination is not a directory: ${destinationDirectory}`);
+        deps.exit(1);
+      }
+
+      const destination = join(destinationDirectory, basename(deps.config.credentialStorePath));
+      if (existsSync(destination)) {
+        deps.errorLog(`Error: Destination file already exists: ${destination}`);
+        deps.errorLog('Remove it first or choose a different destination directory.');
+        deps.exit(1);
+      }
+
+      const sourceKey = await resolveEncryptionKeyFromConfig(deps.config);
+
+      // An empty stdin means "reuse the existing encryption key".
+      const stdinKey = (await deps.readStdin()).trim();
+      const destinationKey = stdinKey === '' ? sourceKey : stdinKey;
+      // Validate the key up front using the encryption routine itself, rather
+      // than duplicating its key-format checks.
+      try {
+        encrypt('', destinationKey);
+      } catch (error) {
+        if (error instanceof EncryptionError) {
+          deps.errorLog(`Error: ${error.message}. Generate a key with: openssl rand -base64 32`);
+          deps.exit(1);
+        }
+        throw error;
+      }
+
+      const sourceStorage = new EncryptedStorage(sourceKey);
+      const sourceStore = new ApiCredentialStore(deps.config.credentialStorePath, sourceStorage);
+
+      let allCredentials: ReadonlyMap<string, ReadonlyMap<string, ApiCredentials>>;
+      try {
+        allCredentials = sourceStore.getAll();
+      } catch (error) {
+        if (error instanceof ApiCredentialStoreError || error instanceof EncryptedStorageError) {
+          deps.errorLog(`Error: ${error.message}`);
+          deps.exit(1);
+        }
+        throw error;
+      }
+
+      let selectedServiceNames: string[];
+      if (options.services !== undefined) {
+        const missing = options.services.filter((name) => !allCredentials.has(name));
+        if (missing.length > 0) {
+          deps.errorLog(`Error: No stored credentials for: ${missing.join(', ')}`);
+          deps.exit(1);
+        }
+        selectedServiceNames = options.services;
+      } else {
+        selectedServiceNames = [...allCredentials.keys()];
+      }
+
+      if (selectedServiceNames.length === 0) {
+        deps.errorLog('Error: No stored credentials found to re-encrypt.');
+        deps.exit(1);
+      }
+
+      const destinationStorage = new EncryptedStorage(destinationKey);
+      const destinationStore = new ApiCredentialStore(destination, destinationStorage);
+      for (const serviceName of selectedServiceNames) {
+        const accountMap = allCredentials.get(serviceName);
+        if (accountMap !== undefined) {
+          for (const [account, credentials] of accountMap) {
+            destinationStore.save(serviceName, credentials, account);
+          }
+        }
+        const preparation = sourceStore.getPreparation(serviceName);
+        if (preparation !== null) {
+          destinationStore.savePreparation(serviceName, preparation);
+        }
+      }
+
+      deps.log(`Re-encrypted ${String(selectedServiceNames.length)} service(s) to ${destination}.`);
+    });
 
   program
     .command('skill-md')

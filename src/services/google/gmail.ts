@@ -2,12 +2,7 @@ import { GoogleService, type GoogleServiceConfig } from './base.js';
 
 const CONFIG: GoogleServiceConfig = {
   apis: ['gmail.googleapis.com'],
-  scopes: [
-    'https://www.googleapis.com/auth/gmail.readonly',
-    'https://www.googleapis.com/auth/gmail.modify',
-    'https://www.googleapis.com/auth/gmail.compose',
-    'https://www.googleapis.com/auth/gmail.send',
-  ],
+  scopes: ['https://www.googleapis.com/auth/gmail.modify'],
 };
 
 export class GoogleGmail extends GoogleService {
@@ -17,11 +12,9 @@ export class GoogleGmail extends GoogleService {
   readonly info =
     'https://developers.google.com/gmail/api/reference/rest. ' +
     'If needed, run "latchkey auth browser-prepare google-gmail" to create an OAuth client first. ' +
-    'It may take a few minutes before the OAuth client is ready to use.';
-
-  readonly credentialCheckCurlArguments = [
-    'https://gmail.googleapis.com/gmail/v1/users/me/profile',
-  ] as const;
+    'It may take a few minutes before the OAuth client is ready to use. ' +
+    'Requests that end with `ACCESS_TOKEN_SCOPE_INSUFFICIENT` may be caused by some scopes not having been approved during login. ' +
+    'Logging in again and approving all the scopes might help in that case.';
 
   protected readonly config = CONFIG;
 }

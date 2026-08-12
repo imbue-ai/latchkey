@@ -11,6 +11,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { Browser, BrowserContext, Locator, Page, Response } from 'playwright';
 import { type ApiCredentials, OAuthCredentials } from '../../apiCredentials/base.js';
+import { fetchAccountFromEndpoint, tryParseJson } from '../../apiCredentials/account.js';
 import { extractUrlFromCurlArguments } from '../../curl.js';
 import {
   showSpinnerPage,
@@ -20,17 +21,25 @@ import {
 } from '../../playwrightUtils.js';
 import {
   exchangeCodeForTokens,
+  generateCodeChallenge,
+  generateCodeVerifier,
   refreshAccessToken,
   startOAuthCallbackServer,
 } from '../../oauthUtils.js';
 import {
   Service,
   BrowserFollowupServiceSession,
+  buildFollowupSpinnerDetails,
+  FollowupWork,
+  buildPreparedCredentials,
   LoginFailedError,
   LoginCancelledError,
   isBrowserClosedError,
+  isResponseBodyUnavailableError,
+  isTimeoutError,
 } from '../core/base.js';
 import type { EncryptedStorage } from '../../encryptedStorage.js';
+import { DEFAULT_APP_NAME_PREFIX } from '../../config.js';
 
 /**
  * Google API key credentials.
@@ -52,7 +61,7 @@ export class GoogleApiKeyCredentials implements ApiCredentials {
   }
 
   injectIntoCurlCall(curlArguments: readonly string[]): Promise<readonly string[]> {
-    const url = extractUrlFromCurlArguments(curlArguments as string[]);
+    const url = extractUrlFromCurlArguments(curlArguments);
     if (!url?.startsWith('https://') || !url.includes('.googleapis.com')) {
       return Promise.resolve(curlArguments);
     }
@@ -216,8 +225,15 @@ async function findExistingLatchkeyProject(
   // date/random segment between the prefix and the service suffix, so both the
   // new ("Latchkey-calendar") and legacy ("Latchkey-06-01-ab-calendar") naming
   // schemes match.
+  //
+  // We accept either the configured (possibly overridden) prefix or the
+  // literal default "Latchkey" prefix: a project may have been created before
+  // the override was configured, and reusing it is still preferable to
+  // allocating a new one against Google's per-account project cap.
+  const prefixes = [...new Set([appNamePrefix, DEFAULT_APP_NAME_PREFIX])];
+  const prefixAlternation = prefixes.map(escapeRegExp).join('|');
   const suffixPattern = new RegExp(
-    `^\\s*${escapeRegExp(appNamePrefix)}.*${escapeRegExp(serviceSuffix)}\\s*$`
+    `^\\s*(?:${prefixAlternation}).*${escapeRegExp(serviceSuffix)}\\s*$`
   );
   const latchkeyTitle = page
     .locator('.cfc-resource-card-header-title')
@@ -259,23 +275,44 @@ async function createProject(page: Page, appName: string): Promise<string> {
   await projectNameInput.clear();
   await typeLikeHuman(page, projectNameInput, appName);
 
-  await new Promise((resolve) => setTimeout(resolve, 300));
-
   // Angular form sometimes fails to commit the typed value to its internal
   // state, causing submit to report "fields not correct" even though the
   // input is visibly populated. Deleting and retyping the last character
   // forces the form state to update.
+  // (Sprinkle small delays between actions to try to battle emprically observed flakiness.)
   const lastChar = appName.slice(-1);
+  await new Promise((resolve) => setTimeout(resolve, 192));
   await projectNameInput.press('End');
+  await new Promise((resolve) => setTimeout(resolve, 256));
   await projectNameInput.press('Backspace');
+  await new Promise((resolve) => setTimeout(resolve, 128));
   await projectNameInput.pressSequentially(lastChar);
 
+  await new Promise((resolve) => setTimeout(resolve, 256));
   const createButton = page.locator('button[type="submit"]');
   await createButton.click();
 
-  await page.waitForURL('https://console.cloud.google.com/home/dashboard?project=**', {
-    timeout: 32000,
-  });
+  const dashboardUrl = 'https://console.cloud.google.com/home/dashboard?project=**';
+  const submissionError = page.locator('.cfc-form-submission-error');
+
+  // Submitting the form occasionally surfaces a transient submission error
+  // instead of navigating. When that happens, wait a moment and click again.
+  const navigation = page
+    .waitForURL(dashboardUrl, { timeout: 32000 })
+    .then(() => 'navigated' as const);
+  const errorAppeared = submissionError
+    .waitFor({ state: 'visible', timeout: 32000 })
+    .then(() => 'error' as const)
+    .catch(() => 'navigated' as const);
+  const outcome = await Promise.race([navigation, errorAppeared]);
+
+  if (outcome === 'error') {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await createButton.click();
+    await page.waitForURL(dashboardUrl, {
+      timeout: 32000,
+    });
+  }
   const urlObj = new URL(page.url());
   const projectId = urlObj.searchParams.get('project');
   if (!projectId) {
@@ -292,7 +329,7 @@ async function enableApi(page: Page, projectSlug: string, apiName: string): Prom
     }
   );
 
-  const successIcon = page.locator('.cfc-icon-status-success');
+  const successIcon = page.locator('.cfc-product-header-content .cfc-icon-status-success');
   const enableButton = page
     .locator('.mp-details-cta-button-primary button .mdc-button__label')
     .filter({ visible: true });
@@ -315,21 +352,59 @@ interface BrandingResult {
   supportEmail: string;
 }
 
+/**
+ * Configure the OAuth consent screen (branding) for a project.
+ *
+ * Idempotent: returns null when the consent screen is already configured (e.g.
+ * a reused project), so callers can safely invoke it on every run. Google
+ * blocks OAuth-client creation ("you must first configure your consent screen")
+ * until this is done, so it must run before {@link createOAuthClient}.
+ */
 async function configureBranding(
   page: Page,
   projectSlug: string,
   appName: string
-): Promise<BrandingResult> {
+): Promise<BrandingResult | null> {
   await page.goto(`https://console.cloud.google.com/auth/branding?project=${projectSlug}`, {
     timeout: DEFAULT_TIMEOUT_MS,
   });
   const getStartedButton = page.locator('cfc-empty-state-actions .mdc-button__label');
-  await getStartedButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-  await getStartedButton.click();
   const appNameInput = page.locator('input[formcontrolname="displayName"]');
+  // The branding page renders in one of two states: an empty-state "Get
+  // started" CTA when the consent screen hasn't been configured, or the
+  // editable branding form (with the app-name field) when it already has. Wait
+  // for whichever appears; if neither does in time, fall through and treat the
+  // screen as already configured (the CTA visibility check below will be false).
+  try {
+    await getStartedButton.or(appNameInput).first().waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+  } catch {
+    // Neither state materialized in time. This commonly happens when the
+    // project was only just created and Google's branding backend isn't ready
+    // yet, which surfaces as a "Failed to load" message somewhere on the page.
+    const failedToLoad = page.getByText('Failed to load', { exact: false }).first();
+    if (await failedToLoad.isVisible().catch(() => false)) {
+      throw new LoginFailedError(
+        'Google failed to load the OAuth consent screen ("Failed to load"). This is a ' +
+          "transient error on Google's side, usually because the project was just created. " +
+          'Please wait a few minutes and try again.'
+      );
+    }
+    // Otherwise let the visibility check below decide.
+  }
+  if (!(await getStartedButton.isVisible())) {
+    // Consent screen already configured — nothing to do.
+    return null;
+  }
+  await getStartedButton.click();
   await appNameInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
   await appNameInput.fill(appName);
-  const emailSelector = page.locator('svg[data-icon-name="arrowDropDownIcon"]').nth(0);
+  // Google renders multiple arrowDropDownIcon SVGs on this page, some hidden.
+  // Target the first visible one so waitFor() (which waits for visibility)
+  // doesn't latch onto a hidden element and time out.
+  const emailSelector = page
+    .locator('svg[data-icon-name="arrowDropDownIcon"]')
+    .filter({ visible: true })
+    .first();
   await emailSelector.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
   await emailSelector.click();
   const supportEmailOption = page.locator('mat-option > span:nth-child(1)').first();
@@ -448,11 +523,19 @@ async function createOAuthClient(
   await oauthClientIdOption.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
   await oauthClientIdOption.click();
 
-  const applicationTypeDropdown = page.locator('svg[data-icon-name="arrowDropDownIcon"]').nth(0);
+  // Google renders multiple arrowDropDownIcon SVGs on this page, some hidden.
+  // Target the first visible one so waitFor() (which waits for visibility)
+  // doesn't latch onto a hidden element and time out.
+  const applicationTypeDropdown = page
+    .locator('svg[data-icon-name="arrowDropDownIcon"]')
+    .filter({ visible: true })
+    .first();
   await applicationTypeDropdown.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
   await applicationTypeDropdown.click();
 
-  const desktopAppOption = page.locator('#_1rif_mat-option-5');
+  // Select by visible label rather than an auto-generated Angular Material id
+  // (e.g. "#_1rif_mat-option-5"), which changes between page loads/versions.
+  const desktopAppOption = page.getByRole('option', { name: 'Desktop app' });
   await desktopAppOption.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
   await desktopAppOption.click();
 
@@ -497,9 +580,14 @@ function checkGoogleLoginResponse(
         .catch((error: unknown) => {
           // The response body can become unreadable if the page/context
           // closes while it's still being read (e.g. the automation
-          // navigates onward, or the user closes the browser). Treat that
-          // specific race as inconclusive; let any other error propagate.
-          if (error instanceof Error && isBrowserClosedError(error)) {
+          // navigates onward, or the user closes the browser), or if the
+          // response simply retains no readable body (redirects, cached or
+          // evicted resources). Login detection here is best-effort, so treat
+          // those cases as inconclusive; let any other error propagate.
+          if (
+            error instanceof Error &&
+            (isBrowserClosedError(error) || isResponseBodyUnavailableError(error))
+          ) {
             return;
           }
           throw error;
@@ -539,6 +627,15 @@ async function waitForTermsOfServiceAcceptance(
   }
 }
 
+/**
+ * Detects the MFA enforcement redirect that Google Cloud now issues for
+ * accounts without multi-factor authentication. The query string (e.g.
+ * `?redirectTo=`) is irrelevant, so only the path is matched.
+ */
+function isEnableMfaUrl(url: string): boolean {
+  return url.startsWith('https://console.cloud.google.com/enable-mfa');
+}
+
 async function waitForGoogleLogin(page: Page): Promise<void> {
   const loginDetector = { isLoggedIn: false };
 
@@ -566,6 +663,9 @@ export interface GoogleServiceConfig {
 }
 
 class GoogleServiceSession extends BrowserFollowupServiceSession {
+  // The OAuth client is created during `prepare` (see below), not during login:
+  // login only runs the OAuth flow against the already prepared client.
+  protected readonly followupWork = FollowupWork.CreateApp;
   private readonly loginDetector = { isLoggedIn: false };
   private readonly config: GoogleServiceConfig;
 
@@ -629,65 +729,97 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
   ): Promise<ApiCredentials> {
     return withTempBrowserContext(encryptedStorage, launchOptions ?? {}, async ({ context }) => {
       const page = await context.newPage();
-      await page.goto(this.service.loginUrl);
-      await waitForGoogleLogin(page);
-
-      const serviceSuffix = this.service.name.replace(/^google/, '');
-
-      const spinnerPage = await showSpinnerPage(
-        context,
-        `Finalizing ${this.service.displayName} login by using Google Console to set up the project for custom authentication...\nThis can take a few minutes.`
-      );
-
-      // Google caps the number of projects per account, so try to reuse a
-      // previously created Latchkey project for this service before
-      // allocating a new one. This also detects the first-time-user Terms of
-      // Service dialog and surfaces it to the user when needed.
-      const existingProjectSlug = await findExistingLatchkeyProject(
-        page,
-        serviceSuffix,
-        this.appNamePrefix,
-        spinnerPage
-      );
-      let projectSlug: string;
-      if (existingProjectSlug === null) {
-        // Use a deterministic project name (e.g. "Latchkey-gmail") rather than
-        // one with date/random bits: projects are now reused per service, so a
-        // stable name keeps the reuse lookup predictable. Google still derives
-        // a globally-unique project ID from this display name on its own.
-        const appName = `${this.appNamePrefix}${serviceSuffix}`;
-        // Google limits the OAuth project name to 30 characters.
-        if (appName.length > 30) {
+      try {
+        return await this.runPrepareFlow(context, page);
+      } catch (error: unknown) {
+        // Google now enforces MFA for accounts that use Google Cloud. When the
+        // account lacks it, the console redirects to the enable-mfa page, which
+        // makes our project-setup steps time out. Detect that redirect and
+        // surface an actionable message instead of a generic timeout.
+        if (error instanceof Error && isTimeoutError(error) && isEnableMfaUrl(page.url())) {
           throw new LoginFailedError(
-            `Generated app name "${appName}" exceeds Google OAuth project name limit of 30 characters.`
+            'Error: Enable multi-factor authentication in your Google account first.'
           );
         }
-        projectSlug = await createProject(page, appName);
-        const { isExternalApp, supportEmail } = await configureBranding(page, projectSlug, appName);
-        if (isExternalApp && supportEmail) {
-          await addTestUser(page, projectSlug, supportEmail);
-        }
-      } else {
-        projectSlug = existingProjectSlug;
+        throw error;
       }
-
-      // Always make sure every required API is enabled, whether the project was
-      // just created or reused. A reused project might be a half-configured
-      // leftover from a previous run that crashed before all APIs were turned
-      // on; enableApi is idempotent and returns immediately when an API is
-      // already enabled, so re-running it is cheap and self-healing.
-      for (const api of this.config.apis) {
-        await enableApi(page, projectSlug, api);
-      }
-
-      const { clientId, clientSecret } = await createOAuthClient(
-        page,
-        serviceSuffix,
-        this.appNamePrefix
-      );
-      await page.close();
-      return new OAuthCredentials(clientId, clientSecret);
     });
+  }
+
+  private async runPrepareFlow(context: BrowserContext, page: Page): Promise<ApiCredentials> {
+    await page.goto(this.service.loginUrl);
+    await waitForGoogleLogin(page);
+
+    const serviceSuffix = this.service.name.replace(/^google/, '');
+
+    const spinnerPage = await showSpinnerPage(
+      context,
+      `Finalizing ${this.service.displayName} login...`,
+      buildFollowupSpinnerDetails(
+        this.service.displayName,
+        FollowupWork.CreateApp,
+        'This can take a few minutes, as it involves setting up a project in the Google Console.'
+      )
+    );
+
+    // Google caps the number of projects per account, so try to reuse a
+    // previously created Latchkey project for this service before
+    // allocating a new one. This also detects the first-time-user Terms of
+    // Service dialog and surfaces it to the user when needed.
+    const existingProjectSlug = await findExistingLatchkeyProject(
+      page,
+      serviceSuffix,
+      this.appNamePrefix,
+      spinnerPage
+    );
+    // Use a deterministic project name (e.g. "Latchkey-gmail") rather than
+    // one with date/random bits: projects are now reused per service, so a
+    // stable name keeps the reuse lookup predictable. Google still derives
+    // a globally-unique project ID from this display name on its own.
+    const appName = `${this.appNamePrefix}${serviceSuffix}`;
+    // Google limits the OAuth project name to 30 characters.
+    if (appName.length > 30) {
+      throw new LoginFailedError(
+        `Generated app name "${appName}" exceeds Google OAuth project name limit of 30 characters.`
+      );
+    }
+
+    let projectSlug: string;
+    if (existingProjectSlug === null) {
+      projectSlug = await createProject(page, appName);
+    } else {
+      projectSlug = existingProjectSlug;
+    }
+
+    // Always make sure the OAuth consent screen (branding) is configured,
+    // whether the project was just created or reused. A reused project may be a
+    // half-configured leftover from an earlier run that crashed before the
+    // consent screen was set up; Google then blocks OAuth-client creation with
+    // "you must first configure your consent screen". configureBranding is
+    // idempotent and returns null when the screen is already configured, in
+    // which case any required test user was already added on the run that set
+    // it up, so there's nothing left to do here.
+    const branding = await configureBranding(page, projectSlug, appName);
+    if (branding && branding.isExternalApp && branding.supportEmail) {
+      await addTestUser(page, projectSlug, branding.supportEmail);
+    }
+
+    // Always make sure every required API is enabled, whether the project was
+    // just created or reused. A reused project might be a half-configured
+    // leftover from a previous run that crashed before all APIs were turned
+    // on; enableApi is idempotent and returns immediately when an API is
+    // already enabled, so re-running it is cheap and self-healing.
+    for (const api of this.config.apis) {
+      await enableApi(page, projectSlug, api);
+    }
+
+    const { clientId, clientSecret } = await createOAuthClient(
+      page,
+      serviceSuffix,
+      this.appNamePrefix
+    );
+    await page.close();
+    return new OAuthCredentials(clientId, clientSecret);
   }
 
   private async performOAuthFlow(
@@ -717,6 +849,12 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
       );
       const redirectUri = `http://localhost:${port.toString()}/oauth2callback`;
 
+      // PKCE (RFC 7636): bind the authorization code to a one-time verifier so a
+      // stolen code cannot be redeemed without it. We keep sending the client
+      // secret too so this is confidential-client + PKCE, defense-in-depth.
+      const codeVerifier = generateCodeVerifier();
+      const codeChallenge = generateCodeChallenge(codeVerifier);
+
       const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
       authUrl.searchParams.set('client_id', clientId);
       authUrl.searchParams.set('redirect_uri', redirectUri);
@@ -724,16 +862,19 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
       authUrl.searchParams.set('scope', allScopes.join(' '));
       authUrl.searchParams.set('access_type', 'offline');
       authUrl.searchParams.set('prompt', 'consent');
+      authUrl.searchParams.set('code_challenge', codeChallenge);
+      authUrl.searchParams.set('code_challenge_method', 'S256');
 
       await page.goto(authUrl.toString());
 
       const code = await codePromise;
-      const tokens = exchangeCodeForTokens(
+      const tokens = await exchangeCodeForTokens(
         GOOGLE_TOKEN_ENDPOINT,
         code,
         clientId,
         clientSecret,
-        redirectUri
+        redirectUri,
+        codeVerifier
       );
       const accessTokenExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
@@ -755,6 +896,20 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
 }
 
 /**
+ * JSON accepted by `latchkey auth prepare <google-service>`: the OAuth client
+ * credentials to use for that service. `.strict()` rejects unknown keys so
+ * typos are reported instead of silently ignored.
+ */
+export const GooglePrepareInputSchema = z
+  .object({
+    clientId: z.string().min(1),
+    clientSecret: z.string().min(1),
+  })
+  .strict();
+
+export type GooglePrepareInput = z.infer<typeof GooglePrepareInputSchema>;
+
+/**
  * Abstract base class for individual Google API services.
  *
  * Each subclass declares the specific API, scopes, and credential-check endpoint
@@ -764,7 +919,44 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
 export abstract class GoogleService extends Service {
   readonly loginUrl = 'https://console.cloud.google.com/';
 
+  /**
+   * All Google services share the same credential check: the OpenID userinfo
+   * endpoint. The login scopes always include userinfo.email (see
+   * COMMON_SCOPES), so a valid token always answers there, and the response
+   * reveals the signed-in e-mail — including for services whose own API
+   * carries no identity (Analytics, Docs, Sheets, Slides). Service-specific
+   * scopes are deliberately not examined — the check only decides credential
+   * validity.
+   */
+  readonly credentialCheckCurlArguments = [
+    'https://openidconnect.googleapis.com/v1/userinfo',
+  ] as const;
+
+  override getAccount(apiCredentials: ApiCredentials): Promise<string | null> {
+    return fetchAccountFromEndpoint(
+      apiCredentials,
+      this.credentialCheckCurlArguments,
+      (responseBody) => {
+        const data = tryParseJson(responseBody) as { email?: string; sub?: string } | null;
+        return data?.email ?? data?.sub ?? null;
+      }
+    );
+  }
+
   protected abstract readonly config: GoogleServiceConfig;
+
+  /**
+   * Google services accept an OAuth client's id/secret prepared
+   * in advance via `latchkey auth prepare`, stored as token-less OAuth credentials until login.
+   */
+  override prepareFromJson(parsedJson: unknown): ApiCredentials {
+    return buildPreparedCredentials(
+      this.name,
+      GooglePrepareInputSchema,
+      parsedJson,
+      ({ clientId, clientSecret }) => new OAuthCredentials(clientId, clientSecret)
+    );
+  }
 
   setCredentialsExample(serviceName: string): string {
     return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
@@ -774,16 +966,18 @@ export abstract class GoogleService extends Service {
     return new GoogleServiceSession(this, this.config, appNamePrefix);
   }
 
-  override refreshCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentials | null> {
+  override async refreshCredentials(
+    apiCredentials: ApiCredentials
+  ): Promise<ApiCredentials | null> {
     if (!(apiCredentials instanceof OAuthCredentials)) {
-      return Promise.resolve(null);
+      return null;
     }
 
     if (!apiCredentials.refreshToken) {
-      return Promise.resolve(null);
+      return null;
     }
 
-    const tokens = refreshAccessToken(
+    const tokens = await refreshAccessToken(
       GOOGLE_TOKEN_ENDPOINT,
       apiCredentials.refreshToken,
       apiCredentials.clientId,
@@ -791,20 +985,18 @@ export abstract class GoogleService extends Service {
     );
 
     if (tokens === null) {
-      return Promise.resolve(null);
+      return null;
     }
 
     const accessTokenExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
-    return Promise.resolve(
-      new OAuthCredentials(
-        apiCredentials.clientId,
-        apiCredentials.clientSecret,
-        tokens.access_token,
-        tokens.refresh_token ?? apiCredentials.refreshToken,
-        accessTokenExpiresAt,
-        apiCredentials.refreshTokenExpiresAt
-      )
+    return new OAuthCredentials(
+      apiCredentials.clientId,
+      apiCredentials.clientSecret,
+      tokens.access_token,
+      tokens.refresh_token ?? apiCredentials.refreshToken,
+      accessTokenExpiresAt,
+      apiCredentials.refreshTokenExpiresAt
     );
   }
 }

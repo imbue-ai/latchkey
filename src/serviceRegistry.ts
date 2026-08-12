@@ -2,8 +2,10 @@
  * Service registry for looking up services by name or URL.
  */
 
-import { loadRegisteredServices } from './configDataStore.js';
-import { RegisteredService } from './services/core/registered.js';
+import { loadRegisteredServices, type RegisteredServiceEntry } from './configDataStore.js';
+import { buildRegisteredServiceOptions, RegisteredService } from './services/core/registered.js';
+import { resolveLoginFlow, UnknownLoginFlowError } from './services/core/loginFlows/registry.js';
+import { LoginFlowParamsInvalidError, type LoginFlow } from './services/core/loginFlows/base.js';
 import {
   Service,
   SLACK,
@@ -18,6 +20,7 @@ import {
   GOOGLE_DRIVE,
   GOOGLE_SHEETS,
   GOOGLE_DOCS,
+  GOOGLE_SLIDES,
   GOOGLE_PEOPLE,
   MAILCHIMP,
   GITLAB,
@@ -33,6 +36,9 @@ import {
   GOOGLE_DIRECTIONS,
   COOLIFY,
   UMAMI,
+  RAMP,
+  TODOIST,
+  NGROK,
 } from './services/index.js';
 
 export class DuplicateServiceNameError extends Error {
@@ -79,6 +85,13 @@ export class ServiceRegistry {
     this._services.push(service);
   }
 
+  removeService(name: string): void {
+    const index = this._services.findIndex((service) => service.name === name);
+    if (index !== -1) {
+      this._services.splice(index, 1);
+    }
+  }
+
   getByName(name: string): Service | null {
     for (const service of this._services) {
       if (service.name === name) {
@@ -88,21 +101,80 @@ export class ServiceRegistry {
     return null;
   }
 
-  getByUrl(url: string): Service | null {
-    for (const service of this._services) {
-      for (const baseApiUrl of service.baseApiUrls) {
-        if (typeof baseApiUrl === 'string') {
-          if (url.startsWith(baseApiUrl)) {
-            return service;
-          }
-        } else {
-          if (baseApiUrl.test(url)) {
-            return service;
-          }
+  private matchesUrl(service: Service, url: string): boolean {
+    for (const baseApiUrl of service.baseApiUrls) {
+      if (typeof baseApiUrl === 'string') {
+        if (url.startsWith(baseApiUrl)) {
+          return true;
+        }
+      } else {
+        if (baseApiUrl.test(url)) {
+          return true;
         }
       }
     }
-    return null;
+    return false;
+  }
+
+  /**
+   * Return every service whose base API URLs match the given URL, in
+   * registration order.
+   *
+   * Some APIs are shared across services (e.g. the Google Drive files API is
+   * used by Drive, Docs, and Sheets), so a single URL can legitimately match
+   * more than one service. Callers disambiguate by picking the candidate that
+   * actually has usable credentials.
+   */
+  getCandidatesByUrl(url: string): readonly Service[] {
+    return this._services.filter((service) => this.matchesUrl(service, url));
+  }
+
+  /**
+   * The primary (first-registered) service matching a URL, or null if none do.
+   *
+   * The injection pipeline uses {@link getCandidatesByUrl} to consider every
+   * match and disambiguate by credential availability; this remains as a
+   * convenience for SDK consumers that just want the canonical owner.
+   */
+  getByUrl(url: string): Service | null {
+    return this.getCandidatesByUrl(url)[0] ?? null;
+  }
+}
+
+/**
+ * Remove the named services from the registry so that the rest of the
+ * application behaves as if they never existed. Names that don't match any
+ * registered service are silently ignored.
+ */
+export function hideServicesFromRegistry(
+  registry: ServiceRegistry,
+  serviceNames: readonly string[]
+): void {
+  for (const name of serviceNames) {
+    registry.removeService(name);
+  }
+}
+
+/**
+ * Resolve a stored login flow, dropping it if it no longer resolves.
+ *
+ * A flow that is unknown or misconfigured (hand-edited config, or one written
+ * by a newer Latchkey) costs the service its browser login, but the service
+ * itself stays usable with `latchkey auth set`.
+ */
+function resolveStoredLoginFlow(
+  storedLoginFlow: RegisteredServiceEntry['loginFlow']
+): LoginFlow | undefined {
+  if (storedLoginFlow === undefined) {
+    return undefined;
+  }
+  try {
+    return resolveLoginFlow(storedLoginFlow.name, storedLoginFlow.params);
+  } catch (error) {
+    if (error instanceof UnknownLoginFlowError || error instanceof LoginFlowParamsInvalidError) {
+      return undefined;
+    }
+    throw error;
   }
 }
 
@@ -125,8 +197,11 @@ export function loadRegisteredServicesIntoServiceRegistry(
     const registeredService = new RegisteredService(
       name,
       entry.baseApiUrl,
-      familyService,
-      entry.loginUrl
+      buildRegisteredServiceOptions(
+        familyService,
+        entry.loginUrl,
+        resolveStoredLoginFlow(entry.loginFlow)
+      )
     );
     registry.addService(registeredService);
   }
@@ -145,6 +220,7 @@ export const SERVICE_REGISTRY = new ServiceRegistry([
   GOOGLE_DRIVE,
   GOOGLE_SHEETS,
   GOOGLE_DOCS,
+  GOOGLE_SLIDES,
   GOOGLE_PEOPLE,
   MAILCHIMP,
   GITLAB,
@@ -160,4 +236,7 @@ export const SERVICE_REGISTRY = new ServiceRegistry([
   GOOGLE_DIRECTIONS,
   COOLIFY,
   UMAMI,
+  RAMP,
+  TODOIST,
+  NGROK,
 ]);

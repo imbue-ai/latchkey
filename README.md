@@ -162,6 +162,33 @@ code, stdout and stderr are passed back from curl to the caller
 of `latchkey`.
 
 
+### Multiple accounts
+
+Credentials for a service can be stored under several accounts.
+An account is a string that uniquely identifies the account
+behind the credentials - typically an e-mail, but for some
+services it may be an id. Use the global `--account` option to
+select one:
+
+```bash
+# Store credentials for a specific account.
+latchkey --account bob@example.com auth set slack -H "Authorization: Bearer xoxb-..."
+
+# Use them in a request.
+latchkey --account bob@example.com curl https://slack.com/api/auth.test
+```
+
+When `--account` is omitted, the single stored account is used
+automatically. If a service has more than one stored account,
+`--account` becomes required. Credentials stored without an
+account live under a "default" account (empty string, `""`).
+
+Browser logins (`latchkey auth browser`) determine the account
+automatically. The `--account` option here merely allows users
+to specify which existing OAuth client configuration to use for
+the login (selecting one associated with an existing account) if
+needed.
+
 ### Self-hosted services
 
 For services that can be self-hosted, like GitLab, first make Latchkey aware of your service instance:
@@ -194,7 +221,8 @@ latchkey auth set mastodon -H "Authorization: Bearer <your_access_token>"
 latchkey curl https://mastodon.social/api/v1/timelines/public?limit=2
 ```
 
-User-registered services only support authentication via static curl arguments provided through `latchkey auth set`.
+You can also configure browser login flows for registered services. For details,
+see `latchkey services register --help`.
 
 
 ### Indirect credentials
@@ -226,14 +254,17 @@ calls.
 
 ### Inspecting the status of stored credentials
 
-Calling `latchkey services info <service_name>` will show information
-about the service, including the credentials status. The
-credentials status line will show one of:
+Calling `latchkey services info <service_name>` will show
+information about the service, including a `credentials` object
+keyed by account (the default account uses the empty string).
+Each entry reports a credentials status of:
 
-- `missing`
 - `invalid`
 - `valid`
 - `unknown` (for user-registered services)
+
+A service with no stored credentials shows an empty `credentials`
+object.
 
 ### Clearing credentials
 
@@ -275,6 +306,14 @@ latchkey auth clear
 ```
 
 
+### Re-encrypting credentials
+
+If you want to export your stored credentials encrypted with
+a different key or containing only some of the credentials (for
+example to move them to another machine) , use the `auth re-encrypt`
+subcommand.
+
+
 ### Permissions
 
 Optionally, you can specify rules for approving / rejecting
@@ -294,6 +333,9 @@ This would mean that:
 
 - When accessing the Gmail or the Slack API, only read actions are allowed.
 - No requests are allowed to any other domains.
+
+Rules can also depend on the used account which Latchkey injects as the
+`account` custom metadata key. See [the underlying library's docs](https://github.com/imbue-ai/detent#custom-metadata) for more details.
 
 Ideally make the file read-only: `chmod -w ~/.latchkey/permissions.json`.
 In the gateway mode, you can use [permission overrides](#permission-overrides) to let
@@ -376,11 +418,14 @@ defaults:
 - `LATCHKEY_KEYRING_SERVICE_NAME`, `LATCHKEY_KEYRING_ACCOUNT_NAME`: identifiers that are used to store the encryption password in your keyring
 - `LATCHKEY_ENCRYPTION_KEY`: override the encryption key, e.g. when a keyring is not available. Example: `export LATCHKEY_ENCRYPTION_KEY="$(openssl rand -base64 32)"`
 - `LATCHKEY_DISABLE_BROWSER`: when set to a non-empty value, disables the browser login flow; commands that would trigger a browser login (`auth browser`, `auth browser-prepare`) will fail with an error instead
+- `LATCHKEY_EPHEMERAL_BROWSER`: when set to a non-empty value, browser flows operate similarly to the browser incognito mode. Useful when logging into multiple accounts.
 - `LATCHKEY_DISABLE_COUNTING`: when set to a non-empty value, disables daily usage counting.
+- `LATCHKEY_DISABLE_CREDENTIALS_REFRESH`: when set to a non-empty value, expired credentials are never refreshed. (Useful when the credentials are shared and refreshing in one place would risk exhausting the refresh token for the other one.)
 - `LATCHKEY_PERMISSIONS_CONFIG`: override the `permissions.json` location.
 - `LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS`: do not use the built-in permission definitions.
 - `LATCHKEY_PASSTHROUGH_UNKNOWN`: if set, Latchkey will forward requests (via `latchkey curl` or gateway) even if no credentials are injected.
-- `LATCHKEY_GATEWAY`: when set to a base URL (e.g. `http://localhost:1989`), the CLI delegates commands to a remote Latchkey gateway instead of running them locally. Commands that change local state (`auth set`, `auth clear`, `services register`, `ensure-browser`, `gateway`) cannot run in this mode.
+- `LATCHKEY_HIDE_BUILTIN_SERVICES`: comma-separated list of built-in service names to disable/hide.
+- `LATCHKEY_GATEWAY`: when set to a base URL (e.g. `http://localhost:1989`), the CLI delegates commands to a remote Latchkey gateway instead of running them locally. Commands that change local state (`auth set`, `auth clear`, `auth re-encrypt`, `services register`, `ensure-browser`, `gateway`) cannot run in this mode.
 - `LATCHKEY_GATEWAY_LISTEN_HOST`, `LATCHKEY_GATEWAY_LISTEN_PORT`: default address and port the local `latchkey gateway` command binds to when `--host` / `--port` are not supplied (defaults: `localhost`, `1989`). Distinct from `LATCHKEY_GATEWAY`, which configures a *remote* gateway URL.
 - `LATCHKEY_GATEWAY_PASSWORD`: optional shared secret used by the client side. When set together with `LATCHKEY_GATEWAY`, the CLI sends the value in the `X-Latchkey-Gateway-Password` header on every outgoing gateway request.
 - `LATCHKEY_GATEWAY_LISTEN_PASSWORD`: optional shared secret used by the server side. When set, `latchkey gateway` rejects (with `401`) any request that does not present the same value in the `X-Latchkey-Gateway-Password` header. The header is stripped before requests are forwarded upstream.
@@ -402,10 +447,12 @@ override `config.json` values.
     "keyringServiceName": "latchkey",
     "keyringAccountName": "encryption-key",
     "browserDisabled": false,
+    "browserEphemeral": false,
     "countingDisabled": true,
     "permissionsConfig": "/etc/latchkey/permissions.json",
     "permissionsDoNotUseBuiltinSchemas": false,
     "passthroughUnknown": false,
+    "hideBuiltinServices": ["telegram", "yelp"],
     "gateway": "http://localhost:1989",
     "gatewayListenHost": "localhost",
     "gatewayListenPort": 1989,
@@ -431,4 +478,4 @@ override `config.json` values.
 Latchkey currently offers varying levels of support for the
 following services: AWS, Calendly, Discord, Dropbox, Figma, GitHub, GitLab,
 Gmail, Google Analytics, Google Calendar, Google Docs, Google Drive, Google Sheets,
-Linear, Mailchimp, Notion, Sentry, Slack, Stripe, Telegram, Yelp, Zoom, and more.
+Linear, Mailchimp, Notion, Ramp, Sentry, Slack, Stripe, Telegram, Todoist, Yelp, Zoom, and more.

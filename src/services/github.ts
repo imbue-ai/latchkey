@@ -5,7 +5,13 @@
 import type { Response, BrowserContext } from 'playwright';
 import { ApiCredentials, AuthorizationBearer } from '../apiCredentials/base.js';
 import { typeLikeHuman } from '../playwrightUtils.js';
-import { Service, BrowserFollowupServiceSession, LoginFailedError } from './core/base.js';
+import {
+  Service,
+  BrowserFollowupServiceSession,
+  FollowupWork,
+  LoginFailedError,
+} from './core/base.js';
+import { fetchAccountFromEndpoint, tryParseJson } from '../apiCredentials/account.js';
 
 const DEFAULT_TIMEOUT_MS = 8000;
 
@@ -76,6 +82,7 @@ const GITHUB_TOKEN_SCOPES = [
 ] as const;
 
 class GithubServiceSession extends BrowserFollowupServiceSession {
+  protected readonly followupWork = FollowupWork.CreateApiToken;
   private isLoggedIn = false;
 
   onResponse(response: Response): void {
@@ -179,6 +186,19 @@ export class Github extends Service {
 
   override getSession(appNamePrefix: string): GithubServiceSession {
     return new GithubServiceSession(this, appNamePrefix);
+  }
+
+  override getAccount(apiCredentials: ApiCredentials): Promise<string | null> {
+    return fetchAccountFromEndpoint(
+      apiCredentials,
+      this.credentialCheckCurlArguments,
+      (responseBody) => {
+        // The login is the stable GitHub handle; the e-mail is null unless the
+        // user makes it public, so keying on it would be unreliable.
+        const data = tryParseJson(responseBody) as { login?: string } | null;
+        return data?.login ?? null;
+      }
+    );
   }
 }
 

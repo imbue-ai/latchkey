@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -21,8 +21,8 @@ import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { ApiCredentialStore } from '../src/apiCredentials/store.js';
 import { Config } from '../src/config.js';
 import { ServiceRegistry } from '../src/serviceRegistry.js';
-import { ApiCredentialStatus } from '../src/apiCredentials/base.js';
-import { NoCurlCredentialsNotSupportedError, Service } from '../src/services/core/base.js';
+import { Service } from '../src/services/core/base.js';
+import { createMockService } from './mockService.js';
 
 const TEST_ENCRYPTION_KEY = 'dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q=';
 
@@ -111,12 +111,14 @@ describe('buildCurlArguments', () => {
       ['Content-Type', 'application/json'],
       ['X-Latchkey-Gateway-Password', 'sekret'],
       ['X-Latchkey-Gateway-Permissions-Override', 'jwt-payload'],
+      ['X-Latchkey-Gateway-Account', 'jou'],
     ]);
     const args = buildCurlArguments('GET', headers, 'https://api.example.com/test', false);
     expect(args).toContain('Content-Type: application/json');
     const joined = args.join('\n').toLowerCase();
     expect(joined).not.toContain('x-latchkey-gateway-password');
     expect(joined).not.toContain('x-latchkey-gateway-permissions-override');
+    expect(joined).not.toContain('x-latchkey-gateway-account');
     expect(joined).not.toContain('sekret');
     expect(joined).not.toContain('jwt-payload');
   });
@@ -189,25 +191,15 @@ describe('gateway server', () => {
   let errorLogs: string[];
   let capturedCurlArgs: readonly string[];
   let capturedCurlStdin: Buffer | undefined;
+  let capturedPermissionCheckBody: string | undefined;
   let mockCurlResponse: AsyncCurlResult;
   let mockCurlHeaderDump: string;
   let mockPermissionResult: boolean;
 
-  const mockSlackService: Service = {
-    name: 'slack',
-    displayName: 'Slack',
-    baseApiUrls: ['https://slack.com/api/'],
-    loginUrl: 'https://slack.com/signin',
+  const mockSlackService: Service = createMockService({
     info: 'Test Slack service.',
-    credentialCheckCurlArguments: ['https://slack.com/api/auth.test'],
-    checkApiCredentials: vi.fn().mockResolvedValue(ApiCredentialStatus.Valid),
-    setCredentialsExample(serviceName: string) {
-      return `latchkey auth set ${serviceName} -H "Authorization: Bearer xoxb-your-token"`;
-    },
-    getCredentialsNoCurl() {
-      throw new NoCurlCredentialsNotSupportedError('slack');
-    },
-  };
+    getSession: undefined,
+  });
 
   function createMockConfig(configOverrides: Partial<Config> = {}): Config {
     const base = new Config((name) => {
@@ -231,10 +223,16 @@ describe('gateway server', () => {
     },
     overrides: Partial<CliDependencies> = {},
     optionOverrides: Partial<GatewayOptions> = {},
-    configOverrides: Partial<Config> = {}
+    configOverrides: Partial<Config> = {},
+    accountKey = ''
   ): Promise<GatewayServer> {
     const storePath = join(tempDir, 'credentials.json');
-    writeSecureFile(storePath, JSON.stringify(credentialsData));
+    // Store credentials under the given account (default account by default),
+    // matching the on-disk layout.
+    const nestedCredentials = Object.fromEntries(
+      Object.entries(credentialsData).map(([service, creds]) => [service, { [accountKey]: creds }])
+    );
+    writeSecureFile(storePath, JSON.stringify({ credentials: nestedCredentials }));
 
     const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
     const apiCredentialStore = new ApiCredentialStore(storePath, encryptedStorage);
@@ -260,8 +258,12 @@ describe('gateway server', () => {
 
         return mockCurlResponse;
       },
-      checkPermission: () => Promise.resolve(mockPermissionResult),
+      checkPermission: async (request: Request): Promise<boolean> => {
+        capturedPermissionCheckBody = await request.clone().text();
+        return mockPermissionResult;
+      },
       confirm: () => Promise.resolve(true),
+      readStdin: () => Promise.resolve(''),
       exit: (code: number): never => {
         throw new Error(`process.exit(${String(code)})`);
       },
@@ -310,6 +312,7 @@ describe('gateway server', () => {
     errorLogs = [];
     capturedCurlArgs = [];
     capturedCurlStdin = undefined;
+    capturedPermissionCheckBody = undefined;
     mockPermissionResult = true;
     mockCurlResponse = {
       returncode: 0,
@@ -381,6 +384,22 @@ describe('gateway server', () => {
       expect(capturedCurlArgs).toContain('--data-binary');
       expect(capturedCurlArgs).toContain('@-');
       expect(capturedCurlStdin?.toString()).toBe(requestBody);
+    });
+
+    it('should expose the real body (not the @- placeholder) to the permission check', async () => {
+      gateway = await createTestGateway();
+      const requestBody = '{"channel":"C01","text":"hello"}';
+
+      await fetch('/gateway/https://slack.com/api/chat.postMessage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: requestBody,
+      });
+
+      // The body is streamed to curl via `--data-binary @-`, but the
+      // permission check must still see the actual payload.
+      expect(capturedPermissionCheckBody).toBe(requestBody);
+      expect(capturedPermissionCheckBody).not.toBe('@-');
     });
 
     it('should forward query parameters in the target URL', async () => {
@@ -458,6 +477,43 @@ describe('gateway server', () => {
       expect(response.status).toBe(400);
       const body = (await response.json()) as { error: string };
       expect(body.error).toContain('No credentials found for slack');
+    });
+
+    it('honors the account header by rejecting an account without credentials', async () => {
+      // The stored slack credentials live under the default account, so a
+      // request scoped to a different account must not silently fall back to
+      // them: it must report that the requested account has no credentials.
+      gateway = await createTestGateway();
+
+      const response = await fetch('/gateway/https://slack.com/api/auth.test', {
+        headers: { 'X-Latchkey-Gateway-Account': 'jou' },
+      });
+
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as { error: string };
+      expect(body.error).toContain("No credentials found for slack (account 'jou')");
+    });
+
+    it('honors the account header by injecting the requested account credentials', async () => {
+      gateway = await createTestGateway(
+        {
+          slack: {
+            objectType: 'rawCurl',
+            curlArguments: ['-H', 'Authorization: Bearer jou-token'],
+          },
+        },
+        {},
+        {},
+        {},
+        'jou'
+      );
+
+      const response = await fetch('/gateway/https://slack.com/api/auth.test', {
+        headers: { 'X-Latchkey-Gateway-Account': 'jou' },
+      });
+
+      expect(response.status).toBe(200);
+      expect(capturedCurlArgs).toContain('Authorization: Bearer jou-token');
     });
 
     it('should pass through unknown service when passthroughUnknown is enabled', async () => {
@@ -947,6 +1003,7 @@ describe('gateway CLI command registration', () => {
       runCurlAsync: () => Promise.resolve({ returncode: 0, stdout: Buffer.from(''), stderr: '' }),
       checkPermission: () => Promise.resolve(true),
       confirm: () => Promise.resolve(true),
+      readStdin: () => Promise.resolve(''),
       exit: (code: number): never => {
         throw new Error(`process.exit(${String(code)})`);
       },

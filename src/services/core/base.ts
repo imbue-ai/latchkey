@@ -3,12 +3,14 @@
  */
 
 import type { Browser, BrowserContext, Page, Response } from 'playwright';
+import type { z, ZodError, ZodTypeAny } from 'zod';
 import {
   ApiCredentialStatus,
   ApiCredentials,
   ApiCredentialsUsageError,
 } from '../../apiCredentials/base.js';
-import { runCaptured } from '../../curl.js';
+import { DEFAULT_ACCOUNT } from '../../apiCredentials/account.js';
+import { runCapturedAsync } from '../../curl.js';
 import { EncryptedStorage } from '../../encryptedStorage.js';
 import {
   generateLatchkeyAppName,
@@ -38,6 +40,80 @@ export class LoginFailedError extends Error {
   }
 }
 
+/**
+ * Thrown when `latchkey auth prepare` is run for a service that does not declare a
+ * prepare schema (the base default — services opt in by setting one).
+ */
+export class PrepareNotSupportedError extends Error {
+  constructor(serviceName: string) {
+    super(
+      `Service '${serviceName}' does not support 'latchkey auth prepare'. ` +
+        `Use 'latchkey services info ${serviceName}' to see how to authenticate.`
+    );
+    this.name = 'PrepareNotSupportedError';
+  }
+}
+
+/**
+ * Thrown when the JSON passed to `latchkey auth prepare` is malformed or does not
+ * match the service's prepare schema. The whole command is rejected and
+ * nothing is stored.
+ */
+export class PrepareInputInvalidError extends Error {
+  constructor(serviceName: string, detail: string) {
+    super(`Invalid prepare input for '${serviceName}': ${detail}`);
+    this.name = 'PrepareInputInvalidError';
+  }
+}
+
+/**
+ * Validate a parsed JSON value against a service's prepare schema and build the
+ * resulting credentials. Centralizes validation so each service's
+ * `prepareFromJson` only expresses its schema and build step. Throws
+ * `PrepareInputInvalidError` (with the failing fields) on any schema mismatch;
+ * nothing is built unless the input fully validates.
+ */
+export function buildPreparedCredentials<Schema extends ZodTypeAny>(
+  serviceName: string,
+  schema: Schema,
+  parsedJson: unknown,
+  build: (validatedInput: z.infer<Schema>) => ApiCredentials
+): ApiCredentials {
+  const result = schema.safeParse(parsedJson);
+  if (!result.success) {
+    throw new PrepareInputInvalidError(serviceName, describeSchemaIssues(result.error));
+  }
+  return build(result.data as z.infer<Schema>);
+}
+
+/**
+ * Render the failing fields of a schema mismatch as a single line, so every
+ * command that validates JSON input reports problems the same way.
+ */
+export function describeSchemaIssues(error: ZodError): string {
+  return error.issues
+    .map((issue) => {
+      const path = issue.path.join('.');
+      return path ? `${path}: ${issue.message}` : issue.message;
+    })
+    .join('; ');
+}
+
+/**
+ * The outcome of a browser login or preparation flow: the extracted
+ * credentials together with the account they belong to.
+ *
+ * The account is a string that uniquely identifies the account behind the
+ * credentials (typically an e-mail, sometimes an opaque id). Because the
+ * account is only known once the user has logged in, browser flows report it
+ * here rather than accepting it up front. Services that cannot (yet) determine
+ * the account use the default account (the empty string).
+ */
+export interface LoginResult {
+  readonly credentials: ApiCredentials;
+  readonly account: string;
+}
+
 export function isBrowserClosedError(error: Error): boolean {
   const message = error.message.toLowerCase();
   return (
@@ -50,7 +126,23 @@ export function isBrowserClosedError(error: Error): boolean {
   );
 }
 
-function isTimeoutError(error: Error): boolean {
+/**
+ * Detects the Playwright/CDP error raised when a response body can no longer be
+ * retrieved (`Network.getResponseBody` reports "No resource with given
+ * identifier found"). This happens for responses that retain no readable body —
+ * redirects, evicted or cached resources, or bodies fetched after the page has
+ * navigated onward. Callers that read response bodies opportunistically should
+ * treat this as inconclusive rather than fatal.
+ */
+export function isResponseBodyUnavailableError(error: Error): boolean {
+  const message = error.message.toLowerCase();
+  return (
+    message.includes('no resource with given identifier') ||
+    message.includes('network.getresponsebody')
+  );
+}
+
+export function isTimeoutError(error: Error): boolean {
   return error.name === 'TimeoutError';
 }
 
@@ -84,16 +176,19 @@ export abstract class Service {
 
   /**
    * Check if the given API credentials are valid for this service.
+   *
+   * The check is a single request whose response decides validity via
+   * {@link isCredentialCheckResponseValid}; services whose check endpoint
+   * reports auth failures inside the body customize that hook rather than
+   * this method.
    */
   async checkApiCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentialStatus> {
     let allCurlArgs: readonly string[];
     try {
       allCurlArgs = await apiCredentials.injectIntoCurlCall([
         '-s',
-        '-o',
-        '/dev/null',
         '-w',
-        '%{http_code}',
+        '\n%{http_code}',
         ...this.credentialCheckCurlArguments,
       ]);
     } catch (error) {
@@ -103,13 +198,42 @@ export abstract class Service {
       throw error;
     }
 
-    const result = runCaptured(allCurlArgs, 10);
+    const result = await runCapturedAsync(allCurlArgs, 10);
 
-    if (result.stdout === '200') {
-      return ApiCredentialStatus.Valid;
+    // The `-w '\n%{http_code}'` above appends the status code as the final
+    // line, so the body is everything before the last newline.
+    const separatorIndex = result.stdout.lastIndexOf('\n');
+    const httpStatusCode = result.stdout.slice(separatorIndex + 1).trim();
+    const responseBody = separatorIndex === -1 ? '' : result.stdout.slice(0, separatorIndex);
+
+    if (!this.isCredentialCheckResponseValid(httpStatusCode, responseBody)) {
+      return ApiCredentialStatus.Invalid;
     }
-    return ApiCredentialStatus.Invalid;
+    return ApiCredentialStatus.Valid;
   }
+
+  /**
+   * Decide whether a credential-check response indicates valid credentials.
+   * The default accepts HTTP 200. Services whose check endpoint reports auth
+   * failures inside the body (e.g. Slack's `ok: false`) override this.
+   */
+  protected isCredentialCheckResponseValid(httpStatusCode: string, _responseBody: string): boolean {
+    return httpStatusCode === '200';
+  }
+
+  /**
+   * Determine which account the given credentials belong to: an e-mail when
+   * available, otherwise a human-readable handle, otherwise an opaque id.
+   * Returns null when the account cannot be determined.
+   *
+   * Best-effort and entirely separate from the credential check: services
+   * typically implement it via `fetchAccountFromEndpoint()`, asking an
+   * identity-revealing endpoint and parsing the account from its body.
+   * Services whose credentials carry no queryable identity (e.g. app-scoped
+   * API keys) must still implement this — explicitly returning null — so that
+   * the decision is a conscious one for every service.
+   */
+  abstract getAccount(apiCredentials: ApiCredentials): Promise<string | null>;
 
   /**
    * Return an example showing how to set credentials for this service via the CLI.
@@ -125,6 +249,18 @@ export abstract class Service {
   getCredentialsNoCurl(_arguments: readonly string[]): ApiCredentials {
     throw new NoCurlCredentialsNotSupportedError(this.name);
   }
+
+  /**
+   * Build credentials from a parsed JSON payload for `latchkey auth prepare`.
+   *
+   * Optional, like `getSession`/`refreshCredentials`: services opt in by
+   * implementing it (typically via `buildPreparedCredentials` with a Zod
+   * schema). When a service does not implement it, prepare is "not supported"
+   * — the default that lets every service stay closed until it declares a
+   * schema. Implementations validate `parsedJson` and throw
+   * `PrepareInputInvalidError` on mismatch.
+   */
+  prepareFromJson?(parsedJson: unknown): ApiCredentials;
 
   /**
    * Get a new session for the login flow.
@@ -164,8 +300,13 @@ export abstract class ServiceSession {
 
   /**
    * Handle a response during the headful login phase.
+   *
+   * Sessions that do asynchronous work here return a promise, so that a caller
+   * driving responses in on its own — replaying a recording, say — can wait for
+   * one to be processed before sending the next. The login itself does not
+   * wait: it polls {@link isLoginComplete} instead.
    */
-  abstract onResponse(response: Response): void;
+  abstract onResponse(response: Response): void | Promise<void>;
 
   /**
    * Check if the login phase is complete.
@@ -212,6 +353,10 @@ export abstract class ServiceSession {
   /**
    * Optional preparation step before login.
    * Services can override this to perform setup (e.g., creating OAuth clients).
+   *
+   * Unlike {@link login}, this returns bare credentials without an account:
+   * preparations are service-level artifacts shared by all of a service's
+   * accounts, and usually happen before any user is signed in.
    */
   prepare?(
     encryptedStorage: EncryptedStorage,
@@ -228,12 +373,12 @@ export abstract class ServiceSession {
     encryptedStorage: EncryptedStorage,
     launchOptions: BrowserLaunchOptions = {},
     oldCredentials?: ApiCredentials
-  ): Promise<ApiCredentials> {
+  ): Promise<LoginResult> {
     return withTempBrowserContext(encryptedStorage, launchOptions, async ({ browser, context }) => {
       const page = await context.newPage();
 
       context.on('response', (response) => {
-        this.onResponse(response);
+        void this.onResponse(response);
       });
 
       try {
@@ -267,7 +412,10 @@ export abstract class ServiceSession {
         throw new LoginFailedError();
       }
 
-      return apiCredentials;
+      // Ask the service which account the fresh credentials belong to,
+      // falling back to the unnamed default account.
+      const account = (await this.service.getAccount(apiCredentials)) ?? DEFAULT_ACCOUNT;
+      return { credentials: apiCredentials, account };
     });
   }
 }
@@ -279,18 +427,35 @@ export abstract class SimpleServiceSession extends ServiceSession {
   protected apiCredentials: ApiCredentials | null = null;
 
   /**
+   * What the session has extracted so far, or null while the login phase is
+   * still going.
+   *
+   * Exists for the tests, and they are its only callers: a real login goes
+   * through {@link login}, which returns the credentials once the phase
+   * completes. It is public rather than protected because the alternative is
+   * what the tests did before — casting past `protected` to read the field —
+   * which typechecks forever and quietly stops meaning anything the moment the
+   * internals change.
+   */
+  get capturedCredentials(): ApiCredentials | null {
+    return this.apiCredentials;
+  }
+
+  /**
    * Extract API credentials from a response during the headful login phase.
    */
   protected abstract getApiCredentialsFromResponse(
     response: Response
   ): Promise<ApiCredentials | null>;
 
-  onResponse(response: Response): void {
+  onResponse(response: Response): Promise<void> {
     if (this.apiCredentials !== null) {
-      return;
+      return Promise.resolve();
     }
-    this.getApiCredentialsFromResponse(response)
+    return this.getApiCredentialsFromResponse(response)
       .then((credentials) => {
+        // Another response may have produced credentials while this one was
+        // being read.
         if (this.apiCredentials === null && credentials !== null) {
           this.apiCredentials = credentials;
         }
@@ -314,6 +479,35 @@ export abstract class SimpleServiceSession extends ServiceSession {
 }
 
 /**
+ * What the browser followup does in the user's account, phrased for users who
+ * do not care about the underlying mechanism (e.g. "app" rather than "OAuth
+ * client", which is also what service consoles like Dropbox's call it).
+ *
+ * Each value ends with the preposition that links it to "your <service>
+ * account", since retrieval and creation need different ones.
+ */
+export enum FollowupWork {
+  CreateApiToken = 'Creating an API token in',
+  CreateApp = 'Creating an app in',
+  RetrieveApiToken = 'Retrieving the API token from',
+}
+
+/**
+ * Build the small print shown below the spinner headline: what the automation
+ * is doing and how to recover when it fails.
+ */
+export function buildFollowupSpinnerDetails(
+  displayName: string,
+  followupWork: FollowupWork,
+  durationSentence = 'This can take a while.'
+): string {
+  return (
+    `${followupWork} your ${displayName} account. ${durationSentence} ` +
+    'If the process fails, click the first browser tab in this window to manually complete it.'
+  );
+}
+
+/**
  * Service session that requires a browser followup to finalize credentials.
  *
  * The login phase captures login state. After login completes,
@@ -321,6 +515,21 @@ export abstract class SimpleServiceSession extends ServiceSession {
  * (e.g., navigating to settings and creating an API key).
  */
 export abstract class BrowserFollowupServiceSession extends ServiceSession {
+  private followupSpinnerPage: Page | null = null;
+
+  /** What the followup does in the user's account, shown on the spinner page. */
+  protected abstract readonly followupWork: FollowupWork;
+
+  /**
+   * Spinner page hiding the automation from the user while the followup runs,
+   * or null when the spinner is disabled. Subclasses that temporarily surface
+   * a real page to the user (e.g. to have terms accepted) bring this page back
+   * to the front afterwards.
+   */
+  protected get spinnerPage(): Page | null {
+    return this.followupSpinnerPage;
+  }
+
   /**
    * Perform actions in the browser to finalize and extract API credentials.
    * This runs in the same browser session used for login.
@@ -337,7 +546,11 @@ export abstract class BrowserFollowupServiceSession extends ServiceSession {
     context: BrowserContext,
     oldCredentials?: ApiCredentials
   ): Promise<ApiCredentials | null> {
-    await showSpinnerPage(context, `Finalizing ${this.service.displayName} login...`);
+    this.followupSpinnerPage = await showSpinnerPage(
+      context,
+      `Finalizing ${this.service.displayName} login...`,
+      buildFollowupSpinnerDetails(this.service.displayName, this.followupWork)
+    );
     return this.performBrowserFollowup(context, oldCredentials);
   }
 }

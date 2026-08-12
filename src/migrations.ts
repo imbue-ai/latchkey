@@ -1,8 +1,17 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { writeFileAtomic } from './atomicWrite.js';
+import { DEFAULT_ACCOUNT } from './apiCredentials/account.js';
+import { ApiCredentialStatus, type ApiCredentials } from './apiCredentials/base.js';
+import {
+  ApiCredentialsSchema,
+  deserializeCredentials,
+  serializeCredentials,
+} from './apiCredentials/serialization.js';
 import type { Config } from './config.js';
 import type { EncryptedStorage } from './encryptedStorage.js';
+import type { Service } from './services/core/base.js';
+import { SERVICE_REGISTRY } from './serviceRegistry.js';
 
 export class MigrationError extends Error {
   constructor(message: string) {
@@ -13,7 +22,102 @@ export class MigrationError extends Error {
 
 const DATA_FORMAT_VERSION_FILENAME = 'data-format-version';
 
-type MigrationFunction = (config: Config, encryptedStorage: EncryptedStorage) => void;
+/**
+ * The resolved validity and owning account of a service's stored credentials.
+ * The account is null when it cannot be determined.
+ */
+export interface ResolvedCredential {
+  readonly status: ApiCredentialStatus;
+  readonly account: string | null;
+  /**
+   * The credential data that should be persisted, which may differ from the
+   * original when an expired credential was refreshed while resolving it.
+   * Undefined means the original data is kept unchanged.
+   */
+  readonly credentialData?: unknown;
+}
+
+/**
+ * Resolves the validity and owning account of a service's stored credentials.
+ * Injected into migrations so tests can dictate check outcomes directly
+ * instead of stubbing the service registry and the curl subprocess layer.
+ *
+ * A resolver must be best-effort: it should never reject. Anything it cannot
+ * determine (unknown service, unparseable data, network error, timeout) is
+ * reported as {@link ApiCredentialStatus.Unknown} so the migration leaves the
+ * default account in place rather than dropping credentials.
+ */
+export type CredentialResolver = (
+  serviceName: string,
+  credentialData: unknown
+) => Promise<ResolvedCredential>;
+
+/**
+ * Refresh an expired credential when the service supports it, mirroring the
+ * runtime credential-status path ({@link maybeRefreshCredentials}). Returns the
+ * refreshed credentials on success and the original credentials otherwise, so a
+ * still-refreshable credential is never mistaken for a permanently invalid one.
+ */
+async function refreshIfExpired(
+  service: Service,
+  credentials: ApiCredentials
+): Promise<ApiCredentials> {
+  if (credentials.isExpired() !== true || !service.refreshCredentials) {
+    return credentials;
+  }
+  const refreshed = await service.refreshCredentials(credentials);
+  return refreshed ?? credentials;
+}
+
+/**
+ * Default resolver: look the service up in the registry, ask it to check the
+ * credentials and — when they are valid — which account they belong to,
+ * translating every failure mode into an inconclusive result.
+ *
+ * Expired credentials are refreshed before the check (just like the runtime
+ * path), so an expired-but-refreshable credential is reported as valid rather
+ * than invalid. When a refresh happens, the refreshed data is returned so the
+ * migration persists it: some services rotate the refresh token on refresh, and
+ * keeping the original data would leave a token the service has already
+ * invalidated.
+ */
+async function resolveCredentialViaServiceRegistry(
+  serviceName: string,
+  credentialData: unknown
+): Promise<ResolvedCredential> {
+  const service = SERVICE_REGISTRY.getByName(serviceName);
+  if (service === null) {
+    return { status: ApiCredentialStatus.Unknown, account: null };
+  }
+
+  const parsed = ApiCredentialsSchema.safeParse(credentialData);
+  if (!parsed.success) {
+    return { status: ApiCredentialStatus.Unknown, account: null };
+  }
+
+  try {
+    const originalCredentials = deserializeCredentials(parsed.data);
+    const credentials = await refreshIfExpired(service, originalCredentials);
+    const [status, account] = await Promise.all([
+      service.checkApiCredentials(credentials),
+      service.getAccount(credentials),
+    ]);
+    return {
+      status,
+      account: status === ApiCredentialStatus.Valid ? account : null,
+      credentialData:
+        credentials === originalCredentials ? undefined : serializeCredentials(credentials),
+    };
+  } catch {
+    return { status: ApiCredentialStatus.Unknown, account: null };
+  }
+}
+
+type MigrationFunction = (
+  config: Config,
+  encryptedStorage: EncryptedStorage,
+  resolveCredential: CredentialResolver
+) => void | Promise<void>;
 
 const GOOGLE_OAUTH_SERVICE_NAMES = [
   'google-gmail',
@@ -21,6 +125,7 @@ const GOOGLE_OAUTH_SERVICE_NAMES = [
   'google-drive',
   'google-sheets',
   'google-docs',
+  'google-slides',
   'google-people',
 ] as const;
 
@@ -47,7 +152,116 @@ function migrationSplitGoogleCredentials(config: Config, encryptedStorage: Encry
   encryptedStorage.writeFile(config.credentialStorePath, JSON.stringify(rest, null, 2));
 }
 
-const MIGRATIONS: readonly MigrationFunction[] = [migrationSplitGoogleCredentials];
+/**
+ * The serialized shape of an OAuth credential entry, as far as this migration
+ * needs it: the client pair plus the access token whose absence marks the
+ * entry as "prepared but not yet logged in".
+ */
+interface OAuthCredentialData {
+  readonly objectType: 'oauth';
+  readonly clientId: string;
+  readonly clientSecret: string;
+  readonly accessToken?: string;
+}
+
+function asOAuthCredentialData(credentialData: unknown): OAuthCredentialData | null {
+  if (typeof credentialData !== 'object' || credentialData === null) {
+    return null;
+  }
+  const record = credentialData as Record<string, unknown>;
+  if (
+    record.objectType !== 'oauth' ||
+    typeof record.clientId !== 'string' ||
+    typeof record.clientSecret !== 'string'
+  ) {
+    return null;
+  }
+  return record as unknown as OAuthCredentialData;
+}
+
+/**
+ * Convert the pre-multi-account format `{ service: credentials }` into the
+ * account-keyed store with separate preparations:
+ * `{ credentials: { service: { account: credentials } }, preparations: { service: oauthClient } }`.
+ *
+ * For every service, the stored credentials are validated in parallel:
+ *   - valid credentials whose account can be determined are keyed by that
+ *     account instead of the default one,
+ *   - valid credentials whose account cannot be determined stay under the
+ *     default account,
+ *   - definitively invalid credentials are dropped,
+ *   - anything inconclusive (unknown service, network error, timeout) is left
+ *     under the default account (best-effort).
+ *
+ * Expired credentials that the service can refresh are refreshed first, so they
+ * are preserved (as valid) rather than dropped as invalid; the refreshed data
+ * is what gets stored.
+ *
+ * Independently of validity, the OAuth client (id/secret) of every OAuth
+ * credential entry is saved as a preparation, so that future logins — also to
+ * additional accounts — can reuse the client without a fresh browser-prepare.
+ * This deliberately includes dropped invalid credentials (an expired token
+ * says nothing about the client) and the token-less placeholders that `auth
+ * prepare` / `auth browser-prepare` used to store as credentials; the
+ * placeholders live on only as preparations.
+ */
+async function migrationIntroduceAccountsAndPreparations(
+  config: Config,
+  encryptedStorage: EncryptedStorage,
+  resolveCredential: CredentialResolver
+): Promise<void> {
+  const content = encryptedStorage.readFile(config.credentialStorePath);
+  if (content === null) {
+    return;
+  }
+
+  const store = JSON.parse(content) as Record<string, unknown>;
+
+  const resolvedEntries = await Promise.all(
+    Object.entries(store).map(async ([serviceName, credentialData]) => ({
+      serviceName,
+      credentialData,
+      check: await resolveCredential(serviceName, credentialData),
+    }))
+  );
+
+  const credentials: Record<string, Record<string, unknown>> = {};
+  const preparations: Record<string, unknown> = {};
+
+  for (const { serviceName, credentialData, check } of resolvedEntries) {
+    const oauthData = asOAuthCredentialData(credentialData);
+    if (oauthData !== null && oauthData.clientId !== '') {
+      preparations[serviceName] = {
+        objectType: 'oauth',
+        clientId: oauthData.clientId,
+        clientSecret: oauthData.clientSecret,
+      };
+    }
+
+    const isPreparedPlaceholder = oauthData !== null && oauthData.accessToken === undefined;
+    if (isPreparedPlaceholder || check.status === ApiCredentialStatus.Invalid) {
+      continue;
+    }
+
+    const account =
+      check.status === ApiCredentialStatus.Valid &&
+      check.account !== null &&
+      check.account !== DEFAULT_ACCOUNT
+        ? check.account
+        : DEFAULT_ACCOUNT;
+    credentials[serviceName] = { [account]: check.credentialData ?? credentialData };
+  }
+
+  encryptedStorage.writeFile(
+    config.credentialStorePath,
+    JSON.stringify({ credentials, preparations }, null, 2)
+  );
+}
+
+const MIGRATIONS: readonly MigrationFunction[] = [
+  migrationSplitGoogleCredentials,
+  migrationIntroduceAccountsAndPreparations,
+];
 
 export const LATEST_VERSION = MIGRATIONS.length;
 
@@ -75,8 +289,18 @@ function isFirstInstallation(config: Config): boolean {
   return !existsSync(config.directory) || !existsSync(config.credentialStorePath);
 }
 
-export function runMigrations(config: Config, encryptedStorage: EncryptedStorage): void {
+export async function runMigrations(
+  config: Config,
+  encryptedStorage: EncryptedStorage,
+  resolveCredential: CredentialResolver = resolveCredentialViaServiceRegistry
+): Promise<void> {
   if (isFirstInstallation(config)) {
+    // A fresh installation starts out in the newest data format. Stamp the
+    // version right away so that a later run does not mistake the newly
+    // created store for one in the oldest format and "migrate" (i.e. corrupt)
+    // it.
+    mkdirSync(config.directory, { recursive: true, mode: 0o700 });
+    writeDataFormatVersion(config, LATEST_VERSION);
     return;
   }
 
@@ -94,7 +318,7 @@ export function runMigrations(config: Config, encryptedStorage: EncryptedStorage
     if (migration === undefined) {
       throw new MigrationError(`Missing migration function for version ${String(i + 1)}.`);
     }
-    migration(config, encryptedStorage);
+    await migration(config, encryptedStorage, resolveCredential);
   }
 
   if (currentVersion < LATEST_VERSION) {
