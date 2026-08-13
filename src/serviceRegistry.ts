@@ -40,6 +40,7 @@ import {
   TODOIST,
   NGROK,
   HUGGINGFACE,
+  OPENROUTER,
 } from './services/index.js';
 
 export class DuplicateServiceNameError extends Error {
@@ -241,4 +242,5 @@ export const SERVICE_REGISTRY = new ServiceRegistry([
   TODOIST,
   NGROK,
   HUGGINGFACE,
+  OPENROUTER,
 ]);
