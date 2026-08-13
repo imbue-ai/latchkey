@@ -26,7 +26,10 @@ import {
   LoginFailedError,
 } from './core/base.js';
 
-const DEFAULT_TIMEOUT_MS = 8000;
+// Token creation can lag behind a slow sign-in or an extra confirmation step
+// (a write token sometimes prompts before revealing), so this is more generous
+// than the 8s default other services use for quick form interactions.
+const DEFAULT_TIMEOUT_MS = 30000;
 
 // Hub API + Inference router. Hub model/dataset downloads and the whoami check
 // live under huggingface.co; hosted inference goes through the router.
