@@ -78,12 +78,10 @@ Every service must include an `info` property that provides developer notes. Thi
 - Any caveats or limitations
 
 Keep `info` about the service itself -- links to its own docs, caveats, special
-requirements -- not the Detent scopes or permission names an agent might request.
-Latchkey only matches URLs and injects credentials; scopes live in
-[Detent](https://github.com/imbue-ai/detent), the enforcement layer, which is the
-side that knows about Latchkey. Point agents at the service's own documentation
-(e.g. an `llms.txt` index) rather than baking Detent's vocabulary into the
-connector. The same applies to comments on the `Service` class.
+requirements -- not the Detent scopes or permission names an agent might
+request. Latchkey only matches URLs and injects credentials; scopes live in
+[Detent](https://github.com/imbue-ai/detent), which is the side that knows about
+Latchkey. The same applies to comments on the `Service` class.
 
 ### Potentially useful helpers
 
