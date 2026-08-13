@@ -78,9 +78,7 @@ Every service must include an `info` property that provides developer notes. Thi
 - Any caveats or limitations
 
 Keep `info` (and comments on the `Service` class) about the service itself, not
-the Detent scopes or permission names an agent might request. Scopes live in
-[Detent](https://github.com/imbue-ai/detent), which is the side that knows about
-Latchkey -- not the other way around.
+the Detent scopes or permission names (not everyone uses them).
 
 ### Potentially useful helpers
 

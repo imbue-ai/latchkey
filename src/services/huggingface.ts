@@ -31,10 +31,22 @@ import {
 // than the 8s default other services use for quick form interactions.
 const DEFAULT_TIMEOUT_MS = 30000;
 
-// Hub API + Inference router. Hub model/dataset downloads and the whoami check
-// live under huggingface.co; hosted inference goes through the router.
+// Hub API + Inference router. The Hub API, repository file and git transfers and
+// the whoami check live under huggingface.co (hf.co is an alias for the same
+// host); hosted inference goes through the router, and the dataset viewer has
+// its own host.
 const HF_HUB_BASE_URL = 'https://huggingface.co/';
+const HF_HUB_ALIAS_BASE_URL = 'https://hf.co/';
 const HF_ROUTER_BASE_URL = 'https://router.huggingface.co/';
+const HF_DATASETS_SERVER_BASE_URL = 'https://datasets-server.huggingface.co/';
+
+// Deliberately not covered: the storage hosts that file transfers are redirected
+// to (*.cdn.hf.co, cdn-lfs*.hf.co and the Xet hosts). They authenticate through
+// the URL itself -- a signed CDN URL, or a repository-scoped Xet token the caller
+// fetches from the hub -- so there is nothing for this service to contribute, and
+// adding a bearer header there is at best ignored and at worst fatal (the Xet CAS
+// server answers 400 once a second Authorization header shows up). Such requests
+// need no credentials, so callers can make them directly.
 
 const HF_LOGIN_URL = 'https://huggingface.co/login';
 
@@ -131,7 +143,12 @@ class HuggingfaceServiceSession extends BrowserFollowupServiceSession {
 export class Huggingface extends Service {
   readonly name = 'huggingface';
   readonly displayName = 'Hugging Face';
-  readonly baseApiUrls = [HF_HUB_BASE_URL, HF_ROUTER_BASE_URL] as const;
+  readonly baseApiUrls = [
+    HF_HUB_BASE_URL,
+    HF_HUB_ALIAS_BASE_URL,
+    HF_ROUTER_BASE_URL,
+    HF_DATASETS_SERVER_BASE_URL,
+  ] as const;
   readonly loginUrl = HF_LOGIN_URL;
   readonly info =
     'Hugging Face Hub + Inference: download models and datasets, manage ' +
