@@ -1,30 +1,16 @@
 /**
- * DocuSign connector (session-riding, with a just-in-time bearer mint).
+ * DocuSign connector: session-riding. The eSignature REST API needs an 8h BEARER (not
+ * cookies), and the web SPA gets no refresh token -- so we can neither inject a cookie
+ * (Slack-style) nor refresh over HTTP (OAuth-style). Instead we store the session cookies
+ * and mint the bearer by loading the app with them and capturing the `Authorization:
+ * Bearer` off the SPA's own calls. No password after first login; cookies last ~30 days.
  *
- * Why this shape: DocuSign's eSignature REST API authenticates with a short-lived (8h)
- * BEARER token, not cookies -- so we cannot inject cookies directly the way the Slack
- * connector does. And its web SPA is issued NO refresh token, so we cannot refresh over
- * plain HTTP the way the OAuth connectors (dropbox/ramp/zoom) do.
- *
- * What we CAN do (verified live): the user's session COOKIES silently authenticate the
- * SPA, which then makes its own authenticated API calls. So the stored credential is the
- * session cookies (like Slack's `d` cookie), plus the most recently seen bearer. To get a
- * fresh bearer we do NOT try to reproduce DocuSign's token endpoint (that needs DocuSign's
- * confidential web-client secret); instead we load the app with the cookies and CAPTURE
- * the `Authorization: Bearer` header off the SPA's own requests. No password after the
- * first login. Cookies last ~30 days, so the user re-auths about monthly.
- *
- * Refresh is just-in-time and needs a browser DocuSign does not block. Plain Chrome is
- * blocked (headless and headed); a non-Chrome Chromium (Brave, or a stealth build like
- * Fortress) is not. latchkey does not bundle such a browser -- it stays BYO-browser -- so
- * `refreshCredentials` mints only when a refresh browser is configured
- * (`LATCHKEY_REFRESH_BROWSER_PATH`); otherwise it returns null and latchkey falls back to
- * an interactive re-login (the ~8h path). Point that variable at a Brave/Fortress-class
- * executable to get the ~30-day silent path.
- *
- * Dynamic host: eSignature calls go to `{base_uri}/restapi/v2.1/accounts/{account_id}
- * /...`, where base_uri/account_id come from `GET account.docusign.com/oauth/userinfo`
- * (the bearer is injected there too).
+ * The mint needs a browser DocuSign does not block (a non-Chrome Chromium: Brave or a
+ * stealth build). latchkey stays BYO-browser: `refreshCredentials` mints just-in-time only
+ * when one is configured via `LATCHKEY_REFRESH_BROWSER_PATH`, else returns null and falls
+ * back to an interactive re-login (~8h). eSignature calls go to
+ * `{base_uri}/restapi/v2.1/accounts/{account_id}/...`; base_uri/account_id come from
+ * `GET account.docusign.com/oauth/userinfo`.
  */
 
 import type { Cookie, Response } from 'playwright';
@@ -74,7 +60,7 @@ const REFRESH_BROWSER_PATH_ENV = 'LATCHKEY_REFRESH_BROWSER_PATH';
  * injected on both userinfo and the REST calls.
  */
 const DOCUSIGN_BASE_API_URL_PATTERN =
-  /^https:\/\/(account(-d)?\.docusign\.com|[a-z0-9-]+\.docusign\.net)\//i;
+  /^https:\/\/(account\.docusign\.com|[a-z0-9-]+\.docusign\.net)\//i;
 
 /** A stored cookie, reduced to what Playwright's addCookies needs to restore it. */
 const StoredCookieSchema = z.object({
@@ -317,10 +303,11 @@ export class Docusign extends Service {
     '(the regional host, e.g. https://na4.docusign.net); then call ' +
     '{base_uri}/restapi/v2.1/accounts/{account_id}/... To send a contract for signature, ' +
     'POST an envelope with status "sent". ' +
-    'Docs: https://developers.docusign.com/docs/esign-rest-api/. ' +
-    '(Auth rides the user\'s web session; the gateway re-mints the 8h bearer from the ' +
-    'stored cookies when a refresh browser is configured, so no re-login until the ' +
-    'session expires.)';
+    'Do NOT set up a DocuSign integration key, OAuth app, or go-live -- that developer ' +
+    'path is gated behind payment and review and is not needed here: this connector ' +
+    'already authenticates via the browser session, so just call the REST API directly. ' +
+    'The gateway re-mints the 8h bearer from the stored session, so no re-login until ' +
+    'the session expires.';
 
   // userinfo returns 200 for any valid token, so it doubles as the credential check.
   readonly credentialCheckCurlArguments = [DOCUSIGN_USERINFO_URL] as const;
