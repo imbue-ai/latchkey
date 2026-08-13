@@ -40,7 +40,10 @@ const HF_LOGIN_URL = 'https://huggingface.co/login';
 
 // Navigating here opens the "Create new Access Token" form preset to a classic
 // write token (read + write, and a valid bearer for inference); the value is
-// shown once in a dialog after creation.
+// shown once in a dialog after creation. The settings page can trigger HF's
+// "sudo" re-authentication, so we bring the page to the front first (see
+// performBrowserFollowup) so the password prompt doesn't land on a tab the
+// user isn't looking at.
 const HF_NEW_TOKEN_URL = 'https://huggingface.co/settings/tokens/new?tokenType=write';
 
 // Endpoint that returns the signed-in identity; also used as the credential check.
@@ -94,6 +97,10 @@ class HuggingfaceServiceSession extends BrowserFollowupServiceSession {
       throw new LoginFailedError('No page available in browser context.');
     }
 
+    // The token settings page can trigger HF's "sudo" re-authentication; focus the
+    // page first so the password prompt surfaces on the tab the user is looking
+    // at, not a background one.
+    await page.bringToFront();
     await page.goto(HF_NEW_TOKEN_URL);
 
     // Give the token a recognizable name so the user can find and revoke it.
@@ -126,11 +133,6 @@ export class Huggingface extends Service {
   readonly displayName = 'Hugging Face';
   readonly baseApiUrls = [HF_HUB_BASE_URL, HF_ROUTER_BASE_URL] as const;
   readonly loginUrl = HF_LOGIN_URL;
-  // The `info` text is what an agent reads to decide whether this service is
-  // useful. Keep it about the *service*, not the Detent scopes/permissions --
-  // those are Detent's concern and only loosely connected to Latchkey (see
-  // DEVELOPING.md). Point agents at the docs index so they can find the right
-  // page for the task they have in mind.
   readonly info =
     'Hugging Face Hub + Inference: download models and datasets, manage ' +
     'repositories, and run hosted inference. Docs: https://huggingface.co/docs/hub/llms.txt';
