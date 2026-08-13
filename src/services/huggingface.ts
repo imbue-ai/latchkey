@@ -3,10 +3,14 @@
  *
  * Hugging Face issues personal User Access Tokens from the account settings,
  * and a token's value is revealed exactly once at creation time (like Linear).
- * We sign the user into huggingface.co, create a fresh read-only token on their
- * behalf, and read its value from the one-time reveal dialog.
+ * We sign the user into huggingface.co, create a fresh token on their behalf,
+ * and read its value from the one-time reveal dialog.
  *
- * Requests to the Hub API and the Inference router authenticate with a single
+ * A classic `write` token grants read and write access to the user's
+ * repositories and also serves as a bearer token for the Inference Providers
+ * router, so one minted token is capable of everything an agent might do
+ * through this service (download, upload, run inference). Requests to the Hub
+ * API and the Inference router authenticate with a single
  * `Authorization: Bearer hf_...` header, so we store an AuthorizationBearer
  * credential and let it inject that header into every matching request.
  */
@@ -31,9 +35,10 @@ const HF_ROUTER_BASE_URL = 'https://router.huggingface.co/';
 
 const HF_LOGIN_URL = 'https://huggingface.co/login';
 
-// Navigating here opens the "Create new Access Token" form preset to a
-// read-only token; the value is shown once in a dialog after creation.
-const HF_NEW_READ_TOKEN_URL = 'https://huggingface.co/settings/tokens/new?tokenType=read';
+// Navigating here opens the "Create new Access Token" form preset to a classic
+// write token (read + write, and a valid bearer for inference); the value is
+// shown once in a dialog after creation.
+const HF_NEW_TOKEN_URL = 'https://huggingface.co/settings/tokens/new?tokenType=write';
 
 // Endpoint that returns the signed-in identity; also used as the credential check.
 const HF_WHOAMI_URL = 'https://huggingface.co/api/whoami-v2';
@@ -86,7 +91,7 @@ class HuggingfaceServiceSession extends BrowserFollowupServiceSession {
       throw new LoginFailedError('No page available in browser context.');
     }
 
-    await page.goto(HF_NEW_READ_TOKEN_URL);
+    await page.goto(HF_NEW_TOKEN_URL);
 
     // Give the token a recognizable name so the user can find and revoke it.
     const tokenName = this.generateAppName();
@@ -118,15 +123,14 @@ export class Huggingface extends Service {
   readonly displayName = 'Hugging Face';
   readonly baseApiUrls = [HF_HUB_BASE_URL, HF_ROUTER_BASE_URL] as const;
   readonly loginUrl = HF_LOGIN_URL;
-  // Signing in mints a read-only User Access Token. To mint and run hosted
-  // inference, request the `huggingface-api` scope with `huggingface-inference`
-  // (add `huggingface-read` to list/download models & datasets; `huggingface-write`
-  // covers creating repos and uploading).
+  // The `info` text is what an agent reads to decide whether this service is
+  // useful. Keep it about the *service*, not the Detent scopes/permissions --
+  // those are Detent's concern and only loosely connected to Latchkey (see
+  // DEVELOPING.md). Point agents at the docs index so they can find the right
+  // page for the task they have in mind.
   readonly info =
-    'Hugging Face Hub + Inference. Signing in mints a read-only token. Request the ' +
-    'huggingface-api scope with huggingface-read (list and download models/datasets), ' +
-    'huggingface-write (create repos, upload), or huggingface-inference (run hosted ' +
-    'inference). Docs: https://huggingface.co/docs/hub/en/api';
+    'Hugging Face Hub + Inference: download models and datasets, manage ' +
+    'repositories, and run hosted inference. Docs: https://huggingface.co/docs/hub/llms.txt';
 
   // whoami-v2 returns 200 for any valid token; the stored bearer header is
   // added by the credential before the request is sent.

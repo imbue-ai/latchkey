@@ -77,6 +77,17 @@ Every service must include an `info` property that provides developer notes. Thi
 - Special requirements (e.g., need to run `latchkey auth browser-prepare` first)
 - Any caveats or limitations
 
+Keep the `info` text about the *service* itself, not the Detent scopes or
+permission names an agent might request. Latchkey is intentionally fairly
+standalone: it matches URLs and injects credentials, and it does not know which
+scopes a service exposes. Scopes and permissions are defined in
+[Detent](https://github.com/imbue-ai/detent) (the enforcement layer), which is
+aware of Latchkey and is where those names belong. Pointing an agent at the
+service's own documentation (e.g. an `llms.txt` index) lets it discover the right
+endpoint and capability for the task instead of baking Detent's vocabulary into
+the connector. The same applies to comments on the `Service` class: describe what
+the token can do, not which Detent permissions it backs.
+
 ### Potentially useful helpers
 
 #### Codegen
