@@ -77,11 +77,10 @@ Every service must include an `info` property that provides developer notes. Thi
 - Special requirements (e.g., need to run `latchkey auth browser-prepare` first)
 - Any caveats or limitations
 
-Keep `info` about the service itself -- links to its own docs, caveats, special
-requirements -- not the Detent scopes or permission names an agent might
-request. Latchkey only matches URLs and injects credentials; scopes live in
+Keep `info` (and comments on the `Service` class) about the service itself, not
+the Detent scopes or permission names an agent might request. Scopes live in
 [Detent](https://github.com/imbue-ai/detent), which is the side that knows about
-Latchkey. The same applies to comments on the `Service` class.
+Latchkey -- not the other way around.
 
 ### Potentially useful helpers
 
