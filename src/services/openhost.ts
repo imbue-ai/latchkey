@@ -4,7 +4,7 @@
  * OpenHost (https://github.com/imbue-openhost/openhost) is a self-hosted app
  * platform: every user runs their own instance on their own host, so there is
  * no canonical API host to pin. This connector is therefore a *family* -- a
- * template with no URL of its own -- that a user registers their instance
+ * template with no login URL of its own -- that a user registers their instance
  * against:
  *
  *   latchkey services register my-openhost \
@@ -16,9 +16,12 @@
  * OpenHost's owner API is not confined to `/api/` -- app controls such as
  * `/stop_app/<id>`, `/reload_app/<id>` and `/app_logs/<id>` are served at the
  * root -- so a `/api/`-scoped base would leave the token uninjected on those.
- * The registration also matches subdomains of the instance host: OpenHost
- * serves its client apps at `<app>.<host>`, gated by the same owner auth, so
- * the token is what signs the agent into those apps (see `registeredBaseApiUrls`).
+ * The registration also matches a single subdomain label of the instance host:
+ * OpenHost serves its client apps at `<app>.<host>`, gated by the same owner
+ * auth, so the token is what signs the agent into those apps (see
+ * `registeredBaseApiUrls`). Imbue-hosted instances (`<customer>.selfhost.imbue.com`)
+ * are matched by the bare family without any registration (see
+ * `IMBUE_HOSTED_OPENHOST_URL`).
  *
  * The registered instance supplies the login and API URLs, and the login below
  * reads them from `this.service`, so the same connector works for any instance.
@@ -44,6 +47,16 @@ const OPENHOST_SESSION_COOKIE = 'session_token';
 // on the instance origin (OpenHost's owner API lives under `/api/`, even when
 // the injection base is the root). OpenHost returns the token once in the body.
 const OPENHOST_TOKEN_ENDPOINT = '/api/tokens';
+
+// Imbue-hosted OpenHost instances live at `<customer>.selfhost.imbue.com`, with
+// their client apps at `<app>.<customer>.selfhost.imbue.com`. The host suffix is
+// fixed and known ahead of time, so the bare family matches it without a
+// registration: a user who sets a token on the `openhost` service (e.g. one
+// minted on an Imbue-hosted instance) gets it injected into that instance and
+// its apps automatically. A self-hosted instance on any other host still needs
+// `services register` to pin its URL (see `registeredBaseApiUrls`).
+const IMBUE_HOSTED_OPENHOST_URL =
+  /^https?:\/\/([a-z0-9-]+\.)?[a-z0-9-]+\.selfhost\.imbue\.com(:\d+)?\//i;
 
 /**
  * Whether a `Set-Cookie` header assigns a non-empty value to `name`.
@@ -170,17 +183,21 @@ class OpenhostServiceSession extends ServiceSession {
 }
 
 /**
- * The OpenHost family. It carries no URLs of its own: an instance is registered
- * with `--service-family openhost`, and its `--base-api-url` / `--login-url`
- * drive the login above.
+ * The OpenHost family. It carries no login URL of its own: an instance is
+ * registered with `--service-family openhost`, and its `--base-api-url` /
+ * `--login-url` drive the login above. The only URL the bare family matches
+ * is the fixed Imbue-hosted host suffix, so those instances are autoallowed
+ * without registration (see `IMBUE_HOSTED_OPENHOST_URL`).
  */
 export class Openhost extends Service {
   readonly name = 'openhost';
   readonly displayName = 'OpenHost';
-  // No canonical host: OpenHost is always self-hosted. An empty list matches no
-  // URL, so the bare family injects nothing; the registered instance's own base
-  // API URL is what requests match against.
-  readonly baseApiUrls = [] as const;
+  // No canonical host of its own: OpenHost is always self-hosted. The bare
+  // family matches only Imbue-hosted instances (see `IMBUE_HOSTED_OPENHOST_URL`),
+  // so a user with a token for one of those needs no registration; any other
+  // host requires `services register`, and the registered instance's own base
+  // API URL is what requests match against (see `registeredBaseApiUrls`).
+  readonly baseApiUrls = [IMBUE_HOSTED_OPENHOST_URL] as const;
   // Supplied per instance via `--login-url`; the family template has none.
   readonly loginUrl = '';
   readonly info =
@@ -194,9 +211,10 @@ export class Openhost extends Service {
   readonly credentialCheckCurlArguments = [] as const;
 
   // OpenHost serves the owner API on the instance host and its client apps on
-  // subdomains of it (`<app>.<host>`). The owner token authenticates into those
-  // apps too -- signing into an app is the point of the token -- so a registered
-  // instance matches the host and any subdomain of it, not just the bare host.
+  // a single subdomain label of it (`<app>.<host>`). The owner token
+  // authenticates into those apps too -- signing into an app is the point of
+  // the token -- so a registered instance matches the host and one subdomain
+  // label on top of it, not arbitrarily deep nesting.
   override registeredBaseApiUrls(baseApiUrl: string): readonly (string | RegExp)[] {
     let hostname: string;
     try {
@@ -206,10 +224,11 @@ export class Openhost extends Service {
       return [baseApiUrl];
     }
     const escapedHost = hostname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    // `([a-z0-9-]+\.)*` matches zero labels (the bare host) or any number of
-    // subdomain labels; the optional port and required `/` keep a lookalike
-    // domain (`<host>.evil.com`) from matching.
-    return [new RegExp(`^https?://([a-z0-9-]+\\.)*${escapedHost}(:\\d+)?/`, 'i')];
+    // `([a-z0-9-]+\.)?` matches zero labels (the bare host) or exactly one
+    // subdomain label (`<app>.<host>`); the optional port and required `/` keep
+    // a lookalike domain (`<host>.evil.com`) and deeper nesting
+    // (`x.y.<host>`) from matching.
+    return [new RegExp(`^https?://([a-z0-9-]+\\.)?${escapedHost}(:\\d+)?/`, 'i')];
   }
 
   // `/dashboard` is owner-guarded: a valid owner credential gets 200, anything

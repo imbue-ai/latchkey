@@ -97,9 +97,17 @@ describe('mintOpenhostToken', () => {
 });
 
 describe('the OpenHost family', () => {
-  it('is registered, and carries no URL of its own', () => {
+  it('is registered, autoallows Imbue-hosted instances, and has no login URL', () => {
     expect(SERVICE_REGISTRY.getByName('openhost')).toBe(OPENHOST);
-    expect(OPENHOST.baseApiUrls).toEqual([]);
+    // The bare family carries no login URL, but it does match Imbue-hosted
+    // instances (`<customer>.selfhost.imbue.com` and their app subdomains)
+    // so a user with a token for one of those needs no registration.
+    expect(OPENHOST.baseApiUrls).toEqual([expect.any(RegExp)]);
+    const pattern = OPENHOST.baseApiUrls[0];
+    expect(pattern.test('https://acme.selfhost.imbue.com/api/apps')).toBe(true);
+    expect(pattern.test('https://myapp.acme.selfhost.imbue.com/')).toBe(true);
+    expect(pattern.test('https://acme.selfhost.imbue.com.evil.com/')).toBe(false);
+    expect(pattern.test('https://selfhost.imbue.com/')).toBe(false);
     expect(OPENHOST.loginUrl).toBe('');
   });
 
@@ -122,7 +130,7 @@ describe('the OpenHost family', () => {
     expect(session.service.loginUrl).toBe(INSTANCE_LOGIN);
   });
 
-  it('matches the instance host and its app subdomains, but not lookalikes', () => {
+  it('matches the instance host and one subdomain label on top of it, but not deeper nesting or lookalikes', () => {
     const instance = new RegisteredService('openhost-mine', INSTANCE_BASE, {
       familyService: OPENHOST,
       loginUrl: INSTANCE_LOGIN,
@@ -134,11 +142,13 @@ describe('the OpenHost family', () => {
         base instanceof RegExp ? base.test(url) : url.startsWith(base)
       );
 
-    // The owner API on the host, and any client app on a subdomain of it.
+    // The owner API on the host, and a client app on a single subdomain label.
     expect(matches('https://oh.example.com/api/apps')).toBe(true);
     expect(matches('https://oh.example.com/stop_app/abc')).toBe(true);
     expect(matches('https://my-app.oh.example.com/')).toBe(true);
-    expect(matches('https://deep.nested.oh.example.com/x')).toBe(true);
+    // Arbitrarily nested subdomains are NOT matched -- OpenHost only ever
+    // serves apps one label below the instance host.
+    expect(matches('https://deep.nested.oh.example.com/x')).toBe(false);
     // Not a different domain that merely ends with the host's text.
     expect(matches('https://oh.example.com.evil.com/')).toBe(false);
     expect(matches('https://notoh.example.com/')).toBe(false);
