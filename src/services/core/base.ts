@@ -166,6 +166,33 @@ export abstract class Service {
   abstract readonly credentialCheckCurlArguments: readonly string[];
 
   /**
+   * The URL patterns a self-hosted instance registered against this service (as
+   * its family, with `--base-api-url`) should match. Defaults to the base URL
+   * itself, so an ordinary registered service matches exactly what was given.
+   *
+   * A family overrides this when an instance serves more than that one prefix.
+   * OpenHost, for one, serves its client apps on subdomains of the instance
+   * host (`<app>.<host>`), and the owner credential authenticates into them, so
+   * it widens the match to the host and all of its subdomains.
+   */
+  registeredBaseApiUrls(baseApiUrl: string): readonly (string | RegExp)[] {
+    return [baseApiUrl];
+  }
+
+  /**
+   * Credential-check curl arguments for a self-hosted instance registered at
+   * `baseApiUrl` (see {@link credentialCheckCurlArguments}). Defaults to none,
+   * so a registered service whose family provides nothing reports an unknown
+   * status rather than guessing. A family overrides this with a check endpoint
+   * on the instance -- OpenHost validates against the instance's `/dashboard`,
+   * which its own CLI uses the same way -- so the instance can report valid or
+   * invalid instead of unknown.
+   */
+  registeredCredentialCheckCurlArguments(_baseApiUrl: string): readonly string[] {
+    return [];
+  }
+
+  /**
    * Optionally transform the stored credentials before they are injected into a
    * curl call, based on the request URL. Services can override this to use a
    * different credential form for different kinds of URLs (e.g. API access vs.

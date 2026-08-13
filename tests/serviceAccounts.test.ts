@@ -70,9 +70,9 @@ describe('base credential check', () => {
     expect(status).toBe(ApiCredentialStatus.Missing);
   });
 
-  it('reports unknown status for registered services without a request', async () => {
+  it('reports unknown status for registered services without a check endpoint', async () => {
     const registered = new RegisteredService('my-service', 'https://example.com/api/');
-    const status = await registered.checkApiCredentials();
+    const status = await registered.checkApiCredentials(BEARER);
     expect(status).toBe(ApiCredentialStatus.Unknown);
   });
 });

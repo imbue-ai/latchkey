@@ -64,7 +64,7 @@ export function buildRegisteredServiceOptions(
 export class RegisteredService extends Service {
   readonly name: string;
   readonly displayName: string;
-  readonly baseApiUrls: readonly string[];
+  readonly baseApiUrls: readonly (string | RegExp)[];
   readonly loginUrl: string;
   readonly info: string;
   readonly credentialCheckCurlArguments: readonly string[];
@@ -85,9 +85,19 @@ export class RegisteredService extends Service {
 
     this.name = name;
     this.displayName = name;
-    this.baseApiUrls = [baseApiUrl];
+    // A family decides what a self-hosted instance matches (OpenHost widens it
+    // to the instance host's subdomains, where its client apps are served);
+    // without a family the match is exactly the registered base.
+    this.baseApiUrls =
+      familyService !== undefined ? familyService.registeredBaseApiUrls(baseApiUrl) : [baseApiUrl];
     this.loginUrl = loginUrl ?? '';
-    this.credentialCheckCurlArguments = [];
+    // A family may know an endpoint on the instance that validates a credential
+    // (OpenHost's `/dashboard`); when it does, this instance can report a real
+    // status instead of an unknown one.
+    this.credentialCheckCurlArguments =
+      familyService !== undefined
+        ? familyService.registeredCredentialCheckCurlArguments(baseApiUrl)
+        : [];
     this.familyService = familyService;
 
     if (familyService !== undefined) {
@@ -102,7 +112,14 @@ export class RegisteredService extends Service {
     }
 
     if (loginUrl !== undefined && familyService?.getSession !== undefined) {
-      this.getSession = (appNamePrefix: string) => familyService.getSession!(appNamePrefix);
+      // Run the family's login bound to *this* registered service, not the
+      // family, so the session reads the instance's loginUrl and baseApiUrls
+      // (the self-hosted URL the user registered) rather than the family
+      // template's. A family session builds itself from `this.service`, so
+      // binding `this` here is what makes a self-hosted instance sign in at its
+      // own login page instead of the family's canonical one.
+      this.getSession = (appNamePrefix: string) =>
+        familyService.getSession!.call(this, appNamePrefix);
     } else if (usableLoginFlow !== undefined) {
       this.getSession = (appNamePrefix: string) =>
         usableLoginFlow.flow.createSession(this, appNamePrefix);
@@ -111,8 +128,14 @@ export class RegisteredService extends Service {
 
   override getSession?(appNamePrefix: string): ServiceSession;
 
-  override checkApiCredentials(): Promise<ApiCredentialStatus> {
-    return Promise.resolve(ApiCredentialStatus.Unknown);
+  override checkApiCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentialStatus> {
+    // With a check endpoint from the family, verify for real (200 vs. a
+    // redirect / auth failure); otherwise a self-hosted instance's API shape is
+    // unknown, so the status is too.
+    if (this.credentialCheckCurlArguments.length === 0) {
+      return Promise.resolve(ApiCredentialStatus.Unknown);
+    }
+    return super.checkApiCredentials(apiCredentials);
   }
 
   // Registered services point at self-hosted instances whose API shape is
