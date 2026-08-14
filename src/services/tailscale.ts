@@ -220,8 +220,8 @@ export class Tailscale extends Service {
 
   // The credential check needs the tailnet, which the static
   // credentialCheckCurlArguments cannot carry, so checkApiCredentials is
-  // overridden below. This value is unused but satisfies the abstract member.
-  readonly credentialCheckCurlArguments = [TAILSCALE_SETTINGS_URL_PREFIX] as const;
+  // overridden below and this value is unused (mirrors RegisteredService).
+  readonly credentialCheckCurlArguments = [] as const;
 
   override async checkApiCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentialStatus> {
     // The tailnet is needed to validate a token and is only carried by the
