@@ -167,10 +167,8 @@ class TailscaleServiceSession extends BrowserFollowupServiceSession {
       const mintDialog = page.getByRole('dialog', { name: 'Generate API access token' });
       await mintDialog.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
 
-      // Give the token a recognizable description so the user can find and
-      // revoke it from the Keys page. The description input is the first
-      // input inside the dialog (it has no placeholder — the "Add an optional
-      // description for the key." text is a label, not a placeholder).
+      // The description input is the first input in the dialog (the "Add an
+      // optional description" text above it is a label, not a placeholder).
       const descriptionInput = mintDialog.locator('input').first();
       await descriptionInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
       await typeLikeHuman(page, descriptionInput, this.generateAppName());
