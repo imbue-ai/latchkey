@@ -66,3 +66,5 @@ export { Ramp, RAMP } from './ramp.js';
 export { Todoist, TODOIST } from './todoist.js';
 export { Ngrok, NGROK } from './ngrok.js';
 export { Docusign, DOCUSIGN, DocusignSessionCredentials } from './docusign.js';
+export { Huggingface, HUGGINGFACE } from './huggingface.js';
+export { Openrouter, OPENROUTER } from './openrouter.js';
