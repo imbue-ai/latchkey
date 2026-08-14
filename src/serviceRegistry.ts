@@ -41,6 +41,7 @@ import {
   NGROK,
   HUGGINGFACE,
   OPENROUTER,
+  SPOTIFY,
 } from './services/index.js';
 
 export class DuplicateServiceNameError extends Error {
@@ -243,4 +244,5 @@ export const SERVICE_REGISTRY = new ServiceRegistry([
   NGROK,
   HUGGINGFACE,
   OPENROUTER,
+  SPOTIFY,
 ]);

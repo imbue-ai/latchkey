@@ -67,3 +67,4 @@ export { Todoist, TODOIST } from './todoist.js';
 export { Ngrok, NGROK } from './ngrok.js';
 export { Huggingface, HUGGINGFACE } from './huggingface.js';
 export { Openrouter, OPENROUTER } from './openrouter.js';
+export { Spotify, SPOTIFY } from './spotify.js';

@@ -26,6 +26,7 @@ import {
   ZoomServerToServerCredentials,
   ZoomServerToServerCredentialsSchema,
 } from '../services/zoom.js';
+import { SpotifySessionCredentials, SpotifySessionCredentialsSchema } from '../services/spotify.js';
 
 /**
  * Union schema for all credential types.
@@ -40,6 +41,7 @@ export const ApiCredentialsSchema = z.discriminatedUnion('objectType', [
   AwsCredentialsSchema,
   GoogleApiKeyCredentialsSchema,
   ZoomServerToServerCredentialsSchema,
+  SpotifySessionCredentialsSchema,
 ]);
 
 export type ApiCredentialsData = z.infer<typeof ApiCredentialsSchema>;
@@ -65,6 +67,8 @@ export function deserializeCredentials(data: ApiCredentialsData): ApiCredentials
       return AwsCredentials.fromJSON(data);
     case 'googleApiKey':
       return GoogleApiKeyCredentials.fromJSON(data);
+    case 'spotifySession':
+      return SpotifySessionCredentials.fromJSON(data);
     case 'zoomServerToServer':
       return ZoomServerToServerCredentials.fromJSON(data);
     default: {
@@ -105,6 +109,9 @@ export function serializeCredentials(credentials: ApiCredentials): ApiCredential
     return credentials.toJSON();
   }
   if (credentials instanceof ZoomServerToServerCredentials) {
+    return credentials.toJSON();
+  }
+  if (credentials instanceof SpotifySessionCredentials) {
     return credentials.toJSON();
   }
   throw new ApiCredentialsSerializationError(`Unknown credential type: ${credentials.objectType}`);
