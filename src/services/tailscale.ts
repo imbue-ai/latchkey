@@ -30,7 +30,7 @@ import {
   LoginCancelledError,
 } from './core/base.js';
 
-const DEFAULT_TIMEOUT_MS = 12000;
+const DEFAULT_TIMEOUT_MS = 30000;
 
 // The Tailscale admin REST API.
 const TAILSCALE_API_BASE_URL = 'https://api.tailscale.com/';
@@ -168,10 +168,10 @@ class TailscaleServiceSession extends BrowserFollowupServiceSession {
       await mintDialog.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
 
       // Give the token a recognizable description so the user can find and
-      // revoke it from the Keys page.
-      const descriptionInput = mintDialog.getByPlaceholder(
-        'Add an optional description for the key.'
-      );
+      // revoke it from the Keys page. The description input is the first
+      // input inside the dialog (it has no placeholder — the "Add an optional
+      // description for the key." text is a label, not a placeholder).
+      const descriptionInput = mintDialog.locator('input').first();
       await descriptionInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
       await typeLikeHuman(page, descriptionInput, this.generateAppName());
 
