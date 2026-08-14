@@ -2,7 +2,12 @@ import { GoogleService, type GoogleServiceConfig } from './base.js';
 
 const CONFIG: GoogleServiceConfig = {
   apis: ['gmail.googleapis.com'],
-  scopes: ['https://www.googleapis.com/auth/gmail.modify'],
+  scopes: [
+    // gmail.modify covers reading/labeling messages and reading filters/labels,
+    // but creating or deleting filters requires gmail.settings.basic.
+    'https://www.googleapis.com/auth/gmail.modify',
+    'https://www.googleapis.com/auth/gmail.settings.basic',
+  ],
 };
 
 export class GoogleGmail extends GoogleService {
@@ -14,7 +19,8 @@ export class GoogleGmail extends GoogleService {
     'If needed, run "latchkey auth browser-prepare google-gmail" to create an OAuth client first. ' +
     'It may take a few minutes before the OAuth client is ready to use. ' +
     'Requests that end with `ACCESS_TOKEN_SCOPE_INSUFFICIENT` may be caused by some scopes not having been approved during login. ' +
-    'Logging in again and approving all the scopes might help in that case.';
+    'Logging in again and approving all the scopes might help in that case. ' +
+    'Note: filter create/delete requires the `gmail.settings.basic` scope, which is now requested at login; older tokens minted without it must be re-logged-in to gain it.';
 
   protected readonly config = CONFIG;
 }
