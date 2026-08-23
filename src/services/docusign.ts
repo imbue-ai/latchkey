@@ -160,7 +160,11 @@ export class DocusignSessionCredentials implements ApiCredentials {
   }
 
   static fromJSON(data: DocusignSessionData): DocusignSessionCredentials {
-    return new DocusignSessionCredentials(data.cookies, data.accessToken, data.accessTokenExpiresAt);
+    return new DocusignSessionCredentials(
+      data.cookies,
+      data.accessToken,
+      data.accessTokenExpiresAt
+    );
   }
 }
 
@@ -333,7 +337,9 @@ export class Docusign extends Service {
    * null so latchkey falls back to an interactive re-login. Returns null (never throws):
    * a thrown error here breaks callers like `services info` and the approval prompt.
    */
-  override async refreshCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentials | null> {
+  override async refreshCredentials(
+    apiCredentials: ApiCredentials
+  ): Promise<ApiCredentials | null> {
     if (!(apiCredentials instanceof DocusignSessionCredentials)) {
       return null;
     }
