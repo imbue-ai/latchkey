@@ -14,6 +14,7 @@ import { TelegramBotCredentials } from '../src/services/telegram.js';
 import { AwsCredentials } from '../src/services/aws.js';
 import { GoogleApiKeyCredentials } from '../src/services/google/base.js';
 import { ZoomServerToServerCredentials } from '../src/services/zoom.js';
+import { DocusignSessionCredentials } from '../src/services/docusign.js';
 
 describe('AuthorizationBearer', () => {
   it('should inject Bearer token header', async () => {
@@ -178,6 +179,42 @@ describe('AwsCredentials', () => {
   });
 });
 
+describe('DocusignSessionCredentials', () => {
+  const cookie = { name: 'ds', value: 'v', domain: '.docusign.com', path: '/' };
+
+  it('should inject the bearer as an Authorization header', async () => {
+    const credentials = new DocusignSessionCredentials(
+      [cookie],
+      'the-bearer',
+      new Date(Date.now() + 3600_000).toISOString()
+    );
+    await expect(credentials.injectIntoCurlCall(['url'])).resolves.toEqual([
+      '-H',
+      'Authorization: Bearer the-bearer',
+      'url',
+    ]);
+  });
+
+  it('should throw when injecting with no token yet', () => {
+    const credentials = new DocusignSessionCredentials([cookie]);
+    expect(() => credentials.injectIntoCurlCall([])).toThrow();
+  });
+
+  it('should be expired when there is no token', () => {
+    expect(new DocusignSessionCredentials([cookie]).isExpired()).toBe(true);
+  });
+
+  it('should be expired within the 2-minute early-refresh window', () => {
+    const soon = new Date(Date.now() + 60_000).toISOString(); // 1 min out
+    expect(new DocusignSessionCredentials([cookie], 't', soon).isExpired()).toBe(true);
+  });
+
+  it('should not be expired well before the expiry', () => {
+    const later = new Date(Date.now() + 3600_000).toISOString(); // 1 hour out
+    expect(new DocusignSessionCredentials([cookie], 't', later).isExpired()).toBe(false);
+  });
+});
+
 describe('serialization roundtrip', () => {
   const cases: {
     name: string;
@@ -213,6 +250,15 @@ describe('serialization roundtrip', () => {
           'client-id',
           'client-secret',
           'access-token',
+          new Date(Date.now() + 3600_000).toISOString()
+        ),
+    },
+    {
+      name: 'DocusignSessionCredentials',
+      credentials: () =>
+        new DocusignSessionCredentials(
+          [{ name: 'ds', value: 'v', domain: '.docusign.com', path: '/' }],
+          'bearer-token',
           new Date(Date.now() + 3600_000).toISOString()
         ),
     },

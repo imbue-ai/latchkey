@@ -11,6 +11,7 @@ export {
 } from './apiCredentials/base.js';
 export { deserializeCredentials, serializeCredentials } from './apiCredentials/serialization.js';
 export { SlackApiCredentials } from './services/slack.js';
+export { DocusignSessionCredentials } from './services/docusign.js';
 
 export { ApiCredentialStore, ApiCredentialStoreError } from './apiCredentials/store.js';
 

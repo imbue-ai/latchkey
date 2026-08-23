@@ -39,6 +39,7 @@ import {
   RAMP,
   TODOIST,
   NGROK,
+  DOCUSIGN,
   HUGGINGFACE,
   OPENROUTER,
 } from './services/index.js';
@@ -241,6 +242,7 @@ export const SERVICE_REGISTRY = new ServiceRegistry([
   RAMP,
   TODOIST,
   NGROK,
+  DOCUSIGN,
   HUGGINGFACE,
   OPENROUTER,
 ]);
