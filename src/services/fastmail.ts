@@ -50,6 +50,10 @@ export const FastmailPrepareInputSchema = z
 
 export type FastmailPrepareInput = z.infer<typeof FastmailPrepareInputSchema>;
 
+// The session document, requested directly. Not `/.well-known/jmap`: that
+// 302s to this URL on a *different* host, and curl drops the Authorization
+// header across a cross-host redirect, so following it reports a missing
+// header even when the credential is fine.
 const SESSION_ENDPOINT = 'https://api.fastmail.com/jmap/session';
 const REGISTRATION_ENDPOINT = 'https://api.fastmail.com/oauth/register';
 const AUTHORIZATION_ENDPOINT = 'https://api.fastmail.com/oauth/authorize';
@@ -90,6 +94,12 @@ const JMAP_RESOURCE = 'https://api.fastmail.com/jmap/session';
  *
  * The same string is sent twice: once when registering the client, and again on
  * the authorization request. They have to agree — see {@link registerClient}.
+ *
+ * These grant read AND write: Fastmail publishes no read-only OAuth scope, and
+ * its registration endpoint rejects every `:readonly` variant. A read-only
+ * credential has to be a hand-made API token ("Read-only access" on the API
+ * token screen) supplied with `latchkey auth set`, which this service also
+ * accepts.
  */
 const OAUTH_SCOPES =
   'urn:ietf:params:oauth:scope:mail ' +
@@ -224,7 +234,13 @@ class FastmailSession extends ServiceSession {
         );
         const redirectUri = `http://localhost:${port.toString()}/oauth2callback`;
 
-        // 2. Register client or reuse existing client_id
+        // 2. Register client or reuse existing client_id.
+        //
+        // Fastmail fixes a client's scopes at registration, so reusing a stored
+        // client id pins the scopes granted the first time. If OAUTH_SCOPES ever
+        // widens, an existing user's next login is refused for asking outside
+        // the old client's scopes, and `latchkey auth clear fastmail --all`
+        // (which drops the stored client id) is the way out.
         let clientId: string;
         if (oldCredentials instanceof OAuthCredentials && oldCredentials.clientId) {
           clientId = oldCredentials.clientId;
@@ -330,28 +346,10 @@ export class Fastmail extends Service {
   readonly loginUrl = AUTHORIZATION_ENDPOINT;
 
   readonly info =
-    'Fastmail mail, over JMAP (RFC 8620 core + RFC 8621 mail). ' +
-    'https://www.fastmail.com/dev/ (developer docs) and ' +
-    'https://jmap.io/spec.html (protocol spec). ' +
-    'Start at https://api.fastmail.com/jmap/session — the session document names the ' +
-    'apiUrl, downloadUrl and account ids to use for everything else; those point at the ' +
-    'regional shard the account is homed on, which this service already covers. ' +
-    `Browser login requests the scopes "${OAUTH_SCOPES}", which grant read AND write ` +
-    'access to mail: Fastmail publishes no read-only OAuth scope (its registration endpoint ' +
-    'rejects every :readonly variant). For a read-only credential, create an API token with ' +
-    'read-only mail access — https://app.fastmail.com/settings/security, under ' +
-    '"Connected apps & API tokens" / "Manage API tokens" — and supply it ' +
-    'with `latchkey auth set` instead of logging in through the browser. ' +
-    "Changing the requested scopes requires a NEW OAuth client: Fastmail fixes a client's " +
-    'scopes at registration, and login reuses the client id stored with existing credentials. ' +
-    'Run `latchkey auth clear fastmail --all` before logging in again, or the authorization ' +
-    "is refused for asking outside the old client's scopes. " +
-    'To see what the stored credential can actually reach, read the session document: each ' +
-    'entry of its `accounts` map carries `isReadOnly` and an `accountCapabilities` map whose ' +
-    'keys are the JMAP capabilities that credential can use (RFC 8620 §1.6.2). ' +
-    'Note that https://api.fastmail.com/.well-known/jmap redirects to the session document ' +
-    'on a different host, and curl drops the Authorization header across such a redirect — ' +
-    'request /jmap/session directly instead of following the redirect.';
+    'https://www.fastmail.com/dev/ and https://jmap.io/spec.html. ' +
+    'Start at https://api.fastmail.com/jmap/session: that session document names the apiUrl, ' +
+    'downloadUrl and account ids for everything else, and its `accounts` entries carry ' +
+    '`isReadOnly` and the `accountCapabilities` this credential can reach.';
 
   readonly credentialCheckCurlArguments = [SESSION_ENDPOINT] as const;
 

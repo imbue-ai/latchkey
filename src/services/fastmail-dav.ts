@@ -12,6 +12,20 @@
  * among services that match a URL by registration order, with no way for a
  * caller to name the one it wants, so two services claiming the same host would
  * be a coin flip. These hosts are disjoint from the JMAP ones.
+ *
+ * The credential is an app password from Settings → Privacy & Security →
+ * "Connected apps & API tokens" → "Manage app passwords and access", used with
+ * the account's own e-mail address as the username. Its "DAV" access level is
+ * enough.
+ *
+ * One failure worth recognizing: on an account with no active subscription
+ * (observed on a lapsed trial) app passwords appear to be refused for every
+ * legacy protocol, and the refusal is a 401 reading "Incorrect username,
+ * password or access token" — indistinguishable from a typo — while JMAP over
+ * an API token or OAuth keeps working. Subscribing restored DAV with no change
+ * to any request. An IMAP login against imap.fastmail.com with the same
+ * credential tells the two apart: refused there too points at the account
+ * rather than the credential.
  */
 
 import type { ApiCredentials } from '../apiCredentials/base.js';
@@ -70,27 +84,11 @@ export class FastmailDav extends Service {
   readonly loginUrl = 'https://app.fastmail.com/settings/security';
 
   readonly info =
-    'Fastmail contacts over CardDAV (RFC 6352) and calendars over CalDAV (RFC 4791). ' +
-    'Collection roots: https://carddav.fastmail.com/dav/addressbooks and ' +
-    'https://caldav.fastmail.com/dav/calendars; discover per-user collections from ' +
-    'https://carddav.fastmail.com/dav/principals/ with a `current-user-principal` PROPFIND. ' +
-    'Credentials are an APP PASSWORD over HTTP Basic auth: at ' +
-    'https://app.fastmail.com/settings/security find "Connected apps & API tokens", click ' +
-    '"Manage app passwords and access", then "New app password". Its "DAV" access level is ' +
-    'enough; the broader "Mail, Contacts & Calendars" also works. The username is the account\'s ' +
-    'own e-mail address. ' +
-    'NOTE: an account with no active subscription (observed on a lapsed trial) appears to refuse ' +
-    'app passwords for every legacy protocol — DAV and IMAP alike answer 401 "Incorrect ' +
-    'username, password or access token", indistinguishable from a typo — while JMAP over an API ' +
-    'token or OAuth keeps working. Subscribing restored DAV with no change to any request. An ' +
-    'IMAP login against imap.fastmail.com with the same credential tells the two apart: refused ' +
-    'there too points at the account rather than the credential. ' +
-    'OAuth access tokens do NOT work here: the DAV endpoints advertise ' +
-    '`WWW-Authenticate: Basic realm=..., Bearer` but reject Fastmail OAuth tokens with 401 on ' +
-    'every path, so use the `fastmail` service for JMAP and this one for DAV. ' +
-    'Fastmail also exposes contacts over JMAP, which the `fastmail` service already covers — ' +
-    'prefer that if you are not tied to DAV. ' +
-    'DAV replies to a successful PROPFIND with 207 Multi-Status, not 200.';
+    'https://www.fastmail.com/dev/ — contacts over CardDAV (RFC 6352) and calendars over ' +
+    'CalDAV (RFC 4791), rooted at /dav/addressbooks and /dav/calendars. ' +
+    'Credentials are an app password, not the OAuth token the `fastmail` service uses; ' +
+    'that service also reaches contacts over JMAP, which is the better route unless a ' +
+    'caller needs DAV specifically.';
 
   readonly credentialCheckCurlArguments = PRINCIPAL_CHECK_CURL_ARGUMENTS;
 
