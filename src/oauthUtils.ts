@@ -106,11 +106,22 @@ export function startOAuthCallbackServer(
               cleanup();
               resolve(code);
             } else {
+              // No code means the authorization server refused. RFC 6749 §4.1.2.1
+              // puts the reason in `error` / `error_description`; reporting the
+              // bare absence of a code instead leaves the caller with nothing to
+              // act on.
+              const error = parsedUrl.searchParams.get('error');
+              const errorDescription = parsedUrl.searchParams.get('error_description');
+              const reason =
+                error === null
+                  ? 'No authorization code received from OAuth callback.'
+                  : `Authorization failed: ${error}` +
+                    (errorDescription === null ? '' : ` (${errorDescription})`);
               res.writeHead(400, { 'Content-Type': 'text/plain' });
               res.end('ERROR');
               signal?.removeEventListener('abort', abortHandler);
               cleanup();
-              reject(new LoginFailedError('No authorization code received from OAuth callback.'));
+              reject(new LoginFailedError(reason));
             }
           } else {
             res.writeHead(404);
@@ -165,14 +176,18 @@ export async function exchangeCodeForTokens(
   clientId: string,
   clientSecret: string,
   redirectUri: string,
-  codeVerifier?: string
+  codeVerifier?: string,
+  extraParams?: Readonly<Record<string, string>>
 ): Promise<OAuthTokenExchangeResponse> {
-  const body = new URLSearchParams({
-    code,
-    client_id: clientId,
-    redirect_uri: redirectUri,
-    grant_type: 'authorization_code',
-  });
+  // Extras first, so the protocol fields below always win: a caller cannot
+  // accidentally replace `grant_type` or `code` with its own value. Servers that
+  // pin tokens to a named audience need their own parameters here, e.g. RFC
+  // 8707's `resource`.
+  const body = new URLSearchParams({ ...extraParams });
+  body.set('code', code);
+  body.set('client_id', clientId);
+  body.set('redirect_uri', redirectUri);
+  body.set('grant_type', 'authorization_code');
   if (clientSecret) {
     body.set('client_secret', clientSecret);
   }
@@ -201,9 +216,19 @@ export async function exchangeCodeForTokens(
   }
 
   try {
-    const response = JSON.parse(result.stdout) as OAuthTokenResponse;
+    const response = JSON.parse(result.stdout) as OAuthTokenResponse & {
+      error?: string;
+      error_description?: string;
+    };
     if (!response.access_token || !response.refresh_token) {
-      throw new OAuthTokenExchangeError('Token response missing access_token or refresh_token.');
+      // A refusal is reported as `error` / `error_description` (RFC 6749 §5.2);
+      // reporting only the absent fields discards the reason.
+      const reason =
+        response.error === undefined
+          ? 'Token response missing access_token or refresh_token.'
+          : `Token exchange failed: ${response.error}` +
+            (response.error_description === undefined ? '' : ` (${response.error_description})`);
+      throw new OAuthTokenExchangeError(reason);
     }
     return response as OAuthTokenExchangeResponse;
   } catch (error: unknown) {
@@ -228,13 +253,16 @@ export async function refreshAccessToken(
   tokenEndpoint: string,
   refreshToken: string,
   clientId: string,
-  clientSecret: string
+  clientSecret: string,
+  extraParams?: Readonly<Record<string, string>>
 ): Promise<OAuthTokenResponse | null> {
-  const body = new URLSearchParams({
-    refresh_token: refreshToken,
-    client_id: clientId,
-    grant_type: 'refresh_token',
-  });
+  // Extras first so the protocol fields win (see exchangeCodeForTokens). A
+  // refresh has to name the same audience the original grant did, or a server
+  // that pins tokens to a resource will refuse it.
+  const body = new URLSearchParams({ ...extraParams });
+  body.set('refresh_token', refreshToken);
+  body.set('client_id', clientId);
+  body.set('grant_type', 'refresh_token');
   if (clientSecret) {
     body.set('client_secret', clientSecret);
   }
