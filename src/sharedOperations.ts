@@ -171,9 +171,21 @@ async function computeAccountStatuses(
   return Object.fromEntries(entries);
 }
 
+/**
+ * Render one entry of a service's `baseApiUrls` for display.
+ *
+ * A service may match by literal prefix or by pattern, and a `RegExp` has no
+ * useful JSON form — it serializes as `{}`, which told a reader nothing about
+ * which hosts the service covers. Patterns are rendered in `/.../` literal
+ * form so they stay distinguishable from a plain prefix.
+ */
+function formatBaseApiUrl(baseApiUrl: string | RegExp): string {
+  return typeof baseApiUrl === 'string' ? baseApiUrl : String(baseApiUrl);
+}
+
 export interface ServicesInfoResult {
   readonly type: 'built-in' | 'user-registered';
-  readonly baseApiUrls: readonly (string | RegExp)[];
+  readonly baseApiUrls: readonly string[];
   readonly authOptions: readonly string[];
   readonly credentials: AccountCredentialStatuses;
   readonly setCredentialsExample: string;
@@ -206,7 +218,7 @@ export async function servicesInfo(
 
   return {
     type: serviceType,
-    baseApiUrls: service.baseApiUrls,
+    baseApiUrls: service.baseApiUrls.map(formatBaseApiUrl),
     authOptions,
     credentials,
     setCredentialsExample: service.setCredentialsExample(serviceName),
