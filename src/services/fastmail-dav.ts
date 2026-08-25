@@ -86,8 +86,8 @@ export class FastmailDav extends Service {
   readonly info =
     'https://www.fastmail.com/dev/ — contacts over CardDAV (RFC 6352) and calendars over ' +
     'CalDAV (RFC 4791), rooted at /dav/addressbooks and /dav/calendars. ' +
-    'Credentials are an app password, not the OAuth token the `fastmail` service uses; ' +
-    'that service also reaches contacts over JMAP, which is the better route unless a ' +
+    'Credentials are an app password, rather than the OAuth token the `fastmail` service uses. ' +
+    'The `fastmail` service can also reach contacts over JMAP, which is the better route unless a ' +
     'caller needs DAV specifically.';
 
   readonly credentialCheckCurlArguments = PRINCIPAL_CHECK_CURL_ARGUMENTS;
