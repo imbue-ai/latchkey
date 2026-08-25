@@ -26,6 +26,7 @@ import {
   ZoomServerToServerCredentials,
   ZoomServerToServerCredentialsSchema,
 } from '../services/zoom.js';
+import { TailscaleCredentials, TailscaleCredentialsSchema } from '../services/tailscale.js';
 
 /**
  * Union schema for all credential types.
@@ -40,6 +41,7 @@ export const ApiCredentialsSchema = z.discriminatedUnion('objectType', [
   AwsCredentialsSchema,
   GoogleApiKeyCredentialsSchema,
   ZoomServerToServerCredentialsSchema,
+  TailscaleCredentialsSchema,
 ]);
 
 export type ApiCredentialsData = z.infer<typeof ApiCredentialsSchema>;
@@ -67,6 +69,8 @@ export function deserializeCredentials(data: ApiCredentialsData): ApiCredentials
       return GoogleApiKeyCredentials.fromJSON(data);
     case 'zoomServerToServer':
       return ZoomServerToServerCredentials.fromJSON(data);
+    case 'tailscale':
+      return TailscaleCredentials.fromJSON(data);
     default: {
       const exhaustiveCheck: never = data;
       throw new ApiCredentialsSerializationError(
@@ -105,6 +109,9 @@ export function serializeCredentials(credentials: ApiCredentials): ApiCredential
     return credentials.toJSON();
   }
   if (credentials instanceof ZoomServerToServerCredentials) {
+    return credentials.toJSON();
+  }
+  if (credentials instanceof TailscaleCredentials) {
     return credentials.toJSON();
   }
   throw new ApiCredentialsSerializationError(`Unknown credential type: ${credentials.objectType}`);
