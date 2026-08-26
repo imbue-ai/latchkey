@@ -34,6 +34,8 @@ export {
 export { CookieCaptureLoginFlow } from './core/loginFlows/cookieCapture.js';
 
 export { Slack, SLACK } from './slack.js';
+export { ClaudeAi, CLAUDE_AI } from './claude-ai.js';
+export { Chatgpt, CHATGPT } from './chatgpt.js';
 export { Discord, DISCORD } from './discord.js';
 export { Github, GITHUB } from './github.js';
 export { Dropbox, DROPBOX } from './dropbox.js';
