@@ -23,6 +23,8 @@ import {
   GOOGLE_SLIDES,
   GOOGLE_PEOPLE,
   MAILCHIMP,
+  FASTMAIL,
+  FASTMAIL_DAV,
   GITLAB,
   AWS,
   TELEGRAM,
@@ -56,6 +58,8 @@ describe('ServiceRegistry', () => {
       ['google-slides', GOOGLE_SLIDES],
       ['google-people', GOOGLE_PEOPLE],
       ['mailchimp', MAILCHIMP],
+      ['fastmail', FASTMAIL],
+      ['fastmail-dav', FASTMAIL_DAV],
       ['aws', AWS],
       ['telegram', TELEGRAM],
       ['ramp', RAMP],
@@ -94,6 +98,15 @@ describe('ServiceRegistry', () => {
       ['https://api.notion.com/v1/users/me', NOTION],
       ['https://api.mailchimp.com/3.0/ping', MAILCHIMP],
       ['https://us1.api.mailchimp.com/3.0/lists', MAILCHIMP],
+      // All four host shapes one Fastmail account can span: session discovery,
+      // the region-homed JMAP api the session points at, and the blob CDN in
+      // both its plain and region-homed forms.
+      ['https://api.fastmail.com/jmap/session', FASTMAIL],
+      ['https://phl.api.fastmail.com/jmap/api/', FASTMAIL],
+      ['https://www.fastmailusercontent.com/jmap/download/u1/G1/x?type=x', FASTMAIL],
+      ['https://phl-www.fastmailusercontent.com/jmap/download/u1/G1/x?type=x', FASTMAIL],
+      ['https://carddav.fastmail.com/dav/addressbooks', FASTMAIL_DAV],
+      ['https://caldav.fastmail.com/dav/calendars', FASTMAIL_DAV],
       ['https://sts.amazonaws.com/?Action=GetCallerIdentity', AWS],
       ['https://s3.us-east-1.amazonaws.com/my-bucket', AWS],
       ['https://api.ramp.com/developer/v1/transactions', RAMP],
@@ -105,6 +118,29 @@ describe('ServiceRegistry', () => {
         expect(primaryServiceForUrl(SERVICE_REGISTRY, url)).toBe(service);
       });
     }
+
+    it('never lets the two Fastmail services claim the same URL', () => {
+      // `latchkey curl` picks among services matching a URL by registration
+      // order and offers no way to name one, so overlap here would silently
+      // route a request with whichever credential was registered first — e.g. a
+      // JMAP OAuth token sent to CardDAV, which rejects it. The services are
+      // split by host precisely so this can't happen.
+      const urls = [
+        'https://api.fastmail.com/jmap/session',
+        'https://phl.api.fastmail.com/jmap/api/',
+        'https://www.fastmailusercontent.com/jmap/download/u1/G1/x?type=x',
+        'https://phl-www.fastmailusercontent.com/jmap/download/u1/G1/x?type=x',
+        'https://carddav.fastmail.com/dav/addressbooks',
+        'https://caldav.fastmail.com/dav/calendars',
+        'https://carddav.fastmail.com/dav/principals/',
+      ];
+      for (const url of urls) {
+        const claimants = SERVICE_REGISTRY.getCandidatesByUrl(url).filter(
+          (service) => service === FASTMAIL || service === FASTMAIL_DAV
+        );
+        expect(claimants).toHaveLength(1);
+      }
+    });
 
     it('should return null for unknown URL', () => {
       expect(primaryServiceForUrl(SERVICE_REGISTRY, 'https://example.com/api')).toBeNull();
