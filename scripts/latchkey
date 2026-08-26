@@ -8,8 +8,9 @@
 #   - anywhere else: fall back to the checkout this shim is installed from,
 #     discovered from the shim's own path.
 #
-# In a checkout whose node_modules has no tsx, runs the compiled
-# dist/src/cli.js under node instead, which requires `npm run build`.
+# Requires `npm install` in the target checkout (tsx is a devDependency, and
+# the prepare script generates src/version.ts); fails with instructions
+# otherwise. Never writes to the checkout and never runs dist/.
 #
 # Install onto PATH with `npm run install-dev-shim` (symlinks
 # ~/.local/bin/latchkey here).
@@ -44,21 +45,15 @@ else
     fi
 fi
 
-if [ ! -d "$root/node_modules" ]; then
-    echo "latchkey: no node_modules in $root; run \`npm install\` there first" >&2
-    exit 1
-fi
-
 tsx="$root/node_modules/.bin/tsx"
-if [ -x "$tsx" ]; then
-    # src/version.ts is gitignored and generated, so fresh checkouts and
-    # worktrees lack it until a build or test run creates it.
-    [ -f "$root/src/version.ts" ] || node "$root/scripts/generateVersion.js"
-    exec "$tsx" "$root/src/cli.ts" "$@"
-fi
-
-if [ ! -f "$root/dist/src/cli.js" ]; then
-    echo "latchkey: no tsx in $root/node_modules and no built output at $root/dist/src/cli.js; run \`npm install\` (or \`npm run build\`) in $root" >&2
+if [ ! -x "$tsx" ]; then
+    echo "latchkey: no tsx in $root/node_modules; run \`npm install\` in $root first" >&2
     exit 1
 fi
-exec node "$root/dist/src/cli.js" "$@"
+
+if [ ! -f "$root/src/version.ts" ]; then
+    echo "latchkey: $root/src/version.ts is missing; run \`npm install\` in $root to generate it" >&2
+    exit 1
+fi
+
+exec "$tsx" "$root/src/cli.ts" "$@"

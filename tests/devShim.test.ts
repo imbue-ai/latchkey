@@ -120,35 +120,17 @@ describe('dev shim (scripts/latchkey)', () => {
     expect(secondRun.stdout.trim()).toBe('fake-cli source v2');
   });
 
-  it('generates the missing src/version.ts before running the CLI', () => {
+  it('fails with an install instruction when src/version.ts is missing', () => {
     const fakeCheckout = join(tempDir, 'fake-checkout');
     mkdirSync(fakeCheckout);
     createFakeLatchkeyCheckout(fakeCheckout, { includeTsx: true });
     rmSync(join(fakeCheckout, 'src', 'version.ts'));
-    mkdirSync(join(fakeCheckout, 'scripts'));
-    writeFileSync(
-      join(fakeCheckout, 'scripts', 'generateVersion.js'),
-      [
-        "const { writeFileSync } = require('node:fs');",
-        "const { join } = require('node:path');",
-        'writeFileSync(',
-        "  join(__dirname, '..', 'src', 'version.ts'),",
-        '  "export const VERSION = \'generated-by-fake-script\';\\n"',
-        ');',
-        '',
-      ].join('\n')
-    );
-    // The CLI can only print the marker if the shim generated version.ts first.
-    writeFileSync(
-      join(fakeCheckout, 'src', 'cli.ts'),
-      "import { VERSION } from './version';\nconsole.log(VERSION);\n"
-    );
 
     const result = runShim([], { cwd: fakeCheckout });
 
-    expect(result.stderr).toBe('');
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout.trim()).toBe('generated-by-fake-script');
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain('version.ts');
+    expect(result.stderr).toContain('npm install');
   });
 
   it('falls back to its own checkout when cwd is outside any checkout', () => {
@@ -183,24 +165,7 @@ describe('dev shim (scripts/latchkey)', () => {
     expect(result.stdout.trim()).toBe(projectVersion);
   });
 
-  it('runs the built output under node when the checkout has no tsx', () => {
-    const fakeCheckout = join(tempDir, 'fake-checkout');
-    mkdirSync(fakeCheckout);
-    createFakeLatchkeyCheckout(fakeCheckout, { includeTsx: false });
-    mkdirSync(join(fakeCheckout, 'dist', 'src'), { recursive: true });
-    writeFileSync(
-      join(fakeCheckout, 'dist', 'src', 'cli.js'),
-      "console.log('fake-cli dist build');\n"
-    );
-
-    const result = runShim([], { cwd: fakeCheckout });
-
-    expect(result.stderr).toBe('');
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout.trim()).toBe('fake-cli dist build');
-  });
-
-  it('fails with install and build instructions when tsx and dist are both missing', () => {
+  it('fails with an install instruction when the checkout has no tsx', () => {
     const fakeCheckout = join(tempDir, 'fake-checkout');
     mkdirSync(fakeCheckout);
     createFakeLatchkeyCheckout(fakeCheckout, { includeTsx: false });
@@ -208,8 +173,8 @@ describe('dev shim (scripts/latchkey)', () => {
     const result = runShim([], { cwd: fakeCheckout });
 
     expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain('tsx');
     expect(result.stderr).toContain('npm install');
-    expect(result.stderr).toContain('npm run build');
   });
 
   it('fails when neither cwd nor the shim location is inside a latchkey checkout', () => {

@@ -36,11 +36,8 @@ The shim runs `src/cli.ts` under node via the checkout's own
 build step. It resolves
 the checkout from your current directory, which makes worktrees
 and secondary clones work without relinking; outside any checkout
-it falls back to the checkout the shim was installed from.
-
-In a checkout whose `node_modules` has no tsx, the shim runs the
-compiled `dist/src/cli.js` under node instead, which requires
-`npm run build`.
+it falls back to the checkout the shim was installed from. The
+target checkout just needs `npm install` to have been run in it.
 
 ## Before you submit a PR
 
