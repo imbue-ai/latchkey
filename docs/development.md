@@ -100,6 +100,9 @@ Every service must include an `info` property that provides developer notes. Thi
 - Special requirements (e.g., need to run `latchkey auth browser-prepare` first)
 - Any caveats or limitations
 
+Keep `info` (and comments on the `Service` class) about the service itself, not
+the Detent scopes or permission names (not everyone uses them).
+
 ### Potentially useful helpers
 
 #### Codegen
