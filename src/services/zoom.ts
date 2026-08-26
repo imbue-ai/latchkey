@@ -44,8 +44,8 @@ export function isZoomSignedInLandingUrl(url: string): boolean {
   return SIGNED_IN_LANDING_URL_PATTERN.test(url);
 }
 
-// The Marketplace page that lists the user's apps and carries the "Develop"
-// menu the app creation flow starts from.
+// The Marketplace page that lists the user's apps and carries the sidebar menu
+// the app creation flow starts from.
 const ZOOM_MARKETPLACE_BUILD_URL = 'https://marketplace.zoom.us/user/build';
 
 // Zoom's access tokens live for an hour; renew slightly early so a token does
@@ -254,11 +254,15 @@ const TOKEN_MINTING_RETRY_DELAY_MS = 2000;
 
 // Marketplace pages expose the signed-in user, their privileges and their
 // account in a global object, which is both more reliable and more
-// language-independent than reading the rendered page.
+// language-independent than reading the rendered page. Zoom names the privilege
+// to create a server-to-server app twice, once after the app type as the
+// Marketplace shows it and once after the OAuth flow behind it; the app creation
+// dialog goes by the latter.
 const ZoomMarketplaceUserInfoSchema = z.object({
   email: z.string().optional(),
   userName: z.string().optional(),
   canBuildServerToServerOAuthApp: z.boolean().optional(),
+  canBuildTwoLeggedOAuthApp: z.boolean().optional(),
 });
 
 type ZoomMarketplaceUserInfo = z.infer<typeof ZoomMarketplaceUserInfoSchema>;
@@ -310,11 +314,14 @@ const SCOPE_GROUP_PATTERNS = [
   /^Message$/i,
 ] as const;
 
-const DEVELOP_MENU_BUTTON_SELECTOR = 'button[data-ta="develop"]';
+// The app creation menu hangs off the plus button in the "Developer" section of
+// the Marketplace sidebar. Its label is written into Zoom's code rather than
+// translated, so it does not depend on the interface language.
+const BUILD_MENU_BUTTON_SELECTOR = 'button[aria-label="Add"][aria-haspopup="true"]';
 
-// Menus are modals: they cover the page with an invisible backdrop that
-// swallows pointer events until the menu is dismissed.
-const OPEN_MENU_BACKDROP_SELECTOR = '.MuiMenu-root .MuiModal-backdrop:visible';
+// The Marketplace is a heavy single-page app whose sidebar only shows up once it
+// has hydrated, which takes noticeably longer than any step that follows.
+const MARKETPLACE_LOAD_TIMEOUT_MS = 30_000;
 
 // The API terms dialog is recognized by its link to the license document, which
 // does not depend on the interface language. The app kind dialog is the one
@@ -339,12 +346,12 @@ function visibleDialog(page: Page): Locator {
 }
 
 /**
- * Wait for the Marketplace header to be there and settle: it hydrates after the
+ * Wait for the Marketplace sidebar to be there and settle: it hydrates after the
  * page load and re-renders shortly after. Clicking into it before that opens a
- * menu whose backdrop then stays behind, blocking every later click.
+ * menu the re-render then closes again.
  */
-async function waitForMarketplaceHeader(page: Page): Promise<void> {
-  await page.locator(DEVELOP_MENU_BUTTON_SELECTOR).waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+async function waitForMarketplaceSidebar(page: Page): Promise<void> {
+  await page.locator(BUILD_MENU_BUTTON_SELECTOR).waitFor({ timeout: MARKETPLACE_LOAD_TIMEOUT_MS });
   await page.waitForTimeout(PAGE_SETTLE_MS);
 }
 
@@ -390,51 +397,21 @@ async function clickControl(locator: Locator): Promise<void> {
 }
 
 /**
- * Close a menu that is (still) open. A menu covers the whole page with an
- * invisible backdrop that swallows every click, so one left open blocks the
- * rest of the flow — including a second attempt at opening it.
- */
-async function dismissOpenMenu(page: Page): Promise<void> {
-  const menuBackdrop = page.locator(OPEN_MENU_BACKDROP_SELECTOR).first();
-  if ((await menuBackdrop.count()) === 0) {
-    return;
-  }
-  // Escape rather than a click on the backdrop, which would land on whatever is
-  // underneath should the menu close on its own in the meantime.
-  await page.keyboard.press('Escape');
-  await menuBackdrop.waitFor({ state: 'hidden', timeout: DEFAULT_TIMEOUT_MS });
-}
-
-/**
- * Ask for the app creation dialog through the header's "Develop" menu.
+ * Ask for the app creation dialog through the sidebar's "Build app" menu.
  *
- * The menu opens on hover, so the button is hovered rather than clicked: a click
- * arrives at a menu that is already open and closes it again, which is why
- * clicking here gets nowhere. Its entry is then chosen with Enter, since the
- * menu takes the focus as it opens — that is what leaves its first entry
- * highlighted — and a keypress needs no coordinates, unlike a click, which the
- * invisible backdrop MUI spreads beside the menu can swallow.
+ * The plus button toggles the menu, so an attempt that left it open carries on
+ * with it rather than clicking it away again; the button says which of the two
+ * it is through aria-expanded. The menu itself is a plain popup rather than a
+ * modal one, so its entry takes an ordinary click.
  */
-async function chooseDevelopBuildApp(page: Page): Promise<void> {
-  await dismissOpenMenu(page);
-
-  const developMenuButton = page.locator(DEVELOP_MENU_BUTTON_SELECTOR);
-  await developMenuButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-  await developMenuButton.hover({ force: true });
-
-  const buildAppEntry = page.getByRole('menuitem', { name: BUILD_APP_MENU_ITEM_PATTERN }).first();
-  await buildAppEntry.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-  // Let the menu settle and take the focus before the keypress.
-  await page.waitForTimeout(ANIMATION_SETTLE_MS);
-  await page.keyboard.press('Enter');
-
-  await page.waitForTimeout(ANIMATION_SETTLE_MS);
-  if (await buildAppEntry.isVisible()) {
-    // The menu stayed open, so the focus was elsewhere: click the entry after
-    // all, and clear the menu if that leaves it behind.
-    await clickControl(buildAppEntry);
-    await dismissOpenMenu(page);
+async function chooseBuildApp(page: Page): Promise<void> {
+  const buildMenuButton = page.locator(BUILD_MENU_BUTTON_SELECTOR).first();
+  await buildMenuButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+  if ((await buildMenuButton.getAttribute('aria-expanded')) !== 'true') {
+    await clickControl(buildMenuButton);
   }
+
+  await clickControl(page.getByRole('menuitem', { name: BUILD_APP_MENU_ITEM_PATTERN }).first());
 }
 
 async function selectServerToServerAppKind(appKindDialog: Locator): Promise<void> {
@@ -456,7 +433,18 @@ async function selectServerToServerAppKind(appKindDialog: Locator): Promise<void
   if (!(await serverToServerOption.isEnabled())) {
     throw new ZoomAppCreationNotPermittedError();
   }
-  await serverToServerOption.check();
+
+  // The radio button reports the choice but does not make it: the click is
+  // handled by the card around it, which is why the choice is made with a click
+  // like every other one of this flow rather than with Playwright's check().
+  await clickControl(serverToServerOption);
+  await serverToServerOption.page().waitForTimeout(ANIMATION_SETTLE_MS);
+  if (!(await serverToServerOption.isChecked())) {
+    throw new LoginFailedError(
+      'Zoom did not take "Server to Server OAuth" as the kind of app to create. ' +
+        'Create the app in the browser window to finish the login.'
+    );
+  }
 }
 
 async function nameAndCreateApp(page: Page, appName: string): Promise<void> {
@@ -619,8 +607,7 @@ async function selectAllScopesOfGroup(page: Page, scopesDialog: Locator): Promis
   const previousCount = await readSelectedScopeCount(scopesDialog);
 
   await clickControl(scopesDialog.getByText(SELECT_ALL_SCOPES_GLYPH).first());
-  // The menu opens outside the dialog, so it is looked up on the page. Unlike
-  // the header's, this menu opens on click and its entries take one.
+  // The menu opens outside the dialog, so it is looked up on the page.
   await clickControl(
     page.locator('[role="menu"]:visible').last().locator('[role="menuitem"]').first()
   );
@@ -769,7 +756,7 @@ class ZoomServiceSession extends BrowserFollowupServiceSession {
       if (await appKindDialog.isVisible()) {
         return appKindDialog;
       }
-      await chooseDevelopBuildApp(page);
+      await chooseBuildApp(page);
       // Zoom fetches the dialog rather than having it ready, so wait for
       // whichever it puts up: the app kinds, or the terms of use that have to
       // be accepted first.
@@ -806,7 +793,7 @@ class ZoomServiceSession extends BrowserFollowupServiceSession {
     // Sign-in happened on Zoom itself; the app is created on the Marketplace,
     // which the same session carries over to.
     await page.goto(ZOOM_MARKETPLACE_BUILD_URL);
-    await waitForMarketplaceHeader(page);
+    await waitForMarketplaceSidebar(page);
 
     const userInfo = await readMarketplaceUserInfo(page);
     if (userInfo === null) {
@@ -815,7 +802,10 @@ class ZoomServiceSession extends BrowserFollowupServiceSession {
           'Sign in to https://marketplace.zoom.us/ in the browser window and try again.'
       );
     }
-    if (userInfo.canBuildServerToServerOAuthApp === false) {
+    if (
+      userInfo.canBuildServerToServerOAuthApp === false ||
+      userInfo.canBuildTwoLeggedOAuthApp === false
+    ) {
       throw new ZoomAppCreationNotPermittedError();
     }
 
