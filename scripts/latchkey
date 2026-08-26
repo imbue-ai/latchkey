@@ -3,12 +3,13 @@
 #
 # Routes `latchkey ...` to the latchkey checkout you are actually working in:
 #   - inside any latchkey checkout/worktree: use THAT tree, running src/cli.ts
-#     directly under bun, so local edits take effect with no build step.
+#     under node via the checkout's own tsx, so local edits take effect with
+#     no build step.
 #   - anywhere else: fall back to the checkout this shim is installed from,
 #     discovered from the shim's own path.
 #
-# Without bun on PATH -- or with LATCHKEY_DEV_SHIM_USE_DIST=1 -- runs the
-# compiled dist/src/cli.js under node instead, which requires `npm run build`.
+# In a checkout whose node_modules has no tsx, runs the compiled
+# dist/src/cli.js under node instead, which requires `npm run build`.
 #
 # Install onto PATH with `npm run install-dev-shim` (symlinks
 # ~/.local/bin/latchkey here).
@@ -48,15 +49,16 @@ if [ ! -d "$root/node_modules" ]; then
     exit 1
 fi
 
-if [ -z "${LATCHKEY_DEV_SHIM_USE_DIST:-}" ] && command -v bun >/dev/null 2>&1; then
+tsx="$root/node_modules/.bin/tsx"
+if [ -x "$tsx" ]; then
     # src/version.ts is gitignored and generated, so fresh checkouts and
     # worktrees lack it until a build or test run creates it.
-    [ -f "$root/src/version.ts" ] || bun "$root/scripts/generateVersion.js"
-    exec bun "$root/src/cli.ts" "$@"
+    [ -f "$root/src/version.ts" ] || node "$root/scripts/generateVersion.js"
+    exec "$tsx" "$root/src/cli.ts" "$@"
 fi
 
 if [ ! -f "$root/dist/src/cli.js" ]; then
-    echo "latchkey: no built output at $root/dist/src/cli.js; run \`npm run build\` in $root (or install bun to run from source)" >&2
+    echo "latchkey: no tsx in $root/node_modules and no built output at $root/dist/src/cli.js; run \`npm install\` (or \`npm run build\`) in $root" >&2
     exit 1
 fi
 exec node "$root/dist/src/cli.js" "$@"

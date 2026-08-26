@@ -31,15 +31,16 @@ npm run install-dev-shim
 This symlinks `~/.local/bin/latchkey` to `scripts/latchkey` and
 warns if something else on your PATH still shadows it.
 
-The shim runs `src/cli.ts` directly under [bun](https://bun.sh),
-so edits take effect immediately with no build step. It resolves
+The shim runs `src/cli.ts` under node via the checkout's own
+[tsx](https://tsx.is), so edits take effect immediately with no
+build step. It resolves
 the checkout from your current directory, which makes worktrees
 and secondary clones work without relinking; outside any checkout
 it falls back to the checkout the shim was installed from.
 
-Without bun on PATH (or with `LATCHKEY_DEV_SHIM_USE_DIST=1`), the
-shim runs the compiled `dist/src/cli.js` under node instead, which
-requires `npm run build`.
+In a checkout whose `node_modules` has no tsx, the shim runs the
+compiled `dist/src/cli.js` under node instead, which requires
+`npm run build`.
 
 ## Before you submit a PR
 
@@ -153,8 +154,6 @@ npx tsx scripts/cryptFile.ts decrypt ~/.latchkey/credentials.json.enc
 The following environment variables can be set for development and debugging:
 
 - `LATCHKEY_DISABLE_SPINNER=1`: Disables the spinner overlay that normally hides browser activity during credential finalization. Useful for debugging browser automation sequences.
-- `LATCHKEY_DEV_SHIM_USE_DIST=1`: Makes the dev shim (`scripts/latchkey`) run the compiled `dist/src/cli.js` under node instead of `src/cli.ts` under bun.
-
 
 ## Style guidelines
 
