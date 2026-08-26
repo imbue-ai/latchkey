@@ -39,6 +39,21 @@ and secondary clones work without relinking; outside any checkout
 it falls back to the checkout the shim was installed from. The
 target checkout just needs `npm install` to have been run in it.
 
+The shim only changes which code runs; like an installed CLI, it
+still operates on your real `~/.latchkey` (credentials, browser
+state, encryption key). Since the CLI migrates the credential
+store at startup, running a newer branch can move `~/.latchkey`
+to a format that older branches no longer read. When testing
+store-format changes, migrations, or anything else risky, point
+the run at a throwaway store instead:
+
+```bash
+LATCHKEY_DIRECTORY=/tmp/latchkey-sandbox latchkey ...
+```
+
+(Also set `LATCHKEY_ENCRYPTION_KEY` to a base64 32-byte key to
+keep the sandbox out of your system keychain.)
+
 ## Before you submit a PR
 
 - Run `npm run lint` and `npm test` to validate your changes.
