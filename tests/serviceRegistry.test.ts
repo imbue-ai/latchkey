@@ -1,5 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import {
+  createServiceRegistry,
   DuplicateServiceNameError,
   InvalidServiceNameError,
   ServiceRegistry,
@@ -399,6 +403,113 @@ describe('ServiceRegistry', () => {
       hideServicesFromRegistry(registry, ['nope', 'slack']);
       expect(registry.getByName('slack')).toBeNull();
       expect(registry.services).toHaveLength(0);
+    });
+  });
+
+  describe('createServiceRegistry', () => {
+    let temporaryDirectory: string;
+    let configPath: string;
+
+    beforeEach(() => {
+      temporaryDirectory = mkdtempSync(join(tmpdir(), 'latchkey-registry-'));
+      configPath = join(temporaryDirectory, 'config.json');
+    });
+
+    afterEach(() => {
+      rmSync(temporaryDirectory, { recursive: true, force: true });
+    });
+
+    function writeRegisteredServices(registeredServices: Record<string, unknown>): void {
+      writeFileSync(configPath, JSON.stringify({ registeredServices }));
+    }
+
+    it('combines the base services with the ones registered in config.json', () => {
+      writeRegisteredServices({
+        'self-hosted-gitlab': {
+          baseApiUrl: 'https://gitlab.example.com/api/',
+          serviceFamily: 'gitlab',
+        },
+      });
+
+      const registry = createServiceRegistry([SLACK, GITLAB], configPath, []);
+
+      expect(registry.getByName('slack')).toBe(SLACK);
+      expect(registry.getByName('gitlab')).toBe(GITLAB);
+      expect(registry.getByName('self-hosted-gitlab')).toBeInstanceOf(RegisteredService);
+    });
+
+    it('works when config.json does not exist', () => {
+      const registry = createServiceRegistry([SLACK], configPath, []);
+
+      expect(registry.services).toHaveLength(1);
+      expect(registry.getByName('slack')).toBe(SLACK);
+    });
+
+    it('picks up a service registered between two calls', () => {
+      writeRegisteredServices({});
+      expect(createServiceRegistry([SLACK], configPath, []).getByName('added-later')).toBeNull();
+
+      writeRegisteredServices({ 'added-later': { baseApiUrl: 'https://api.example.com/' } });
+
+      const refreshed = createServiceRegistry([SLACK], configPath, []);
+      expect(refreshed.getByName('added-later')).toBeInstanceOf(RegisteredService);
+      expect(refreshed.getByUrl('https://api.example.com/things')?.name).toBe('added-later');
+    });
+
+    it('drops a service deregistered between two calls', () => {
+      writeRegisteredServices({ 'going-away': { baseApiUrl: 'https://api.example.com/' } });
+      expect(createServiceRegistry([SLACK], configPath, []).getByName('going-away')).not.toBeNull();
+
+      writeRegisteredServices({});
+
+      const refreshed = createServiceRegistry([SLACK], configPath, []);
+      expect(refreshed.getByName('going-away')).toBeNull();
+      expect(refreshed.getByUrl('https://api.example.com/things')).toBeNull();
+    });
+
+    it('returns an independent registry on every call', () => {
+      writeRegisteredServices({});
+      const first = createServiceRegistry([SLACK], configPath, []);
+      const second = createServiceRegistry([SLACK], configPath, []);
+
+      first.removeService('slack');
+
+      expect(first.getByName('slack')).toBeNull();
+      expect(second.getByName('slack')).toBe(SLACK);
+    });
+
+    it('skips config.json entirely when given no path', () => {
+      writeRegisteredServices({ 'from-the-file': { baseApiUrl: 'https://api.example.com/' } });
+
+      const registry = createServiceRegistry([SLACK, GITHUB], null, ['github']);
+
+      expect(registry.getByName('from-the-file')).toBeNull();
+      expect(registry.getByName('slack')).toBe(SLACK);
+      // Hiding still applies, as it does for a CLI pointed at a gateway.
+      expect(registry.getByName('github')).toBeNull();
+    });
+
+    it('hides the named services', () => {
+      writeRegisteredServices({});
+
+      const registry = createServiceRegistry([SLACK, GITHUB], configPath, ['slack']);
+
+      expect(registry.getByName('slack')).toBeNull();
+      expect(registry.getByName('github')).toBe(GITHUB);
+    });
+
+    it('lets a registered service use a hidden built-in as its family', () => {
+      writeRegisteredServices({
+        'self-hosted-gitlab': {
+          baseApiUrl: 'https://gitlab.example.com/api/',
+          serviceFamily: 'gitlab',
+        },
+      });
+
+      const registry = createServiceRegistry([GITLAB], configPath, ['gitlab']);
+
+      expect(registry.getByName('gitlab')).toBeNull();
+      expect(registry.getByName('self-hosted-gitlab')).toBeInstanceOf(RegisteredService);
     });
   });
 });

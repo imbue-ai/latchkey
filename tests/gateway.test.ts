@@ -20,7 +20,10 @@ import type { AsyncCurlResult, CurlResult } from '../src/curl.js';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { ApiCredentialStore } from '../src/apiCredentials/store.js';
 import { Config } from '../src/config.js';
-import { ServiceRegistry } from '../src/serviceRegistry.js';
+import {
+  loadRegisteredServicesIntoServiceRegistry,
+  ServiceRegistry,
+} from '../src/serviceRegistry.js';
 import { Service } from '../src/services/core/base.js';
 import { createMockService } from './mockService.js';
 
@@ -237,8 +240,12 @@ describe('gateway server', () => {
     const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
     const apiCredentialStore = new ApiCredentialStore(storePath, encryptedStorage);
 
+    // One source for both, so that overriding the services a test runs against
+    // cannot leave the registry describing a different set.
+    const services: readonly Service[] = overrides.builtinServices ?? [mockSlackService];
     const deps: CliDependencies = {
-      registry: new ServiceRegistry([mockSlackService]),
+      builtinServices: services,
+      registry: new ServiceRegistry(services),
       config: createMockConfig(configOverrides),
       runCurl: (): CurlResult => ({ returncode: 0, stdout: '', stderr: '' }),
       runCurlAsync: async (
@@ -968,6 +975,81 @@ describe('gateway server', () => {
     });
   });
 
+  describe('services registered while the gateway runs', () => {
+    const REGISTERED_BASE_URL = 'https://selfhosted.example.com/api/';
+    const CREDENTIALS = {
+      slack: {
+        objectType: 'rawCurl',
+        curlArguments: ['-H', 'Authorization: Bearer test-token'],
+      },
+      'self-hosted': {
+        objectType: 'rawCurl',
+        curlArguments: ['-H', 'Authorization: Bearer self-hosted-token'],
+      },
+    };
+
+    function writeRegisteredServices(registeredServices: Record<string, unknown>): void {
+      writeFileSync(join(tempDir, 'config.json'), JSON.stringify({ registeredServices }));
+    }
+
+    it('injects credentials for a service registered after startup', async () => {
+      gateway = await createTestGateway(CREDENTIALS);
+
+      const beforeRegistering = await fetch(`/gateway/${REGISTERED_BASE_URL}thing`);
+      expect(beforeRegistering.status).toBe(400);
+
+      writeRegisteredServices({ 'self-hosted': { baseApiUrl: REGISTERED_BASE_URL } });
+
+      const afterRegistering = await fetch(`/gateway/${REGISTERED_BASE_URL}thing`);
+      expect(afterRegistering.status).toBe(200);
+      expect(capturedCurlArgs).toContain('Authorization: Bearer self-hosted-token');
+    });
+
+    it('stops serving a service deregistered after startup', async () => {
+      writeRegisteredServices({ 'self-hosted': { baseApiUrl: REGISTERED_BASE_URL } });
+      gateway = await createTestGateway(CREDENTIALS);
+
+      const beforeDeregistering = await fetch(`/gateway/${REGISTERED_BASE_URL}thing`);
+      expect(beforeDeregistering.status).toBe(200);
+
+      writeRegisteredServices({});
+
+      const afterDeregistering = await fetch(`/gateway/${REGISTERED_BASE_URL}thing`);
+      expect(afterDeregistering.status).toBe(400);
+    });
+
+    // The registry in the dependencies is the one cli.ts already loaded
+    // config.json into, so a deregistered service is still sitting in it. The
+    // gateway builds its own registry per request and must not fall back to
+    // that one.
+    it('drops a service deregistered after startup even when it was loaded at startup', async () => {
+      writeRegisteredServices({ 'self-hosted': { baseApiUrl: REGISTERED_BASE_URL } });
+      const startupRegistry = new ServiceRegistry([mockSlackService]);
+      loadRegisteredServicesIntoServiceRegistry(join(tempDir, 'config.json'), startupRegistry);
+      expect(startupRegistry.getByName('self-hosted')).not.toBeNull();
+
+      gateway = await createTestGateway(CREDENTIALS, { registry: startupRegistry });
+
+      const beforeDeregistering = await fetch(`/gateway/${REGISTERED_BASE_URL}thing`);
+      expect(beforeDeregistering.status).toBe(200);
+
+      writeRegisteredServices({});
+
+      const afterDeregistering = await fetch(`/gateway/${REGISTERED_BASE_URL}thing`);
+      expect(afterDeregistering.status).toBe(400);
+    });
+
+    it('keeps serving the built-in services it started with', async () => {
+      gateway = await createTestGateway(CREDENTIALS);
+
+      writeRegisteredServices({ 'self-hosted': { baseApiUrl: REGISTERED_BASE_URL } });
+
+      const response = await fetch('/gateway/https://slack.com/api/auth.test');
+      expect(response.status).toBe(200);
+      expect(capturedCurlArgs).toContain('Authorization: Bearer test-token');
+    });
+  });
+
   describe('shutdown', () => {
     it('should shut down cleanly', async () => {
       gateway = await createTestGateway();
@@ -998,6 +1080,7 @@ describe('gateway CLI command registration', () => {
 
     const mockDeps: CliDependencies = {
       registry: new ServiceRegistry([]),
+      builtinServices: [],
       config: new Config(() => undefined),
       runCurl: (): CurlResult => ({ returncode: 0, stdout: '', stderr: '' }),
       runCurlAsync: () => Promise.resolve({ returncode: 0, stdout: Buffer.from(''), stderr: '' }),
