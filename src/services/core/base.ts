@@ -625,7 +625,7 @@ export abstract class BrowserFollowupServiceSession extends ServiceSession {
       credentials = await requestCredentialsFromUser<ApiCredentials>({
         context,
         spinnerPage: this.spinnerPage,
-        message: `The ${this.service.displayName} credentials could not be retrieved automatically.`,
+        message: `${this.service.displayName} credentials could not be retrieved automatically.`,
         details: buildFailureNoticeDetails(form),
         fields: form.fields,
         decide: (values) => this.decideOnSubmittedCredentials(form, values),
