@@ -42,22 +42,6 @@ export interface ManualCredentialForm {
   buildCredentials(values: CredentialFormValues): ApiCredentials;
 }
 
-/**
- * The notice explains what to do, not what went wrong: the automation's error
- * message means nothing to the user, and it is reported on the command line
- * anyway.
- */
-function buildFailureNoticeDetails(form: ManualCredentialForm): string {
-  return [
-    form.instructions,
-    'Then paste the credentials into the form below.',
-    'Closing this browser window gives up on the login.',
-  ].join('\n\n');
-}
-
-/** How long the browser is left open for the user to finish a failed flow. */
-const MANUAL_COMPLETION_LIMIT_MS = 30 * 60_000;
-
 export class NoCurlCredentialsNotSupportedError extends Error {
   constructor(serviceName: string) {
     super(`Service '${serviceName}' does not support set-nocurl credentials.`);
@@ -375,117 +359,6 @@ export abstract class ServiceSession {
   }
 
   /**
-   * Page hiding the automation from the user, for sessions that show one, or
-   * null while none is up (or when the spinner is disabled). It doubles as the
-   * place where a failure is explained to the user.
-   *
-   * Subclasses that temporarily surface a real page to the user (e.g. to have
-   * terms accepted) bring this page back to the front afterwards.
-   */
-  protected spinnerPage: Page | null = null;
-
-  /**
-   * Form shown on the failure notice for the user to paste the credentials they
-   * created by hand into.
-   *
-   * Public so the fields and instructions can be inspected without running a
-   * browser — which is how the tests check that every session that should offer
-   * one does, and that its builder agrees with its field names.
-   */
-  readonly manualCredentialForm?: ManualCredentialForm;
-
-  /**
-   * Turn a failed finalization into an error the user can act on, without
-   * taking the browser away from them.
-   *
-   * A broken automation usually means the service changed, which is precisely
-   * the situation where the flow is still perfectly doable by hand: the browser
-   * is signed in and sitting on the right page. So the spinner is replaced by
-   * an explanation of what failed and what to do about it, and the window stays
-   * open for a while, waiting for the user to paste the credentials in.
-   *
-   * This needs somewhere to put them, so sessions without a
-   * {@link manualCredentialForm} report the failure straight away rather than
-   * asking for work latchkey could not accept.
-   */
-  private async recoverFromFinalizationFailure(
-    context: BrowserContext,
-    error: Error
-  ): Promise<ApiCredentials> {
-    // A timeout says nothing beyond "the page did not do what we expected", so
-    // it is reported as the login failure it is.
-    const failure = isTimeoutError(error)
-      ? new LoginFailedError(`Login failed: ${error.message}`)
-      : error;
-
-    const form = this.manualCredentialForm;
-    if (form === undefined) {
-      throw failure;
-    }
-
-    console.error(
-      `[latchkey] The ${this.service.displayName} login automation failed. The browser ` +
-        'window is left open so the credentials can be provided by hand; close it to give up.'
-    );
-
-    let credentials: ApiCredentials | null;
-    try {
-      credentials = await requestCredentialsFromUser<ApiCredentials>({
-        context,
-        spinnerPage: this.spinnerPage,
-        message: `The ${this.service.displayName} credentials could not be retrieved automatically.`,
-        details: buildFailureNoticeDetails(form),
-        fields: form.fields,
-        decide: (values) => this.decideOnSubmittedCredentials(form, values),
-        timeoutMs: MANUAL_COMPLETION_LIMIT_MS,
-      });
-    } catch {
-      // The browser is gone; there is nobody left to ask.
-      throw failure;
-    }
-
-    if (credentials !== null) {
-      return credentials;
-    }
-    // Nothing came of the request, so the automation failure is what gets reported.
-    throw failure;
-  }
-
-  /**
-   * Turn submitted values into credentials, refusing them with a reason the form
-   * can show if the service does not accept them.
-   */
-  private async decideOnSubmittedCredentials(
-    form: ManualCredentialForm,
-    values: CredentialFormValues
-  ): Promise<CredentialFormDecision<ApiCredentials>> {
-    // A build error is reported to the user as a problem with what they typed:
-    // requestCredentialsFromUser turns it into one.
-    const built = form.buildCredentials(values);
-
-    // Some pasted values are not usable as they stand — Zoom's server-to-server
-    // app credentials have to mint an access token first — so they get the same
-    // refresh the stored ones would, or the check below would call a perfectly
-    // good app "missing".
-    const credentials =
-      built.isExpired() === true && this.service.refreshCredentials
-        ? ((await this.service.refreshCredentials(built)) ?? built)
-        : built;
-
-    // These were pasted by hand, so they are checked before being taken:
-    // finding out now beats storing a typo and failing on the next request.
-    const status = await this.service.checkApiCredentials(credentials);
-    if (status !== ApiCredentialStatus.Valid) {
-      return {
-        problem:
-          `${this.service.displayName} did not accept these credentials (${status}). ` +
-          'Please check them and try again.',
-      };
-    }
-    return { accepted: credentials };
-  }
-
-  /**
    * Optional preparation step before login.
    * Services can override this to perform setup (e.g., creating OAuth clients).
    *
@@ -530,13 +403,10 @@ export abstract class ServiceSession {
       try {
         apiCredentials = await this.finalizeCredentials(browser, context, oldCredentials);
       } catch (error: unknown) {
-        if (!(error instanceof Error)) {
-          throw error;
-        }
-        if (isBrowserClosedError(error)) {
+        if (error instanceof Error && isBrowserClosedError(error)) {
           throw new LoginCancelledError();
         }
-        apiCredentials = await this.recoverFromFinalizationFailure(context, error);
+        throw error;
       }
 
       if (apiCredentials === null) {
@@ -636,6 +506,22 @@ export function buildFollowupSpinnerDetails(
 }
 
 /**
+ * The notice explains what to do, not what went wrong: the automation's error
+ * message means nothing to the user, and it is reported on the command line
+ * anyway.
+ */
+function buildFailureNoticeDetails(form: ManualCredentialForm): string {
+  return [
+    form.instructions,
+    'Then paste the credentials into the form below.',
+    'Closing this browser window gives up on the login.',
+  ].join('\n\n');
+}
+
+/** How long the browser is left open for the user to finish a failed flow. */
+const MANUAL_COMPLETION_LIMIT_MS = 30 * 60_000;
+
+/**
  * Service session that requires a browser followup to finalize credentials.
  *
  * The login phase captures login state. After login completes,
@@ -645,6 +531,26 @@ export function buildFollowupSpinnerDetails(
 export abstract class BrowserFollowupServiceSession extends ServiceSession {
   /** What the followup does in the user's account, shown on the spinner page. */
   protected abstract readonly followupWork: FollowupWork;
+
+  /**
+   * Page hiding the automation from the user, for sessions that show one, or
+   * null while none is up (or when the spinner is disabled). It doubles as the
+   * place where a failure is explained to the user.
+   *
+   * Subclasses that temporarily surface a real page to the user (e.g. to have
+   * terms accepted) bring this page back to the front afterwards.
+   */
+  protected spinnerPage: Page | null = null;
+
+  /**
+   * Form shown on the failure notice for the user to paste the credentials they
+   * created by hand into.
+   *
+   * Public so the fields and instructions can be inspected without running a
+   * browser — which is how the tests check that every session that should offer
+   * one does, and that its builder agrees with its field names.
+   */
+  readonly manualCredentialForm?: ManualCredentialForm;
 
   /**
    * Perform actions in the browser to finalize and extract API credentials.
@@ -667,6 +573,107 @@ export abstract class BrowserFollowupServiceSession extends ServiceSession {
       `Finalizing ${this.service.displayName} login...`,
       buildFollowupSpinnerDetails(this.service.displayName, this.followupWork)
     );
-    return this.performBrowserFollowup(context, oldCredentials);
+    try {
+      return await this.performBrowserFollowup(context, oldCredentials);
+    } catch (error: unknown) {
+      // A browser the user closed is a cancellation, which login() reports;
+      // everything else is the automation breaking, which the user may still be
+      // able to work around.
+      if (!(error instanceof Error) || isBrowserClosedError(error)) {
+        throw error;
+      }
+      return await this.recoverFromFailedFollowup(context, error);
+    }
+  }
+
+  /**
+   * Turn a failed followup into an error the user can act on, without taking
+   * the browser away from them.
+   *
+   * A broken automation usually means the service changed, which is precisely
+   * the situation where the flow is still perfectly doable by hand: the browser
+   * is signed in and sitting on the right page. So the spinner is replaced by
+   * an explanation of what failed and what to do about it, and the window stays
+   * open for a while, waiting for the user to paste the credentials in.
+   *
+   * This needs somewhere to put them, so sessions without a
+   * {@link manualCredentialForm} report the failure straight away rather than
+   * asking for work latchkey could not accept.
+   */
+  private async recoverFromFailedFollowup(
+    context: BrowserContext,
+    error: Error
+  ): Promise<ApiCredentials> {
+    // A timeout says nothing beyond "the page did not do what we expected", so
+    // it is reported as the login failure it is.
+    const failure = isTimeoutError(error)
+      ? new LoginFailedError(`Login failed: ${error.message}`)
+      : error;
+
+    const form = this.manualCredentialForm;
+    if (form === undefined) {
+      throw failure;
+    }
+
+    console.error(
+      `[latchkey] The ${this.service.displayName} login automation failed. The browser ` +
+        'window is left open so the credentials can be provided by hand; close it to give up.'
+    );
+
+    let credentials: ApiCredentials | null;
+    try {
+      credentials = await requestCredentialsFromUser<ApiCredentials>({
+        context,
+        spinnerPage: this.spinnerPage,
+        message: `The ${this.service.displayName} credentials could not be retrieved automatically.`,
+        details: buildFailureNoticeDetails(form),
+        fields: form.fields,
+        decide: (values) => this.decideOnSubmittedCredentials(form, values),
+        timeoutMs: MANUAL_COMPLETION_LIMIT_MS,
+      });
+    } catch {
+      // The browser is gone; there is nobody left to ask.
+      throw failure;
+    }
+
+    if (credentials !== null) {
+      return credentials;
+    }
+    // Nothing came of the request, so the automation failure is what gets reported.
+    throw failure;
+  }
+
+  /**
+   * Turn submitted values into credentials, refusing them with a reason the form
+   * can show if the service does not accept them.
+   */
+  private async decideOnSubmittedCredentials(
+    form: ManualCredentialForm,
+    values: CredentialFormValues
+  ): Promise<CredentialFormDecision<ApiCredentials>> {
+    // A build error is reported to the user as a problem with what they typed:
+    // requestCredentialsFromUser turns it into one.
+    const built = form.buildCredentials(values);
+
+    // Some pasted values are not usable as they stand — Zoom's server-to-server
+    // app credentials have to mint an access token first — so they get the same
+    // refresh the stored ones would, or the check below would call a perfectly
+    // good app "missing".
+    const credentials =
+      built.isExpired() === true && this.service.refreshCredentials
+        ? ((await this.service.refreshCredentials(built)) ?? built)
+        : built;
+
+    // These were pasted by hand, so they are checked before being taken:
+    // finding out now beats storing a typo and failing on the next request.
+    const status = await this.service.checkApiCredentials(credentials);
+    if (status !== ApiCredentialStatus.Valid) {
+      return {
+        problem:
+          `${this.service.displayName} did not accept these credentials (${status}). ` +
+          'Please check them and try again.',
+      };
+    }
+    return { accepted: credentials };
   }
 }

@@ -11,7 +11,6 @@ import {
   BrowserFollowupServiceSession,
   type ManualCredentialForm,
   type Service,
-  type ServiceSession,
 } from '../src/services/core/base.js';
 import { CredentialFormValues } from '../src/playwrightUtils.js';
 
@@ -35,7 +34,7 @@ function isOAuthOnlyService(service: Service): boolean {
 
 interface NamedSession {
   readonly service: Service;
-  readonly session: ServiceSession;
+  readonly session: BrowserFollowupServiceSession;
 }
 
 const BROWSER_FOLLOWUP_SESSIONS: readonly NamedSession[] = SERVICE_REGISTRY.services
