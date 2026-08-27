@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import {
   chmodSync,
   copyFileSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -245,6 +246,81 @@ describe('dev shim (scripts/latchkey)', () => {
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain('instead of the dev shim');
       expect(readlinkSync(join(fakeHome, '.local', 'bin', 'latchkey'))).toBe(shimPath);
+    });
+  });
+
+  describe('uninstaller (scripts/uninstallDevShim.sh)', () => {
+    const uninstallerPath = join(projectRoot, 'scripts', 'uninstallDevShim.sh');
+
+    function runUninstaller(home: string): ShimResult {
+      return runShim([], {
+        cwd: projectRoot,
+        command: uninstallerPath,
+        env: { HOME: home, PATH: minimalSystemPath },
+      });
+    }
+
+    // lstat, not exists: a dangling symlink is still a path we must clean up.
+    function pathExists(path: string): boolean {
+      try {
+        lstatSync(path);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    function createFakeHomeWithBinDirectory(): { home: string; binDirectory: string } {
+      const home = join(tempDir, 'fake-home');
+      const binDirectory = join(home, '.local', 'bin');
+      mkdirSync(binDirectory, { recursive: true });
+      return { home, binDirectory };
+    }
+
+    it('removes the installed shim symlink', () => {
+      const { home, binDirectory } = createFakeHomeWithBinDirectory();
+      const linkPath = join(binDirectory, 'latchkey');
+      symlinkSync(shimPath, linkPath);
+
+      const result = runUninstaller(home);
+
+      expect(result.stderr).toBe('');
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('removed latchkey dev shim');
+      expect(pathExists(linkPath)).toBe(false);
+    });
+
+    it('succeeds when no shim is installed', () => {
+      const { home } = createFakeHomeWithBinDirectory();
+
+      const result = runUninstaller(home);
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('nothing to do');
+    });
+
+    it('removes a dangling shim symlink whose checkout is gone', () => {
+      const { home, binDirectory } = createFakeHomeWithBinDirectory();
+      const linkPath = join(binDirectory, 'latchkey');
+      symlinkSync(join(tempDir, 'deleted-checkout', 'scripts', 'latchkey'), linkPath);
+
+      const result = runUninstaller(home);
+
+      expect(result.exitCode).toBe(0);
+      expect(pathExists(linkPath)).toBe(false);
+    });
+
+    it('refuses to remove a latchkey that is not the dev shim', () => {
+      const { home, binDirectory } = createFakeHomeWithBinDirectory();
+      const linkPath = join(binDirectory, 'latchkey');
+      writeFileSync(linkPath, "#!/usr/bin/env bash\necho 'some other install'\n");
+      chmodSync(linkPath, 0o755);
+
+      const result = runUninstaller(home);
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('not a latchkey dev shim');
+      expect(pathExists(linkPath)).toBe(true);
     });
   });
 });

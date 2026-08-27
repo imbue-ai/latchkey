@@ -39,6 +39,15 @@ and secondary clones work without relinking; outside any checkout
 it falls back to the checkout the shim was installed from. The
 target checkout just needs `npm install` to have been run in it.
 
+To get rid of it again, run:
+
+```bash
+npm run uninstall-dev-shim
+```
+
+This removes `~/.local/bin/latchkey` (only if it is the dev shim)
+and tells you what `latchkey` resolves to afterwards.
+
 The shim only changes which code runs; like an installed CLI, it
 still operates on your real `~/.latchkey` (credentials, browser
 state, encryption key). Since the CLI migrates the credential

@@ -13,7 +13,7 @@
 # otherwise. Never writes to the checkout and never runs dist/.
 #
 # Install onto PATH with `npm run install-dev-shim` (symlinks
-# ~/.local/bin/latchkey here).
+# ~/.local/bin/latchkey here); remove it with `npm run uninstall-dev-shim`.
 set -euo pipefail
 
 _resolve() {
