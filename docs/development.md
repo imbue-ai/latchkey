@@ -16,8 +16,9 @@ npm install && npm run build && npm link
 ```
 
 After that, every time you make a change to the code, run
-`npm run rebuild`. Invoking `latchkey` in your terminal will
-then use the version you just built.
+`npm run build`. Invoking `latchkey` in your terminal will
+then use the version you just built. (`npm run dev` runs the
+compiler in watch mode if you would rather not rebuild by hand.)
 
 ## Before you submit a PR
 

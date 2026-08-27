@@ -51,6 +51,8 @@ export { GooglePeople, GOOGLE_PEOPLE } from './google/people.js';
 export { Notion, NOTION } from './notion.js';
 export { NotionMcp, NOTION_MCP } from './notion-mcp.js';
 export { Mailchimp, MAILCHIMP } from './mailchimp.js';
+export { Fastmail, FASTMAIL } from './fastmail.js';
+export { FastmailDav, FASTMAIL_DAV } from './fastmail-dav.js';
 export { Gitlab, GITLAB } from './gitlab.js';
 export { Zoom, ZOOM } from './zoom.js';
 export { Telegram, TELEGRAM } from './telegram.js';
