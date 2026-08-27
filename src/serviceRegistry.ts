@@ -44,6 +44,8 @@ import {
   HUGGINGFACE,
   OPENROUTER,
   TAILSCALE,
+  CLAUDE_AI,
+  CHATGPT,
 } from './services/index.js';
 
 export class DuplicateServiceNameError extends Error {
@@ -249,4 +251,6 @@ export const SERVICE_REGISTRY = new ServiceRegistry([
   HUGGINGFACE,
   OPENROUTER,
   TAILSCALE,
+  CLAUDE_AI,
+  CHATGPT,
 ]);
