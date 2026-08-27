@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
@@ -127,20 +127,27 @@ describe('/latchkey/ endpoint', () => {
   let logs: string[];
   let errorLogs: string[];
 
+  /**
+   * Merge into the config file the gateway reads, so that settings survive the
+   * per-request reload the way they do in a real deployment.
+   */
+  function updateConfigFile(update: Record<string, unknown>): void {
+    const path = join(tempDir, 'config.json');
+    const existing = existsSync(path)
+      ? (JSON.parse(readFileSync(path, 'utf-8')) as Record<string, unknown>)
+      : {};
+    writeFileSync(path, JSON.stringify({ ...existing, ...update }));
+  }
+
   function createMockConfig(configOverrides: Partial<Config> = {}): Config {
-    const base = new Config((name) => {
+    if (Object.keys(configOverrides).length > 0) {
+      updateConfigFile({ settings: configOverrides });
+    }
+    return new Config((name) => {
       if (name === 'LATCHKEY_DIRECTORY') return tempDir;
       if (name === 'LATCHKEY_ENCRYPTION_KEY') return TEST_ENCRYPTION_KEY;
       return undefined;
     });
-    if (Object.keys(configOverrides).length === 0) {
-      return base;
-    }
-    return Object.assign(
-      Object.create(Object.getPrototypeOf(base) as object) as Config,
-      base,
-      configOverrides
-    );
   }
 
   async function createTestGateway(

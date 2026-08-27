@@ -365,13 +365,22 @@ route your agent's `latchkey` calls to the host Latchkey
 agent won't be able to tamper with your Latchkey configuration
 while still being able to use Latchkey itself as intended.
 
-A running gateway reads the registered services from
-`config.json` on every request, so `latchkey services register`
-and `latchkey services deregister` take effect immediately, the
-same way stored credentials and `permissions.json` do. The
-`settings` section of `config.json` is still read once at
-startup, so changing a setting (including `hideBuiltinServices`)
-requires restarting the gateway.
+A running gateway reads the environment and `config.json` again on
+every request, so most changes take effect without a restart:
+services added or removed with `latchkey services register` and
+`latchkey services deregister`, and settings such as
+`passthroughUnknown`, `hideBuiltinServices`, `permissionsConfig`,
+`credentialsRefreshDisabled`, `browserDisabled` and `curlCommand`.
+Stored credentials and `permissions.json` were already read this
+way.
+
+The exceptions are the settings whose work is done before the
+first request arrives: `keyringServiceName` and
+`keyringAccountName` (the encryption key has already been
+resolved), `gatewayListenHost` and `gatewayListenPort` (the socket
+is already bound), and `countingDisabled` (the daily count has
+already run). The gateway logs a warning when it sees one of these
+change, and applying it needs a restart.
 
 #### Password
 

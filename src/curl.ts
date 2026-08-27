@@ -11,6 +11,26 @@ import { CONFIG } from './config.js';
 // have to depend on detent directly.
 export { CurlParseError, parseCurlArgs };
 
+/**
+ * The curl command to spawn, when something other than the startup config
+ * decides it. The gateway sets this per request so that a changed
+ * `curlCommand` reaches the call sites inside the services, which reach this
+ * module directly rather than through the CLI dependencies.
+ */
+let curlCommandOverride: string | null = null;
+
+export function setCurlCommand(command: string): void {
+  curlCommandOverride = command;
+}
+
+export function resetCurlCommand(): void {
+  curlCommandOverride = null;
+}
+
+function curlCommand(): string {
+  return curlCommandOverride ?? CONFIG.curlCommand;
+}
+
 export interface CurlResult {
   readonly returncode: number;
   readonly stdout: string;
@@ -28,7 +48,7 @@ export type SubprocessRunner = (args: readonly string[]) => CurlResult;
 export type DetachedSubprocessRunner = (args: readonly string[]) => void;
 
 function defaultSubprocessRunner(args: readonly string[]): CurlResult {
-  const result: SpawnSyncReturns<Buffer> = spawnSync(CONFIG.curlCommand, args as string[], {
+  const result: SpawnSyncReturns<Buffer> = spawnSync(curlCommand(), args as string[], {
     stdio: ['inherit', 'inherit', 'inherit'],
   });
   return {
@@ -39,7 +59,7 @@ function defaultSubprocessRunner(args: readonly string[]): CurlResult {
 }
 
 function defaultDetachedSubprocessRunner(args: readonly string[]): void {
-  const child = spawn(CONFIG.curlCommand, args as string[], {
+  const child = spawn(curlCommand(), args as string[], {
     stdio: 'ignore',
     detached: true,
   });
@@ -80,7 +100,7 @@ function defaultAsyncSubprocessRunner(
   options?: AsyncSubprocessOptions
 ): Promise<AsyncCurlResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(CONFIG.curlCommand, args as string[], {
+    const child = spawn(curlCommand(), args as string[], {
       stdio: ['pipe', 'pipe', 'pipe'],
       ...(options?.timeout !== undefined ? { timeout: options.timeout * 1000 } : {}),
     });

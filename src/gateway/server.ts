@@ -8,8 +8,10 @@
 import * as http from 'node:http';
 import type { ApiCredentialStore } from '../apiCredentials/store.js';
 import type { CliDependencies } from '../cliCommands.js';
+import type { Config } from '../config.js';
 import type { EncryptedStorage } from '../encryptedStorage.js';
 import { ErrorMessages } from '../errorMessages.js';
+import { setCurlCommand } from '../curl.js';
 import {
   extractTargetUrl,
   GATEWAY_PATH_PREFIX,
@@ -128,6 +130,72 @@ function runExtensions(
 }
 
 /**
+ * Settings a running gateway reads again but cannot act on, with the reason it
+ * cannot. Everything else in the config takes effect on the next request, so
+ * these are the ones worth telling the user about rather than leaving to be
+ * discovered.
+ */
+interface StartupOnlySetting {
+  readonly name: string;
+  readonly reason: string;
+  readonly read: (config: Config) => string | number | boolean;
+}
+
+const STARTUP_ONLY_SETTINGS: readonly StartupOnlySetting[] = [
+  {
+    name: 'keyringServiceName',
+    reason: 'the encryption key was resolved before the server started',
+    read: (config) => config.serviceName,
+  },
+  {
+    name: 'keyringAccountName',
+    reason: 'the encryption key was resolved before the server started',
+    read: (config) => config.accountName,
+  },
+  {
+    name: 'gatewayListenHost',
+    reason: 'the listening socket is already bound',
+    read: (config) => config.gatewayListenHost,
+  },
+  {
+    name: 'gatewayListenPort',
+    reason: 'the listening socket is already bound',
+    read: (config) => config.gatewayListenPort,
+  },
+  {
+    name: 'countingDisabled',
+    reason: 'daily counting runs once, at startup',
+    read: (config) => config.countingDisabled,
+  },
+];
+
+/**
+ * Report settings that changed since startup but cannot take effect until the
+ * gateway is restarted. Each is reported once, so that a config left in place
+ * does not repeat itself on every request.
+ */
+function reportSettingChangesNeedingRestart(
+  startupConfig: Config,
+  requestConfig: Config,
+  alreadyReported: Set<string>,
+  deps: CliDependencies
+): void {
+  for (const setting of STARTUP_ONLY_SETTINGS) {
+    if (alreadyReported.has(setting.name)) {
+      continue;
+    }
+    if (setting.read(startupConfig) === setting.read(requestConfig)) {
+      continue;
+    }
+    alreadyReported.add(setting.name);
+    deps.errorLog(
+      `Warning: '${setting.name}' has changed, but this gateway cannot apply it ` +
+        `because ${setting.reason}. Restart the gateway for it to take effect.`
+    );
+  }
+}
+
+/**
  * Start the gateway HTTP server.
  */
 export async function startGateway(
@@ -140,6 +208,8 @@ export async function startGateway(
 
   const extensions = await loadExtensions(deps.config.extensionsDirectoryPath);
   await startExtensions(extensions);
+
+  const settingChangesReported = new Set<string>();
 
   const server = http.createServer((request, response) => {
     const rawUrl = request.url ?? '';
@@ -156,20 +226,32 @@ export async function startGateway(
       return;
     }
 
-    // Build the registry from config.json as it reads now, rather than using
-    // the one in `deps`, so that registering or deregistering a service while
-    // the gateway runs takes effect without a restart — the way writes to the
-    // credential store and to permissions.json already do. Each request gets
-    // its own: a shared one would be rebuilt underneath requests already in
-    // flight.
+    // Read the environment and config.json again, so that everything the
+    // request path consults reflects what they say now rather than what they
+    // said at startup. Each request gets its own config and registry: shared
+    // ones would change underneath requests already in flight.
+    //
+    // Hiding is re-applied here from the config as it reads now, which works
+    // because the registry is rebuilt from the full set of built-in services: a
+    // name dropped from hideBuiltinServices brings its service back.
+    const requestConfig = deps.config.reload();
+    reportSettingChangesNeedingRestart(deps.config, requestConfig, settingChangesReported, deps);
     const requestDeps: CliDependencies = {
       ...deps,
+      config: requestConfig,
       registry: createServiceRegistry(
         deps.builtinServices,
-        deps.config.configPath,
-        deps.config.hideBuiltinServices
+        requestConfig.configPath,
+        requestConfig.hideBuiltinServices
       ),
     };
+
+    // curl is spawned from call sites deep inside the services, which reach the
+    // runner directly rather than through these dependencies, so the command to
+    // spawn is handed to that module instead of threaded down to them. Every
+    // request computes it from the same file, so concurrent requests write the
+    // same value except in the moment the file itself changes.
+    setCurlCommand(requestConfig.curlCommand);
 
     // Latchkey RPC endpoint
     if (rawUrl === '/latchkey/' || rawUrl === '/latchkey') {

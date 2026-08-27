@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Command } from 'commander';
@@ -16,7 +16,12 @@ import {
   PERMISSIONS_OVERRIDE_HEADER,
 } from '../src/gateway/permissionsOverride.js';
 import { startGateway, type GatewayServer } from '../src/gateway/server.js';
-import type { AsyncCurlResult, CurlResult } from '../src/curl.js';
+import {
+  resetCurlCommand,
+  runCapturedAsync,
+  type AsyncCurlResult,
+  type CurlResult,
+} from '../src/curl.js';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { ApiCredentialStore } from '../src/apiCredentials/store.js';
 import { Config } from '../src/config.js';
@@ -25,6 +30,7 @@ import {
   ServiceRegistry,
 } from '../src/serviceRegistry.js';
 import { Service } from '../src/services/core/base.js';
+import { GITHUB } from '../src/services/index.js';
 import { createMockService } from './mockService.js';
 
 const TEST_ENCRYPTION_KEY = 'dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q=';
@@ -204,20 +210,27 @@ describe('gateway server', () => {
     getSession: undefined,
   });
 
+  /**
+   * Merge into the config file the gateway reads, so that settings survive the
+   * per-request reload the way they do in a real deployment.
+   */
+  function updateConfigFile(update: Record<string, unknown>): void {
+    const path = join(tempDir, 'config.json');
+    const existing = existsSync(path)
+      ? (JSON.parse(readFileSync(path, 'utf-8')) as Record<string, unknown>)
+      : {};
+    writeFileSync(path, JSON.stringify({ ...existing, ...update }));
+  }
+
   function createMockConfig(configOverrides: Partial<Config> = {}): Config {
-    const base = new Config((name) => {
+    if (Object.keys(configOverrides).length > 0) {
+      updateConfigFile({ settings: configOverrides });
+    }
+    return new Config((name) => {
       if (name === 'LATCHKEY_DIRECTORY') return tempDir;
       if (name === 'LATCHKEY_ENCRYPTION_KEY') return TEST_ENCRYPTION_KEY;
       return undefined;
     });
-    if (Object.keys(configOverrides).length === 0) {
-      return base;
-    }
-    return Object.assign(
-      Object.create(Object.getPrototypeOf(base) as object) as Config,
-      base,
-      configOverrides
-    );
   }
 
   async function createTestGateway(
@@ -333,6 +346,7 @@ describe('gateway server', () => {
     if (gateway) {
       await gateway.close();
     }
+    resetCurlCommand();
     rmSync(tempDir, { recursive: true, force: true });
   });
 
@@ -989,7 +1003,7 @@ describe('gateway server', () => {
     };
 
     function writeRegisteredServices(registeredServices: Record<string, unknown>): void {
-      writeFileSync(join(tempDir, 'config.json'), JSON.stringify({ registeredServices }));
+      updateConfigFile({ registeredServices });
     }
 
     it('injects credentials for a service registered after startup', async () => {
@@ -1047,6 +1061,108 @@ describe('gateway server', () => {
       const response = await fetch('/gateway/https://slack.com/api/auth.test');
       expect(response.status).toBe(200);
       expect(capturedCurlArgs).toContain('Authorization: Bearer test-token');
+    });
+  });
+
+  describe('configuration changed while the gateway runs', () => {
+    function writeSettings(settings: Record<string, unknown>): void {
+      updateConfigFile({ settings });
+    }
+
+    it('applies passthroughUnknown enabled after startup', async () => {
+      gateway = await createTestGateway();
+
+      const beforeEnabling = await fetch('/gateway/https://unknown-api.example.com/thing');
+      expect(beforeEnabling.status).toBe(400);
+
+      writeSettings({ passthroughUnknown: true });
+
+      const afterEnabling = await fetch('/gateway/https://unknown-api.example.com/thing');
+      expect(afterEnabling.status).toBe(200);
+    });
+
+    it('applies passthroughUnknown disabled after startup', async () => {
+      writeSettings({ passthroughUnknown: true });
+      gateway = await createTestGateway();
+
+      const beforeDisabling = await fetch('/gateway/https://unknown-api.example.com/thing');
+      expect(beforeDisabling.status).toBe(200);
+
+      writeSettings({ passthroughUnknown: false });
+
+      const afterDisabling = await fetch('/gateway/https://unknown-api.example.com/thing');
+      expect(afterDisabling.status).toBe(400);
+    });
+
+    it('hides a service named in hideBuiltinServices after startup', async () => {
+      gateway = await createTestGateway();
+      expect((await fetch('/gateway/https://slack.com/api/auth.test')).status).toBe(200);
+
+      writeSettings({ hideBuiltinServices: ['slack'] });
+
+      expect((await fetch('/gateway/https://slack.com/api/auth.test')).status).toBe(400);
+    });
+
+    it('brings back a service dropped from hideBuiltinServices after startup', async () => {
+      // GitHub is among the built-in services but hidden at startup, so this
+      // only passes if hiding is re-applied per request from the config as it
+      // reads then, rather than baked into what the gateway starts from.
+      writeSettings({ hideBuiltinServices: ['github'] });
+      gateway = await createTestGateway(
+        {
+          github: {
+            objectType: 'rawCurl',
+            curlArguments: ['-H', 'Authorization: Bearer github-token'],
+          },
+        },
+        { builtinServices: [mockSlackService, GITHUB] }
+      );
+
+      const whileHidden = await fetch('/gateway/https://api.github.com/user');
+      expect(whileHidden.status).toBe(400);
+
+      writeSettings({ hideBuiltinServices: [] });
+
+      const afterUnhiding = await fetch('/gateway/https://api.github.com/user');
+      expect(afterUnhiding.status).toBe(200);
+      expect(capturedCurlArgs).toContain('Authorization: Bearer github-token');
+    });
+
+    it('warns once about a setting it cannot apply without a restart', async () => {
+      gateway = await createTestGateway();
+
+      writeSettings({ gatewayListenPort: 4242 });
+
+      await fetch('/gateway/https://slack.com/api/auth.test');
+      await fetch('/gateway/https://slack.com/api/auth.test');
+
+      const warnings = errorLogs.filter((message) => message.includes('gatewayListenPort'));
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain('listening socket is already bound');
+      expect(warnings[0]).toContain('Restart the gateway');
+    });
+
+    it('applies a changed curlCommand to the curl the services spawn', async () => {
+      gateway = await createTestGateway();
+
+      writeSettings({ curlCommand: 'echo' });
+      await fetch('/gateway/https://slack.com/api/auth.test');
+
+      // The proxy itself runs curl through the injected runCurlAsync, so what
+      // this checks is the other path: the gateway handing the command to the
+      // curl module, which is where the call sites inside the services reach
+      // for it.
+      const result = await runCapturedAsync(['picked-up']);
+      expect(result.stdout.trim()).toBe('picked-up');
+    });
+
+    it('does not warn about settings it can apply', async () => {
+      gateway = await createTestGateway();
+
+      writeSettings({ passthroughUnknown: true });
+      await fetch('/gateway/https://unknown-api.example.com/thing');
+
+      expect(errorLogs.filter((message) => message.startsWith('Warning:'))).toEqual([]);
     });
   });
 
