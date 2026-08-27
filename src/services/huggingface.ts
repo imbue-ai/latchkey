@@ -24,6 +24,7 @@ import {
   BrowserFollowupServiceSession,
   FollowupWork,
   LoginFailedError,
+  type ManualCredentialForm,
 } from './core/base.js';
 
 // Token creation can lag behind a slow sign-in or an extra confirmation step
@@ -70,6 +71,20 @@ const HF_PRE_LOGIN_PATH_PATTERN = /^\/(login|join|signup|oauth|sso|auth|logout)/
 
 class HuggingfaceServiceSession extends BrowserFollowupServiceSession {
   protected readonly followupWork = FollowupWork.CreateApiToken;
+  override readonly manualCredentialForm: ManualCredentialForm = {
+    instructions:
+      `To finish by hand, open ${HF_NEW_TOKEN_URL} in the other tab of this window, ` +
+      'give the token a name, and create it. The token is shown once, in the dialog ' +
+      'that follows.',
+    fields: [
+      {
+        name: 'token',
+        label: 'Access token',
+        hint: 'Starts with "hf_".',
+      },
+    ],
+    buildCredentials: (values) => new AuthorizationBearer(values.get('token')),
+  };
   private isLoggedIn = false;
 
   onResponse(response: Response): void {

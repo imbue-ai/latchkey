@@ -10,6 +10,7 @@ import {
   BrowserFollowupServiceSession,
   FollowupWork,
   LoginFailedError,
+  type ManualCredentialForm,
 } from './core/base.js';
 import { fetchAccountFromEndpoint, tryParseJson } from '../apiCredentials/account.js';
 
@@ -88,6 +89,21 @@ async function waitForWorkspaceName(page: Page): Promise<string> {
 
 class LinearServiceSession extends BrowserFollowupServiceSession {
   protected readonly followupWork = FollowupWork.CreateApiToken;
+  override readonly manualCredentialForm: ManualCredentialForm = {
+    instructions:
+      'To finish by hand, open your Linear workspace in the other tab of this window and ' +
+      'go to Settings → Security & access → Personal API keys (or ' +
+      'https://linear.app/<your-workspace>/settings/account/security/api-keys/new), ' +
+      'name the key, and create it. The key is shown once, right after creation.',
+    fields: [
+      {
+        name: 'apiKey',
+        label: 'Personal API key',
+        hint: 'Starts with "lin_api_".',
+      },
+    ],
+    buildCredentials: (values) => new AuthorizationBare(values.get('apiKey')),
+  };
   private isLoggedIn = false;
 
   onResponse(response: Response): void {

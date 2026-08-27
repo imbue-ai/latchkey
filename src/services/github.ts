@@ -10,6 +10,7 @@ import {
   BrowserFollowupServiceSession,
   FollowupWork,
   LoginFailedError,
+  type ManualCredentialForm,
 } from './core/base.js';
 import { fetchAccountFromEndpoint, tryParseJson } from '../apiCredentials/account.js';
 
@@ -83,6 +84,20 @@ const GITHUB_TOKEN_SCOPES = [
 
 class GithubServiceSession extends BrowserFollowupServiceSession {
   protected readonly followupWork = FollowupWork.CreateApiToken;
+  override readonly manualCredentialForm: ManualCredentialForm = {
+    instructions:
+      `To finish by hand, open ${GITHUB_NEW_TOKEN_URL} in the other tab of this window, ` +
+      'give the token a name, tick the appropriate scopes ("repo" and "user" ' +
+      'are the usual minimum), and click "Generate token".',
+    fields: [
+      {
+        name: 'token',
+        label: 'Personal access token',
+        hint: 'Starts with "ghp_" (classic) or "github_pat_" (fine-grained).',
+      },
+    ],
+    buildCredentials: (values) => new AuthorizationBearer(values.get('token')),
+  };
   private isLoggedIn = false;
 
   onResponse(response: Response): void {
