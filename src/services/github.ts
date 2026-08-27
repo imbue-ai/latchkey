@@ -89,6 +89,10 @@ const GITHUB_TOKEN_SCOPES = [
  * Exported for the test that keeps the field name and the builder in agreement.
  */
 export const GITHUB_MANUAL_CREDENTIAL_FORM: ManualCredentialForm = {
+  instructions:
+    `To finish by hand, open ${GITHUB_NEW_TOKEN_URL} in the other tab of this window, ` +
+    'give the token a name, tick the scopes latchkey should have ("repo" and "user" ' +
+    'are the usual minimum), and click "Generate token".',
   fields: [
     {
       name: 'token',
@@ -101,10 +105,6 @@ export const GITHUB_MANUAL_CREDENTIAL_FORM: ManualCredentialForm = {
 
 class GithubServiceSession extends BrowserFollowupServiceSession {
   protected readonly followupWork = FollowupWork.CreateApiToken;
-  protected override readonly manualCompletionInstructions =
-    `To finish by hand, open ${GITHUB_NEW_TOKEN_URL} in the other tab of this window, ` +
-    'give the token a name, tick the scopes latchkey should have ("repo" and "user" ' +
-    'are the usual minimum), and click "Generate token".';
   protected override readonly manualCredentialForm = GITHUB_MANUAL_CREDENTIAL_FORM;
   private isLoggedIn = false;
 

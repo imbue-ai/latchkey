@@ -77,15 +77,14 @@ step), usually by timing out. When that happens, the browser is
 signed in and sitting on the right page, so the login is usually
 still doable by hand — and a session can offer the user that way
 out by defining `manualCredentialForm` (see
-[GitHub](../src/services/github.ts)): the fields the user can
-paste back (typically one API key, sometimes a client id and
-secret) plus a `buildCredentials(values)` step.
+[GitHub](../src/services/github.ts)): `instructions` for doing it
+by hand ("open this URL, name the token, tick these scopes"), the
+fields the user can paste back (typically one API key, sometimes
+a client id and secret), and a `buildCredentials(values)` step.
 
 For such sessions, a failure no longer closes the browser. The
-spinner is replaced by a notice saying what failed, what to do
-about it (`manualCompletionInstructions`, e.g. "open this URL,
-name the token, tick these scopes") and the form itself. What the
-user submits is checked with the service's own
+spinner is replaced by a notice carrying those instructions and
+the form. What the user submits is checked with the service's own
 `checkApiCredentials` before being accepted, and rejected values
 are reported back into the form so they can be corrected on the
 spot.

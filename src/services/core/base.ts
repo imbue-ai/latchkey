@@ -31,8 +31,28 @@ import {
  * by the service's credential check, which runs before they are accepted.
  */
 export interface ManualCredentialForm {
+  /**
+   * What the user can do by hand, e.g. "create a token in Settings →
+   * Developer". Shown above the fields, so it should read as instructions
+   * rather than as a description. Don't forget that the breakage might have
+   * occurred in the middle of the process (not necessarily at the start).
+   */
+  readonly instructions: string;
   readonly fields: readonly CredentialFormField[];
   buildCredentials(values: CredentialFormValues): ApiCredentials;
+}
+
+/**
+ * The notice explains what to do, not what went wrong: the automation's error
+ * message means nothing to the user, and it is reported on the command line
+ * anyway.
+ */
+function buildFailureNoticeDetails(form: ManualCredentialForm): string {
+  return [
+    form.instructions,
+    'Then paste the credentials into the form below.',
+    'Closing this browser window gives up on the login.',
+  ].join('\n\n');
 }
 
 /** How long the browser is left open for the user to finish a failed flow. */
@@ -365,15 +385,6 @@ export abstract class ServiceSession {
   protected spinnerPage: Page | null = null;
 
   /**
-   * What the user can do by hand when the automation gives up, e.g. "create a
-   * token in Settings → Developer". Shown on the failure notice, so it should
-   * read as instructions rather than as a description. Don't
-   * forget that the breakage might have occurred in the middle
-   * of the process (not necessarily at the start).
-   */
-  protected readonly manualCompletionInstructions?: string;
-
-  /**
    * Form shown on the failure notice for the user to paste the credentials they
    * created by hand into.
    */
@@ -419,7 +430,7 @@ export abstract class ServiceSession {
         context,
         spinnerPage: this.spinnerPage,
         message: `Latchkey could not finish the ${this.service.displayName} login automatically.`,
-        details: this.buildFailureNoticeDetails(),
+        details: buildFailureNoticeDetails(form),
         fields: form.fields,
         decide: (values) => this.decideOnSubmittedCredentials(form, values),
         timeoutMs: MANUAL_COMPLETION_LIMIT_MS,
@@ -434,21 +445,6 @@ export abstract class ServiceSession {
     }
     // Nothing came of the request, so the automation failure is what gets reported.
     throw failure;
-  }
-
-  /**
-   * The notice explains what to do, not what went wrong: the automation's error
-   * message means nothing to the user, and it is reported on the command line
-   * anyway.
-   */
-  private buildFailureNoticeDetails(): string {
-    return [
-      this.manualCompletionInstructions ??
-        `You can try to retrieve the ${this.service.displayName} credentials yourself in the ` +
-          'other tab of this window.',
-      'Then paste the credentials into the form below.',
-      'Closing this browser window gives up on the login.',
-    ].join('\n\n');
   }
 
   /**
