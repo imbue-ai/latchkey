@@ -70,7 +70,6 @@ Above, when we say "API", we always mean a public API. Do
 not expose undocumented private APIs through Latchkey - agents
 should be able to determine usage by consulting the documentation.
 
-
 ### Service info
 
 Every service must include an `info` property that provides developer notes. This information is accessible via `latchkey services info <service_name>` and helps agents and users understand service-specific details such as:
