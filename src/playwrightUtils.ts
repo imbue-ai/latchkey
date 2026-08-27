@@ -215,11 +215,34 @@ export async function typeLikeHuman(page: Page, locator: Locator, text: string):
   }
 }
 
-// Script that creates the spinner overlay, designed to run in browser context
-function createSpinnerOverlayScript(message: string, details: string): string {
+/** One value the user can paste back when the automation could not get it. */
+export interface CredentialFormField {
+  /** Key the submitted value appears under. */
+  readonly name: string;
+  readonly label: string;
+  /** Example or explanation shown under the input. */
+  readonly hint?: string;
+}
+
+interface OverlayContent {
+  readonly message: string;
+  readonly details: string;
+  readonly showSpinner: boolean;
+  readonly formFields: readonly CredentialFormField[];
+}
+
+/**
+ * Script that creates the latchkey overlay, designed to run in browser context.
+ *
+ * The texts are injected as JSON literals and assigned as text rather than
+ * markup, so an error message that happens to contain a backtick or an angle
+ * bracket cannot break the script or the page.
+ */
+function createOverlayScript(content: OverlayContent): string {
+  const { message, details, showSpinner, formFields } = content;
   return `
 (() => {
-  if (document.getElementById('latchkey-spinner-overlay')) return;
+  document.getElementById('latchkey-spinner-overlay')?.remove();
   const overlay = document.createElement('div');
   overlay.id = 'latchkey-spinner-overlay';
   overlay.innerHTML = \`
@@ -254,6 +277,10 @@ function createSpinnerOverlayScript(message: string, details: string): string {
         text-align: center;
         max-width: 80%;
         white-space: pre-line;
+        /* The text is there to be read from and copied (URLs, mostly), which
+           needs the pointer to reach it — the overlay itself stays inert. */
+        pointer-events: auto;
+        user-select: text;
       }
       #latchkey-spinner-overlay .details {
         margin-top: 44px;
@@ -261,16 +288,140 @@ function createSpinnerOverlayScript(message: string, details: string): string {
         font-size: 13px;
         line-height: 1.6;
         text-align: left;
-        max-width: 360px;
+        max-width: 460px;
+        white-space: pre-line;
+        pointer-events: auto;
+        user-select: text;
+      }
+      #latchkey-spinner-overlay form {
+        margin-top: 28px;
+        width: 460px;
+        max-width: 80%;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        pointer-events: auto;
+        font-size: 13px;
+        color: #555;
+      }
+      #latchkey-spinner-overlay form label {
+        display: block;
+        margin-bottom: 4px;
+      }
+      #latchkey-spinner-overlay form input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 8px 10px;
+        border: 1px solid #cfcfcf;
+        border-radius: 4px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 13px;
+        background: #fff;
+      }
+      #latchkey-spinner-overlay form .hint {
+        margin-top: 4px;
+        color: #8a8a8a;
+        font-size: 12px;
+      }
+      #latchkey-spinner-overlay form button {
+        align-self: flex-start;
+        padding: 8px 16px;
+        border: none;
+        border-radius: 4px;
+        background: #007bff;
+        color: #fff;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      #latchkey-spinner-overlay form button:disabled {
+        background: #9dc7f5;
+        cursor: default;
+      }
+      #latchkey-spinner-overlay .form-status {
+        color: #c0392b;
+        font-size: 13px;
+        min-height: 18px;
+        white-space: pre-line;
+      }
+      #latchkey-spinner-overlay .form-status.accepted {
+        color: #1e7e34;
       }
       @keyframes latchkey-spin {
         to { transform: rotate(360deg); }
       }
     </style>
-    <div class="spinner"></div>
-    <div class="message">${message}</div>
-    ${details === '' ? '' : `<div class="details">${details}</div>`}
+    ${showSpinner ? '<div class="spinner"></div>' : ''}
+    <div class="message"></div>
+    <div class="details"></div>
   \`;
+  overlay.querySelector('.message').textContent = ${JSON.stringify(message)};
+  const detailsText = ${JSON.stringify(details)};
+  const detailsElement = overlay.querySelector('.details');
+  if (detailsText === '') {
+    detailsElement.remove();
+  } else {
+    detailsElement.textContent = detailsText;
+  }
+
+  const fields = ${JSON.stringify(formFields)};
+  if (fields.length > 0) {
+    const form = document.createElement('form');
+    const inputs = fields.map((field) => {
+      const wrapper = document.createElement('div');
+      const label = document.createElement('label');
+      label.textContent = field.label;
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.autocomplete = 'off';
+      input.spellcheck = false;
+      label.appendChild(input);
+      wrapper.appendChild(label);
+      if (field.hint) {
+        const hint = document.createElement('div');
+        hint.className = 'hint';
+        hint.textContent = field.hint;
+        wrapper.appendChild(hint);
+      }
+      form.appendChild(wrapper);
+      return { name: field.name, input: input };
+    });
+
+    const status = document.createElement('div');
+    status.className = 'form-status';
+    const submit = document.createElement('button');
+    submit.type = 'submit';
+    submit.textContent = 'Use these credentials';
+    form.appendChild(submit);
+    form.appendChild(status);
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const values = {};
+      for (const entry of inputs) {
+        values[entry.name] = entry.input.value.trim();
+      }
+      const isComplete = inputs.every((entry) => values[entry.name] !== '');
+      if (!isComplete) {
+        status.textContent = 'Please fill in every field.';
+        return;
+      }
+      status.className = 'form-status';
+      status.textContent = 'Checking the credentials...';
+      submit.disabled = true;
+      const decision = await window['${SUBMIT_CREDENTIALS_BINDING}'](values);
+      if (decision && decision.problem) {
+        status.textContent = decision.problem;
+        submit.disabled = false;
+        return;
+      }
+      status.className = 'form-status accepted';
+      status.textContent = 'Credentials accepted. This window can be closed.';
+    });
+
+    overlay.appendChild(form);
+    setTimeout(() => { inputs[0].input.focus(); }, 0);
+  }
+
   document.body.appendChild(overlay);
 })()
 `;
@@ -298,7 +449,155 @@ export async function showSpinnerPage(
     return null;
   }
   const spinnerPage = await context.newPage();
-  await spinnerPage.evaluate(createSpinnerOverlayScript(message, details));
+  await spinnerPage.evaluate(
+    createOverlayScript({ message, details, showSpinner: true, formFields: [] })
+  );
   await spinnerPage.bringToFront();
   return spinnerPage;
+}
+
+/** Name the credential form calls to hand what the user typed back to latchkey. */
+const SUBMIT_CREDENTIALS_BINDING = '__latchkeySubmitCredentials';
+
+export class CredentialFormFieldMissingError extends Error {
+  constructor(fieldName: string) {
+    super(`The credential form did not provide a value for '${fieldName}'.`);
+    this.name = 'CredentialFormFieldMissingError';
+  }
+}
+
+/** Non-empty values the user submitted, keyed by field name. */
+export class CredentialFormValues {
+  private readonly values: ReadonlyMap<string, string>;
+
+  constructor(values: ReadonlyMap<string, string>) {
+    this.values = values;
+  }
+
+  get(fieldName: string): string {
+    const value = this.values.get(fieldName);
+    if (value === undefined) {
+      throw new CredentialFormFieldMissingError(fieldName);
+    }
+    return value;
+  }
+}
+
+/**
+ * Turn what the form handed over into values, or null if it is not a complete
+ * set. The form checks completeness too; this is the Node-side half of that,
+ * so callers can rely on every field having a value.
+ */
+export function parseSubmittedCredentialValues(
+  submitted: unknown,
+  fields: readonly CredentialFormField[]
+): CredentialFormValues | null {
+  if (typeof submitted !== 'object' || submitted === null) {
+    return null;
+  }
+  const submittedValues = submitted as Record<string, unknown>;
+  const values = new Map<string, string>();
+  for (const field of fields) {
+    const value = submittedValues[field.name];
+    if (typeof value !== 'string' || value === '') {
+      return null;
+    }
+    values.set(field.name, value);
+  }
+  return new CredentialFormValues(values);
+}
+
+/** What the caller makes of a submission: a result, or a problem to report back. */
+export type CredentialFormDecision<T> = { readonly accepted: T } | { readonly problem: string };
+
+export interface CredentialRequest<T> {
+  readonly context: BrowserContext;
+  /**
+   * Page to show the request on, typically the spinner the user has been
+   * staring at. A page is opened when there is none (or it is already gone).
+   */
+  readonly spinnerPage: Page | null;
+  readonly message: string;
+  readonly details: string;
+  readonly fields: readonly CredentialFormField[];
+  /**
+   * Decides what a submission is worth, e.g. by checking the credentials it
+   * builds against the service. A returned problem is shown in the form, which
+   * then lets the user correct and submit again.
+   */
+  readonly decide: (values: CredentialFormValues) => Promise<CredentialFormDecision<T>>;
+  /** How long the request stays up before it is given up on. */
+  readonly timeoutMs: number;
+}
+
+/**
+ * Ask the user to paste in credentials the automation could not get, and wait
+ * for them to submit something acceptable.
+ *
+ * Returns null when nothing usable arrived: the user closed the browser, or the
+ * request timed out. There is no polling — the page calls in when the user
+ * submits, and its "checking..." state is resolved by what `decide` says.
+ */
+export async function requestCredentialsFromUser<T>(
+  request: CredentialRequest<T>
+): Promise<T | null> {
+  const { context, spinnerPage, message, details, fields, decide, timeoutMs } = request;
+  const page =
+    spinnerPage !== null && !spinnerPage.isClosed() ? spinnerPage : await context.newPage();
+
+  let resolveAccepted: (value: T | null) => void = () => {
+    /* replaced below */
+  };
+  const accepted = new Promise<T | null>((resolve) => {
+    resolveAccepted = resolve;
+  });
+
+  // Listened for before the form goes up: a browser closed while it is being
+  // rendered should end the wait just the same.
+  const abandoned = new Promise<null>((resolve) => {
+    const giveUp = () => {
+      resolve(null);
+    };
+    page.on('close', giveUp);
+    context.on('close', giveUp);
+    context.browser()?.on('disconnected', giveUp);
+  });
+
+  await page.exposeFunction(SUBMIT_CREDENTIALS_BINDING, async (submitted: unknown) => {
+    const values = parseSubmittedCredentialValues(submitted, fields);
+    if (values === null) {
+      return { problem: 'Please fill in every field.' };
+    }
+    let decision: CredentialFormDecision<T>;
+    try {
+      decision = await decide(values);
+    } catch (error: unknown) {
+      // The page is waiting for an answer, so failures are reported as
+      // problems rather than left to become an unhandled rejection there.
+      return { problem: error instanceof Error ? error.message : 'These values cannot be used.' };
+    }
+    if ('problem' in decision) {
+      return { problem: decision.problem };
+    }
+    resolveAccepted(decision.accepted);
+    return { accepted: true };
+  });
+
+  await page.evaluate(
+    createOverlayScript({ message, details, showSpinner: false, formFields: fields })
+  );
+  await page.bringToFront();
+
+  let timer: NodeJS.Timeout | undefined;
+  const timedOut = new Promise<null>((resolve) => {
+    timer = setTimeout(() => {
+      resolve(null);
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([accepted, abandoned, timedOut]);
+  } finally {
+    clearTimeout(timer);
+  }
 }

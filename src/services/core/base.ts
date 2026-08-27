@@ -14,10 +14,29 @@ import { runCapturedAsync } from '../../curl.js';
 import { EncryptedStorage } from '../../encryptedStorage.js';
 import {
   generateLatchkeyAppName,
+  requestCredentialsFromUser,
   showSpinnerPage,
   withTempBrowserContext,
   type BrowserLaunchOptions,
+  type CredentialFormDecision,
+  type CredentialFormField,
+  type CredentialFormValues,
 } from '../../playwrightUtils.js';
+
+/**
+ * Way out of a failed automation: the values the user can produce by hand and
+ * paste back, and how to turn them into credentials.
+ *
+ * The build step only shapes the values; whether they actually work is decided
+ * by the service's credential check, which runs before they are accepted.
+ */
+export interface ManualCredentialForm {
+  readonly fields: readonly CredentialFormField[];
+  buildCredentials(values: CredentialFormValues): ApiCredentials;
+}
+
+/** How long the browser is left open for the user to finish a failed flow. */
+const MANUAL_COMPLETION_LIMIT_MS = 30 * 60_000;
 
 export class NoCurlCredentialsNotSupportedError extends Error {
   constructor(serviceName: string) {
@@ -336,18 +355,125 @@ export abstract class ServiceSession {
   }
 
   /**
-   * Optionally diagnose a timeout error that occurred during credential finalization.
+   * Page hiding the automation from the user, for sessions that show one, or
+   * null while none is up (or when the spinner is disabled). It doubles as the
+   * place where a failure is explained to the user.
    *
-   * Services can override this to inspect the page state and return a more
-   * specific error (e.g., checking for permission denied messages).
-   * If this returns an error, it will be thrown instead of the generic
-   * LoginFailedError. If it returns null, the original timeout error message is used.
+   * Subclasses that temporarily surface a real page to the user (e.g. to have
+   * terms accepted) bring this page back to the front afterwards.
    */
-  protected diagnoseTimeoutError(
-    _context: BrowserContext,
-    _originalError: Error
-  ): Promise<Error | null> {
-    return Promise.resolve(null);
+  protected spinnerPage: Page | null = null;
+
+  /**
+   * What the user can do by hand when the automation gives up, e.g. "create a
+   * token in Settings → Developer". Shown on the failure notice, so it should
+   * read as instructions rather than as a description. Don't
+   * forget that the breakage might have occurred in the middle
+   * of the process (not necessarily at the start).
+   */
+  protected readonly manualCompletionInstructions?: string;
+
+  /**
+   * Form shown on the failure notice for the user to paste the credentials they
+   * created by hand into.
+   */
+  protected readonly manualCredentialForm?: ManualCredentialForm;
+
+  /**
+   * Turn a failed finalization into an error the user can act on, without
+   * taking the browser away from them.
+   *
+   * A broken automation usually means the service changed, which is precisely
+   * the situation where the flow is still perfectly doable by hand: the browser
+   * is signed in and sitting on the right page. So the spinner is replaced by
+   * an explanation of what failed and what to do about it, and the window stays
+   * open for a while, waiting for the user to paste the credentials in.
+   *
+   * This needs somewhere to put them, so sessions without a
+   * {@link manualCredentialForm} report the failure straight away rather than
+   * asking for work latchkey could not accept.
+   */
+  private async recoverFromFinalizationFailure(
+    context: BrowserContext,
+    error: Error
+  ): Promise<ApiCredentials> {
+    // A timeout says nothing beyond "the page did not do what we expected", so
+    // it is reported as the login failure it is.
+    const failure = isTimeoutError(error)
+      ? new LoginFailedError(`Login failed: ${error.message}`)
+      : error;
+
+    const form = this.manualCredentialForm;
+    if (form === undefined) {
+      throw failure;
+    }
+
+    console.error(
+      `[latchkey] The ${this.service.displayName} login automation failed. The browser ` +
+        'window is left open so the credentials can be provided by hand; close it to give up.'
+    );
+
+    let credentials: ApiCredentials | null;
+    try {
+      credentials = await requestCredentialsFromUser<ApiCredentials>({
+        context,
+        spinnerPage: this.spinnerPage,
+        message: `Latchkey could not finish the ${this.service.displayName} login automatically.`,
+        details: this.buildFailureNoticeDetails(),
+        fields: form.fields,
+        decide: (values) => this.decideOnSubmittedCredentials(form, values),
+        timeoutMs: MANUAL_COMPLETION_LIMIT_MS,
+      });
+    } catch {
+      // The browser is gone; there is nobody left to ask.
+      throw failure;
+    }
+
+    if (credentials !== null) {
+      return credentials;
+    }
+    // Nothing came of the request, so the automation failure is what gets reported.
+    throw failure;
+  }
+
+  /**
+   * The notice explains what to do, not what went wrong: the automation's error
+   * message means nothing to the user, and it is reported on the command line
+   * anyway.
+   */
+  private buildFailureNoticeDetails(): string {
+    return [
+      this.manualCompletionInstructions ??
+        `You can try to retrieve the ${this.service.displayName} credentials yourself in the ` +
+          'other tab of this window.',
+      'Then paste the credentials into the form below.',
+      'Closing this browser window gives up on the login.',
+    ].join('\n\n');
+  }
+
+  /**
+   * Turn submitted values into credentials, refusing them with a reason the form
+   * can show if the service does not accept them.
+   */
+  private async decideOnSubmittedCredentials(
+    form: ManualCredentialForm,
+    values: CredentialFormValues
+  ): Promise<CredentialFormDecision<ApiCredentials>> {
+    // A build error is reported to the user as a problem with what they typed:
+    // requestCredentialsFromUser turns it into one.
+    const credentials = form.buildCredentials(values);
+
+    // These were pasted by hand, so they are checked before being taken:
+    // finding out now beats storing a typo and failing on the next request.
+    const status = await this.service.checkApiCredentials(credentials);
+    if (status !== ApiCredentialStatus.Valid) {
+      return {
+        problem:
+          `${this.service.displayName} did not accept these credentials (${status}). ` +
+          'Please check them and try again.',
+      };
+    }
+    return { accepted: credentials };
   }
 
   /**
@@ -395,17 +521,13 @@ export abstract class ServiceSession {
       try {
         apiCredentials = await this.finalizeCredentials(browser, context, oldCredentials);
       } catch (error: unknown) {
-        if (error instanceof Error && isBrowserClosedError(error)) {
+        if (!(error instanceof Error)) {
+          throw error;
+        }
+        if (isBrowserClosedError(error)) {
           throw new LoginCancelledError();
         }
-        if (error instanceof Error && isTimeoutError(error)) {
-          const diagnosedError = await this.diagnoseTimeoutError(context, error);
-          if (diagnosedError !== null) {
-            throw diagnosedError;
-          }
-          throw new LoginFailedError(`Login failed: ${error.message}`);
-        }
-        throw error;
+        apiCredentials = await this.recoverFromFinalizationFailure(context, error);
       }
 
       if (apiCredentials === null) {
@@ -515,20 +637,8 @@ export function buildFollowupSpinnerDetails(
  * (e.g., navigating to settings and creating an API key).
  */
 export abstract class BrowserFollowupServiceSession extends ServiceSession {
-  private followupSpinnerPage: Page | null = null;
-
   /** What the followup does in the user's account, shown on the spinner page. */
   protected abstract readonly followupWork: FollowupWork;
-
-  /**
-   * Spinner page hiding the automation from the user while the followup runs,
-   * or null when the spinner is disabled. Subclasses that temporarily surface
-   * a real page to the user (e.g. to have terms accepted) bring this page back
-   * to the front afterwards.
-   */
-  protected get spinnerPage(): Page | null {
-    return this.followupSpinnerPage;
-  }
 
   /**
    * Perform actions in the browser to finalize and extract API credentials.
@@ -546,7 +656,7 @@ export abstract class BrowserFollowupServiceSession extends ServiceSession {
     context: BrowserContext,
     oldCredentials?: ApiCredentials
   ): Promise<ApiCredentials | null> {
-    this.followupSpinnerPage = await showSpinnerPage(
+    this.spinnerPage = await showSpinnerPage(
       context,
       `Finalizing ${this.service.displayName} login...`,
       buildFollowupSpinnerDetails(this.service.displayName, this.followupWork)

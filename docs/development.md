@@ -70,6 +70,39 @@ Above, when we say "API", we always mean a public API. Do
 not expose undocumented private APIs through Latchkey - agents
 should be able to determine usage by consulting the documentation.
 
+### When the automation breaks
+
+Browser automation eventually breaks (a redesign, a new consent
+step), usually by timing out. When that happens, the browser is
+signed in and sitting on the right page, so the login is usually
+still doable by hand — and a session can offer the user that way
+out by defining `manualCredentialForm` (see
+[GitHub](../src/services/github.ts)): the fields the user can
+paste back (typically one API key, sometimes a client id and
+secret) plus a `buildCredentials(values)` step.
+
+For such sessions, a failure no longer closes the browser. The
+spinner is replaced by a notice saying what failed, what to do
+about it (`manualCompletionInstructions`, e.g. "open this URL,
+name the token, tick these scopes") and the form itself. What the
+user submits is checked with the service's own
+`checkApiCredentials` before being accepted, and rejected values
+are reported back into the form so they can be corrected on the
+spot.
+
+Asking is deliberate: reading the credentials off the page would
+be guesswork about a service that has just proven it changed,
+while a form keeps working however the pages look.
+
+The wait ends when usable credentials are submitted, when the
+user closes the browser window, or after a fixed limit (15
+minutes). Unless credentials arrived, the original automation
+failure is the error that gets reported.
+
+Sessions without a form keep the old behaviour: the failure is
+reported immediately and the browser closes, since there is
+nowhere to put credentials the user might produce.
+
 ### Service info
 
 Every service must include an `info` property that provides developer notes. This information is accessible via `latchkey services info <service_name>` and helps agents and users understand service-specific details such as:
