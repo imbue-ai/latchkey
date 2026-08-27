@@ -275,11 +275,3 @@ export const BUILTIN_SERVICES: readonly Service[] = [
   OPENROUTER,
   TAILSCALE,
 ];
-
-/**
- * The built-in services alone, with nothing from config.json and nothing
- * hidden. The CLI and the gateway both build their own registry with
- * {@link createServiceRegistry} instead; this is for callers that want the
- * services latchkey ships with.
- */
-export const SERVICE_REGISTRY = new ServiceRegistry(BUILTIN_SERVICES);

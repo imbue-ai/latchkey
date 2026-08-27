@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { SERVICE_REGISTRY } from '../src/serviceRegistry.js';
+import { BUILTIN_SERVICE_REGISTRY } from './builtinServiceRegistry.js';
 import {
   BrowserFollowupServiceSession,
   type ManualCredentialForm,
@@ -37,7 +37,7 @@ interface NamedSession {
   readonly session: BrowserFollowupServiceSession;
 }
 
-const BROWSER_FOLLOWUP_SESSIONS: readonly NamedSession[] = SERVICE_REGISTRY.services
+const BROWSER_FOLLOWUP_SESSIONS: readonly NamedSession[] = BUILTIN_SERVICE_REGISTRY.services
   .map((service) => ({ service, session: service.getSession?.('latchkey') }))
   .filter(
     (candidate): candidate is NamedSession =>

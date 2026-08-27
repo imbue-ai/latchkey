@@ -365,14 +365,6 @@ route your agent's `latchkey` calls to the host Latchkey
 agent won't be able to tamper with your Latchkey configuration
 while still being able to use Latchkey itself as intended.
 
-A running gateway reads the registered services from
-`config.json` on every request, so `latchkey services register`
-and `latchkey services deregister` take effect immediately, the
-same way stored credentials and `permissions.json` do. The
-`settings` section of `config.json` is still read once at
-startup, so changing a setting (including `hideBuiltinServices`)
-requires restarting the gateway.
-
 #### Password
 
 You can additionally protect the gateway with a shared password.

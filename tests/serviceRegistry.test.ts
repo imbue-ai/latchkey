@@ -7,11 +7,11 @@ import {
   DuplicateServiceNameError,
   InvalidServiceNameError,
   ServiceRegistry,
-  SERVICE_REGISTRY,
   canonicalizeServiceName,
   hideServicesFromRegistry,
 } from '../src/serviceRegistry.js';
 import { RegisteredService } from '../src/services/core/registered.js';
+import { BUILTIN_SERVICE_REGISTRY } from './builtinServiceRegistry.js';
 import {
   SLACK,
   DISCORD,
@@ -72,16 +72,16 @@ describe('ServiceRegistry', () => {
 
     for (const [name, service] of namedServices) {
       it(`should find ${name} by name`, () => {
-        expect(SERVICE_REGISTRY.getByName(name)).toBe(service);
+        expect(BUILTIN_SERVICE_REGISTRY.getByName(name)).toBe(service);
       });
     }
 
     it('should return null for unknown service', () => {
-      expect(SERVICE_REGISTRY.getByName('unknown')).toBeNull();
+      expect(BUILTIN_SERVICE_REGISTRY.getByName('unknown')).toBeNull();
     });
 
     it('should be case-sensitive', () => {
-      expect(SERVICE_REGISTRY.getByName('Slack')).toBeNull();
+      expect(BUILTIN_SERVICE_REGISTRY.getByName('Slack')).toBeNull();
     });
   });
 
@@ -119,7 +119,7 @@ describe('ServiceRegistry', () => {
 
     for (const [url, service] of urlMappings) {
       it(`should find ${service.name} by URL ${url}`, () => {
-        expect(primaryServiceForUrl(SERVICE_REGISTRY, url)).toBe(service);
+        expect(primaryServiceForUrl(BUILTIN_SERVICE_REGISTRY, url)).toBe(service);
       });
     }
 
@@ -139,7 +139,7 @@ describe('ServiceRegistry', () => {
         'https://carddav.fastmail.com/dav/principals/',
       ];
       for (const url of urls) {
-        const claimants = SERVICE_REGISTRY.getCandidatesByUrl(url).filter(
+        const claimants = BUILTIN_SERVICE_REGISTRY.getCandidatesByUrl(url).filter(
           (service) => service === FASTMAIL || service === FASTMAIL_DAV
         );
         expect(claimants).toHaveLength(1);
@@ -147,36 +147,41 @@ describe('ServiceRegistry', () => {
     });
 
     it('should return null for unknown URL', () => {
-      expect(primaryServiceForUrl(SERVICE_REGISTRY, 'https://example.com/api')).toBeNull();
+      expect(primaryServiceForUrl(BUILTIN_SERVICE_REGISTRY, 'https://example.com/api')).toBeNull();
     });
 
     it('should not match partial URLs', () => {
-      expect(primaryServiceForUrl(SERVICE_REGISTRY, 'https://slack.com/')).toBeNull();
+      expect(primaryServiceForUrl(BUILTIN_SERVICE_REGISTRY, 'https://slack.com/')).toBeNull();
     });
 
     it('should match GitHub git smart-HTTP operation URLs', () => {
       expect(
         primaryServiceForUrl(
-          SERVICE_REGISTRY,
+          BUILTIN_SERVICE_REGISTRY,
           'https://github.com/owner/repo.git/info/refs?service=git-upload-pack'
         )
       ).toBe(GITHUB);
       expect(
-        primaryServiceForUrl(SERVICE_REGISTRY, 'https://github.com/owner/repo/git-upload-pack')
+        primaryServiceForUrl(
+          BUILTIN_SERVICE_REGISTRY,
+          'https://github.com/owner/repo/git-upload-pack'
+        )
       ).toBe(GITHUB);
     });
 
     it('should not match GitHub web pages as git operations', () => {
-      expect(primaryServiceForUrl(SERVICE_REGISTRY, 'https://github.com/owner/repo')).toBeNull();
       expect(
-        primaryServiceForUrl(SERVICE_REGISTRY, 'https://github.com/settings/tokens')
+        primaryServiceForUrl(BUILTIN_SERVICE_REGISTRY, 'https://github.com/owner/repo')
+      ).toBeNull();
+      expect(
+        primaryServiceForUrl(BUILTIN_SERVICE_REGISTRY, 'https://github.com/settings/tokens')
       ).toBeNull();
     });
   });
 
   describe('getCandidatesByUrl', () => {
     it('should return every service matching a shared Drive files URL', () => {
-      const candidates = SERVICE_REGISTRY.getCandidatesByUrl(
+      const candidates = BUILTIN_SERVICE_REGISTRY.getCandidatesByUrl(
         'https://www.googleapis.com/drive/v3/files?pageSize=1'
       );
       expect(candidates).toContain(GOOGLE_DRIVE);
@@ -188,23 +193,23 @@ describe('ServiceRegistry', () => {
     });
 
     it('should only match Drive itself for non-files Drive URLs', () => {
-      const candidates = SERVICE_REGISTRY.getCandidatesByUrl(
+      const candidates = BUILTIN_SERVICE_REGISTRY.getCandidatesByUrl(
         'https://www.googleapis.com/drive/v3/about?fields=user'
       );
       expect(candidates).toEqual([GOOGLE_DRIVE]);
     });
 
     it('should return an empty list for unknown URLs', () => {
-      expect(SERVICE_REGISTRY.getCandidatesByUrl('https://example.com/api')).toEqual([]);
+      expect(BUILTIN_SERVICE_REGISTRY.getCandidatesByUrl('https://example.com/api')).toEqual([]);
     });
   });
 
   describe('services', () => {
     it('should contain all registered services', () => {
-      expect(SERVICE_REGISTRY.services.length).toBeGreaterThan(0);
-      expect(SERVICE_REGISTRY.services).toContain(SLACK);
-      expect(SERVICE_REGISTRY.services).toContain(GITHUB);
-      expect(SERVICE_REGISTRY.services).toContain(AWS);
+      expect(BUILTIN_SERVICE_REGISTRY.services.length).toBeGreaterThan(0);
+      expect(BUILTIN_SERVICE_REGISTRY.services).toContain(SLACK);
+      expect(BUILTIN_SERVICE_REGISTRY.services).toContain(GITHUB);
+      expect(BUILTIN_SERVICE_REGISTRY.services).toContain(AWS);
     });
   });
 

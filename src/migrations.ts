@@ -11,7 +11,14 @@ import {
 import type { Config } from './config.js';
 import type { EncryptedStorage } from './encryptedStorage.js';
 import type { Service } from './services/core/base.js';
-import { SERVICE_REGISTRY } from './serviceRegistry.js';
+import { BUILTIN_SERVICES, ServiceRegistry } from './serviceRegistry.js';
+
+/**
+ * Migrations run before the CLI has built its own registry, and only ever need
+ * to recognize the services latchkey ships with: a credential stored under a
+ * name that is not one of them is left with an unknown status.
+ */
+const BUILTIN_SERVICE_REGISTRY = new ServiceRegistry(BUILTIN_SERVICES);
 
 export class MigrationError extends Error {
   constructor(message: string) {
@@ -85,7 +92,7 @@ async function resolveCredentialViaServiceRegistry(
   serviceName: string,
   credentialData: unknown
 ): Promise<ResolvedCredential> {
-  const service = SERVICE_REGISTRY.getByName(serviceName);
+  const service = BUILTIN_SERVICE_REGISTRY.getByName(serviceName);
   if (service === null) {
     return { status: ApiCredentialStatus.Unknown, account: null };
   }

@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { HUGGINGFACE } from '../src/services/huggingface.js';
-import { SERVICE_REGISTRY } from '../src/serviceRegistry.js';
+import { BUILTIN_SERVICE_REGISTRY } from './builtinServiceRegistry.js';
 import type { Service } from '../src/services/core/base.js';
 
 function primaryServiceForUrl(url: string): Service | null {
-  return SERVICE_REGISTRY.getByUrl(url);
+  return BUILTIN_SERVICE_REGISTRY.getByUrl(url);
 }
 
 describe('Hugging Face URL matching', () => {

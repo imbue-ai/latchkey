@@ -6,7 +6,7 @@ import {
   deserializeCredentials,
   ApiCredentialsSchema,
 } from '../src/apiCredentials/serialization.js';
-import { SERVICE_REGISTRY } from '../src/serviceRegistry.js';
+import { BUILTIN_SERVICE_REGISTRY } from './builtinServiceRegistry.js';
 import { resetAsyncSubprocessRunner, setAsyncSubprocessRunner } from '../src/curl.js';
 import type { Service } from '../src/services/core/base.js';
 
@@ -21,7 +21,7 @@ function mockCurlStdout(stdout: string): void {
 }
 
 function primaryServiceForUrl(url: string): Service | null {
-  return SERVICE_REGISTRY.getByUrl(url);
+  return BUILTIN_SERVICE_REGISTRY.getByUrl(url);
 }
 
 describe('Tailscale URL matching', () => {
