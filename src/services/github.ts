@@ -91,7 +91,7 @@ const GITHUB_TOKEN_SCOPES = [
 export const GITHUB_MANUAL_CREDENTIAL_FORM: ManualCredentialForm = {
   instructions:
     `To finish by hand, open ${GITHUB_NEW_TOKEN_URL} in the other tab of this window, ` +
-    'give the token a name, tick the scopes latchkey should have ("repo" and "user" ' +
+    'give the token a name, tick the appropriate scopes ("repo" and "user" ' +
     'are the usual minimum), and click "Generate token".',
   fields: [
     {

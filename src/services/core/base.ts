@@ -429,7 +429,7 @@ export abstract class ServiceSession {
       credentials = await requestCredentialsFromUser<ApiCredentials>({
         context,
         spinnerPage: this.spinnerPage,
-        message: `Latchkey could not finish the ${this.service.displayName} login automatically.`,
+        message: `The ${this.service.displayName} credentials could not be retrieved automatically.`,
         details: buildFailureNoticeDetails(form),
         fields: form.fields,
         decide: (values) => this.decideOnSubmittedCredentials(form, values),
@@ -619,10 +619,7 @@ export function buildFollowupSpinnerDetails(
   followupWork: FollowupWork,
   durationSentence = 'This can take a while.'
 ): string {
-  return (
-    `${followupWork} your ${displayName} account. ${durationSentence} ` +
-    'If the process fails, click the first browser tab in this window to manually complete it.'
-  );
+  return `${followupWork} your ${displayName} account. ${durationSentence} `;
 }
 
 /**
