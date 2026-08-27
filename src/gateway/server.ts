@@ -18,6 +18,7 @@ import {
 } from './gatewayEndpoint.js';
 import { handleLatchkeyRequest } from './latchkeyEndpoint.js';
 import { GATEWAY_PASSWORD_HEADER, passwordsMatch } from './password.js';
+import { createServiceRegistry } from '../serviceRegistry.js';
 import {
   dispatchExtensionRequest,
   loadExtensions,
@@ -155,12 +156,27 @@ export async function startGateway(
       return;
     }
 
+    // Build the registry from config.json as it reads now, rather than using
+    // the one in `deps`, so that registering or deregistering a service while
+    // the gateway runs takes effect without a restart — the way writes to the
+    // credential store and to permissions.json already do. Each request gets
+    // its own: a shared one would be rebuilt underneath requests already in
+    // flight.
+    const requestDeps: CliDependencies = {
+      ...deps,
+      registry: createServiceRegistry(
+        deps.builtinServices,
+        deps.config.configPath,
+        deps.config.hideBuiltinServices
+      ),
+    };
+
     // Latchkey RPC endpoint
     if (rawUrl === '/latchkey/' || rawUrl === '/latchkey') {
       const requestPromise = handleLatchkeyRequest(
         request,
         response,
-        deps,
+        requestDeps,
         apiCredentialStore,
         encryptedStorage
       ).catch((error: unknown) => {
@@ -192,7 +208,7 @@ export async function startGateway(
         request,
         response,
         targetUrl,
-        deps,
+        requestDeps,
         apiCredentialStore,
         options
       ).catch((error: unknown) => {
@@ -212,7 +228,7 @@ export async function startGateway(
     }
 
     // Finally, try extensions (if any).
-    const requestPromise = runExtensions(request, response, extensions, deps, options)
+    const requestPromise = runExtensions(request, response, extensions, requestDeps, options)
       .then((handled) => {
         if (!handled && !response.headersSent) {
           response.writeHead(404);

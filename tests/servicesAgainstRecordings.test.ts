@@ -23,7 +23,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import type { Response, Request } from 'playwright';
 import { ApiCredentials } from '../src/apiCredentials/base.js';
-import { SERVICE_REGISTRY } from '../src/serviceRegistry.js';
+import { BUILTIN_SERVICE_REGISTRY } from './builtinServiceRegistry.js';
 import { Service, SimpleServiceSession } from '../src/services/core/base.js';
 
 // Get the directory of this file
@@ -225,7 +225,7 @@ describe('Services Against Recordings', () => {
 
   for (const { serviceName, recordingPath } of discoveredRecordings) {
     it(`should extract credentials from ${serviceName} recording`, async () => {
-      const service = SERVICE_REGISTRY.getByName(serviceName);
+      const service = BUILTIN_SERVICE_REGISTRY.getByName(serviceName);
 
       if (service === null) {
         // Skip if service not found in registry

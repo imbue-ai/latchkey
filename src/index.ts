@@ -78,4 +78,4 @@ export {
 } from './services/index.js';
 
 // ServiceRegistry
-export { ServiceRegistry, SERVICE_REGISTRY } from './serviceRegistry.js';
+export { ServiceRegistry } from './serviceRegistry.js';

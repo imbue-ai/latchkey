@@ -43,10 +43,11 @@ import type { CurlResult } from './curl.js';
 import { EncryptedStorage, EncryptedStorageError } from './encryptedStorage.js';
 import { encrypt, EncryptionError, resolveEncryptionKey } from './encryption.js';
 import {
+  BUILTIN_SERVICES,
+  createServiceRegistry,
   DuplicateServiceNameError,
   InvalidServiceNameError,
   ServiceRegistry,
-  SERVICE_REGISTRY,
   canonicalizeServiceName,
 } from './serviceRegistry.js';
 import { buildRegisteredServiceOptions, RegisteredService } from './services/core/registered.js';
@@ -117,6 +118,13 @@ export const PERMISSION_DENIED_EXIT_CODE = 126;
  */
 export interface CliDependencies {
   readonly registry: ServiceRegistry;
+  /**
+   * The services latchkey ships with, which is what a registry is built on top
+   * of before config.json is applied to it. The gateway rebuilds a registry
+   * from these on every request, so it needs them separately from `registry`,
+   * which has already had config.json applied and the hidden services removed.
+   */
+  readonly builtinServices: readonly Service[];
   readonly config: Config;
   readonly runCurl: (args: readonly string[]) => CurlResult;
   readonly runCurlAsync: typeof curlRunAsync;
@@ -139,7 +147,15 @@ export interface CliDependencies {
  */
 export function createDefaultDependencies(): CliDependencies {
   return {
-    registry: SERVICE_REGISTRY,
+    // Pointed at a remote gateway, the CLI forwards commands rather than
+    // resolving services itself, so it leaves the registered ones to the
+    // gateway.
+    registry: createServiceRegistry(
+      BUILTIN_SERVICES,
+      CONFIG.gatewayUrl === null ? CONFIG.configPath : null,
+      CONFIG.hideBuiltinServices
+    ),
+    builtinServices: BUILTIN_SERVICES,
     config: CONFIG,
     runCurl: curlRun,
     runCurlAsync: curlRunAsync,

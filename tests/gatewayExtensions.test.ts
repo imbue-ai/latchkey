@@ -182,6 +182,7 @@ describe('startExtensions / stopExtensions', () => {
   function makeFakeDeps(errorLogs: string[]): CliDependencies {
     return {
       registry: new ServiceRegistry([]),
+      builtinServices: [],
       config: new Config(() => undefined),
       runCurl: (): CurlResult => ({ returncode: 0, stdout: '', stderr: '' }),
       runCurlAsync: (): Promise<AsyncCurlResult> =>
@@ -352,6 +353,7 @@ describe('gateway extensions integration', () => {
     const config = createMockConfig();
     const deps: CliDependencies = {
       registry: new ServiceRegistry([]),
+      builtinServices: [],
       config,
       runCurl: (): CurlResult => ({ returncode: 0, stdout: '', stderr: '' }),
       runCurlAsync: (): Promise<AsyncCurlResult> =>
