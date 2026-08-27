@@ -185,6 +185,13 @@ function resolveBoolean(envValue: string | undefined, fileValue: boolean | undef
  * LATCHKEY_DIRECTORY and LATCHKEY_ENCRYPTION_KEY are env-only.
  */
 export class Config {
+  /**
+   * Where this config was read from, kept so that {@link reload} can consult
+   * the same sources again.
+   */
+  readonly getEnv: (name: string) => string | undefined;
+  readonly loadSettingsFromFile: (configPath: string) => Settings;
+
   readonly directory: string;
   readonly curlCommand: string;
   /**
@@ -293,6 +300,9 @@ export class Config {
     getEnv: (name: string) => string | undefined = (name) => process.env[name],
     loadSettingsFromFile: (configPath: string) => Settings = loadSettings
   ) {
+    this.getEnv = getEnv;
+    this.loadSettingsFromFile = loadSettingsFromFile;
+
     // The directory and encryption key are configured exclusively via environment variables;
     // they cannot be set from config.json (the directory determines where config.json lives).
     const directoryEnv = getEnv(LATCHKEY_DIRECTORY_ENV_VAR);
@@ -382,6 +392,15 @@ export class Config {
       settings.appNamePrefix,
       DEFAULT_APP_NAME_PREFIX
     );
+  }
+
+  /**
+   * Read the same environment and config file again, returning what they say
+   * now. The receiver is left untouched, so a caller holding it keeps a stable
+   * view for as long as it needs one.
+   */
+  reload(): Config {
+    return new Config(this.getEnv, this.loadSettingsFromFile);
   }
 
   get credentialStorePath(): string {

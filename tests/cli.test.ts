@@ -411,6 +411,11 @@ describe('CLI commands with dependency injection', () => {
       appNamePrefix: overrides.appNamePrefix ?? defaultConfig.appNamePrefix,
       checkSensitiveFilePermissions: () => undefined,
       checkSystemPrerequisites: () => undefined,
+      getEnv: () => undefined,
+      loadSettingsFromFile: () => ({}),
+      // A reloaded stand-in reads the same stubbed sources, so it says exactly
+      // what this one says.
+      reload: () => createMockConfig(overrides),
     };
   }
 

@@ -256,4 +256,54 @@ describe('Config with config.json settings', () => {
 
     expect(config.curlCommand).toBe('curl');
   });
+
+  describe('reload', () => {
+    it('picks up a setting written after the config was constructed', () => {
+      const config = makeConfig();
+      expect(config.passthroughUnknown).toBe(false);
+
+      writeSettings({ passthroughUnknown: true });
+
+      expect(config.reload().passthroughUnknown).toBe(true);
+    });
+
+    it('picks up a setting removed after the config was constructed', () => {
+      writeSettings({ passthroughUnknown: true });
+      const config = makeConfig();
+      expect(config.passthroughUnknown).toBe(true);
+
+      writeSettings({});
+
+      expect(config.reload().passthroughUnknown).toBe(false);
+    });
+
+    it('leaves the config it was called on untouched', () => {
+      const config = makeConfig();
+
+      writeSettings({ passthroughUnknown: true, hideBuiltinServices: ['slack'] });
+      const reloaded = config.reload();
+
+      expect(config.passthroughUnknown).toBe(false);
+      expect(config.hideBuiltinServices).toEqual([]);
+      expect(reloaded.passthroughUnknown).toBe(true);
+      expect(reloaded.hideBuiltinServices).toEqual(['slack']);
+    });
+
+    it('reads the same environment the config was built from', () => {
+      const config = makeConfig({ LATCHKEY_CURL: '/usr/bin/env-curl' });
+
+      writeSettings({ curlCommand: '/usr/bin/file-curl' });
+
+      // The environment still wins over the file, as it does at construction.
+      expect(config.reload().curlCommand).toBe('/usr/bin/env-curl');
+      expect(config.reload().directory).toBe(directory);
+    });
+
+    it('can be called repeatedly', () => {
+      const config = makeConfig();
+
+      writeSettings({ passthroughUnknown: true });
+      expect(config.reload().reload().passthroughUnknown).toBe(true);
+    });
+  });
 });
