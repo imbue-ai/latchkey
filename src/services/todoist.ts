@@ -9,6 +9,7 @@ import {
   BrowserFollowupServiceSession,
   FollowupWork,
   LoginFailedError,
+  type ManualCredentialForm,
 } from './core/base.js';
 import { fetchAccountFromEndpoint, tryParseJson } from '../apiCredentials/account.js';
 
@@ -25,6 +26,13 @@ class TodoistServiceSession extends BrowserFollowupServiceSession {
   // Todoist does not mint a new token: the personal API token already exists on
   // the Developer settings page and is only read from there.
   protected readonly followupWork = FollowupWork.RetrieveApiToken;
+  override readonly manualCredentialForm: ManualCredentialForm = {
+    instructions:
+      `To finish by hand, open ${TODOIST_DEVELOPER_SETTINGS_URL} in the other tab of this ` +
+      'window and copy the API token shown there.',
+    fields: [{ name: 'token', label: 'API token' }],
+    buildCredentials: (values) => new AuthorizationBearer(values.get('token')),
+  };
   private isLoggedIn = false;
 
   onResponse(response: Response): void {

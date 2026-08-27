@@ -20,6 +20,7 @@ import {
   BrowserFollowupServiceSession,
   FollowupWork,
   LoginFailedError,
+  type ManualCredentialForm,
 } from './core/base.js';
 
 const DEFAULT_TIMEOUT_MS = 12000;
@@ -52,6 +53,19 @@ const OPENROUTER_KEY_PATTERN = /sk-or-v1-[A-Za-z0-9-]+/;
 
 class OpenrouterServiceSession extends BrowserFollowupServiceSession {
   protected readonly followupWork = FollowupWork.CreateApiToken;
+  override readonly manualCredentialForm: ManualCredentialForm = {
+    instructions:
+      `To finish by hand, open ${OPENROUTER_KEYS_URL} in the other tab of this window, ` +
+      'create a key, and copy the value the dialog reveals.',
+    fields: [
+      {
+        name: 'apiKey',
+        label: 'API key',
+        hint: 'Starts with "sk-or-v1-".',
+      },
+    ],
+    buildCredentials: (values) => new AuthorizationBearer(values.get('apiKey')),
+  };
   private isLoggedIn = false;
 
   onResponse(response: Response): void {

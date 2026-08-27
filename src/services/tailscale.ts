@@ -28,6 +28,7 @@ import {
   LoginFailedError,
   isBrowserClosedError,
   LoginCancelledError,
+  type ManualCredentialForm,
 } from './core/base.js';
 
 const DEFAULT_TIMEOUT_MS = 30000;
@@ -107,6 +108,26 @@ export class TailscaleCredentials implements ApiCredentials {
 
 class TailscaleServiceSession extends BrowserFollowupServiceSession {
   protected readonly followupWork = FollowupWork.CreateApiToken;
+  override readonly manualCredentialForm: ManualCredentialForm = {
+    instructions:
+      `To finish by hand, open ${TAILSCALE_KEYS_URL} in the other tab of this window and ` +
+      'generate an API access token. The tailnet name is shown at the top of the admin ' +
+      'console; almost every Tailscale API path needs it, which is why it is asked for here.',
+    fields: [
+      {
+        name: 'token',
+        label: 'API access token',
+        hint: 'Starts with "tskey-api-".',
+      },
+      {
+        name: 'tailnet',
+        label: 'Tailnet',
+        hint: 'For example "example.com" or "tail1234.ts.net".',
+      },
+    ],
+    buildCredentials: (values) =>
+      new TailscaleCredentials(values.get('token'), values.get('tailnet')),
+  };
   private isLoggedIn = false;
 
   onResponse(response: Response): void {

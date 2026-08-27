@@ -387,8 +387,12 @@ export abstract class ServiceSession {
   /**
    * Form shown on the failure notice for the user to paste the credentials they
    * created by hand into.
+   *
+   * Public so the fields and instructions can be inspected without running a
+   * browser — which is how the tests check that every session that should offer
+   * one does, and that its builder agrees with its field names.
    */
-  protected readonly manualCredentialForm?: ManualCredentialForm;
+  readonly manualCredentialForm?: ManualCredentialForm;
 
   /**
    * Turn a failed finalization into an error the user can act on, without
@@ -457,7 +461,16 @@ export abstract class ServiceSession {
   ): Promise<CredentialFormDecision<ApiCredentials>> {
     // A build error is reported to the user as a problem with what they typed:
     // requestCredentialsFromUser turns it into one.
-    const credentials = form.buildCredentials(values);
+    const built = form.buildCredentials(values);
+
+    // Some pasted values are not usable as they stand — Zoom's server-to-server
+    // app credentials have to mint an access token first — so they get the same
+    // refresh the stored ones would, or the check below would call a perfectly
+    // good app "missing".
+    const credentials =
+      built.isExpired() === true && this.service.refreshCredentials
+        ? ((await this.service.refreshCredentials(built)) ?? built)
+        : built;
 
     // These were pasted by hand, so they are checked before being taken:
     // finding out now beats storing a typo and failing on the next request.

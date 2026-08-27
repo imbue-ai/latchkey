@@ -82,30 +82,22 @@ const GITHUB_TOKEN_SCOPES = [
   'project',
 ] as const;
 
-/**
- * What the user pastes back when the token automation fails: GitHub tokens are
- * a single opaque string, so one field is enough.
- *
- * Exported for the test that keeps the field name and the builder in agreement.
- */
-export const GITHUB_MANUAL_CREDENTIAL_FORM: ManualCredentialForm = {
-  instructions:
-    `To finish by hand, open ${GITHUB_NEW_TOKEN_URL} in the other tab of this window, ` +
-    'give the token a name, tick the appropriate scopes ("repo" and "user" ' +
-    'are the usual minimum), and click "Generate token".',
-  fields: [
-    {
-      name: 'token',
-      label: 'Personal access token',
-      hint: 'Starts with "ghp_" (classic) or "github_pat_" (fine-grained).',
-    },
-  ],
-  buildCredentials: (values) => new AuthorizationBearer(values.get('token')),
-};
-
 class GithubServiceSession extends BrowserFollowupServiceSession {
   protected readonly followupWork = FollowupWork.CreateApiToken;
-  protected override readonly manualCredentialForm = GITHUB_MANUAL_CREDENTIAL_FORM;
+  override readonly manualCredentialForm: ManualCredentialForm = {
+    instructions:
+      `To finish by hand, open ${GITHUB_NEW_TOKEN_URL} in the other tab of this window, ` +
+      'give the token a name, tick the appropriate scopes ("repo" and "user" ' +
+      'are the usual minimum), and click "Generate token".',
+    fields: [
+      {
+        name: 'token',
+        label: 'Personal access token',
+        hint: 'Starts with "ghp_" (classic) or "github_pat_" (fine-grained).',
+      },
+    ],
+    buildCredentials: (values) => new AuthorizationBearer(values.get('token')),
+  };
   private isLoggedIn = false;
 
   onResponse(response: Response): void {

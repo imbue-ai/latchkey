@@ -21,6 +21,7 @@ import {
   LoginCancelledError,
   LoginFailedError,
   Service,
+  type ManualCredentialForm,
 } from './core/base.js';
 
 const ZOOM_TOKEN_ENDPOINT = 'https://zoom.us/oauth/token';
@@ -683,6 +684,24 @@ async function mintFirstAccessToken(
 
 class ZoomServiceSession extends BrowserFollowupServiceSession {
   protected readonly followupWork = FollowupWork.CreateApp;
+  override readonly manualCredentialForm: ManualCredentialForm = {
+    instructions:
+      `To finish by hand, open ${ZOOM_MARKETPLACE_BUILD_URL} in the other tab of this ` +
+      'window and create (or open) a "Server-to-Server OAuth" app, adding the appropriate scopes ' +
+      "and activating it. Its three credentials are on the app's " +
+      '"App Credentials" page.',
+    fields: [
+      { name: 'accountId', label: 'Account ID' },
+      { name: 'clientId', label: 'Client ID' },
+      { name: 'clientSecret', label: 'Client secret' },
+    ],
+    buildCredentials: (values) =>
+      new ZoomServerToServerCredentials(
+        values.get('accountId'),
+        values.get('clientId'),
+        values.get('clientSecret')
+      ),
+  };
   private isSignedIn = false;
 
   /**

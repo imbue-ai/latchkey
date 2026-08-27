@@ -18,8 +18,6 @@ import {
   type CredentialFormDecision,
   type CredentialFormField,
 } from '../src/playwrightUtils.js';
-import { GITHUB_MANUAL_CREDENTIAL_FORM } from '../src/services/github.js';
-import { AuthorizationBearer } from '../src/apiCredentials/base.js';
 
 const FORM_FIELDS: readonly CredentialFormField[] = [
   { name: 'clientId', label: 'Client ID' },
@@ -273,19 +271,5 @@ describe('CredentialFormValues', () => {
   it('rejects reading a field the form does not have', () => {
     const values = new CredentialFormValues(new Map([['token', 'ghp_1']]));
     expect(() => values.get('somethingElse')).toThrow(CredentialFormFieldMissingError);
-  });
-});
-
-describe('GitHub manual credential form', () => {
-  it('turns a pasted token into bearer credentials', async () => {
-    expect(GITHUB_MANUAL_CREDENTIAL_FORM.fields).toHaveLength(1);
-    const field = GITHUB_MANUAL_CREDENTIAL_FORM.fields[0];
-    const values = new CredentialFormValues(new Map([[field?.name ?? '', 'ghp_pasted']]));
-    const credentials = GITHUB_MANUAL_CREDENTIAL_FORM.buildCredentials(values);
-    expect(credentials).toBeInstanceOf(AuthorizationBearer);
-    await expect(credentials.injectIntoCurlCall([])).resolves.toEqual([
-      '-H',
-      'Authorization: Bearer ghp_pasted',
-    ]);
   });
 });

@@ -21,6 +21,7 @@ import {
   BrowserFollowupServiceSession,
   FollowupWork,
   LoginFailedError,
+  type ManualCredentialForm,
 } from './core/base.js';
 
 const DEFAULT_TIMEOUT_MS = 8000;
@@ -57,6 +58,19 @@ function ngrokCredentials(apiKey: string): RawCurlCredentials {
 
 class NgrokServiceSession extends BrowserFollowupServiceSession {
   protected readonly followupWork = FollowupWork.CreateApiToken;
+  override readonly manualCredentialForm: ManualCredentialForm = {
+    instructions:
+      `To finish by hand, open ${NGROK_NEW_API_KEY_URL} in the other tab of this window, ` +
+      'describe the key, and add it. The key is shown once, right after creation.',
+    fields: [
+      {
+        name: 'apiKey',
+        label: 'API key',
+        hint: 'The long secret shown in the dialog right after the key is added.',
+      },
+    ],
+    buildCredentials: (values) => ngrokCredentials(values.get('apiKey')),
+  };
   private isLoggedIn = false;
 
   onResponse(response: Response): void {

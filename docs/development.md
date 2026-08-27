@@ -93,6 +93,13 @@ Asking is deliberate: reading the credentials off the page would
 be guesswork about a service that has just proven it changed,
 while a form keeps working however the pages look.
 
+Every browser-automated service should have one. The exceptions
+are logins that end in an OAuth exchange against an app latchkey
+itself created (Dropbox, the Google services): there is no value
+the user could paste, so those still fail immediately.
+`tests/manualCredentialForms.test.ts` walks the registry and
+holds everyone else to it.
+
 The wait ends when usable credentials are submitted, when the
 user closes the browser window, or after a fixed limit (15
 minutes). Unless credentials arrived, the original automation
