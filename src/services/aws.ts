@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { z } from 'zod';
 import { ApiCredentialsUsageError, type ApiCredentials } from '../apiCredentials/base.js';
 import { fetchAccountFromEndpoint } from '../apiCredentials/account.js';
-import { CurlParseError, parseCurlArgs } from '../curl.js';
+import { CurlParseError, parseCurlArgs, resolveCurlRequestBodySource } from '../curl.js';
 import { NoCurlCredentialsNotSupportedError, Service } from './core/base.js';
 
 /**
@@ -28,34 +28,12 @@ function sha256HexOfText(text: string): string {
 }
 
 /**
- * curl reads the payload from a file (or stdin) when a data flag's value
- * starts with `@`. The curl parser does not resolve those references, so the
- * parsed body is just the placeholder text.
- */
-const CURL_DATA_FLAGS: ReadonlySet<string> = new Set([
-  '-d',
-  '--data',
-  '--data-ascii',
-  '--data-binary',
-]);
-
-function findFileReferenceDataArgument(curlArguments: readonly string[]): string | null {
-  for (let index = 0; index < curlArguments.length - 1; index++) {
-    const value = curlArguments[index + 1]!;
-    if (CURL_DATA_FLAGS.has(curlArguments[index]!) && value.startsWith('@')) {
-      return value;
-    }
-  }
-  return null;
-}
-
-/**
  * Resolve the bytes curl will actually send, which is what SigV4 must hash.
  *
  * Callers that stream the payload to curl out-of-band (the gateway pipes it in
- * via `--data-binary @-`) pass it explicitly. Otherwise a `@file` reference is
- * read from disk, and a `@-` reference without an explicit body cannot be
- * signed at all because the payload only exists on curl's stdin.
+ * via `--data-binary @-`) pass it explicitly. Otherwise the payload has to come
+ * from the arguments: a `@file` reference is read from disk, while a body that
+ * only exists on curl's stdin, or one curl assembles itself, cannot be signed.
  */
 function resolveRequestBody(
   curlArguments: readonly string[],
@@ -66,20 +44,20 @@ function resolveRequestBody(
     return outOfBandRequestBody;
   }
 
-  const fileReference = findFileReferenceDataArgument(curlArguments);
-  if (fileReference === null || fileReference !== parsedBodyText) {
-    return Buffer.from(parsedBodyText, 'utf-8');
-  }
-
-  if (fileReference === '@-') {
-    throw new AwsRequestBodyNotAvailableError();
-  }
-
-  const path = fileReference.slice(1);
-  try {
-    return readFileSync(path);
-  } catch {
-    throw new AwsRequestBodyFileUnreadableError(path);
+  const bodySource = resolveCurlRequestBodySource(curlArguments, parsedBodyText);
+  switch (bodySource.kind) {
+    case 'inline':
+      return Buffer.from(bodySource.text, 'utf-8');
+    case 'file':
+      try {
+        return readFileSync(bodySource.path);
+      } catch {
+        throw new AwsRequestBodyFileUnreadableError(bodySource.path);
+      }
+    case 'stdin':
+      throw new AwsRequestBodyNotAvailableError();
+    case 'unreconstructable':
+      throw new AwsRequestBodyNotSignableError();
   }
 }
 
@@ -400,6 +378,18 @@ export class AwsRequestBodyNotAvailableError extends ApiCredentialsUsageError {
         'or from a file (`--data @payload.json`) instead.'
     );
     this.name = 'AwsRequestBodyNotAvailableError';
+  }
+}
+
+export class AwsRequestBodyNotSignableError extends ApiCredentialsUsageError {
+  constructor() {
+    super(
+      'AWS request signing needs the exact request body, but it is assembled by ' +
+        'curl from several data arguments or from url-encoded file data. Pass the ' +
+        "payload as a single inline `--data '{...}'` or `--data @payload.json` " +
+        'argument instead.'
+    );
+    this.name = 'AwsRequestBodyNotSignableError';
   }
 }
 

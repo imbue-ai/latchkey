@@ -5,7 +5,11 @@ import { tmpdir } from 'node:os';
 import { execSync, ExecSyncOptionsWithStringEncoding } from 'node:child_process';
 import { Command } from 'commander';
 import { registerCommands, type CliDependencies } from '../src/cliCommands.js';
-import { CurlParseError, extractUrlFromCurlArguments } from '../src/curl.js';
+import {
+  CurlParseError,
+  extractUrlFromCurlArguments,
+  resolveCurlRequestBodySource,
+} from '../src/curl.js';
 import { hasGraphicalEnvironment } from '../src/playwrightUtils.js';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { Config } from '../src/config.js';
@@ -256,6 +260,53 @@ describe('extractUrlFromCurlArguments', () => {
     // the argv token exactly, but the stripped form does — and that's the
     // argv token we want to return for positional substitution.
     expect(extractUrlFromCurlArguments(arguments_)).toBe('https://example.com/api?query=from%3Ame');
+  });
+});
+
+describe('resolveCurlRequestBodySource', () => {
+  it('should report an inline body when no file reference is present', () => {
+    expect(
+      resolveCurlRequestBodySource(['-d', '{"a":1}', 'https://example.com'], '{"a":1}')
+    ).toEqual({ kind: 'inline', text: '{"a":1}' });
+  });
+
+  it('should report an inline body for --data-raw, which treats @ literally', () => {
+    expect(
+      resolveCurlRequestBodySource(['--data-raw', '@literal', 'https://example.com'], '@literal')
+    ).toEqual({ kind: 'inline', text: '@literal' });
+  });
+
+  it('should report a file reference', () => {
+    expect(
+      resolveCurlRequestBodySource(
+        ['--data-binary', '@/tmp/payload.json', 'https://example.com'],
+        '@/tmp/payload.json'
+      )
+    ).toEqual({ kind: 'file', path: '/tmp/payload.json' });
+  });
+
+  it('should report stdin for @-', () => {
+    expect(
+      resolveCurlRequestBodySource(['--data-binary', '@-', 'https://example.com'], '@-')
+    ).toEqual({ kind: 'stdin' });
+  });
+
+  it('should report an unreconstructable body for combined data arguments', () => {
+    expect(
+      resolveCurlRequestBodySource(
+        ['-d', '@/tmp/payload.json', '-d', 'extra=1', 'https://example.com'],
+        '@/tmp/payload.json&extra=1'
+      )
+    ).toEqual({ kind: 'unreconstructable' });
+  });
+
+  it('should report an unreconstructable body for url-encoded file data', () => {
+    expect(
+      resolveCurlRequestBodySource(
+        ['--data-urlencode', '@/tmp/payload.json', 'https://example.com'],
+        '@/tmp/payload.json'
+      )
+    ).toEqual({ kind: 'unreconstructable' });
   });
 });
 

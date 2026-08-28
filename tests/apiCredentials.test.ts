@@ -11,7 +11,11 @@ import {
 } from '../src/apiCredentials/serialization.js';
 import { SlackApiCredentials } from '../src/services/slack.js';
 import { TelegramBotCredentials } from '../src/services/telegram.js';
-import { AwsCredentials, AwsRequestBodyNotAvailableError } from '../src/services/aws.js';
+import {
+  AwsCredentials,
+  AwsRequestBodyNotAvailableError,
+  AwsRequestBodyNotSignableError,
+} from '../src/services/aws.js';
 import { createHash } from 'node:crypto';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -239,6 +243,34 @@ describe('AwsCredentials', () => {
         'https://logs.us-east-1.amazonaws.com/',
       ])
     ).rejects.toBeInstanceOf(AwsRequestBodyNotAvailableError);
+  });
+
+  it('should refuse to sign bodies curl assembles from several data arguments', async () => {
+    const credentials = new AwsCredentials('AKIAIOSFODNN7EXAMPLE', 'wJalrXUtnFEMI/K7MDENG');
+    const bodyFile = join(mkdtempSync(join(tmpdir(), 'latchkey-aws-')), 'body.json');
+    writeFileSync(bodyFile, '{"limit":10}');
+
+    await expect(
+      credentials.injectIntoCurlCall([
+        '-X',
+        'POST',
+        '-d',
+        `@${bodyFile}`,
+        '-d',
+        'extra=1',
+        'https://logs.us-east-1.amazonaws.com/',
+      ])
+    ).rejects.toBeInstanceOf(AwsRequestBodyNotSignableError);
+
+    await expect(
+      credentials.injectIntoCurlCall([
+        '-X',
+        'POST',
+        '--data-urlencode',
+        `@${bodyFile}`,
+        'https://logs.us-east-1.amazonaws.com/',
+      ])
+    ).rejects.toBeInstanceOf(AwsRequestBodyNotSignableError);
   });
 
   it('should sign x-amz-* headers supplied by the caller', async () => {

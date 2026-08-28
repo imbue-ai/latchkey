@@ -185,6 +185,76 @@ export async function runCapturedAsync(args: readonly string[], timeout = 10): P
 }
 
 /**
+ * Where curl will read the request body of an invocation from.
+ *
+ * `parseCurlArgs` reports the body exactly as it appears on the command line,
+ * so a `-d @payload.json` or `--data-binary @-` argument comes back as the
+ * literal `@...` placeholder rather than the bytes curl will actually send.
+ * Callers that need the real payload (AWS SigV4 hashes it) must know which of
+ * these cases they are in.
+ */
+export type CurlRequestBodySource =
+  /** The body is spelled out in the arguments and equals `text`. */
+  | { readonly kind: 'inline'; readonly text: string }
+  /** curl will read the body from this file. */
+  | { readonly kind: 'file'; readonly path: string }
+  /** curl will read the body from its standard input (`@-`). */
+  | { readonly kind: 'stdin' }
+  /**
+   * curl assembles the body from several data arguments, or url-encodes file
+   * content, so the bytes it sends cannot be reconstructed from the arguments.
+   */
+  | { readonly kind: 'unreconstructable' };
+
+/**
+ * curl data flags whose value may be a `@file` (or `@-`) reference.
+ * `--data-raw` is deliberately absent: it treats `@` literally.
+ */
+const CURL_FILE_REFERENCE_DATA_FLAGS: ReadonlySet<string> = new Set([
+  '-d',
+  '--data',
+  '--data-ascii',
+  '--data-binary',
+  // `--data-urlencode @file` url-encodes the file content, so the file bytes
+  // are not what curl sends.
+  '--data-urlencode',
+]);
+
+/**
+ * Determine where curl takes the request body from, given the invocation's
+ * arguments and the body text `parseCurlArgs` derived from them.
+ */
+export function resolveCurlRequestBodySource(
+  args: readonly string[],
+  parsedBodyText: string
+): CurlRequestBodySource {
+  const fileReferences: { flag: string; value: string }[] = [];
+  for (let index = 0; index < args.length - 1; index++) {
+    const flag = args[index]!;
+    const value = args[index + 1]!;
+    if (CURL_FILE_REFERENCE_DATA_FLAGS.has(flag) && value.startsWith('@')) {
+      fileReferences.push({ flag, value });
+    }
+  }
+
+  const singleReference = fileReferences.length === 1 ? fileReferences[0]! : undefined;
+  if (singleReference === undefined) {
+    return fileReferences.length === 0
+      ? { kind: 'inline', text: parsedBodyText }
+      : { kind: 'unreconstructable' };
+  }
+  // A reference that is not the whole parsed body means curl combines it with
+  // further data arguments (joined with `&`).
+  if (singleReference.flag === '--data-urlencode' || singleReference.value !== parsedBodyText) {
+    return { kind: 'unreconstructable' };
+  }
+  if (singleReference.value === '@-') {
+    return { kind: 'stdin' };
+  }
+  return { kind: 'file', path: singleReference.value.slice(1) };
+}
+
+/**
  * Extract the target URL argument from a curl invocation.
  *
  * Delegates curl flag parsing to `parseCurlArgs` from detent (which knows the
