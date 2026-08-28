@@ -1285,9 +1285,28 @@ describe('CLI commands with dependency injection', () => {
     const STORE_FILENAME = 'credentials.json';
     const BROWSER_STATE_FILENAME = 'browser_state.json';
 
-    function writeStore(contents: Record<string, unknown>): void {
-      writeSecureFile(join(tempDir, STORE_FILENAME), JSON.stringify(nestAccounts(contents)));
+    function writeStore(
+      contents: Record<string, unknown>,
+      preparations: Record<string, unknown> = {}
+    ): void {
+      writeSecureFile(
+        join(tempDir, STORE_FILENAME),
+        JSON.stringify({ ...nestAccounts(contents), preparations })
+      );
     }
+
+    function readPreparationsWithKey(path: string, key: string): Record<string, unknown> {
+      const raw = JSON.parse(new EncryptedStorage(key).readFile(path) ?? '{}') as {
+        preparations?: Record<string, unknown>;
+      };
+      return raw.preparations ?? {};
+    }
+
+    const GITLAB_PREPARATION = {
+      objectType: 'oauth',
+      clientId: 'gitlab-client-id',
+      clientSecret: 'gitlab-client-secret',
+    };
 
     it('re-encrypts all stored credentials with the new key', async () => {
       writeStore({
@@ -1348,7 +1367,7 @@ describe('CLI commands with dependency injection', () => {
       expect(Object.keys(reEncrypted)).toEqual(['slack']);
     });
 
-    it('errors when a requested service has no stored credentials', async () => {
+    it('errors when a requested service has neither credentials nor a preparation', async () => {
       writeStore({ slack: { objectType: 'slack', token: 'tok', dCookie: 'cookie' } });
       const destinationDirectory = join(tempDir, 'export');
 
@@ -1357,6 +1376,83 @@ describe('CLI commands with dependency injection', () => {
 
       expect(exitCode).toBe(1);
       expect(existsSync(join(destinationDirectory, STORE_FILENAME))).toBe(false);
+    });
+
+    it('carries the preparations of the re-encrypted services', async () => {
+      writeStore(
+        { gitlab: { objectType: 'authorizationBearer', token: 'gitlab-token' } },
+        { gitlab: GITLAB_PREPARATION }
+      );
+      const destinationDirectory = join(tempDir, 'export');
+
+      const deps = withStdinKey(NEW_ENCRYPTION_KEY);
+      await runCommand(['auth', 're-encrypt', destinationDirectory], deps);
+
+      expect(exitCode).toBeNull();
+      const destination = join(destinationDirectory, STORE_FILENAME);
+      expect(readPreparationsWithKey(destination, NEW_ENCRYPTION_KEY)).toEqual({
+        gitlab: GITLAB_PREPARATION,
+      });
+    });
+
+    it('includes services that only have a preparation', async () => {
+      writeStore(
+        { slack: { objectType: 'slack', token: 'tok', dCookie: 'cookie' } },
+        { gitlab: GITLAB_PREPARATION }
+      );
+      const destinationDirectory = join(tempDir, 'export');
+
+      const deps = withStdinKey(NEW_ENCRYPTION_KEY);
+      await runCommand(['auth', 're-encrypt', destinationDirectory], deps);
+
+      expect(exitCode).toBeNull();
+      const destination = join(destinationDirectory, STORE_FILENAME);
+      expect(Object.keys(readWithKey(destination, NEW_ENCRYPTION_KEY))).toEqual(['slack']);
+      expect(readPreparationsWithKey(destination, NEW_ENCRYPTION_KEY)).toEqual({
+        gitlab: GITLAB_PREPARATION,
+      });
+      expect(logs.join('\n')).toContain('2 service(s)');
+    });
+
+    it('selects a service that only has a preparation with --services', async () => {
+      writeStore(
+        { slack: { objectType: 'slack', token: 'tok', dCookie: 'cookie' } },
+        { gitlab: GITLAB_PREPARATION }
+      );
+      const destinationDirectory = join(tempDir, 'export');
+
+      const deps = withStdinKey(NEW_ENCRYPTION_KEY);
+      await runCommand(['auth', 're-encrypt', destinationDirectory, '--services', 'gitlab'], deps);
+
+      expect(exitCode).toBeNull();
+      const destination = join(destinationDirectory, STORE_FILENAME);
+      expect(readWithKey(destination, NEW_ENCRYPTION_KEY)).toEqual({});
+      expect(readPreparationsWithKey(destination, NEW_ENCRYPTION_KEY)).toEqual({
+        gitlab: GITLAB_PREPARATION,
+      });
+    });
+
+    it('replaces an existing preparation in the destination', async () => {
+      writeStore({}, { gitlab: GITLAB_PREPARATION });
+      const destinationDirectory = join(tempDir, 'export');
+      const destination = join(destinationDirectory, STORE_FILENAME);
+      new EncryptedStorage(NEW_ENCRYPTION_KEY).writeFile(
+        destination,
+        JSON.stringify({
+          credentials: {},
+          preparations: {
+            gitlab: { objectType: 'oauth', clientId: 'old-id', clientSecret: 'old-secret' },
+          },
+        })
+      );
+
+      const deps = withStdinKey(NEW_ENCRYPTION_KEY);
+      await runCommand(['auth', 're-encrypt', destinationDirectory], deps);
+
+      expect(exitCode).toBeNull();
+      expect(readPreparationsWithKey(destination, NEW_ENCRYPTION_KEY)).toEqual({
+        gitlab: GITLAB_PREPARATION,
+      });
     });
 
     it('errors for an invalid encryption key read from stdin', async () => {

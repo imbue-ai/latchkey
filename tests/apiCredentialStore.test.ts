@@ -162,6 +162,17 @@ describe('ApiCredentialStore', () => {
       expect((store.getPreparation('google-gmail') as OAuthCredentials).clientId).toBe('new-id');
     });
 
+    it('should list the services that have a preparation', () => {
+      const store = new ApiCredentialStore(storePath, encryptedStorage);
+      expect(store.listPreparedServiceNames()).toEqual([]);
+
+      store.savePreparation('google-gmail', new OAuthCredentials('client-id', 'client-secret'));
+      store.savePreparation('gitlab', new OAuthCredentials('gitlab-id', 'gitlab-secret'));
+      store.save('slack', new AuthorizationBearer('token'));
+
+      expect([...store.listPreparedServiceNames()].sort()).toEqual(['gitlab', 'google-gmail']);
+    });
+
     it('should keep preparations separate from credentials', () => {
       const store = new ApiCredentialStore(storePath, encryptedStorage);
       store.savePreparation('google-gmail', new OAuthCredentials('client-id', 'client-secret'));

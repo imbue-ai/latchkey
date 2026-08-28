@@ -1322,8 +1322,10 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         const sourceStore = new ApiCredentialStore(deps.config.credentialStorePath, sourceStorage);
 
         let allCredentials: ReadonlyMap<string, ReadonlyMap<string, ApiCredentials>>;
+        let preparedServiceNames: readonly string[];
         try {
           allCredentials = sourceStore.getAll();
+          preparedServiceNames = sourceStore.listPreparedServiceNames();
         } catch (error) {
           if (error instanceof ApiCredentialStoreError || error instanceof EncryptedStorageError) {
             deps.errorLog(`Error: ${error.message}`);
@@ -1350,16 +1352,20 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           }
         }
 
+        // A service can have only a preparation and no credentials yet, so both
+        // sections of the store contribute to what can be re-encrypted.
+        const storedServiceNames = new Set([...allCredentials.keys(), ...preparedServiceNames]);
+
         let selectedServiceNames: string[];
         if (options.services !== undefined) {
-          const missing = options.services.filter((name) => !allCredentials.has(name));
+          const missing = options.services.filter((name) => !storedServiceNames.has(name));
           if (missing.length > 0) {
-            deps.errorLog(`Error: No stored credentials for: ${missing.join(', ')}`);
+            deps.errorLog(`Error: No stored credentials or preparation for: ${missing.join(', ')}`);
             deps.exit(1);
           }
           selectedServiceNames = options.services;
         } else {
-          selectedServiceNames = [...allCredentials.keys()];
+          selectedServiceNames = [...storedServiceNames];
         }
 
         if (selectedServiceNames.length === 0 && browserState === null) {
