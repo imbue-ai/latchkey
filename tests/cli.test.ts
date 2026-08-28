@@ -16,6 +16,10 @@ import { Config } from '../src/config.js';
 import { ServiceRegistry } from '../src/serviceRegistry.js';
 import { ApiCredentialStatus } from '../src/apiCredentials/base.js';
 import { LATEST_VERSION } from '../src/migrations.js';
+import {
+  ERROR_JSON_ENVIRONMENT_VARIABLE,
+  INVALID_STORED_CREDENTIAL_EXIT_CODE,
+} from '../src/cliErrors.js';
 import { Service } from '../src/services/core/base.js';
 import { createMockService, MockService } from './mockService.js';
 import { RegisteredService } from '../src/services/core/registered.js';
@@ -1435,6 +1439,63 @@ describe('CLI commands with dependency injection', () => {
 
       expect(exitCode).toBe(1);
       expect(existsSync(join(destinationDirectory, STORE_FILENAME))).toBe(false);
+    });
+
+    // A credential type this Latchkey does not know (e.g. written by a newer
+    // one sharing the store) must not fail exports of other services.
+    const UNREADABLE_CREDENTIAL = { objectType: 'from-a-newer-latchkey', token: 'tok' };
+
+    it('exports the requested services when another stored credential is unreadable', async () => {
+      writeStore({
+        slack: { objectType: 'slack', token: 'tok', dCookie: 'cookie' },
+        mystery: UNREADABLE_CREDENTIAL,
+      });
+      const destinationDirectory = join(tempDir, 'export');
+
+      const deps = withStdinKey(NEW_ENCRYPTION_KEY);
+      await runCommand(['auth', 're-encrypt', destinationDirectory, '--services', 'slack'], deps);
+
+      expect(exitCode).toBeNull();
+      const reEncrypted = readWithKey(
+        join(destinationDirectory, STORE_FILENAME),
+        NEW_ENCRYPTION_KEY
+      );
+      expect(Object.keys(reEncrypted)).toEqual(['slack']);
+    });
+
+    it('exits with a dedicated code when a requested credential is unreadable', async () => {
+      writeStore({ mystery: UNREADABLE_CREDENTIAL });
+      const destinationDirectory = join(tempDir, 'export');
+
+      const deps = withStdinKey(NEW_ENCRYPTION_KEY);
+      await runCommand(['auth', 're-encrypt', destinationDirectory, '--services', 'mystery'], deps);
+
+      expect(exitCode).toBe(INVALID_STORED_CREDENTIAL_EXIT_CODE);
+      expect(errorLogs[0]).toContain('Invalid credential data for service mystery');
+    });
+
+    it('describes an unreadable credential as JSON when LATCHKEY_ERROR_JSON is set', async () => {
+      writeStore({ mystery: UNREADABLE_CREDENTIAL });
+      const destinationDirectory = join(tempDir, 'export');
+
+      const deps = withStdinKey(NEW_ENCRYPTION_KEY);
+      vi.stubEnv(ERROR_JSON_ENVIRONMENT_VARIABLE, '1');
+      try {
+        await runCommand(
+          ['auth', 're-encrypt', destinationDirectory, '--services', 'mystery'],
+          deps
+        );
+      } finally {
+        vi.unstubAllEnvs();
+      }
+
+      expect(exitCode).toBe(INVALID_STORED_CREDENTIAL_EXIT_CODE);
+      const reported = JSON.parse(errorLogs[errorLogs.length - 1]!) as {
+        latchkeyError: { code: string; serviceName: string; message: string };
+      };
+      expect(reported.latchkeyError.code).toBe('invalid_stored_credential');
+      expect(reported.latchkeyError.serviceName).toBe('mystery');
+      expect(reported.latchkeyError.message).toContain('Invalid credential data');
     });
 
     it('carries the preparations of the re-encrypted services', async () => {

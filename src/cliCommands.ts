@@ -10,7 +10,9 @@ import {
   AmbiguousAccountError,
   ApiCredentialStore,
   ApiCredentialStoreError,
+  InvalidStoredCredentialError,
 } from './apiCredentials/store.js';
+import { failWithClassifiedError, INVALID_STORED_CREDENTIAL_EXIT_CODE } from './cliErrors.js';
 import {
   ApiCredentials,
   ApiCredentialsUsageError,
@@ -1327,11 +1329,15 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         const sourceStorage = new EncryptedStorage(sourceKey);
         const sourceStore = new ApiCredentialStore(deps.config.credentialStorePath, sourceStorage);
 
-        let allCredentials: ReadonlyMap<string, ReadonlyMap<string, ApiCredentials>>;
-        let preparedServiceNames: readonly string[];
+        // Only the selected services are parsed, and only below, once the
+        // selection is known: a credential this Latchkey cannot read must not
+        // fail an export that never asked for it.
+        let storedServiceNames: ReadonlySet<string>;
         try {
-          allCredentials = sourceStore.getAll();
-          preparedServiceNames = sourceStore.listPreparedServiceNames();
+          storedServiceNames = new Set([
+            ...sourceStore.listServiceNames(),
+            ...sourceStore.listPreparedServiceNames(),
+          ]);
         } catch (error) {
           if (error instanceof ApiCredentialStoreError || error instanceof EncryptedStorageError) {
             deps.errorLog(`Error: ${error.message}`);
@@ -1358,10 +1364,6 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           }
         }
 
-        // A service can have only a preparation and no credentials yet, so both
-        // sections of the store contribute to what can be re-encrypted.
-        const storedServiceNames = new Set([...allCredentials.keys(), ...preparedServiceNames]);
-
         let selectedServiceNames: string[];
         if (options.services !== undefined) {
           const missing = options.services.filter((name) => !storedServiceNames.has(name));
@@ -1377,6 +1379,33 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         if (selectedServiceNames.length === 0 && browserState === null) {
           deps.errorLog('Error: No stored credentials found to re-encrypt.');
           deps.exit(1);
+        }
+
+        // Parse everything that will be written before writing any of it.
+        let allCredentials: ReadonlyMap<string, ReadonlyMap<string, ApiCredentials>>;
+        const preparations = new Map<string, ApiCredentials>();
+        try {
+          allCredentials = sourceStore.getAllForServices(selectedServiceNames);
+          for (const serviceName of selectedServiceNames) {
+            const preparation = sourceStore.getPreparation(serviceName);
+            if (preparation !== null) {
+              preparations.set(serviceName, preparation);
+            }
+          }
+        } catch (error) {
+          if (error instanceof InvalidStoredCredentialError) {
+            failWithClassifiedError(deps, {
+              code: 'invalid_stored_credential',
+              message: error.message,
+              serviceName: error.serviceName,
+              exitCode: INVALID_STORED_CREDENTIAL_EXIT_CODE,
+            });
+          }
+          if (error instanceof ApiCredentialStoreError || error instanceof EncryptedStorageError) {
+            deps.errorLog(`Error: ${error.message}`);
+            deps.exit(1);
+          }
+          throw error;
         }
 
         const destinationStorage = new EncryptedStorage(destinationKey);
@@ -1433,8 +1462,8 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
               destinationStore.save(serviceName, credentials, account);
             }
           }
-          const preparation = sourceStore.getPreparation(serviceName);
-          if (preparation !== null) {
+          const preparation = preparations.get(serviceName);
+          if (preparation !== undefined) {
             destinationStore.savePreparation(serviceName, preparation);
           }
         }

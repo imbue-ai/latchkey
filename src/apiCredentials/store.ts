@@ -36,6 +36,21 @@ export class ApiCredentialStoreError extends Error {
 }
 
 /**
+ * Thrown when a stored credential matches no known credential schema, which
+ * usually means the store was written by a newer Latchkey that knows a
+ * credential type this one does not.
+ */
+export class InvalidStoredCredentialError extends ApiCredentialStoreError {
+  readonly serviceName: string;
+
+  constructor(serviceName: string, detail: string) {
+    super(`Invalid credential data for service ${serviceName}: ${detail}`);
+    this.name = 'InvalidStoredCredentialError';
+    this.serviceName = serviceName;
+  }
+}
+
+/**
  * Thrown when a service has more than one account stored and no account was
  * specified to disambiguate between them.
  */
@@ -102,9 +117,7 @@ export class ApiCredentialStore {
   private parseCredentials(serviceName: string, credentialData: unknown): ApiCredentials {
     const parseResult = ApiCredentialsSchema.safeParse(credentialData);
     if (!parseResult.success) {
-      throw new ApiCredentialStoreError(
-        `Invalid credential data for service ${serviceName}: ${parseResult.error.message}`
-      );
+      throw new InvalidStoredCredentialError(serviceName, parseResult.error.message);
     }
     return deserializeCredentials(parseResult.data);
   }
@@ -198,13 +211,44 @@ export class ApiCredentialStore {
   }
 
   /**
+   * List the services that have credentials stored, in the order they appear in
+   * the store. Unlike {@link getAll} this does not parse the credentials, so it
+   * works even when the store holds a credential this Latchkey cannot read.
+   */
+  listServiceNames(): readonly string[] {
+    return Object.keys(this.loadStoreData().credentials);
+  }
+
+  /**
    * Return all stored credentials as a map of service name to a map of account
    * to credentials.
    */
   getAll(): ReadonlyMap<string, ReadonlyMap<string, ApiCredentials>> {
     const data = this.loadStoreData();
+    return this.parseServices(data, Object.keys(data.credentials));
+  }
+
+  /**
+   * Like {@link getAll}, but only for the named services: services that are not
+   * named are neither parsed nor returned. Names without stored credentials are
+   * skipped.
+   */
+  getAllForServices(
+    serviceNames: readonly string[]
+  ): ReadonlyMap<string, ReadonlyMap<string, ApiCredentials>> {
+    return this.parseServices(this.loadStoreData(), serviceNames);
+  }
+
+  private parseServices(
+    data: StoreData,
+    serviceNames: readonly string[]
+  ): ReadonlyMap<string, ReadonlyMap<string, ApiCredentials>> {
     const result = new Map<string, ReadonlyMap<string, ApiCredentials>>();
-    for (const [serviceName, serviceData] of Object.entries(data.credentials)) {
+    for (const serviceName of serviceNames) {
+      const serviceData = data.credentials[serviceName];
+      if (serviceData === undefined) {
+        continue;
+      }
       const accountMap = new Map<string, ApiCredentials>();
       for (const [account, credentialData] of Object.entries(serviceData)) {
         accountMap.set(account, this.parseCredentials(serviceName, credentialData));

@@ -424,6 +424,7 @@ defaults:
 - `LATCHKEY_PERMISSIONS_CONFIG`: override the `permissions.json` location.
 - `LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS`: do not use the built-in permission definitions.
 - `LATCHKEY_PASSTHROUGH_UNKNOWN`: if set, Latchkey will forward requests (via `latchkey curl` or gateway) even if no credentials are injected.
+- `LATCHKEY_ERROR_JSON`: when set to `1`, a failure that Latchkey can classify is also printed on stderr as a JSON object (`{"latchkeyError": {"code": ..., "message": ..., "serviceName": ...}}`) after the human-readable message. Programs driving Latchkey as a subprocess can dispatch on `code` instead of matching on message text. Classified failures also use a dedicated exit code (currently: `3` for a stored credential no known schema accepts, which usually means a newer Latchkey wrote the store).
 - `LATCHKEY_HIDE_BUILTIN_SERVICES`: comma-separated list of built-in service names to disable/hide.
 - `LATCHKEY_GATEWAY`: when set to a base URL (e.g. `http://localhost:1989`), the CLI delegates commands to a remote Latchkey gateway instead of running them locally. Commands that change local state (`auth set`, `auth clear`, `auth re-encrypt`, `services register`, `ensure-browser`, `gateway`) cannot run in this mode.
 - `LATCHKEY_GATEWAY_LISTEN_HOST`, `LATCHKEY_GATEWAY_LISTEN_PORT`: default address and port the local `latchkey gateway` command binds to when `--host` / `--port` are not supplied (defaults: `localhost`, `1989`). Distinct from `LATCHKEY_GATEWAY`, which configures a *remote* gateway URL.
