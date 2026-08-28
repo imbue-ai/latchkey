@@ -20,8 +20,17 @@ export interface ApiCredentials {
   /**
    * Inject credentials into a curl call by modifying the given arguments array.
    * Implementations may add headers, change the URL, or transform arguments in any way.
+   *
+   * `requestBody` carries the actual payload when the caller passes it to curl
+   * out-of-band (the gateway streams it via `--data-binary @-` on stdin, so the
+   * curl arguments only contain the `@-` placeholder). Credential types whose
+   * signature depends on the payload — AWS SigV4 — need the real bytes; all
+   * other types ignore it.
    */
-  injectIntoCurlCall(curlArguments: readonly string[]): Promise<readonly string[]>;
+  injectIntoCurlCall(
+    curlArguments: readonly string[],
+    requestBody?: Buffer | null
+  ): Promise<readonly string[]>;
   /**
    * Check if the credentials are expired.
    * Returns true if expired, false if valid, or undefined if expiration is unknown.

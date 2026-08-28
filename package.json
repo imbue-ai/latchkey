@@ -1,6 +1,6 @@
 {
   "name": "latchkey",
-  "version": "3.8.0",
+  "version": "3.9.0",
   "description": "A CLI tool that injects API credentials into curl requests to third-party services",
   "author": "Imbue <hynek@imbue.com>",
   "repository": {
@@ -41,6 +41,8 @@
     "start": "node dist/cli.js",
     "prebun-compile": "node scripts/generateVersion.js",
     "bun-compile": "bun build ./src/cli.ts --compile --external chromium-bidi --external electron --external playwright --external playwright-core --outfile latchkey",
+    "install-dev-shim": "bash scripts/installDevShim.sh",
+    "uninstall-dev-shim": "bash scripts/uninstallDevShim.sh",
     "release-binaries": "npm install && bash scripts/releaseBinaries.sh"
   },
   "keywords": [
@@ -69,6 +71,7 @@
     "@types/node": "^20.0.0",
     "eslint": "^10.8.0",
     "prettier": "^3.8.1",
+    "tsx": "^4.23.12",
     "typescript": "^5.3.0",
     "typescript-eslint": "^8.65.0",
     "vitest": "^4.0.18"

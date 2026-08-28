@@ -43,10 +43,11 @@ import type { CurlResult } from './curl.js';
 import { EncryptedStorage, EncryptedStorageError } from './encryptedStorage.js';
 import { encrypt, EncryptionError, resolveEncryptionKey } from './encryption.js';
 import {
+  BUILTIN_SERVICES,
+  createServiceRegistry,
   DuplicateServiceNameError,
   InvalidServiceNameError,
   ServiceRegistry,
-  SERVICE_REGISTRY,
   canonicalizeServiceName,
 } from './serviceRegistry.js';
 import { buildRegisteredServiceOptions, RegisteredService } from './services/core/registered.js';
@@ -76,6 +77,12 @@ import {
   type PermissionCheckMetadata,
 } from './permissions.js';
 import { ErrorMessages } from './errorMessages.js';
+import {
+  LATEST_VERSION,
+  MigrationError,
+  readDataFormatVersionOfDirectory,
+  writeDataFormatVersionOfDirectory,
+} from './migrations.js';
 import { getSkillMdContent } from './skillMd.js';
 import { startGateway } from './gateway/server.js';
 import {
@@ -117,6 +124,13 @@ export const PERMISSION_DENIED_EXIT_CODE = 126;
  */
 export interface CliDependencies {
   readonly registry: ServiceRegistry;
+  /**
+   * The services latchkey ships with, which is what a registry is built on top
+   * of before config.json is applied to it. The gateway rebuilds a registry
+   * from these on every request, so it needs them separately from `registry`,
+   * which has already had config.json applied and the hidden services removed.
+   */
+  readonly builtinServices: readonly Service[];
   readonly config: Config;
   readonly runCurl: (args: readonly string[]) => CurlResult;
   readonly runCurlAsync: typeof curlRunAsync;
@@ -139,7 +153,15 @@ export interface CliDependencies {
  */
 export function createDefaultDependencies(): CliDependencies {
   return {
-    registry: SERVICE_REGISTRY,
+    // Pointed at a remote gateway, the CLI forwards commands rather than
+    // resolving services itself, so it leaves the registered ones to the
+    // gateway.
+    registry: createServiceRegistry(
+      BUILTIN_SERVICES,
+      CONFIG.gatewayUrl === null ? CONFIG.configPath : null,
+      CONFIG.hideBuiltinServices
+    ),
+    builtinServices: BUILTIN_SERVICES,
     config: CONFIG,
     runCurl: curlRun,
     runCurlAsync: curlRunAsync,
@@ -1246,6 +1268,9 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .description(
       'Re-encrypt stored credentials with a new key and write them into a ' +
         'destination directory, using the same filename Latchkey itself expects. ' +
+        'An existing credential store in the destination directory is kept and ' +
+        'the re-encrypted services are added into it, overwriting services with ' +
+        'the same name. ' +
         'The new key is read from stdin so that it does not appear in the process ' +
         'arguments or shell history. When stdin is empty, the existing encryption ' +
         'key is reused.'
@@ -1258,91 +1283,182 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       '--services <services...>',
       'Only include these services in the new encrypted store (default: all stored services)'
     )
+    .option(
+      '--browser-state',
+      'Also re-encrypt the browser state file into the destination directory'
+    )
     .addHelpText(
       'after',
       `\nExamples:\n  $ openssl rand -base64 32 | latchkey auth re-encrypt ~/latchkey-export` +
-        `\n  $ echo "" | latchkey auth re-encrypt ~/latchkey-export --services gitlab slack`
+        `\n  $ echo "" | latchkey auth re-encrypt ~/latchkey-export --services gitlab slack` +
+        `\n  $ echo "" | latchkey auth re-encrypt ~/latchkey-export --browser-state`
     )
-    .action(async (destinationDirectory: string, options: { services?: string[] }) => {
-      refuseInGatewayMode(deps, 'auth re-encrypt');
+    .action(
+      async (
+        destinationDirectory: string,
+        options: { services?: string[]; browserState?: boolean }
+      ) => {
+        refuseInGatewayMode(deps, 'auth re-encrypt');
 
-      if (existsSync(destinationDirectory) && !statSync(destinationDirectory).isDirectory()) {
-        deps.errorLog(`Error: Destination is not a directory: ${destinationDirectory}`);
-        deps.exit(1);
-      }
-
-      const destination = join(destinationDirectory, basename(deps.config.credentialStorePath));
-      if (existsSync(destination)) {
-        deps.errorLog(`Error: Destination file already exists: ${destination}`);
-        deps.errorLog('Remove it first or choose a different destination directory.');
-        deps.exit(1);
-      }
-
-      const sourceKey = await resolveEncryptionKeyFromConfig(deps.config);
-
-      // An empty stdin means "reuse the existing encryption key".
-      const stdinKey = (await deps.readStdin()).trim();
-      const destinationKey = stdinKey === '' ? sourceKey : stdinKey;
-      // Validate the key up front using the encryption routine itself, rather
-      // than duplicating its key-format checks.
-      try {
-        encrypt('', destinationKey);
-      } catch (error) {
-        if (error instanceof EncryptionError) {
-          deps.errorLog(`Error: ${error.message}. Generate a key with: openssl rand -base64 32`);
+        if (existsSync(destinationDirectory) && !statSync(destinationDirectory).isDirectory()) {
+          deps.errorLog(`Error: Destination is not a directory: ${destinationDirectory}`);
           deps.exit(1);
         }
-        throw error;
-      }
 
-      const sourceStorage = new EncryptedStorage(sourceKey);
-      const sourceStore = new ApiCredentialStore(deps.config.credentialStorePath, sourceStorage);
+        const destination = join(destinationDirectory, basename(deps.config.credentialStorePath));
 
-      let allCredentials: ReadonlyMap<string, ReadonlyMap<string, ApiCredentials>>;
-      try {
-        allCredentials = sourceStore.getAll();
-      } catch (error) {
-        if (error instanceof ApiCredentialStoreError || error instanceof EncryptedStorageError) {
-          deps.errorLog(`Error: ${error.message}`);
-          deps.exit(1);
+        const sourceKey = await resolveEncryptionKeyFromConfig(deps.config);
+
+        // An empty stdin means "reuse the existing encryption key".
+        const stdinKey = (await deps.readStdin()).trim();
+        const destinationKey = stdinKey === '' ? sourceKey : stdinKey;
+        // Validate the key up front using the encryption routine itself, rather
+        // than duplicating its key-format checks.
+        try {
+          encrypt('', destinationKey);
+        } catch (error) {
+          if (error instanceof EncryptionError) {
+            deps.errorLog(`Error: ${error.message}. Generate a key with: openssl rand -base64 32`);
+            deps.exit(1);
+          }
+          throw error;
         }
-        throw error;
-      }
 
-      let selectedServiceNames: string[];
-      if (options.services !== undefined) {
-        const missing = options.services.filter((name) => !allCredentials.has(name));
-        if (missing.length > 0) {
-          deps.errorLog(`Error: No stored credentials for: ${missing.join(', ')}`);
-          deps.exit(1);
+        const sourceStorage = new EncryptedStorage(sourceKey);
+        const sourceStore = new ApiCredentialStore(deps.config.credentialStorePath, sourceStorage);
+
+        let allCredentials: ReadonlyMap<string, ReadonlyMap<string, ApiCredentials>>;
+        let preparedServiceNames: readonly string[];
+        try {
+          allCredentials = sourceStore.getAll();
+          preparedServiceNames = sourceStore.listPreparedServiceNames();
+        } catch (error) {
+          if (error instanceof ApiCredentialStoreError || error instanceof EncryptedStorageError) {
+            deps.errorLog(`Error: ${error.message}`);
+            deps.exit(1);
+          }
+          throw error;
         }
-        selectedServiceNames = options.services;
-      } else {
-        selectedServiceNames = [...allCredentials.keys()];
-      }
 
-      if (selectedServiceNames.length === 0) {
-        deps.errorLog('Error: No stored credentials found to re-encrypt.');
-        deps.exit(1);
-      }
-
-      const destinationStorage = new EncryptedStorage(destinationKey);
-      const destinationStore = new ApiCredentialStore(destination, destinationStorage);
-      for (const serviceName of selectedServiceNames) {
-        const accountMap = allCredentials.get(serviceName);
-        if (accountMap !== undefined) {
-          for (const [account, credentials] of accountMap) {
-            destinationStore.save(serviceName, credentials, account);
+        const sourceBrowserStatePath = deps.config.browserStatePath;
+        let browserState: string | null = null;
+        if (options.browserState === true) {
+          try {
+            browserState = sourceStorage.readFile(sourceBrowserStatePath);
+          } catch (error) {
+            if (error instanceof EncryptedStorageError) {
+              deps.errorLog(`Error: ${error.message}`);
+              deps.exit(1);
+            }
+            throw error;
+          }
+          if (browserState === null) {
+            deps.errorLog(`Error: No browser state found at ${sourceBrowserStatePath}.`);
+            deps.exit(1);
           }
         }
-        const preparation = sourceStore.getPreparation(serviceName);
-        if (preparation !== null) {
-          destinationStore.savePreparation(serviceName, preparation);
-        }
-      }
 
-      deps.log(`Re-encrypted ${String(selectedServiceNames.length)} service(s) to ${destination}.`);
-    });
+        // A service can have only a preparation and no credentials yet, so both
+        // sections of the store contribute to what can be re-encrypted.
+        const storedServiceNames = new Set([...allCredentials.keys(), ...preparedServiceNames]);
+
+        let selectedServiceNames: string[];
+        if (options.services !== undefined) {
+          const missing = options.services.filter((name) => !storedServiceNames.has(name));
+          if (missing.length > 0) {
+            deps.errorLog(`Error: No stored credentials or preparation for: ${missing.join(', ')}`);
+            deps.exit(1);
+          }
+          selectedServiceNames = options.services;
+        } else {
+          selectedServiceNames = [...storedServiceNames];
+        }
+
+        if (selectedServiceNames.length === 0 && browserState === null) {
+          deps.errorLog('Error: No stored credentials found to re-encrypt.');
+          deps.exit(1);
+        }
+
+        const destinationStorage = new EncryptedStorage(destinationKey);
+        const destinationStore = new ApiCredentialStore(destination, destinationStorage);
+        // Reading the destination store validates that it can be decrypted with
+        // the destination key before anything is written into it.
+        if (existsSync(destination)) {
+          // An existing store in an older data format would be migrated (and
+          // thereby mangled) by the next Latchkey run, so refuse to add to it.
+          let destinationVersion: number;
+          try {
+            destinationVersion = readDataFormatVersionOfDirectory(destinationDirectory);
+          } catch (error) {
+            if (error instanceof MigrationError) {
+              deps.errorLog(`Error: ${error.message}`);
+              deps.exit(1);
+            }
+            throw error;
+          }
+          if (destinationVersion !== LATEST_VERSION) {
+            deps.errorLog(
+              `Error: The existing credential store at ${destination} is in data format ` +
+                `version ${String(destinationVersion)}, but ${String(LATEST_VERSION)} is required.`
+            );
+            deps.errorLog(
+              'Point Latchkey at that directory to migrate it first, or choose an empty destination.'
+            );
+            deps.exit(1);
+          }
+
+          try {
+            destinationStore.getAll();
+          } catch (error) {
+            if (
+              error instanceof ApiCredentialStoreError ||
+              error instanceof EncryptedStorageError
+            ) {
+              deps.errorLog(
+                `Error: Cannot read the existing credential store at ${destination}: ${error.message}`
+              );
+              deps.errorLog('It must be readable with the new key to be added to.');
+              deps.exit(1);
+            }
+            throw error;
+          }
+        }
+
+        for (const serviceName of selectedServiceNames) {
+          // Replace whatever the destination has for this service.
+          destinationStore.deleteAll(serviceName);
+          const accountMap = allCredentials.get(serviceName);
+          if (accountMap !== undefined) {
+            for (const [account, credentials] of accountMap) {
+              destinationStore.save(serviceName, credentials, account);
+            }
+          }
+          const preparation = sourceStore.getPreparation(serviceName);
+          if (preparation !== null) {
+            destinationStore.savePreparation(serviceName, preparation);
+          }
+        }
+
+        if (selectedServiceNames.length > 0) {
+          deps.log(
+            `Re-encrypted ${String(selectedServiceNames.length)} service(s) to ${destination}.`
+          );
+        }
+
+        if (browserState !== null) {
+          const browserStateDestination = join(
+            destinationDirectory,
+            basename(sourceBrowserStatePath)
+          );
+          destinationStorage.writeFile(browserStateDestination, browserState);
+          deps.log(`Re-encrypted browser state to ${browserStateDestination}.`);
+        }
+
+        // Stamp the data format version so that Latchkey does not mistake the
+        // exported directory for one in the oldest format and "migrate" it.
+        writeDataFormatVersionOfDirectory(destinationDirectory, LATEST_VERSION);
+      }
+    );
 
   program
     .command('skill-md')

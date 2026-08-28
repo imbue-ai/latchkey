@@ -5,12 +5,17 @@ import { tmpdir } from 'node:os';
 import { execSync, ExecSyncOptionsWithStringEncoding } from 'node:child_process';
 import { Command } from 'commander';
 import { registerCommands, type CliDependencies } from '../src/cliCommands.js';
-import { CurlParseError, extractUrlFromCurlArguments } from '../src/curl.js';
+import {
+  CurlParseError,
+  extractUrlFromCurlArguments,
+  resolveCurlRequestBodySource,
+} from '../src/curl.js';
 import { hasGraphicalEnvironment } from '../src/playwrightUtils.js';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { Config } from '../src/config.js';
 import { ServiceRegistry } from '../src/serviceRegistry.js';
 import { ApiCredentialStatus } from '../src/apiCredentials/base.js';
+import { LATEST_VERSION } from '../src/migrations.js';
 import { Service } from '../src/services/core/base.js';
 import { createMockService, MockService } from './mockService.js';
 import { RegisteredService } from '../src/services/core/registered.js';
@@ -259,6 +264,53 @@ describe('extractUrlFromCurlArguments', () => {
   });
 });
 
+describe('resolveCurlRequestBodySource', () => {
+  it('should report an inline body when no file reference is present', () => {
+    expect(
+      resolveCurlRequestBodySource(['-d', '{"a":1}', 'https://example.com'], '{"a":1}')
+    ).toEqual({ kind: 'inline', text: '{"a":1}' });
+  });
+
+  it('should report an inline body for --data-raw, which treats @ literally', () => {
+    expect(
+      resolveCurlRequestBodySource(['--data-raw', '@literal', 'https://example.com'], '@literal')
+    ).toEqual({ kind: 'inline', text: '@literal' });
+  });
+
+  it('should report a file reference', () => {
+    expect(
+      resolveCurlRequestBodySource(
+        ['--data-binary', '@/tmp/payload.json', 'https://example.com'],
+        '@/tmp/payload.json'
+      )
+    ).toEqual({ kind: 'file', path: '/tmp/payload.json' });
+  });
+
+  it('should report stdin for @-', () => {
+    expect(
+      resolveCurlRequestBodySource(['--data-binary', '@-', 'https://example.com'], '@-')
+    ).toEqual({ kind: 'stdin' });
+  });
+
+  it('should report an unreconstructable body for combined data arguments', () => {
+    expect(
+      resolveCurlRequestBodySource(
+        ['-d', '@/tmp/payload.json', '-d', 'extra=1', 'https://example.com'],
+        '@/tmp/payload.json&extra=1'
+      )
+    ).toEqual({ kind: 'unreconstructable' });
+  });
+
+  it('should report an unreconstructable body for url-encoded file data', () => {
+    expect(
+      resolveCurlRequestBodySource(
+        ['--data-urlencode', '@/tmp/payload.json', 'https://example.com'],
+        '@/tmp/payload.json'
+      )
+    ).toEqual({ kind: 'unreconstructable' });
+  });
+});
+
 describe('hasGraphicalEnvironment', () => {
   const originalPlatform = process.platform;
 
@@ -421,6 +473,7 @@ describe('CLI commands with dependency injection', () => {
 
     return {
       registry: mockRegistry,
+      builtinServices: [mockSlackService],
       config: createMockConfig(),
       runCurl: (args: readonly string[]): CurlResult => {
         capturedArgs.push(...args);
@@ -1280,12 +1333,39 @@ describe('CLI commands with dependency injection', () => {
       return createMockDependencies({ readStdin: () => Promise.resolve(key), ...overrides });
     }
 
-    // The credential store filename used by the mock config.
+    // The filenames used by the mock config.
     const STORE_FILENAME = 'credentials.json';
+    const BROWSER_STATE_FILENAME = 'browser_state.json';
 
-    function writeStore(contents: Record<string, unknown>): void {
-      writeSecureFile(join(tempDir, STORE_FILENAME), JSON.stringify(nestAccounts(contents)));
+    function writeStore(
+      contents: Record<string, unknown>,
+      preparations: Record<string, unknown> = {}
+    ): void {
+      writeSecureFile(
+        join(tempDir, STORE_FILENAME),
+        JSON.stringify({ ...nestAccounts(contents), preparations })
+      );
     }
+
+    function readPreparationsWithKey(path: string, key: string): Record<string, unknown> {
+      const raw = JSON.parse(new EncryptedStorage(key).readFile(path) ?? '{}') as {
+        preparations?: Record<string, unknown>;
+      };
+      return raw.preparations ?? {};
+    }
+
+    // A destination that already holds a store must be in the current data
+    // format, which real Latchkey directories record in this file.
+    function stampDataFormatVersion(directory: string): void {
+      mkdirSync(directory, { recursive: true });
+      writeFileSync(join(directory, 'data-format-version'), String(LATEST_VERSION));
+    }
+
+    const GITLAB_PREPARATION = {
+      objectType: 'oauth',
+      clientId: 'gitlab-client-id',
+      clientSecret: 'gitlab-client-secret',
+    };
 
     it('re-encrypts all stored credentials with the new key', async () => {
       writeStore({
@@ -1346,7 +1426,7 @@ describe('CLI commands with dependency injection', () => {
       expect(Object.keys(reEncrypted)).toEqual(['slack']);
     });
 
-    it('errors when a requested service has no stored credentials', async () => {
+    it('errors when a requested service has neither credentials nor a preparation', async () => {
       writeStore({ slack: { objectType: 'slack', token: 'tok', dCookie: 'cookie' } });
       const destinationDirectory = join(tempDir, 'export');
 
@@ -1355,6 +1435,84 @@ describe('CLI commands with dependency injection', () => {
 
       expect(exitCode).toBe(1);
       expect(existsSync(join(destinationDirectory, STORE_FILENAME))).toBe(false);
+    });
+
+    it('carries the preparations of the re-encrypted services', async () => {
+      writeStore(
+        { gitlab: { objectType: 'authorizationBearer', token: 'gitlab-token' } },
+        { gitlab: GITLAB_PREPARATION }
+      );
+      const destinationDirectory = join(tempDir, 'export');
+
+      const deps = withStdinKey(NEW_ENCRYPTION_KEY);
+      await runCommand(['auth', 're-encrypt', destinationDirectory], deps);
+
+      expect(exitCode).toBeNull();
+      const destination = join(destinationDirectory, STORE_FILENAME);
+      expect(readPreparationsWithKey(destination, NEW_ENCRYPTION_KEY)).toEqual({
+        gitlab: GITLAB_PREPARATION,
+      });
+    });
+
+    it('includes services that only have a preparation', async () => {
+      writeStore(
+        { slack: { objectType: 'slack', token: 'tok', dCookie: 'cookie' } },
+        { gitlab: GITLAB_PREPARATION }
+      );
+      const destinationDirectory = join(tempDir, 'export');
+
+      const deps = withStdinKey(NEW_ENCRYPTION_KEY);
+      await runCommand(['auth', 're-encrypt', destinationDirectory], deps);
+
+      expect(exitCode).toBeNull();
+      const destination = join(destinationDirectory, STORE_FILENAME);
+      expect(Object.keys(readWithKey(destination, NEW_ENCRYPTION_KEY))).toEqual(['slack']);
+      expect(readPreparationsWithKey(destination, NEW_ENCRYPTION_KEY)).toEqual({
+        gitlab: GITLAB_PREPARATION,
+      });
+      expect(logs.join('\n')).toContain('2 service(s)');
+    });
+
+    it('selects a service that only has a preparation with --services', async () => {
+      writeStore(
+        { slack: { objectType: 'slack', token: 'tok', dCookie: 'cookie' } },
+        { gitlab: GITLAB_PREPARATION }
+      );
+      const destinationDirectory = join(tempDir, 'export');
+
+      const deps = withStdinKey(NEW_ENCRYPTION_KEY);
+      await runCommand(['auth', 're-encrypt', destinationDirectory, '--services', 'gitlab'], deps);
+
+      expect(exitCode).toBeNull();
+      const destination = join(destinationDirectory, STORE_FILENAME);
+      expect(readWithKey(destination, NEW_ENCRYPTION_KEY)).toEqual({});
+      expect(readPreparationsWithKey(destination, NEW_ENCRYPTION_KEY)).toEqual({
+        gitlab: GITLAB_PREPARATION,
+      });
+    });
+
+    it('replaces an existing preparation in the destination', async () => {
+      writeStore({}, { gitlab: GITLAB_PREPARATION });
+      const destinationDirectory = join(tempDir, 'export');
+      const destination = join(destinationDirectory, STORE_FILENAME);
+      stampDataFormatVersion(destinationDirectory);
+      new EncryptedStorage(NEW_ENCRYPTION_KEY).writeFile(
+        destination,
+        JSON.stringify({
+          credentials: {},
+          preparations: {
+            gitlab: { objectType: 'oauth', clientId: 'old-id', clientSecret: 'old-secret' },
+          },
+        })
+      );
+
+      const deps = withStdinKey(NEW_ENCRYPTION_KEY);
+      await runCommand(['auth', 're-encrypt', destinationDirectory], deps);
+
+      expect(exitCode).toBeNull();
+      expect(readPreparationsWithKey(destination, NEW_ENCRYPTION_KEY)).toEqual({
+        gitlab: GITLAB_PREPARATION,
+      });
     });
 
     it('errors for an invalid encryption key read from stdin', async () => {
@@ -1381,10 +1539,44 @@ describe('CLI commands with dependency injection', () => {
       ).toEqual(['slack']);
     });
 
-    it('refuses to overwrite an existing credential store in the destination', async () => {
+    it('adds the services into an existing credential store, overwriting by service', async () => {
+      writeStore({
+        slack: { objectType: 'slack', token: 'new-tok', dCookie: 'new-cookie' },
+      });
+      const destinationDirectory = join(tempDir, 'export');
+      const destination = join(destinationDirectory, STORE_FILENAME);
+      stampDataFormatVersion(destinationDirectory);
+      new EncryptedStorage(NEW_ENCRYPTION_KEY).writeFile(
+        destination,
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'slack', token: 'old-tok', dCookie: 'old-cookie' },
+            discord: { objectType: 'authorizationBearer', token: 'discord-token' },
+          })
+        )
+      );
+
+      const deps = withStdinKey(NEW_ENCRYPTION_KEY);
+      await runCommand(['auth', 're-encrypt', destinationDirectory], deps);
+
+      expect(exitCode).toBeNull();
+      const reEncrypted = readWithKey(destination, NEW_ENCRYPTION_KEY);
+      expect(Object.keys(reEncrypted).sort()).toEqual(['discord', 'slack']);
+      expect(reEncrypted.slack).toEqual({
+        objectType: 'slack',
+        token: 'new-tok',
+        dCookie: 'new-cookie',
+      });
+      expect(reEncrypted.discord).toEqual({
+        objectType: 'authorizationBearer',
+        token: 'discord-token',
+      });
+    });
+
+    it('errors when the existing credential store cannot be read with the new key', async () => {
       writeStore({ slack: { objectType: 'slack', token: 'tok', dCookie: 'cookie' } });
       const destinationDirectory = join(tempDir, 'export');
-      mkdirSync(destinationDirectory);
+      stampDataFormatVersion(destinationDirectory);
       const destination = join(destinationDirectory, STORE_FILENAME);
       writeFileSync(destination, 'existing');
 
@@ -1393,6 +1585,57 @@ describe('CLI commands with dependency injection', () => {
 
       expect(exitCode).toBe(1);
       expect(readFileSync(destination, 'utf-8')).toBe('existing');
+    });
+
+    it('re-encrypts the browser state with --browser-state', async () => {
+      writeStore({ slack: { objectType: 'slack', token: 'tok', dCookie: 'cookie' } });
+      new EncryptedStorage(TEST_ENCRYPTION_KEY).writeFile(
+        join(tempDir, BROWSER_STATE_FILENAME),
+        '{"cookies":[]}'
+      );
+      const destinationDirectory = join(tempDir, 'export');
+
+      const deps = withStdinKey(NEW_ENCRYPTION_KEY);
+      await runCommand(['auth', 're-encrypt', destinationDirectory, '--browser-state'], deps);
+
+      expect(exitCode).toBeNull();
+      const browserStateDestination = join(destinationDirectory, BROWSER_STATE_FILENAME);
+      expect(new EncryptedStorage(NEW_ENCRYPTION_KEY).readFile(browserStateDestination)).toBe(
+        '{"cookies":[]}'
+      );
+      expect(
+        Object.keys(readWithKey(join(destinationDirectory, STORE_FILENAME), NEW_ENCRYPTION_KEY))
+      ).toEqual(['slack']);
+    });
+
+    it('errors with --browser-state when there is no browser state', async () => {
+      writeStore({ slack: { objectType: 'slack', token: 'tok', dCookie: 'cookie' } });
+      const destinationDirectory = join(tempDir, 'export');
+
+      const deps = withStdinKey(NEW_ENCRYPTION_KEY);
+      await runCommand(['auth', 're-encrypt', destinationDirectory, '--browser-state'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(existsSync(join(destinationDirectory, STORE_FILENAME))).toBe(false);
+    });
+
+    it('overwrites an existing browser state in the destination', async () => {
+      writeStore({});
+      new EncryptedStorage(TEST_ENCRYPTION_KEY).writeFile(
+        join(tempDir, BROWSER_STATE_FILENAME),
+        '{"cookies":["new"]}'
+      );
+      const destinationDirectory = join(tempDir, 'export');
+      const browserStateDestination = join(destinationDirectory, BROWSER_STATE_FILENAME);
+      new EncryptedStorage(NEW_ENCRYPTION_KEY).writeFile(browserStateDestination, 'old');
+
+      const deps = withStdinKey(NEW_ENCRYPTION_KEY);
+      await runCommand(['auth', 're-encrypt', destinationDirectory, '--browser-state'], deps);
+
+      expect(exitCode).toBeNull();
+      expect(new EncryptedStorage(NEW_ENCRYPTION_KEY).readFile(browserStateDestination)).toBe(
+        '{"cookies":["new"]}'
+      );
     });
 
     it('errors when the destination is an existing file, not a directory', async () => {

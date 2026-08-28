@@ -212,7 +212,32 @@ export function loadRegisteredServicesIntoServiceRegistry(
   }
 }
 
-export const SERVICE_REGISTRY = new ServiceRegistry([
+/**
+ * Build a registry holding `builtinServices` plus the services registered in
+ * config.json, with the named services removed. This is how both the CLI and
+ * every gateway request get their registry.
+ *
+ * Hiding happens once the whole file has been loaded, so that a registered
+ * service naming a hidden built-in as its family still resolves that family.
+ *
+ * A null `configPath` skips config.json entirely, which is what the CLI does
+ * when it is pointed at a remote gateway: the gateway owns the registered
+ * services there, and the local CLI only forwards commands to it.
+ */
+export function createServiceRegistry(
+  builtinServices: readonly Service[],
+  configPath: string | null,
+  hiddenServiceNames: readonly string[]
+): ServiceRegistry {
+  const registry = new ServiceRegistry(builtinServices);
+  if (configPath !== null) {
+    loadRegisteredServicesIntoServiceRegistry(configPath, registry);
+  }
+  hideServicesFromRegistry(registry, hiddenServiceNames);
+  return registry;
+}
+
+export const BUILTIN_SERVICES: readonly Service[] = [
   SLACK,
   DISCORD,
   DROPBOX,
@@ -249,4 +274,4 @@ export const SERVICE_REGISTRY = new ServiceRegistry([
   HUGGINGFACE,
   OPENROUTER,
   TAILSCALE,
-]);
+];

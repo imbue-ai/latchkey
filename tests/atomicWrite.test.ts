@@ -1,5 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, readFileSync, statSync, mkdirSync, readdirSync } from 'node:fs';
+import {
+  mkdtempSync,
+  rmSync,
+  readFileSync,
+  statSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { writeFileAtomic, AtomicWriteError } from '../src/atomicWrite.js';
@@ -89,6 +99,59 @@ describe('writeFileAtomic', () => {
     const content = 'x'.repeat(1_000_000);
     writeFileAtomic(filePath, content);
     expect(readFileSync(filePath, 'utf-8')).toBe(content);
+  });
+
+  it('should write through a symlink instead of replacing it', () => {
+    const realPath = join(tempDir, 'real.txt');
+    const linkPath = join(tempDir, 'link.txt');
+    writeFileSync(realPath, 'original', 'utf-8');
+    symlinkSync(realPath, linkPath);
+
+    writeFileAtomic(linkPath, 'updated');
+
+    expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
+    expect(readFileSync(realPath, 'utf-8')).toBe('updated');
+  });
+
+  it('should follow a chain of symlinks', () => {
+    const realPath = join(tempDir, 'real.txt');
+    const middleLinkPath = join(tempDir, 'middle.txt');
+    const outerLinkPath = join(tempDir, 'outer.txt');
+    writeFileSync(realPath, 'original', 'utf-8');
+    symlinkSync(realPath, middleLinkPath);
+    symlinkSync(middleLinkPath, outerLinkPath);
+
+    writeFileAtomic(outerLinkPath, 'updated');
+
+    expect(lstatSync(outerLinkPath).isSymbolicLink()).toBe(true);
+    expect(lstatSync(middleLinkPath).isSymbolicLink()).toBe(true);
+    expect(readFileSync(realPath, 'utf-8')).toBe('updated');
+  });
+
+  it('should create the target of a dangling symlink', () => {
+    const realPath = join(tempDir, 'not-yet-there.txt');
+    const linkPath = join(tempDir, 'link.txt');
+    symlinkSync(realPath, linkPath);
+
+    writeFileAtomic(linkPath, 'created');
+
+    expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
+    expect(readFileSync(realPath, 'utf-8')).toBe('created');
+  });
+
+  it('should write through a symlink pointing into another directory', () => {
+    const otherDir = join(tempDir, 'other');
+    mkdirSync(otherDir);
+    const realPath = join(otherDir, 'real.txt');
+    const linkPath = join(tempDir, 'link.txt');
+    writeFileSync(realPath, 'original', 'utf-8');
+    symlinkSync('other/real.txt', linkPath);
+
+    writeFileAtomic(linkPath, 'updated', { mode: 0o600 });
+
+    expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
+    expect(readFileSync(realPath, 'utf-8')).toBe('updated');
+    expect(readdirSync(tempDir).sort()).toEqual(['link.txt', 'other']);
   });
 
   it('should not corrupt the target file if rename would fail', () => {

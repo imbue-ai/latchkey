@@ -23,7 +23,9 @@ import { CONFIG } from '../src/config.js';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { resolveEncryptionKey } from '../src/encryption.js';
 import { withTempBrowserContext } from '../src/playwrightUtils.js';
-import { SERVICE_REGISTRY } from '../src/serviceRegistry.js';
+import { BUILTIN_SERVICES, ServiceRegistry } from '../src/serviceRegistry.js';
+
+const BUILTIN_SERVICE_REGISTRY = new ServiceRegistry(BUILTIN_SERVICES);
 
 // Get the directory of this file
 const __filename = fileURLToPath(import.meta.url);
@@ -188,7 +190,7 @@ async function record(
   serviceName: string,
   recordingName: string = DEFAULT_RECORDING_NAME
 ): Promise<void> {
-  const service = SERVICE_REGISTRY.getByName(serviceName);
+  const service = BUILTIN_SERVICE_REGISTRY.getByName(serviceName);
   if (service === null) {
     throw new UnknownServiceError(serviceName);
   }
@@ -271,7 +273,7 @@ async function main(): Promise<void> {
     if (error instanceof UnknownServiceError) {
       console.error(`Error: ${error.message}`);
       console.error('Available services:');
-      for (const service of SERVICE_REGISTRY.services) {
+      for (const service of BUILTIN_SERVICE_REGISTRY.services) {
         console.error(`  - ${service.name}`);
       }
       process.exit(1);

@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# latchkey dev shim -- LATCHKEY_DEV_SHIM_V1
+#
+# Routes `latchkey ...` to the latchkey checkout you are actually working in:
+#   - inside any latchkey checkout/worktree: use THAT tree, running src/cli.ts
+#     under node via the checkout's own tsx, so local edits take effect with
+#     no build step.
+#   - anywhere else: fall back to the checkout this shim is installed from,
+#     discovered from the shim's own path.
+#
+# Requires `npm install` in the target checkout (tsx is a devDependency, and
+# the prepare script generates src/version.ts); fails with instructions
+# otherwise. Never writes to the checkout and never runs dist/.
+#
+# Install onto PATH with `npm run install-dev-shim` (symlinks
+# ~/.local/bin/latchkey here); remove it with `npm run uninstall-dev-shim`.
+set -euo pipefail
+
+_resolve() {
+    # Portable `readlink -f` (macOS ships no GNU readlink by default).
+    local path=$1 target
+    while [ -L "$path" ]; do
+        target=$(readlink "$path")
+        case $target in
+            /*) path=$target ;;
+            *) path=$(cd -P "$(dirname "$path")" && cd -P "$(dirname "$target")" && pwd)/$(basename "$target") ;;
+        esac
+    done
+    printf '%s\n' "$(cd -P "$(dirname "$path")" && pwd)/$(basename "$path")"
+}
+
+_is_latchkey_checkout() {
+    [ -f "$1/src/cli.ts" ] && grep -Eq '"name"[[:space:]]*:[[:space:]]*"latchkey"' "$1/package.json" 2>/dev/null
+}
+
+if root=$(git rev-parse --show-toplevel 2>/dev/null) && _is_latchkey_checkout "$root"; then
+    :
+else
+    shim=$(_resolve "${BASH_SOURCE[0]}")
+    if root=$(git -C "$(dirname "$shim")" rev-parse --show-toplevel 2>/dev/null) && _is_latchkey_checkout "$root"; then
+        :
+    else
+        echo "latchkey: shim at $shim is not inside a latchkey checkout" >&2
+        exit 1
+    fi
+fi
+
+tsx="$root/node_modules/.bin/tsx"
+if [ ! -x "$tsx" ]; then
+    echo "latchkey: no tsx in $root/node_modules; run \`npm install\` in $root first" >&2
+    exit 1
+fi
+
+if [ ! -f "$root/src/version.ts" ]; then
+    echo "latchkey: $root/src/version.ts is missing; run \`npm install\` in $root to generate it" >&2
+    exit 1
+fi
+
+exec "$tsx" "$root/src/cli.ts" "$@"
