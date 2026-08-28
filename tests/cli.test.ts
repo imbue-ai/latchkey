@@ -1281,8 +1281,9 @@ describe('CLI commands with dependency injection', () => {
       return createMockDependencies({ readStdin: () => Promise.resolve(key), ...overrides });
     }
 
-    // The credential store filename used by the mock config.
+    // The filenames used by the mock config.
     const STORE_FILENAME = 'credentials.json';
+    const BROWSER_STATE_FILENAME = 'browser_state.json';
 
     function writeStore(contents: Record<string, unknown>): void {
       writeSecureFile(join(tempDir, STORE_FILENAME), JSON.stringify(nestAccounts(contents)));
@@ -1382,7 +1383,40 @@ describe('CLI commands with dependency injection', () => {
       ).toEqual(['slack']);
     });
 
-    it('refuses to overwrite an existing credential store in the destination', async () => {
+    it('adds the services into an existing credential store, overwriting by service', async () => {
+      writeStore({
+        slack: { objectType: 'slack', token: 'new-tok', dCookie: 'new-cookie' },
+      });
+      const destinationDirectory = join(tempDir, 'export');
+      const destination = join(destinationDirectory, STORE_FILENAME);
+      new EncryptedStorage(NEW_ENCRYPTION_KEY).writeFile(
+        destination,
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'slack', token: 'old-tok', dCookie: 'old-cookie' },
+            discord: { objectType: 'authorizationBearer', token: 'discord-token' },
+          })
+        )
+      );
+
+      const deps = withStdinKey(NEW_ENCRYPTION_KEY);
+      await runCommand(['auth', 're-encrypt', destinationDirectory], deps);
+
+      expect(exitCode).toBeNull();
+      const reEncrypted = readWithKey(destination, NEW_ENCRYPTION_KEY);
+      expect(Object.keys(reEncrypted).sort()).toEqual(['discord', 'slack']);
+      expect(reEncrypted.slack).toEqual({
+        objectType: 'slack',
+        token: 'new-tok',
+        dCookie: 'new-cookie',
+      });
+      expect(reEncrypted.discord).toEqual({
+        objectType: 'authorizationBearer',
+        token: 'discord-token',
+      });
+    });
+
+    it('errors when the existing credential store cannot be read with the new key', async () => {
       writeStore({ slack: { objectType: 'slack', token: 'tok', dCookie: 'cookie' } });
       const destinationDirectory = join(tempDir, 'export');
       mkdirSync(destinationDirectory);
@@ -1394,6 +1428,57 @@ describe('CLI commands with dependency injection', () => {
 
       expect(exitCode).toBe(1);
       expect(readFileSync(destination, 'utf-8')).toBe('existing');
+    });
+
+    it('re-encrypts the browser state with --browser-state', async () => {
+      writeStore({ slack: { objectType: 'slack', token: 'tok', dCookie: 'cookie' } });
+      new EncryptedStorage(TEST_ENCRYPTION_KEY).writeFile(
+        join(tempDir, BROWSER_STATE_FILENAME),
+        '{"cookies":[]}'
+      );
+      const destinationDirectory = join(tempDir, 'export');
+
+      const deps = withStdinKey(NEW_ENCRYPTION_KEY);
+      await runCommand(['auth', 're-encrypt', destinationDirectory, '--browser-state'], deps);
+
+      expect(exitCode).toBeNull();
+      const browserStateDestination = join(destinationDirectory, BROWSER_STATE_FILENAME);
+      expect(new EncryptedStorage(NEW_ENCRYPTION_KEY).readFile(browserStateDestination)).toBe(
+        '{"cookies":[]}'
+      );
+      expect(
+        Object.keys(readWithKey(join(destinationDirectory, STORE_FILENAME), NEW_ENCRYPTION_KEY))
+      ).toEqual(['slack']);
+    });
+
+    it('errors with --browser-state when there is no browser state', async () => {
+      writeStore({ slack: { objectType: 'slack', token: 'tok', dCookie: 'cookie' } });
+      const destinationDirectory = join(tempDir, 'export');
+
+      const deps = withStdinKey(NEW_ENCRYPTION_KEY);
+      await runCommand(['auth', 're-encrypt', destinationDirectory, '--browser-state'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(existsSync(join(destinationDirectory, STORE_FILENAME))).toBe(false);
+    });
+
+    it('overwrites an existing browser state in the destination', async () => {
+      writeStore({});
+      new EncryptedStorage(TEST_ENCRYPTION_KEY).writeFile(
+        join(tempDir, BROWSER_STATE_FILENAME),
+        '{"cookies":["new"]}'
+      );
+      const destinationDirectory = join(tempDir, 'export');
+      const browserStateDestination = join(destinationDirectory, BROWSER_STATE_FILENAME);
+      new EncryptedStorage(NEW_ENCRYPTION_KEY).writeFile(browserStateDestination, 'old');
+
+      const deps = withStdinKey(NEW_ENCRYPTION_KEY);
+      await runCommand(['auth', 're-encrypt', destinationDirectory, '--browser-state'], deps);
+
+      expect(exitCode).toBeNull();
+      expect(new EncryptedStorage(NEW_ENCRYPTION_KEY).readFile(browserStateDestination)).toBe(
+        '{"cookies":["new"]}'
+      );
     });
 
     it('errors when the destination is an existing file, not a directory', async () => {
