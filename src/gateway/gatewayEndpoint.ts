@@ -10,6 +10,7 @@ import * as http from 'node:http';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { ApiCredentialsUsageError } from '../apiCredentials/base.js';
 import { AmbiguousAccountError, type ApiCredentialStore } from '../apiCredentials/store.js';
 import type { AsyncCurlResult } from '../curl.js';
 import type { CliDependencies } from '../cliCommands.js';
@@ -358,8 +359,9 @@ export async function handleGatewayRequest(
       },
       // The gateway forwards the body to curl out-of-band via
       // `--data-binary @-` on stdin, so the parsed curl arguments only carry
-      // the `@-` placeholder. Hand the real body to the permission check so it
-      // inspects the actual payload.
+      // the `@-` placeholder. Hand the real body to the pipeline so the
+      // permission check inspects the actual payload and payload-signing
+      // credentials (AWS SigV4) hash the bytes curl really sends.
       body
     );
   } catch (error) {
@@ -378,7 +380,8 @@ export async function handleGatewayRequest(
       error instanceof NoServiceForUrlError ||
       error instanceof NoCredentialsForServiceError ||
       error instanceof CredentialsExpiredError ||
-      error instanceof AmbiguousAccountError
+      error instanceof AmbiguousAccountError ||
+      error instanceof ApiCredentialsUsageError
     ) {
       deps.log(`${method} ${targetUrl} -> 400`);
       sendErrorResponse(response, 400, error.message);

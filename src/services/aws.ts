@@ -1,8 +1,9 @@
 import { createHash, createHmac } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { z } from 'zod';
-import { type ApiCredentials } from '../apiCredentials/base.js';
+import { ApiCredentialsUsageError, type ApiCredentials } from '../apiCredentials/base.js';
 import { fetchAccountFromEndpoint } from '../apiCredentials/account.js';
-import { CurlParseError, parseCurlArgs } from '../curl.js';
+import { CurlParseError, parseCurlArgs, resolveCurlRequestBodySource } from '../curl.js';
 import { NoCurlCredentialsNotSupportedError, Service } from './core/base.js';
 
 /**
@@ -18,8 +19,46 @@ export const AwsCredentialsSchema = z.object({
 
 export type AwsCredentialsData = z.infer<typeof AwsCredentialsSchema>;
 
-function sha256Hex(data: string): string {
-  return createHash('sha256').update(data, 'utf-8').digest('hex');
+function sha256Hex(data: Buffer): string {
+  return createHash('sha256').update(data).digest('hex');
+}
+
+function sha256HexOfText(text: string): string {
+  return sha256Hex(Buffer.from(text, 'utf-8'));
+}
+
+/**
+ * Resolve the bytes curl will actually send, which is what SigV4 must hash.
+ *
+ * Callers that stream the payload to curl out-of-band (the gateway pipes it in
+ * via `--data-binary @-`) pass it explicitly. Otherwise the payload has to come
+ * from the arguments: a `@file` reference is read from disk, while a body that
+ * only exists on curl's stdin, or one curl assembles itself, cannot be signed.
+ */
+function resolveRequestBody(
+  curlArguments: readonly string[],
+  parsedBodyText: string,
+  outOfBandRequestBody: Buffer | null | undefined
+): Buffer {
+  if (outOfBandRequestBody !== undefined && outOfBandRequestBody !== null) {
+    return outOfBandRequestBody;
+  }
+
+  const bodySource = resolveCurlRequestBodySource(curlArguments, parsedBodyText);
+  switch (bodySource.kind) {
+    case 'inline':
+      return Buffer.from(bodySource.text, 'utf-8');
+    case 'file':
+      try {
+        return readFileSync(bodySource.path);
+      } catch {
+        throw new AwsRequestBodyFileUnreadableError(bodySource.path);
+      }
+    case 'stdin':
+      throw new AwsRequestBodyNotAvailableError();
+    case 'unreconstructable':
+      throw new AwsRequestBodyNotSignableError();
+  }
 }
 
 function hmacSha256(key: Buffer, message: string): Buffer {
@@ -130,7 +169,7 @@ function signAwsRequest(
   method: string,
   url: URL,
   existingHeaders: Record<string, string>,
-  body: string,
+  body: Buffer,
   accessKeyId: string,
   secretAccessKey: string
 ): readonly string[] {
@@ -154,6 +193,17 @@ function signAwsRequest(
   // Include content-type if present
   if (existingHeaders['content-type'] !== undefined) {
     headersToSign['content-type'] = existingHeaders['content-type'];
+  }
+
+  // AWS requires every `x-amz-*` header the request carries to be signed
+  // (e.g. `X-Amz-Target`, which selects the operation for JSON protocol
+  // services such as CloudWatch Logs). The date and payload-hash headers are
+  // produced here and must not be overwritten by client-supplied values.
+  for (const [name, value] of Object.entries(existingHeaders)) {
+    const lowerName = name.toLowerCase();
+    if (lowerName.startsWith('x-amz-') && headersToSign[lowerName] === undefined) {
+      headersToSign[lowerName] = value;
+    }
   }
 
   const signedHeaderNames = Object.keys(headersToSign).sort();
@@ -187,7 +237,7 @@ function signAwsRequest(
     'AWS4-HMAC-SHA256',
     amzDate,
     credentialScope,
-    sha256Hex(canonicalRequest),
+    sha256HexOfText(canonicalRequest),
   ].join('\n');
 
   // Step 3: Signature
@@ -220,7 +270,10 @@ export class AwsCredentials implements ApiCredentials {
     this.secretAccessKey = secretAccessKey;
   }
 
-  async injectIntoCurlCall(curlArguments: readonly string[]): Promise<readonly string[]> {
+  async injectIntoCurlCall(
+    curlArguments: readonly string[],
+    requestBody?: Buffer | null
+  ): Promise<readonly string[]> {
     let request: Request;
     try {
       request = parseCurlArgs(curlArguments);
@@ -235,7 +288,7 @@ export class AwsCredentials implements ApiCredentials {
     request.headers.forEach((value, name) => {
       existingHeaders[name] = value;
     });
-    const body = await request.text();
+    const body = resolveRequestBody(curlArguments, await request.text(), requestBody);
 
     const signingHeaders = signAwsRequest(
       request.method,
@@ -314,6 +367,36 @@ export class Aws extends Service {
         return accountMatch?.[1] ?? null;
       }
     );
+  }
+}
+
+export class AwsRequestBodyNotAvailableError extends ApiCredentialsUsageError {
+  constructor() {
+    super(
+      'AWS request signing needs the request body, but it is streamed to curl ' +
+        "from stdin (`@-`). Pass the body inline (for example `--data '{...}'`) " +
+        'or from a file (`--data @payload.json`) instead.'
+    );
+    this.name = 'AwsRequestBodyNotAvailableError';
+  }
+}
+
+export class AwsRequestBodyNotSignableError extends ApiCredentialsUsageError {
+  constructor() {
+    super(
+      'AWS request signing needs the exact request body, but it is assembled by ' +
+        'curl from several data arguments or from url-encoded file data. Pass the ' +
+        "payload as a single inline `--data '{...}'` or `--data @payload.json` " +
+        'argument instead.'
+    );
+    this.name = 'AwsRequestBodyNotSignableError';
+  }
+}
+
+export class AwsRequestBodyFileUnreadableError extends ApiCredentialsUsageError {
+  constructor(path: string) {
+    super(`AWS request signing could not read the request body file: ${path}`);
+    this.name = 'AwsRequestBodyFileUnreadableError';
   }
 }
 

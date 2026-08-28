@@ -11,7 +11,15 @@ import {
 } from '../src/apiCredentials/serialization.js';
 import { SlackApiCredentials } from '../src/services/slack.js';
 import { TelegramBotCredentials } from '../src/services/telegram.js';
-import { AwsCredentials } from '../src/services/aws.js';
+import {
+  AwsCredentials,
+  AwsRequestBodyNotAvailableError,
+  AwsRequestBodyNotSignableError,
+} from '../src/services/aws.js';
+import { createHash } from 'node:crypto';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { GoogleApiKeyCredentials } from '../src/services/google/base.js';
 import { ZoomServerToServerCredentials } from '../src/services/zoom.js';
 
@@ -175,6 +183,117 @@ describe('AwsCredentials', () => {
     const credentials = new AwsCredentials('AKIAIOSFODNN7EXAMPLE', 'wJalrXUtnFEMI/K7MDENG');
     const result = await credentials.injectIntoCurlCall(['-v']);
     expect(result).toEqual(['-v']);
+  });
+
+  it('should sign the out-of-band body instead of the @- placeholder', async () => {
+    const credentials = new AwsCredentials('AKIAIOSFODNN7EXAMPLE', 'wJalrXUtnFEMI/K7MDENG');
+    const body = '{"logGroupName":"/aws/lambda/test"}';
+    const curlArguments = [
+      '-X',
+      'POST',
+      '-H',
+      'Content-Type: application/x-amz-json-1.1',
+      '--data-binary',
+      '@-',
+      'https://logs.us-east-1.amazonaws.com/',
+    ];
+
+    const result = (await credentials.injectIntoCurlCall(
+      curlArguments,
+      Buffer.from(body, 'utf-8')
+    )) as string[];
+
+    const payloadHashHeader = result.find((argument) =>
+      argument.startsWith('x-amz-content-sha256: ')
+    );
+    const expectedHash = createHash('sha256').update(body, 'utf-8').digest('hex');
+    expect(payloadHashHeader).toBe(`x-amz-content-sha256: ${expectedHash}`);
+    expect(payloadHashHeader).not.toBe(
+      `x-amz-content-sha256: ${createHash('sha256').update('@-', 'utf-8').digest('hex')}`
+    );
+  });
+
+  it('should read a @file body reference when signing', async () => {
+    const credentials = new AwsCredentials('AKIAIOSFODNN7EXAMPLE', 'wJalrXUtnFEMI/K7MDENG');
+    const body = '{"limit":10}';
+    const bodyFile = join(mkdtempSync(join(tmpdir(), 'latchkey-aws-')), 'body.json');
+    writeFileSync(bodyFile, body);
+
+    const result = (await credentials.injectIntoCurlCall([
+      '-X',
+      'POST',
+      '--data-binary',
+      `@${bodyFile}`,
+      'https://logs.us-east-1.amazonaws.com/',
+    ])) as string[];
+
+    const expectedHash = createHash('sha256').update(body, 'utf-8').digest('hex');
+    expect(result).toContain(`x-amz-content-sha256: ${expectedHash}`);
+  });
+
+  it('should report a clear error when the body only exists on curl stdin', async () => {
+    const credentials = new AwsCredentials('AKIAIOSFODNN7EXAMPLE', 'wJalrXUtnFEMI/K7MDENG');
+
+    await expect(
+      credentials.injectIntoCurlCall([
+        '-X',
+        'POST',
+        '--data-binary',
+        '@-',
+        'https://logs.us-east-1.amazonaws.com/',
+      ])
+    ).rejects.toBeInstanceOf(AwsRequestBodyNotAvailableError);
+  });
+
+  it('should refuse to sign bodies curl assembles from several data arguments', async () => {
+    const credentials = new AwsCredentials('AKIAIOSFODNN7EXAMPLE', 'wJalrXUtnFEMI/K7MDENG');
+    const bodyFile = join(mkdtempSync(join(tmpdir(), 'latchkey-aws-')), 'body.json');
+    writeFileSync(bodyFile, '{"limit":10}');
+
+    await expect(
+      credentials.injectIntoCurlCall([
+        '-X',
+        'POST',
+        '-d',
+        `@${bodyFile}`,
+        '-d',
+        'extra=1',
+        'https://logs.us-east-1.amazonaws.com/',
+      ])
+    ).rejects.toBeInstanceOf(AwsRequestBodyNotSignableError);
+
+    await expect(
+      credentials.injectIntoCurlCall([
+        '-X',
+        'POST',
+        '--data-urlencode',
+        `@${bodyFile}`,
+        'https://logs.us-east-1.amazonaws.com/',
+      ])
+    ).rejects.toBeInstanceOf(AwsRequestBodyNotSignableError);
+  });
+
+  it('should sign x-amz-* headers supplied by the caller', async () => {
+    const credentials = new AwsCredentials('AKIAIOSFODNN7EXAMPLE', 'wJalrXUtnFEMI/K7MDENG');
+
+    const result = (await credentials.injectIntoCurlCall(
+      [
+        '-X',
+        'POST',
+        '-H',
+        'Content-Type: application/x-amz-json-1.1',
+        '-H',
+        'X-Amz-Target: Logs_20140328.DescribeLogGroups',
+        '--data-binary',
+        '@-',
+        'https://logs.us-east-1.amazonaws.com/',
+      ],
+      Buffer.from('{}', 'utf-8')
+    )) as string[];
+
+    expect(result[1]).toContain(
+      'SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date;x-amz-target'
+    );
   });
 });
 

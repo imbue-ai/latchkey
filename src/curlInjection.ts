@@ -104,11 +104,12 @@ export async function prepareCurlInvocation(
    * The actual request body, when the caller has it available in memory but
    * passes it to curl out-of-band (e.g. the gateway streams it via
    * `--data-binary @-` on stdin). In that case the parsed curl arguments only
-   * contain the placeholder `@-`, so the permission check would otherwise see
-   * `"@-"` as the body. Supplying it here lets the permission check inspect
-   * the real body without changing how curl is actually invoked.
+   * contain the placeholder `@-`, so both the permission check and any
+   * payload-signing credential type (AWS SigV4) would otherwise see `"@-"` as
+   * the body. Supplying it here lets them inspect the real body without
+   * changing how curl is actually invoked.
    */
-  requestBodyForPermissionCheck?: Buffer | null
+  outOfBandRequestBody?: Buffer | null
 ): Promise<readonly string[]> {
   // Parse the curl arguments once for the permission check. A parse failure
   // here means the user's curl invocation is malformed, which is treated as
@@ -125,11 +126,11 @@ export async function prepareCurlInvocation(
   }
   // When the real body was supplied out-of-band, rebuild the request so the
   // permission check sees the actual payload instead of the `@-` placeholder.
-  if (requestBodyForPermissionCheck !== undefined && requestBodyForPermissionCheck !== null) {
+  if (outOfBandRequestBody !== undefined && outOfBandRequestBody !== null) {
     parsedRequest = new Request(parsedRequest.url, {
       method: parsedRequest.method,
       headers: parsedRequest.headers,
-      body: requestBodyForPermissionCheck,
+      body: outOfBandRequestBody,
     });
   }
   // The permission check is deferred until we know which account's credentials
@@ -250,5 +251,5 @@ export async function prepareCurlInvocation(
     apiCredentials = service.adjustCredentials(apiCredentials, url);
   }
 
-  return await apiCredentials.injectIntoCurlCall(curlArguments);
+  return await apiCredentials.injectIntoCurlCall(curlArguments, outOfBandRequestBody);
 }
