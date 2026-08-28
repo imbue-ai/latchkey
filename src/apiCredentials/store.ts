@@ -179,6 +179,14 @@ export class ApiCredentialStore {
   }
 
   /**
+   * List the services that have a preparation stored, in the order they appear
+   * in the store.
+   */
+  listPreparedServiceNames(): readonly string[] {
+    return Object.keys(this.loadStoreData().preparations);
+  }
+
+  /**
    * List the accounts that have credentials stored for a service, in the order
    * they appear in the store. Returns an empty array when the service has no
    * stored credentials.
