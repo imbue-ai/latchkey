@@ -25,6 +25,8 @@ import {
   ServiceRegistry,
 } from '../src/serviceRegistry.js';
 import { Service } from '../src/services/core/base.js';
+import { AWS } from '../src/services/aws.js';
+import { createHash } from 'node:crypto';
 import { createMockService } from './mockService.js';
 
 const TEST_ENCRYPTION_KEY = 'dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q=';
@@ -407,6 +409,33 @@ describe('gateway server', () => {
       // permission check must still see the actual payload.
       expect(capturedPermissionCheckBody).toBe(requestBody);
       expect(capturedPermissionCheckBody).not.toBe('@-');
+    });
+
+    it('should sign the real body with AWS SigV4 rather than the @- placeholder', async () => {
+      gateway = await createTestGateway(
+        {
+          aws: {
+            objectType: 'aws',
+            accessKeyId: 'AKIAIOSFODNN7EXAMPLE',
+            secretAccessKey: 'wJalrXUtnFEMI/K7MDENG',
+          },
+        },
+        { builtinServices: [AWS] }
+      );
+      const requestBody = '{"logGroupName":"/aws/lambda/test","limit":1}';
+
+      await fetch('/gateway/https://logs.us-east-1.amazonaws.com/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-amz-json-1.1',
+          'X-Amz-Target': 'Logs_20140328.FilterLogEvents',
+        },
+        body: requestBody,
+      });
+
+      const expectedHash = createHash('sha256').update(requestBody, 'utf-8').digest('hex');
+      expect(capturedCurlArgs).toContain(`x-amz-content-sha256: ${expectedHash}`);
+      expect(capturedCurlStdin?.toString()).toBe(requestBody);
     });
 
     it('should forward query parameters in the target URL', async () => {
