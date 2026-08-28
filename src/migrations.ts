@@ -272,8 +272,12 @@ const MIGRATIONS: readonly MigrationFunction[] = [
 
 export const LATEST_VERSION = MIGRATIONS.length;
 
-export function readDataFormatVersion(config: Config): number {
-  const versionFilePath = join(config.directory, DATA_FORMAT_VERSION_FILENAME);
+/**
+ * Read the data format version of an arbitrary Latchkey directory. A directory
+ * without a version file is in the oldest format (version 0).
+ */
+export function readDataFormatVersionOfDirectory(directory: string): number {
+  const versionFilePath = join(directory, DATA_FORMAT_VERSION_FILENAME);
   if (!existsSync(versionFilePath)) {
     return 0;
   }
@@ -287,8 +291,12 @@ export function readDataFormatVersion(config: Config): number {
   return version;
 }
 
-function writeDataFormatVersion(config: Config, version: number): void {
-  const versionFilePath = join(config.directory, DATA_FORMAT_VERSION_FILENAME);
+export function readDataFormatVersion(config: Config): number {
+  return readDataFormatVersionOfDirectory(config.directory);
+}
+
+export function writeDataFormatVersionOfDirectory(directory: string, version: number): void {
+  const versionFilePath = join(directory, DATA_FORMAT_VERSION_FILENAME);
   writeFileAtomic(versionFilePath, String(version));
 }
 
@@ -307,7 +315,7 @@ export async function runMigrations(
     // created store for one in the oldest format and "migrate" (i.e. corrupt)
     // it.
     mkdirSync(config.directory, { recursive: true, mode: 0o700 });
-    writeDataFormatVersion(config, LATEST_VERSION);
+    writeDataFormatVersionOfDirectory(config.directory, LATEST_VERSION);
     return;
   }
 
@@ -329,6 +337,6 @@ export async function runMigrations(
   }
 
   if (currentVersion < LATEST_VERSION) {
-    writeDataFormatVersion(config, LATEST_VERSION);
+    writeDataFormatVersionOfDirectory(config.directory, LATEST_VERSION);
   }
 }

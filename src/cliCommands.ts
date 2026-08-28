@@ -77,6 +77,12 @@ import {
   type PermissionCheckMetadata,
 } from './permissions.js';
 import { ErrorMessages } from './errorMessages.js';
+import {
+  LATEST_VERSION,
+  MigrationError,
+  readDataFormatVersionOfDirectory,
+  writeDataFormatVersionOfDirectory,
+} from './migrations.js';
 import { getSkillMdContent } from './skillMd.js';
 import { startGateway } from './gateway/server.js';
 import {
@@ -1378,6 +1384,29 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         // Reading the destination store validates that it can be decrypted with
         // the destination key before anything is written into it.
         if (existsSync(destination)) {
+          // An existing store in an older data format would be migrated (and
+          // thereby mangled) by the next Latchkey run, so refuse to add to it.
+          let destinationVersion: number;
+          try {
+            destinationVersion = readDataFormatVersionOfDirectory(destinationDirectory);
+          } catch (error) {
+            if (error instanceof MigrationError) {
+              deps.errorLog(`Error: ${error.message}`);
+              deps.exit(1);
+            }
+            throw error;
+          }
+          if (destinationVersion !== LATEST_VERSION) {
+            deps.errorLog(
+              `Error: The existing credential store at ${destination} is in data format ` +
+                `version ${String(destinationVersion)}, but ${String(LATEST_VERSION)} is required.`
+            );
+            deps.errorLog(
+              'Point Latchkey at that directory to migrate it first, or choose an empty destination.'
+            );
+            deps.exit(1);
+          }
+
           try {
             destinationStore.getAll();
           } catch (error) {
@@ -1424,6 +1453,10 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           destinationStorage.writeFile(browserStateDestination, browserState);
           deps.log(`Re-encrypted browser state to ${browserStateDestination}.`);
         }
+
+        // Stamp the data format version so that Latchkey does not mistake the
+        // exported directory for one in the oldest format and "migrate" it.
+        writeDataFormatVersionOfDirectory(destinationDirectory, LATEST_VERSION);
       }
     );
 

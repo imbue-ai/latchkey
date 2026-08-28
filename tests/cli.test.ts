@@ -11,6 +11,7 @@ import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { Config } from '../src/config.js';
 import { ServiceRegistry } from '../src/serviceRegistry.js';
 import { ApiCredentialStatus } from '../src/apiCredentials/base.js';
+import { LATEST_VERSION } from '../src/migrations.js';
 import { Service } from '../src/services/core/base.js';
 import { createMockService, MockService } from './mockService.js';
 import { RegisteredService } from '../src/services/core/registered.js';
@@ -1302,6 +1303,13 @@ describe('CLI commands with dependency injection', () => {
       return raw.preparations ?? {};
     }
 
+    // A destination that already holds a store must be in the current data
+    // format, which real Latchkey directories record in this file.
+    function stampDataFormatVersion(directory: string): void {
+      mkdirSync(directory, { recursive: true });
+      writeFileSync(join(directory, 'data-format-version'), String(LATEST_VERSION));
+    }
+
     const GITLAB_PREPARATION = {
       objectType: 'oauth',
       clientId: 'gitlab-client-id',
@@ -1436,6 +1444,7 @@ describe('CLI commands with dependency injection', () => {
       writeStore({}, { gitlab: GITLAB_PREPARATION });
       const destinationDirectory = join(tempDir, 'export');
       const destination = join(destinationDirectory, STORE_FILENAME);
+      stampDataFormatVersion(destinationDirectory);
       new EncryptedStorage(NEW_ENCRYPTION_KEY).writeFile(
         destination,
         JSON.stringify({
@@ -1485,6 +1494,7 @@ describe('CLI commands with dependency injection', () => {
       });
       const destinationDirectory = join(tempDir, 'export');
       const destination = join(destinationDirectory, STORE_FILENAME);
+      stampDataFormatVersion(destinationDirectory);
       new EncryptedStorage(NEW_ENCRYPTION_KEY).writeFile(
         destination,
         JSON.stringify(
@@ -1515,7 +1525,7 @@ describe('CLI commands with dependency injection', () => {
     it('errors when the existing credential store cannot be read with the new key', async () => {
       writeStore({ slack: { objectType: 'slack', token: 'tok', dCookie: 'cookie' } });
       const destinationDirectory = join(tempDir, 'export');
-      mkdirSync(destinationDirectory);
+      stampDataFormatVersion(destinationDirectory);
       const destination = join(destinationDirectory, STORE_FILENAME);
       writeFileSync(destination, 'existing');
 
