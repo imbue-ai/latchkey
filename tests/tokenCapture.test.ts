@@ -134,8 +134,9 @@ describe('token capture', () => {
 describe('token capture parameters', () => {
   it('is registered under its flow name', () => {
     expect(LOGIN_FLOWS.map((flow) => flow.flowName)).toContain('token-capture');
-    expect(resolveLoginFlow('token-capture', { tokenUrl: TOKEN_URL, tokenField: 'accessToken' })).
-      toBeInstanceOf(TokenCaptureLoginFlow);
+    expect(
+      resolveLoginFlow('token-capture', { tokenUrl: TOKEN_URL, tokenField: 'accessToken' })
+    ).toBeInstanceOf(TokenCaptureLoginFlow);
   });
 
   it('requires a URL and a field', () => {
