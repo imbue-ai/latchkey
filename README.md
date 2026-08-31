@@ -7,8 +7,6 @@
 
 Inject API credentials into local agent requests.
 
-**[Full documentation](https://docs.imbue.com/latchkey)**
-
 ## Quick example
 
 ```bash
