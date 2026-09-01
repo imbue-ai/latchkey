@@ -1347,6 +1347,24 @@ describe('CLI commands with dependency injection', () => {
       );
     }
 
+    // Write an on-disk store with explicit account keys.
+    function writeAccountStore(
+      credentials: Record<string, Record<string, unknown>>,
+      preparations: Record<string, unknown> = {}
+    ): void {
+      writeSecureFile(join(tempDir, STORE_FILENAME), JSON.stringify({ credentials, preparations }));
+    }
+
+    function readAccountsWithKey(
+      path: string,
+      key: string
+    ): Record<string, Record<string, unknown>> {
+      const raw = JSON.parse(new EncryptedStorage(key).readFile(path) ?? '{}') as {
+        credentials?: Record<string, Record<string, unknown>>;
+      };
+      return raw.credentials ?? {};
+    }
+
     function readPreparationsWithKey(path: string, key: string): Record<string, unknown> {
       const raw = JSON.parse(new EncryptedStorage(key).readFile(path) ?? '{}') as {
         preparations?: Record<string, unknown>;
@@ -1513,6 +1531,152 @@ describe('CLI commands with dependency injection', () => {
       expect(readPreparationsWithKey(destination, NEW_ENCRYPTION_KEY)).toEqual({
         gitlab: GITLAB_PREPARATION,
       });
+    });
+
+    it('only includes the given account when using --account', async () => {
+      writeAccountStore(
+        {
+          slack: {
+            'work@example.com': { objectType: 'slack', token: 'work-tok', dCookie: 'work-cookie' },
+            'home@example.com': { objectType: 'slack', token: 'home-tok', dCookie: 'home-cookie' },
+          },
+          gitlab: {
+            'work@example.com': { objectType: 'authorizationBearer', token: 'gitlab-token' },
+          },
+        },
+        { gitlab: GITLAB_PREPARATION }
+      );
+      const destinationDirectory = join(tempDir, 'export');
+
+      const deps = withStdinKey(NEW_ENCRYPTION_KEY);
+      await runCommand(
+        ['--account', 'work@example.com', 'auth', 're-encrypt', destinationDirectory],
+        deps
+      );
+
+      expect(exitCode).toBeNull();
+      const destination = join(destinationDirectory, STORE_FILENAME);
+      expect(readAccountsWithKey(destination, NEW_ENCRYPTION_KEY)).toEqual({
+        slack: {
+          'work@example.com': { objectType: 'slack', token: 'work-tok', dCookie: 'work-cookie' },
+        },
+        gitlab: {
+          'work@example.com': { objectType: 'authorizationBearer', token: 'gitlab-token' },
+        },
+      });
+      // Preparations are not account-specific and are carried over as usual.
+      expect(readPreparationsWithKey(destination, NEW_ENCRYPTION_KEY)).toEqual({
+        gitlab: GITLAB_PREPARATION,
+      });
+    });
+
+    it('keeps the other accounts of the destination when using --account', async () => {
+      writeAccountStore({
+        slack: {
+          'work@example.com': { objectType: 'slack', token: 'new-tok', dCookie: 'new-cookie' },
+        },
+      });
+      const destinationDirectory = join(tempDir, 'export');
+      const destination = join(destinationDirectory, STORE_FILENAME);
+      stampDataFormatVersion(destinationDirectory);
+      new EncryptedStorage(NEW_ENCRYPTION_KEY).writeFile(
+        destination,
+        JSON.stringify({
+          credentials: {
+            slack: {
+              'work@example.com': { objectType: 'slack', token: 'old-tok', dCookie: 'old-cookie' },
+              'home@example.com': {
+                objectType: 'slack',
+                token: 'home-tok',
+                dCookie: 'home-cookie',
+              },
+            },
+          },
+          preparations: {},
+        })
+      );
+
+      const deps = withStdinKey(NEW_ENCRYPTION_KEY);
+      await runCommand(
+        ['--account', 'work@example.com', 'auth', 're-encrypt', destinationDirectory],
+        deps
+      );
+
+      expect(exitCode).toBeNull();
+      expect(readAccountsWithKey(destination, NEW_ENCRYPTION_KEY)).toEqual({
+        slack: {
+          'work@example.com': { objectType: 'slack', token: 'new-tok', dCookie: 'new-cookie' },
+          'home@example.com': { objectType: 'slack', token: 'home-tok', dCookie: 'home-cookie' },
+        },
+      });
+    });
+
+    it('leaves the destination account alone when the source does not have it', async () => {
+      writeAccountStore(
+        {
+          slack: {
+            'work@example.com': { objectType: 'slack', token: 'work-tok', dCookie: 'work-cookie' },
+          },
+        },
+        { gitlab: GITLAB_PREPARATION }
+      );
+      const destinationDirectory = join(tempDir, 'export');
+      const destination = join(destinationDirectory, STORE_FILENAME);
+      stampDataFormatVersion(destinationDirectory);
+      new EncryptedStorage(NEW_ENCRYPTION_KEY).writeFile(
+        destination,
+        JSON.stringify({
+          credentials: {
+            // gitlab only has a preparation in the source, so its credentials
+            // in the destination must survive.
+            gitlab: {
+              'work@example.com': {
+                objectType: 'authorizationBearer',
+                token: 'destination-token',
+              },
+            },
+          },
+          preparations: {},
+        })
+      );
+
+      const deps = withStdinKey(NEW_ENCRYPTION_KEY);
+      await runCommand(
+        ['--account', 'work@example.com', 'auth', 're-encrypt', destinationDirectory],
+        deps
+      );
+
+      expect(exitCode).toBeNull();
+      expect(readAccountsWithKey(destination, NEW_ENCRYPTION_KEY)).toEqual({
+        gitlab: {
+          'work@example.com': { objectType: 'authorizationBearer', token: 'destination-token' },
+        },
+        slack: {
+          'work@example.com': { objectType: 'slack', token: 'work-tok', dCookie: 'work-cookie' },
+        },
+      });
+      expect(readPreparationsWithKey(destination, NEW_ENCRYPTION_KEY)).toEqual({
+        gitlab: GITLAB_PREPARATION,
+      });
+    });
+
+    it('errors when no stored credentials belong to the given account', async () => {
+      writeAccountStore({
+        slack: {
+          'work@example.com': { objectType: 'slack', token: 'work-tok', dCookie: 'work-cookie' },
+        },
+      });
+      const destinationDirectory = join(tempDir, 'export');
+
+      const deps = withStdinKey(NEW_ENCRYPTION_KEY);
+      await runCommand(
+        ['--account', 'missing@example.com', 'auth', 're-encrypt', destinationDirectory],
+        deps
+      );
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs.join('\n')).toContain('missing@example.com');
+      expect(existsSync(join(destinationDirectory, STORE_FILENAME))).toBe(false);
     });
 
     it('errors for an invalid encryption key read from stdin', async () => {

@@ -309,7 +309,9 @@ latchkey auth clear
 If you want to export your stored credentials encrypted with
 a different key or containing only some of the credentials (for
 example to move them to another machine) , use the `auth re-encrypt`
-subcommand.
+subcommand. Use `--services` to limit the export to certain services
+and the global `--account` option to export only the credentials of
+a single account.
 
 
 ### Permissions
