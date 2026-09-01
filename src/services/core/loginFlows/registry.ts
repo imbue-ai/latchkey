@@ -8,9 +8,13 @@
  */
 
 import { CookieCaptureLoginFlow } from './cookieCapture.js';
+import { TokenCaptureLoginFlow } from './tokenCapture.js';
 import type { LoginFlow, LoginFlowClass } from './base.js';
 
-export const LOGIN_FLOWS: readonly LoginFlowClass[] = [CookieCaptureLoginFlow];
+export const LOGIN_FLOWS: readonly LoginFlowClass[] = [
+  CookieCaptureLoginFlow,
+  TokenCaptureLoginFlow,
+];
 
 export class UnknownLoginFlowError extends Error {
   constructor(name: string) {
@@ -58,10 +62,11 @@ export function formatLoginFlowsHelp(): string {
       indent(flowClass.details, '    ')
   );
   return [
-    'Login flows:',
-    '  Each login flow is configured by a JSON object supplied by',
-    '  --login-flow-params.',
-    '',
+    [
+      'Login flows:',
+      '  Each login flow is configured by a JSON object supplied by',
+      '  --login-flow-params.',
+    ].join('\n'),
     ...sections,
-  ].join('\n');
+  ].join('\n\n');
 }

@@ -437,8 +437,8 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
   program.option(
     '--account <account>',
     "Account (e.g. an e-mail) whose credentials to use. Supported by 'curl', " +
-      "'auth set', 'auth set-nocurl', 'auth clear', and 'auth browser'. Required " +
-      'when a service has more than one stored account.'
+      "'auth set', 'auth set-nocurl', 'auth clear', 'auth browser', and " +
+      "'auth re-encrypt'. Required when a service has more than one stored account."
   );
 
   // The account is a global option; commander exposes it on the root program
@@ -454,6 +454,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     'auth set-nocurl',
     'auth clear',
     'auth browser',
+    'auth re-encrypt',
   ]);
   program.hook('preAction', (_thisCommand, actionCommand) => {
     if (getAccount() === undefined) {
@@ -1270,7 +1271,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         'destination directory, using the same filename Latchkey itself expects. ' +
         'An existing credential store in the destination directory is kept and ' +
         'the re-encrypted services are added into it, overwriting services with ' +
-        'the same name. ' +
+        'the same name (or, with --account, only the credentials of that account). ' +
         'The new key is read from stdin so that it does not appear in the process ' +
         'arguments or shell history. When stdin is empty, the existing encryption ' +
         'key is reused.'
@@ -1291,7 +1292,8 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       'after',
       `\nExamples:\n  $ openssl rand -base64 32 | latchkey auth re-encrypt ~/latchkey-export` +
         `\n  $ echo "" | latchkey auth re-encrypt ~/latchkey-export --services gitlab slack` +
-        `\n  $ echo "" | latchkey auth re-encrypt ~/latchkey-export --browser-state`
+        `\n  $ echo "" | latchkey auth re-encrypt ~/latchkey-export --browser-state` +
+        `\n  $ echo "" | latchkey auth re-encrypt ~/latchkey-export --account me@example.com`
     )
     .action(
       async (
@@ -1299,6 +1301,11 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         options: { services?: string[]; browserState?: boolean }
       ) => {
         refuseInGatewayMode(deps, 'auth re-encrypt');
+
+        // When an account is given, only its credentials are exported; the
+        // preparations of the selected services are carried over regardless,
+        // since they are not account-specific.
+        const account = getAccount();
 
         if (existsSync(destinationDirectory) && !statSync(destinationDirectory).isDirectory()) {
           deps.errorLog(`Error: Destination is not a directory: ${destinationDirectory}`);
@@ -1374,6 +1381,14 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           selectedServiceNames = [...storedServiceNames];
         }
 
+        if (
+          account !== undefined &&
+          !selectedServiceNames.some((name) => allCredentials.get(name)?.has(account) === true)
+        ) {
+          deps.errorLog(`Error: No stored credentials for account: ${account}`);
+          deps.exit(1);
+        }
+
         if (selectedServiceNames.length === 0 && browserState === null) {
           deps.errorLog('Error: No stored credentials found to re-encrypt.');
           deps.exit(1);
@@ -1425,12 +1440,19 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         }
 
         for (const serviceName of selectedServiceNames) {
-          // Replace whatever the destination has for this service.
-          destinationStore.deleteAll(serviceName);
+          // Without an account filter the whole service is replaced. With one,
+          // only the exported account is overwritten (by saving it below), so
+          // that accounts the source does not have stay untouched.
+          if (account === undefined) {
+            destinationStore.deleteAll(serviceName);
+          }
           const accountMap = allCredentials.get(serviceName);
           if (accountMap !== undefined) {
-            for (const [account, credentials] of accountMap) {
-              destinationStore.save(serviceName, credentials, account);
+            for (const [storedAccount, credentials] of accountMap) {
+              if (account !== undefined && storedAccount !== account) {
+                continue;
+              }
+              destinationStore.save(serviceName, credentials, storedAccount);
             }
           }
           const preparation = sourceStore.getPreparation(serviceName);
