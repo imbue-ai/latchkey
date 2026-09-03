@@ -350,11 +350,32 @@ export abstract class ServiceSession {
   ): Promise<ApiCredentials | null>;
 
   /**
+   * Work the session does itself while the login phase is still going, run
+   * between polls of {@link isLoginComplete}.
+   *
+   * The default does nothing, which is right for a session that only has to
+   * react to what the browser does. A session whose credential the page never
+   * hands over unprompted overrides this and goes and gets it.
+   *
+   * Implementations own their transient failures: anything thrown here aborts
+   * the login, so a step that can fail and be retried on the next poll has to
+   * swallow that itself.
+   *
+   * Public for the same reason {@link onResponse} is: it is one half of the
+   * pair of hooks a login phase drives, and the tests drive it directly rather
+   * than through a browser.
+   */
+  whileWaitingForLogin(_page: Page): Promise<void> {
+    return Promise.resolve();
+  }
+
+  /**
    * Wait until the browser login phase is complete.
    */
   private async waitForLoginComplete(page: Page): Promise<void> {
     while (!this.isLoginComplete()) {
       await page.waitForTimeout(100);
+      await this.whileWaitingForLogin(page);
     }
   }
 

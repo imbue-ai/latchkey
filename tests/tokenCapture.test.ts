@@ -7,8 +7,8 @@
  * responses fed in by hand instead of by a browser.
  */
 
-import { describe, it, expect } from 'vitest';
-import type { Response } from 'playwright';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import type { Page, Response } from 'playwright';
 import type { ApiCredentials } from '../src/apiCredentials/base.js';
 import { TokenCaptureLoginFlow } from '../src/services/core/loginFlows/tokenCapture.js';
 import { LOGIN_FLOWS, resolveLoginFlow } from '../src/services/core/loginFlows/registry.js';
@@ -40,11 +40,11 @@ async function headerFrom(credentials: ApiCredentials | null): Promise<string | 
  * A login in progress for a service registered with these parameters: responses
  * go in, and out comes the header stored so far, or null.
  */
-function startLogin(params: {
+function registerSession(params: {
   tokenUrl?: string;
   tokenField?: string;
   header?: string;
-}): (body: string, responseUrl?: string) => Promise<string | null> {
+}): SimpleServiceSession {
   const service = new RegisteredService('my-service', 'https://app.example.com/backend-api/', {
     loginUrl: LOGIN_URL,
     loginFlow: new TokenCaptureLoginFlow({
@@ -57,6 +57,15 @@ function startLogin(params: {
   if (!(session instanceof SimpleServiceSession)) {
     throw new TypeError('the token-capture flow should hand out a SimpleServiceSession');
   }
+  return session;
+}
+
+function startLogin(params: {
+  tokenUrl?: string;
+  tokenField?: string;
+  header?: string;
+}): (body: string, responseUrl?: string) => Promise<string | null> {
+  const session = registerSession(params);
   return async (body, responseUrl = TOKEN_URL) => {
     await session.onResponse(responseWith(body, responseUrl));
     return headerFrom(session.capturedCredentials);
@@ -128,6 +137,121 @@ describe('token capture', () => {
   it('stores the token in a custom header when one is registered', async () => {
     const respond = startLogin({ header: 'X-Auth-Token: {token}' });
     expect(await respond('{"accessToken": "tok"}')).toBe('X-Auth-Token: tok');
+  });
+});
+
+/**
+ * A browser parked at `pageUrl`, answering each request for the endpoint with
+ * the next canned reply: a body, null for a request the endpoint refused, or an
+ * Error the request rejects with.
+ *
+ * The last reply repeats, so a test that only cares about the first request
+ * need not say what a second would get.
+ */
+function pageAt(
+  pageUrl: string,
+  replies: readonly (string | null | Error)[]
+): { readonly page: Page; requestCount: () => number } {
+  let requestCount = 0;
+  const page = {
+    url: () => pageUrl,
+    evaluate: () => {
+      const reply = replies[Math.min(requestCount, replies.length - 1)] ?? null;
+      requestCount += 1;
+      return reply instanceof Error ? Promise.reject(reply) : Promise.resolve(reply);
+    },
+  } as unknown as Page;
+  return { page, requestCount: () => requestCount };
+}
+
+async function headerAfterWaiting(
+  session: ReturnType<typeof registerSession>,
+  page: Page
+): Promise<string | null> {
+  await session.whileWaitingForLogin(page);
+  return headerFrom(session.capturedCredentials);
+}
+
+/**
+ * Asking, rather than waiting to overhear.
+ *
+ * A web app calls its own mint endpoint when it wants a token and not
+ * otherwise, so a login that only listens can wait forever on a service that is
+ * working perfectly — which is what chatgpt.com does.
+ */
+describe('token capture by request', () => {
+  const START_TIME = new Date('2026-01-01T00:00:00Z').getTime();
+  // Comfortably past the interval between requests, whatever it is set to.
+  const WELL_PAST_THE_INTERVAL_MS = 10_000;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(START_TIME);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('asks the endpoint when the app never calls it', async () => {
+    const session = registerSession({});
+    const { page } = pageAt('https://app.example.com/', ['{"accessToken": "tok-123"}']);
+    expect(await headerAfterWaiting(session, page)).toBe('Authorization: Bearer tok-123');
+  });
+
+  // Mid-login the browser is commonly on an identity provider, where there is
+  // nothing to ask and a cross-origin read would be refused anyway.
+  it('does not ask while the browser is on another origin', async () => {
+    const session = registerSession({});
+    const { page, requestCount } = pageAt('https://identity-provider.example.net/consent', [
+      '{"accessToken": "tok-123"}',
+    ]);
+    expect(await headerAfterWaiting(session, page)).toBeNull();
+    expect(requestCount()).toBe(0);
+  });
+
+  it('does not ask again before the interval has passed', async () => {
+    const session = registerSession({});
+    const { page, requestCount } = pageAt('https://app.example.com/', ['{}']);
+    await session.whileWaitingForLogin(page);
+    await session.whileWaitingForLogin(page);
+    expect(requestCount()).toBe(1);
+  });
+
+  // A signed-out visitor gets the same endpoint answering `{}`, so asking early
+  // and often has to stay harmless.
+  it('keeps asking until the endpoint has a token', async () => {
+    const session = registerSession({});
+    const { page } = pageAt('https://app.example.com/', ['{}', '{"accessToken": "tok-123"}']);
+    expect(await headerAfterWaiting(session, page)).toBeNull();
+    vi.setSystemTime(START_TIME + WELL_PAST_THE_INTERVAL_MS);
+    expect(await headerAfterWaiting(session, page)).toBe('Authorization: Bearer tok-123');
+  });
+
+  // The page navigates out from under a request all the time during a login.
+  it('keeps waiting when a request fails', async () => {
+    const session = registerSession({});
+    const { page } = pageAt('https://app.example.com/', [
+      new Error('Execution context was destroyed'),
+      '{"accessToken": "tok-123"}',
+    ]);
+    expect(await headerAfterWaiting(session, page)).toBeNull();
+    vi.setSystemTime(START_TIME + WELL_PAST_THE_INTERVAL_MS);
+    expect(await headerAfterWaiting(session, page)).toBe('Authorization: Bearer tok-123');
+  });
+
+  it('captures nothing from a request the endpoint refused', async () => {
+    const session = registerSession({});
+    const { page } = pageAt('https://app.example.com/', [null]);
+    expect(await headerAfterWaiting(session, page)).toBeNull();
+  });
+
+  // Both paths write the same field, and the login keeps the first token.
+  it('leaves a token already captured from a response alone', async () => {
+    const session = registerSession({});
+    await session.onResponse(responseWith('{"accessToken": "from-response"}', TOKEN_URL));
+    const { page } = pageAt('https://app.example.com/', ['{"accessToken": "from-request"}']);
+    expect(await headerAfterWaiting(session, page)).toBe('Authorization: Bearer from-response');
   });
 });
 
