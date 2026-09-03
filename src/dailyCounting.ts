@@ -4,11 +4,15 @@
  * Reads `LATCHKEY_DIR/last-daily-count` for an ISO timestamp.
  * If the file is missing or the timestamp is older than 24 hours,
  * spawns a detached curl process to ping the counting endpoint.
+ *
+ * The tracker file is written atomically, which also means a symlinked
+ * tracker file is written through instead of being replaced.
  */
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { platform } from 'node:os';
 import { join } from 'node:path';
+import { writeFileAtomic } from './atomicWrite.js';
 import type { Config } from './config.js';
 import { runDetached } from './curl.js';
 
@@ -40,7 +44,7 @@ export function countDailyIfNeeded(config: Config): void {
   }
 
   const filePath = join(config.directory, DAILY_COUNT_FILENAME);
-  writeFileSync(filePath, new Date().toISOString(), 'utf-8');
+  writeFileAtomic(filePath, new Date().toISOString());
 
   runDetached([
     '--silent',
