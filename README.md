@@ -402,19 +402,6 @@ to the JWT and the CLI will attach it to every outgoing gateway
 request automatically (analogous to `LATCHKEY_GATEWAY_PASSWORD`).
 
 
-#### Forwarding without credentials
-
-A `/gateway/<url>` request that carries the
-`X-Latchkey-Gateway-No-Credentials` header (any value) is
-forwarded exactly as received: the gateway performs no service
-lookup, injects no credentials, and runs no permission check.
-This is for requests that already carry their credentials --
-typically injected by another Latchkey gateway whose store holds
-them -- and only need this gateway's network position, such as an
-egress from the user's own machine rather than from a datacenter.
-The gateway password, when configured, is still required, and the
-header itself is never forwarded upstream.
-
 #### Extensions
 
 You can extend the gateway with your own HTTP endpoints. For

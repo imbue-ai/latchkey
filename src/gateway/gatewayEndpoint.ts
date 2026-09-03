@@ -25,7 +25,6 @@ import {
 import { PermissionCheckError } from '../permissions.js';
 import { ErrorMessages } from '../errorMessages.js';
 import { GATEWAY_ACCOUNT_HEADER } from './account.js';
-import { GATEWAY_NO_CREDENTIALS_HEADER } from './noCredentials.js';
 import { GATEWAY_PASSWORD_HEADER } from './password.js';
 import {
   InvalidPermissionsOverrideError,
@@ -48,6 +47,16 @@ export const HOP_BY_HOP_HEADERS: ReadonlySet<string> = new Set([
   'upgrade',
   'host',
 ]);
+
+/**
+ * Asks the gateway to forward a `/gateway/<url>` request exactly as received:
+ * no service lookup, no credential injection, and no permission check. Meant
+ * for requests that already carry their credentials (injected by another
+ * gateway whose store holds them) and only need this gateway's network
+ * position. The gateway password, when configured, is still required.
+ * Lowercased to match how Node exposes header names.
+ */
+export const GATEWAY_NO_CREDENTIALS_HEADER = 'x-latchkey-gateway-no-credentials';
 
 /**
  * Headers that the gateway consumes itself and must not forward to upstream
