@@ -117,6 +117,7 @@ describe('buildCurlArguments', () => {
       ['X-Latchkey-Gateway-Password', 'sekret'],
       ['X-Latchkey-Gateway-Permissions-Override', 'jwt-payload'],
       ['X-Latchkey-Gateway-Account', 'jou'],
+      ['X-Latchkey-Gateway-No-Credentials', '1'],
     ]);
     const args = buildCurlArguments('GET', headers, 'https://api.example.com/test', false);
     expect(args).toContain('Content-Type: application/json');
@@ -124,6 +125,7 @@ describe('buildCurlArguments', () => {
     expect(joined).not.toContain('x-latchkey-gateway-password');
     expect(joined).not.toContain('x-latchkey-gateway-permissions-override');
     expect(joined).not.toContain('x-latchkey-gateway-account');
+    expect(joined).not.toContain('x-latchkey-gateway-no-credentials');
     expect(joined).not.toContain('sekret');
     expect(joined).not.toContain('jwt-payload');
   });
@@ -1001,6 +1003,90 @@ describe('gateway server', () => {
       expect(response.status).toBe(400);
       const body = (await response.json()) as { error: string };
       expect(body.error).toContain('missing-permissions.json');
+    });
+  });
+
+  describe('no-credentials header', () => {
+    const noCredentialsHeaders = { 'X-Latchkey-Gateway-No-Credentials': '1' };
+
+    function headerArgumentsOf(args: readonly string[]): string[] {
+      const headerArguments: string[] = [];
+      for (let index = 0; index < args.length; index++) {
+        if (args[index] === '-H' && index + 1 < args.length) {
+          headerArguments.push(args[index + 1]!);
+        }
+      }
+      return headerArguments;
+    }
+
+    it('forwards the request as received, without injecting stored credentials', async () => {
+      gateway = await createTestGateway();
+
+      const response = await fetch('/gateway/https://slack.com/api/auth.test', {
+        headers: { ...noCredentialsHeaders, Authorization: 'Bearer already-injected' },
+      });
+
+      expect(response.status).toBe(200);
+      const headerArguments = headerArgumentsOf(capturedCurlArgs);
+      expect(headerArguments).toContain('Authorization: Bearer already-injected');
+      expect(headerArguments).not.toContain('Authorization: Bearer test-token');
+      expect(capturedCurlArgs).toContain('https://slack.com/api/auth.test');
+    });
+
+    it('never forwards the header itself upstream', async () => {
+      gateway = await createTestGateway();
+
+      await fetch('/gateway/https://slack.com/api/auth.test', { headers: noCredentialsHeaders });
+
+      expect(capturedCurlArgs.join('\n').toLowerCase()).not.toContain(
+        'x-latchkey-gateway-no-credentials'
+      );
+    });
+
+    it('skips the permission check', async () => {
+      mockPermissionResult = false;
+      gateway = await createTestGateway();
+
+      const response = await fetch('/gateway/https://slack.com/api/auth.test', {
+        headers: noCredentialsHeaders,
+      });
+
+      expect(response.status).toBe(200);
+      expect(capturedPermissionCheckBody).toBeUndefined();
+    });
+
+    it('does not require the target to match a known service', async () => {
+      gateway = await createTestGateway();
+
+      const response = await fetch('/gateway/https://unknown-api.example.com/test', {
+        headers: noCredentialsHeaders,
+      });
+
+      expect(response.status).toBe(200);
+      expect(capturedCurlArgs).toContain('https://unknown-api.example.com/test');
+    });
+
+    it('still requires the gateway password', async () => {
+      gateway = await createTestGateway({}, {}, { password: 'sekret' });
+
+      const unauthenticated = await fetch('/gateway/https://slack.com/api/auth.test', {
+        headers: noCredentialsHeaders,
+      });
+      expect(unauthenticated.status).toBe(401);
+
+      const authenticated = await fetch('/gateway/https://slack.com/api/auth.test', {
+        headers: { ...noCredentialsHeaders, 'X-Latchkey-Gateway-Password': 'sekret' },
+      });
+      expect(authenticated.status).toBe(200);
+    });
+
+    it('is ignored when absent, so ordinary requests still get credentials', async () => {
+      gateway = await createTestGateway();
+
+      const response = await fetch('/gateway/https://slack.com/api/auth.test');
+
+      expect(response.status).toBe(200);
+      expect(capturedCurlArgs).toContain('Authorization: Bearer test-token');
     });
   });
 
