@@ -1,7 +1,14 @@
 /**
  * A generic browser login for services whose credential is a token the web app
- * mints for itself: open a URL, watch the responses that arrive while the user
- * signs in, and lift a token out of the JSON body of a named endpoint.
+ * mints for itself: open a URL, and lift a token out of the JSON body of a
+ * named endpoint, either as it goes by or by asking for it.
+ *
+ * Watching alone is not enough, because a web app calls its own mint endpoint
+ * when it needs a token and not otherwise. ChatGPT is the case that showed
+ * this: it signs in, renders the app, and never calls `/api/auth/session` —
+ * the endpoint is there and answers with a token, but a login that only
+ * listens waits for a request that is never made. So once the browser reaches
+ * the endpoint's origin, this flow also asks it directly.
  *
  * This is the counterpart to `cookie-capture`, for the other common shape. In a
  * cookie-authenticated service the cookie *is* the API credential, so capturing
@@ -26,7 +33,7 @@
  *   usually broader than an API key a user would issue deliberately.
  */
 
-import type { Response } from 'playwright';
+import type { Page, Response } from 'playwright';
 import { z } from 'zod';
 import { type ApiCredentials, RawCurlCredentials } from '../../../apiCredentials/base.js';
 import { Service, SimpleServiceSession, type ServiceSession } from '../base.js';
@@ -40,6 +47,13 @@ const TOKEN_PLACEHOLDER = '{token}';
  * Bearer is what the great majority of token-minting web APIs expect.
  */
 const DEFAULT_HEADER_TEMPLATE = `Authorization: Bearer ${TOKEN_PLACEHOLDER}`;
+
+/**
+ * How often the endpoint is asked, once the browser is somewhere it can be
+ * asked from. Slow enough not to hammer a service through a login that takes a
+ * while, quick enough that the login ends promptly once a token exists.
+ */
+const TOKEN_REQUEST_INTERVAL_MS = 2_000;
 
 /**
  * Identity of an endpoint for matching purposes: origin and path, with the
@@ -111,19 +125,33 @@ const TokenCaptureParamsSchema = z
 
 type TokenCaptureParams = z.infer<typeof TokenCaptureParamsSchema>;
 
+/**
+ * Ask the endpoint from inside the page, so the request is the browser's own:
+ * same cookies, same bot-detection clearance the app itself enjoys. Returns
+ * null when the endpoint refuses the request.
+ */
+function requestTokenBody(page: Page, tokenUrl: string): Promise<string | null> {
+  return page.evaluate(async (url) => {
+    const response = await fetch(url, { credentials: 'include' });
+    return response.ok ? await response.text() : null;
+  }, tokenUrl);
+}
+
 /** Store the captured token the way `latchkey auth set -H` would. */
 function buildTokenCredentials(headerTemplate: string, token: string): ApiCredentials {
   return new RawCurlCredentials(['-H', headerTemplate.replaceAll(TOKEN_PLACEHOLDER, token)]);
 }
 
 /**
- * One run of the flow: responses go by, and the first one from the mint
- * endpoint that carries a token ends the login.
+ * One run of the flow. The endpoint is both watched and asked, and whichever
+ * produces a token first ends the login.
  */
 class TokenCaptureSession extends SimpleServiceSession {
+  private readonly tokenUrl: URL;
   private readonly tokenEndpointIdentity: string;
   private readonly tokenPath: readonly string[];
   private readonly headerTemplate: string;
+  private lastRequestedAt = 0;
 
   constructor(
     service: Service,
@@ -133,9 +161,25 @@ class TokenCaptureSession extends SimpleServiceSession {
     headerTemplate: string
   ) {
     super(service, appNamePrefix);
+    this.tokenUrl = tokenUrl;
     this.tokenEndpointIdentity = endpointIdentity(tokenUrl);
     this.tokenPath = tokenPath;
     this.headerTemplate = headerTemplate;
+  }
+
+  /**
+   * Credentials from one body of the endpoint, or null when it carries no
+   * token — including when it is not JSON at all, which is how a bot-detection
+   * interstitial or an error page arrives.
+   */
+  private credentialsFromBody(rawBody: string): ApiCredentials | null {
+    let token: string | null;
+    try {
+      token = readTokenAtPath(JSON.parse(rawBody), this.tokenPath);
+    } catch {
+      return null;
+    }
+    return token === null ? null : buildTokenCredentials(this.headerTemplate, token);
   }
 
   protected async getApiCredentialsFromResponse(
@@ -152,17 +196,63 @@ class TokenCaptureSession extends SimpleServiceSession {
       return null;
     }
 
-    let token: string | null;
+    let rawBody: string;
     try {
-      token = readTokenAtPath(JSON.parse(await response.text()), this.tokenPath);
+      rawBody = await response.text();
     } catch {
-      // Unreadable or not JSON: the endpoint answered with something this
-      // registration does not describe. Keep waiting rather than fail the
-      // login — the response that carries the token may still be coming.
+      // The body is no longer retrievable — a redirect, or a response the page
+      // navigated away from. Keep waiting rather than fail the login; the next
+      // request to the endpoint, ours or the app's, gets another chance.
       return null;
     }
 
-    return token === null ? null : buildTokenCredentials(this.headerTemplate, token);
+    return this.credentialsFromBody(rawBody);
+  }
+
+  /**
+   * Ask the endpoint ourselves, because an app only calls it when it wants a
+   * token and may never want one while we are watching.
+   *
+   * This waits for the browser to arrive on the endpoint's own origin. The
+   * request is made from inside the page so that it carries the session, and a
+   * cross-origin read of the response would be refused — mid-login the browser
+   * is commonly parked on an identity provider, where there is nothing to ask.
+   */
+  override async whileWaitingForLogin(page: Page): Promise<void> {
+    if (Date.now() - this.lastRequestedAt < TOKEN_REQUEST_INTERVAL_MS) {
+      return;
+    }
+
+    let pageUrl: URL;
+    try {
+      pageUrl = new URL(page.url());
+    } catch {
+      return;
+    }
+    if (pageUrl.origin !== this.tokenUrl.origin) {
+      return;
+    }
+    this.lastRequestedAt = Date.now();
+
+    let rawBody: string | null;
+    try {
+      rawBody = await requestTokenBody(page, this.tokenUrl.href);
+    } catch {
+      // The page navigated out from under the request, or the endpoint could
+      // not be reached. The next poll asks again; a browser the user closed is
+      // caught by the wait loop itself.
+      return;
+    }
+    if (rawBody === null) {
+      return;
+    }
+
+    const credentials = this.credentialsFromBody(rawBody);
+    // A response may have produced credentials while this request was in
+    // flight, and the first token captured is the one the login keeps.
+    if (credentials !== null && this.apiCredentials === null) {
+      this.apiCredentials = credentials;
+    }
   }
 }
 
@@ -193,11 +283,13 @@ export class TokenCaptureLoginFlow implements LoginFlow {
     'and the page calls an endpoint of its own to mint a short-lived token. Use',
     'cookie-capture instead when the cookie is itself the API credential.',
     '',
-    'The login finishes when that endpoint answers with a non-empty token, not',
-    'when it is merely requested: a signed-out visitor commonly gets the same',
-    'endpoint answering `{}`. A token minted this way expires and cannot be',
-    'refreshed — the refresh material stays in the browser — so expect to sign',
-    'in again periodically.',
+    'The endpoint is both watched and asked: once the browser reaches its',
+    'origin, it is requested from inside the page every couple of seconds, so a',
+    'web app that never calls it unprompted still works. Either way the login',
+    'finishes when it answers with a non-empty token, not when it is merely',
+    'requested: a signed-out visitor commonly gets the same endpoint answering',
+    '`{}`. A token minted this way expires and cannot be refreshed — the refresh',
+    'material stays in the browser — so expect to sign in again periodically.',
     '',
     'Example:',
     '  $ latchkey services register my-app \\',
