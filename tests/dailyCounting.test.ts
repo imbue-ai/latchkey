@@ -1,5 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import {
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+  existsSync,
+  lstatSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Config } from '../src/config.js';
@@ -86,6 +94,45 @@ describe('countDailyIfNeeded', () => {
     countDailyIfNeeded(countingDisabledConfig);
 
     expect(detachedCalls).toHaveLength(0);
+  });
+
+  it('should write through a symlinked tracker file instead of replacing it', () => {
+    const externalDirectory = mkdtempSync(join(tmpdir(), 'latchkey-daily-count-external-'));
+    const externalPath = join(externalDirectory, 'tracker');
+    const filePath = join(directory, 'last-daily-count');
+    const oldDate = new Date(Date.now() - 25 * 60 * 60 * 1000);
+    writeFileSync(externalPath, oldDate.toISOString(), 'utf-8');
+    symlinkSync(externalPath, filePath);
+
+    try {
+      countDailyIfNeeded(config);
+
+      expect(detachedCalls).toHaveLength(1);
+      expect(lstatSync(filePath).isSymbolicLink()).toBe(true);
+      const timestamp = new Date(readFileSync(externalPath, 'utf-8').trim());
+      expect(Date.now() - timestamp.getTime()).toBeLessThan(5000);
+    } finally {
+      rmSync(externalDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it('should write through a dangling symlinked tracker file', () => {
+    const externalDirectory = mkdtempSync(join(tmpdir(), 'latchkey-daily-count-external-'));
+    const externalPath = join(externalDirectory, 'tracker');
+    const filePath = join(directory, 'last-daily-count');
+    symlinkSync(externalPath, filePath);
+
+    try {
+      countDailyIfNeeded(config);
+
+      expect(detachedCalls).toHaveLength(1);
+      expect(lstatSync(filePath).isSymbolicLink()).toBe(true);
+      expect(existsSync(externalPath)).toBe(true);
+      const timestamp = new Date(readFileSync(externalPath, 'utf-8').trim());
+      expect(isNaN(timestamp.getTime())).toBe(false);
+    } finally {
+      rmSync(externalDirectory, { recursive: true, force: true });
+    }
   });
 
   it('should not fire a request when the timestamp is exactly 23 hours old', () => {
