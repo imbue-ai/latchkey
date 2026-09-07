@@ -70,8 +70,7 @@ export class CredentialsExpiredError extends Error {
   }
 }
 
-export interface CurlInjectionDependencies {
-  readonly registry: ServiceRegistry;
+export interface PermissionCheckDependencies {
   readonly checkPermission: (
     request: Request,
     configPath: string,
@@ -80,6 +79,10 @@ export interface CurlInjectionDependencies {
   ) => Promise<boolean>;
   readonly permissionsConfigPath: string;
   readonly permissionsDoNotUseBuiltinSchemas: boolean;
+}
+
+export interface CurlInjectionDependencies extends PermissionCheckDependencies {
+  readonly registry: ServiceRegistry;
   readonly passthroughUnknown: boolean;
   readonly credentialsRefreshDisabled: boolean;
   /**
@@ -88,6 +91,71 @@ export interface CurlInjectionDependencies {
    * `AmbiguousAccountError` is raised so the caller can require `--account`.
    */
   readonly account?: string;
+}
+
+/**
+ * Turn curl arguments into the `Request` the permission check inspects. A parse
+ * failure means the curl invocation is malformed, which is reported as a
+ * URL-extraction failure (the same category as failing to extract the URL), not
+ * as a permission-check failure.
+ */
+function buildPermissionCheckRequest(
+  curlArguments: readonly string[],
+  outOfBandRequestBody?: Buffer | null
+): Request {
+  let parsedRequest: Request;
+  try {
+    parsedRequest = parseCurlArgs(curlArguments);
+  } catch (error) {
+    if (error instanceof CurlParseError) {
+      throw new UrlExtractionFailedError(error.message);
+    }
+    throw error;
+  }
+  // When the real body was supplied out-of-band, rebuild the request so the
+  // permission check sees the actual payload instead of the `@-` placeholder.
+  if (outOfBandRequestBody !== undefined && outOfBandRequestBody !== null) {
+    return new Request(parsedRequest.url, {
+      method: parsedRequest.method,
+      headers: parsedRequest.headers,
+      body: outOfBandRequestBody,
+    });
+  }
+  return parsedRequest;
+}
+
+async function checkRequestPermission(
+  parsedRequest: Request,
+  dependencies: PermissionCheckDependencies,
+  accountInUse?: string
+): Promise<void> {
+  const metadata: PermissionCheckMetadata | undefined =
+    accountInUse === undefined ? undefined : { account: accountInUse };
+  const allowed = await dependencies.checkPermission(
+    parsedRequest,
+    dependencies.permissionsConfigPath,
+    dependencies.permissionsDoNotUseBuiltinSchemas,
+    metadata
+  );
+  if (!allowed) {
+    throw new RequestNotPermittedError();
+  }
+}
+
+/**
+ * Run only the permission check for a curl invocation, without any service
+ * lookup or credential injection. Used for requests that already carry their
+ * own credentials but must still pass this instance's permissions.
+ */
+export async function ensureCurlRequestIsPermitted(
+  curlArguments: readonly string[],
+  dependencies: PermissionCheckDependencies,
+  outOfBandRequestBody?: Buffer | null
+): Promise<void> {
+  await checkRequestPermission(
+    buildPermissionCheckRequest(curlArguments, outOfBandRequestBody),
+    dependencies
+  );
 }
 
 /**
@@ -111,44 +179,12 @@ export async function prepareCurlInvocation(
    */
   outOfBandRequestBody?: Buffer | null
 ): Promise<readonly string[]> {
-  // Parse the curl arguments once for the permission check. A parse failure
-  // here means the user's curl invocation is malformed, which is treated as
-  // a URL-extraction failure (the same category as the second parse below),
-  // not a permission-check failure.
-  let parsedRequest: Request;
-  try {
-    parsedRequest = parseCurlArgs(curlArguments);
-  } catch (error) {
-    if (error instanceof CurlParseError) {
-      throw new UrlExtractionFailedError(error.message);
-    }
-    throw error;
-  }
-  // When the real body was supplied out-of-band, rebuild the request so the
-  // permission check sees the actual payload instead of the `@-` placeholder.
-  if (outOfBandRequestBody !== undefined && outOfBandRequestBody !== null) {
-    parsedRequest = new Request(parsedRequest.url, {
-      method: parsedRequest.method,
-      headers: parsedRequest.headers,
-      body: outOfBandRequestBody,
-    });
-  }
+  const parsedRequest = buildPermissionCheckRequest(curlArguments, outOfBandRequestBody);
   // The permission check is deferred until we know which account's credentials
   // the request will use, so that the account can be reported as metadata. It
   // is omitted when no credentials are injected at all (passthrough).
-  const ensureRequestIsPermitted = async (accountInUse?: string): Promise<void> => {
-    const metadata: PermissionCheckMetadata | undefined =
-      accountInUse === undefined ? undefined : { account: accountInUse };
-    const allowed = await dependencies.checkPermission(
-      parsedRequest,
-      dependencies.permissionsConfigPath,
-      dependencies.permissionsDoNotUseBuiltinSchemas,
-      metadata
-    );
-    if (!allowed) {
-      throw new RequestNotPermittedError();
-    }
-  };
+  const ensureRequestIsPermitted = (accountInUse?: string): Promise<void> =>
+    checkRequestPermission(parsedRequest, dependencies, accountInUse);
 
   let url: string | null;
   try {
