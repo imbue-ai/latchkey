@@ -1043,7 +1043,7 @@ describe('gateway server', () => {
       );
     });
 
-    it('skips the permission check', async () => {
+    it('still enforces the permission check', async () => {
       mockPermissionResult = false;
       gateway = await createTestGateway();
 
@@ -1051,8 +1051,22 @@ describe('gateway server', () => {
         headers: noCredentialsHeaders,
       });
 
+      expect(response.status).toBe(403);
+      expect(capturedCurlArgs).toEqual([]);
+    });
+
+    it('checks permissions against the real request body', async () => {
+      gateway = await createTestGateway();
+      const requestBody = JSON.stringify({ channel: 'general', text: 'hello' });
+
+      const response = await fetch('/gateway/https://slack.com/api/chat.postMessage', {
+        method: 'POST',
+        headers: { ...noCredentialsHeaders, 'Content-Type': 'application/json' },
+        body: requestBody,
+      });
+
       expect(response.status).toBe(200);
-      expect(capturedPermissionCheckBody).toBeUndefined();
+      expect(capturedPermissionCheckBody).toBe(requestBody);
     });
 
     it('does not require the target to match a known service', async () => {

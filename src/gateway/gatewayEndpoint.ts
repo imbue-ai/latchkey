@@ -16,6 +16,7 @@ import type { AsyncCurlResult } from '../curl.js';
 import type { CliDependencies } from '../cliCommands.js';
 import {
   CredentialsExpiredError,
+  ensureCurlRequestIsPermitted,
   NoCredentialsForServiceError,
   NoServiceForUrlError,
   prepareCurlInvocation,
@@ -49,12 +50,12 @@ export const HOP_BY_HOP_HEADERS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Asks the gateway to forward a `/gateway/<url>` request exactly as received:
- * no service lookup, no credential injection, and no permission check. Meant
- * for requests that already carry their credentials (injected by another
- * gateway whose store holds them) and only need this gateway's network
- * position. The gateway password, when configured, is still required.
- * Lowercased to match how Node exposes header names.
+ * Asks the gateway to forward a `/gateway/<url>` request as received: no
+ * service lookup and no credential injection. Meant for requests that already
+ * carry their credentials (injected by another gateway whose store holds them)
+ * and only need this gateway's network position. The gateway password, when
+ * configured, and the permission check still apply. Lowercased to match how
+ * Node exposes header names.
  */
 export const GATEWAY_NO_CREDENTIALS_HEADER = 'x-latchkey-gateway-no-credentials';
 
@@ -354,36 +355,49 @@ export async function handleGatewayRequest(
   const accountHeader = request.headers[GATEWAY_ACCOUNT_HEADER];
   const account = typeof accountHeader === 'string' ? accountHeader : undefined;
 
-  // A request marked as carrying its own credentials bypasses the injection
-  // pipeline entirely (see `GATEWAY_NO_CREDENTIALS_HEADER`): there is nothing
-  // of this gateway's to protect, so neither the service lookup nor the
-  // permission check runs. The marker itself was stripped along with the other
-  // gateway-internal headers above.
+  // A request marked as carrying its own credentials skips the credential
+  // side of the pipeline (see `GATEWAY_NO_CREDENTIALS_HEADER`): no service
+  // lookup and no injection, since there are no credentials of this gateway's
+  // to add. The permission check still runs, because the gateway's network
+  // position is itself worth guarding. No account is reported to the check:
+  // the credentials come from elsewhere, so this gateway cannot vouch for any.
+  // The marker itself was stripped along with the other gateway-internal
+  // headers above.
   const isNoCredentialsRequest = request.headers[GATEWAY_NO_CREDENTIALS_HEADER] !== undefined;
+  const permissionCheckDependencies = {
+    checkPermission: deps.checkPermission,
+    permissionsConfigPath,
+    permissionsDoNotUseBuiltinSchemas: deps.config.permissionsDoNotUseBuiltinSchemas,
+  };
 
   let allArguments: readonly string[];
   try {
-    allArguments = isNoCredentialsRequest
-      ? curlArguments
-      : await prepareCurlInvocation(
-          curlArguments,
-          apiCredentialStore,
-          {
-            registry: deps.registry,
-            checkPermission: deps.checkPermission,
-            permissionsConfigPath,
-            permissionsDoNotUseBuiltinSchemas: deps.config.permissionsDoNotUseBuiltinSchemas,
-            passthroughUnknown: deps.config.passthroughUnknown,
-            credentialsRefreshDisabled: deps.config.credentialsRefreshDisabled,
-            account,
-          },
-          // The gateway forwards the body to curl out-of-band via
-          // `--data-binary @-` on stdin, so the parsed curl arguments only carry
-          // the `@-` placeholder. Hand the real body to the pipeline so the
-          // permission check inspects the actual payload and payload-signing
-          // credentials (AWS SigV4) hash the bytes curl really sends.
-          body
-        );
+    if (isNoCredentialsRequest) {
+      // The gateway forwards the body to curl out-of-band via `--data-binary
+      // @-` on stdin, so the parsed curl arguments only carry the `@-`
+      // placeholder. Hand the real body over so the permission check inspects
+      // the actual payload.
+      await ensureCurlRequestIsPermitted(curlArguments, permissionCheckDependencies, body);
+      allArguments = curlArguments;
+    } else {
+      allArguments = await prepareCurlInvocation(
+        curlArguments,
+        apiCredentialStore,
+        {
+          ...permissionCheckDependencies,
+          registry: deps.registry,
+          passthroughUnknown: deps.config.passthroughUnknown,
+          credentialsRefreshDisabled: deps.config.credentialsRefreshDisabled,
+          account,
+        },
+        // The gateway forwards the body to curl out-of-band via
+        // `--data-binary @-` on stdin, so the parsed curl arguments only carry
+        // the `@-` placeholder. Hand the real body to the pipeline so the
+        // permission check inspects the actual payload and payload-signing
+        // credentials (AWS SigV4) hash the bytes curl really sends.
+        body
+      );
+    }
   } catch (error) {
     if (error instanceof RequestNotPermittedError) {
       deps.log(`${method} ${targetUrl} -> 403`);
