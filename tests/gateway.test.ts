@@ -1009,6 +1009,20 @@ describe('gateway server', () => {
   describe('no-credentials header', () => {
     const noCredentialsHeaders = { 'X-Latchkey-Gateway-No-Credentials': '1' };
 
+    const DEFAULT_CREDENTIALS = {
+      slack: { objectType: 'rawCurl', curlArguments: ['-H', 'Authorization: Bearer test-token'] },
+    };
+
+    // The header is only honored on a gateway that allows forwarding requests
+    // without credential injection.
+    function createPassthroughGateway(
+      optionOverrides: Partial<GatewayOptions> = {}
+    ): Promise<GatewayServer> {
+      return createTestGateway(DEFAULT_CREDENTIALS, {}, optionOverrides, {
+        passthroughUnknown: true,
+      });
+    }
+
     function headerArgumentsOf(args: readonly string[]): string[] {
       const headerArguments: string[] = [];
       for (let index = 0; index < args.length; index++) {
@@ -1019,8 +1033,21 @@ describe('gateway server', () => {
       return headerArguments;
     }
 
-    it('forwards the request as received, without injecting stored credentials', async () => {
+    it('is refused unless the gateway allows uninjected requests', async () => {
       gateway = await createTestGateway();
+
+      const response = await fetch('/gateway/https://slack.com/api/auth.test', {
+        headers: { ...noCredentialsHeaders, Authorization: 'Bearer already-injected' },
+      });
+
+      expect(response.status).toBe(403);
+      expect(await response.text()).toContain('LATCHKEY_PASSTHROUGH_UNKNOWN');
+      expect(capturedCurlArgs).toEqual([]);
+      expect(capturedPermissionCheckBody).toBeUndefined();
+    });
+
+    it('forwards the request as received, without injecting stored credentials', async () => {
+      gateway = await createPassthroughGateway();
 
       const response = await fetch('/gateway/https://slack.com/api/auth.test', {
         headers: { ...noCredentialsHeaders, Authorization: 'Bearer already-injected' },
@@ -1034,7 +1061,7 @@ describe('gateway server', () => {
     });
 
     it('never forwards the header itself upstream', async () => {
-      gateway = await createTestGateway();
+      gateway = await createPassthroughGateway();
 
       await fetch('/gateway/https://slack.com/api/auth.test', { headers: noCredentialsHeaders });
 
@@ -1045,7 +1072,7 @@ describe('gateway server', () => {
 
     it('still enforces the permission check', async () => {
       mockPermissionResult = false;
-      gateway = await createTestGateway();
+      gateway = await createPassthroughGateway();
 
       const response = await fetch('/gateway/https://slack.com/api/auth.test', {
         headers: noCredentialsHeaders,
@@ -1056,7 +1083,7 @@ describe('gateway server', () => {
     });
 
     it('checks permissions against the real request body', async () => {
-      gateway = await createTestGateway();
+      gateway = await createPassthroughGateway();
       const requestBody = JSON.stringify({ channel: 'general', text: 'hello' });
 
       const response = await fetch('/gateway/https://slack.com/api/chat.postMessage', {
@@ -1070,7 +1097,7 @@ describe('gateway server', () => {
     });
 
     it('does not require the target to match a known service', async () => {
-      gateway = await createTestGateway();
+      gateway = await createPassthroughGateway();
 
       const response = await fetch('/gateway/https://unknown-api.example.com/test', {
         headers: noCredentialsHeaders,
@@ -1081,7 +1108,7 @@ describe('gateway server', () => {
     });
 
     it('still requires the gateway password', async () => {
-      gateway = await createTestGateway({}, {}, { password: 'sekret' });
+      gateway = await createPassthroughGateway({ password: 'sekret' });
 
       const unauthenticated = await fetch('/gateway/https://slack.com/api/auth.test', {
         headers: noCredentialsHeaders,
@@ -1095,7 +1122,7 @@ describe('gateway server', () => {
     });
 
     it('is ignored when absent, so ordinary requests still get credentials', async () => {
-      gateway = await createTestGateway();
+      gateway = await createPassthroughGateway();
 
       const response = await fetch('/gateway/https://slack.com/api/auth.test');
 

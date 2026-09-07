@@ -25,6 +25,9 @@ export const ErrorMessages = {
   couldNotExtractUrlBrief: 'Error: Could not extract URL from curl arguments.',
   upstreamRequestFailed: 'Error: Upstream request failed.',
   requestBodyTooLarge: 'Error: Request body too large.',
+  noCredentialsRequestsNotAllowed:
+    'Error: Forwarding requests without credential injection is not enabled on this gateway. ' +
+    'Set LATCHKEY_PASSTHROUGH_UNKNOWN to allow it.',
 
   noServiceMatchesUrl(url: string): string {
     return `Error: No service matches URL: ${url}`;
