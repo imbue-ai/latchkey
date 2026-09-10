@@ -81,5 +81,8 @@
       "./dist/skills/generic"
     ],
     "video": "https://github.com/imbue-ai/latchkey/releases/download/2.5.4/demo.mp4"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
   }
 }
