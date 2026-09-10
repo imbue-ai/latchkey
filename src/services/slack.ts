@@ -82,10 +82,8 @@ const TOKEN_SETTLE_PERIOD_MS = 5_000;
 export class SlackSessionCookieMissingError extends LoginFailedError {
   constructor() {
     super(
-      'Login failed: Slack signed you in, but the browser holds no "d" session cookie, ' +
-        'which the Slack API requires alongside the token. This has been observed after ' +
-        'choosing "Reject cookies" in Slack\'s cookie dialog. ' +
-        'Please run the login again and accept cookies.'
+      'Login failed: The browser holds no "d" session cookie. ' +
+      'Maybe you rejected cookies in Slack\'s cookie dialog?'
     );
     this.name = 'SlackSessionCookieMissingError';
   }
@@ -97,11 +95,7 @@ export class SlackSessionCookieMissingError extends LoginFailedError {
  */
 export class SlackTokenMissingError extends LoginFailedError {
   constructor() {
-    super(
-      'Login failed: the Slack client loaded, but no session token was found in its ' +
-        'responses. Please run the login again; if you rejected cookies in Slack\'s ' +
-        'cookie dialog, accept them this time.'
-    );
+    super('Login failed: No session token was found.');
     this.name = 'SlackTokenMissingError';
   }
 }
