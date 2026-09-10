@@ -38,7 +38,7 @@ function sendErrorResponse(
   message: string
 ): void {
   response.writeHead(statusCode, { 'Content-Type': 'application/json' });
-  response.end(JSON.stringify({ error: message }));
+  response.end(JSON.stringify({ error: message, latchkeyError: true }));
 }
 
 /**

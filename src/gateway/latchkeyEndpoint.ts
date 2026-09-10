@@ -131,7 +131,7 @@ function sendErrorResponse(
   statusCode: number,
   message: string
 ): void {
-  sendJsonResponse(response, statusCode, { error: message });
+  sendJsonResponse(response, statusCode, { error: message, latchkeyError: true });
 }
 
 function describeRequest(parsed: LatchkeyRequest): string {

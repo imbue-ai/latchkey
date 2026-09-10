@@ -262,7 +262,7 @@ function sendErrorResponse(
 ): void {
   if (response.headersSent) return;
   response.writeHead(statusCode, { 'Content-Type': 'application/json' });
-  response.end(JSON.stringify({ error: message }));
+  response.end(JSON.stringify({ error: message, latchkeyError: true }));
 }
 
 /**
