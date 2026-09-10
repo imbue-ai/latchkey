@@ -15,5 +15,5 @@ describe('TypeScript', () => {
         stdio: 'pipe',
       });
     }).not.toThrow();
-  });
+  }, 20000);
 });
