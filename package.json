@@ -1,6 +1,6 @@
 {
   "name": "latchkey",
-  "version": "3.11.0",
+  "version": "3.11.1",
   "description": "A CLI tool that injects API credentials into curl requests to third-party services",
   "author": "Imbue <hynek@imbue.com>",
   "repository": {
@@ -81,5 +81,8 @@
       "./dist/skills/generic"
     ],
     "video": "https://github.com/imbue-ai/latchkey/releases/download/2.5.4/demo.mp4"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
   }
 }
