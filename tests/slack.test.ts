@@ -82,6 +82,18 @@ describe('slack login from responses', () => {
     expect(capturedOf(session)).toEqual({ token: 'xoxc-123-abc', dCookie: 'the-d-cookie' });
   });
 
+  // Enterprise Grid workspaces sit two labels deep, behind an SSO callback.
+  it('captures from an Enterprise Grid workspace host', async () => {
+    const session = startLogin();
+    await session.onResponse(
+      responseWith({
+        url: 'https://canva.enterprise.slack.com/api/client.boot',
+        cookieHeader: 'd=enterprise-cookie',
+      })
+    );
+    expect(capturedOf(session)).toEqual({ token: 'xoxc-123-abc', dCookie: 'enterprise-cookie' });
+  });
+
   it('ignores responses from outside slack.com', async () => {
     const session = startLogin();
     await session.onResponse(

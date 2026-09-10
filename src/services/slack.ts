@@ -56,7 +56,11 @@ export class SlackApiCredentials implements ApiCredentials {
   }
 }
 
-const SLACK_URL_PATTERN = /^https:\/\/([a-z0-9-]+\.)?slack\.com\//;
+/**
+ * Any host under slack.com. Enterprise Grid workspaces live two labels deep
+ * (`<workspace>.enterprise.slack.com`), so a single optional label is not enough.
+ */
+const SLACK_URL_PATTERN = /^https:\/\/([a-z0-9-]+\.)*slack\.com\//;
 
 /** Where the browser ends up once Slack considers the user signed in. */
 const SLACK_CLIENT_URL_PATTERN = /^https:\/\/app\.slack\.com\/client(\/|$)/;
