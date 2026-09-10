@@ -21,11 +21,7 @@ const START_TIME = new Date('2026-01-01T00:00:00Z').getTime();
 // Comfortably past the settle period, whatever it is set to.
 const WELL_PAST_THE_SETTLE_PERIOD_MS = 60_000;
 
-function responseWith(params: {
-  url?: string;
-  body?: string;
-  cookieHeader?: string;
-}): Response {
+function responseWith(params: { url?: string; body?: string; cookieHeader?: string }): Response {
   const headers: Record<string, string> =
     params.cookieHeader === undefined ? {} : { cookie: params.cookieHeader };
   return {

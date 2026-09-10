@@ -87,7 +87,7 @@ export class SlackSessionCookieMissingError extends LoginFailedError {
   constructor() {
     super(
       'Login failed: The browser holds no "d" session cookie. ' +
-      'Maybe you rejected cookies in Slack\'s cookie dialog?'
+        "Maybe you rejected cookies in Slack's cookie dialog?"
     );
     this.name = 'SlackSessionCookieMissingError';
   }
