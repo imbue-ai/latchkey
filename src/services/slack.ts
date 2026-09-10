@@ -67,11 +67,12 @@ const API_TOKEN_PATTERN = /"api_token":"(xoxc-[a-zA-Z0-9-]+)"/;
 const D_COOKIE_HEADER_PATTERN = /\bd=([^;]+)/;
 
 /**
- * How long a signed-in browser is given to yield both halves of the credentials
- * before the login is given up on with an explanation, rather than left waiting
- * for something that is not going to happen.
+ * How long after the Slack client has finished loading a token is still waited
+ * for. The token may arrive in the client's HTML or in a request the client
+ * makes afterwards, so this is deliberately generous: it only delays the
+ * failure message, never a login that is going to succeed.
  */
-const SIGNED_IN_GRACE_PERIOD_MS = 10_000;
+const TOKEN_SETTLE_PERIOD_MS = 5_000;
 
 /**
  * Slack signed the user in but the browser has no `d` session cookie, which the
@@ -113,16 +114,29 @@ async function readDCookieFromJar(page: Page): Promise<string | null> {
   return dCookie?.value ?? null;
 }
 
+/**
+ * Whether the browser sits on a fully loaded Slack client. Loading counts
+ * subresources too, so on a slow connection this simply takes longer to become
+ * true. A page mid-navigation cannot be asked and counts as not loaded.
+ */
+async function isSlackClientLoaded(page: Page): Promise<boolean> {
+  if (!SLACK_CLIENT_URL_PATTERN.test(page.url())) {
+    return false;
+  }
+  try {
+    const readyState: unknown = await page.evaluate('document.readyState');
+    return readyState === 'complete';
+  } catch {
+    return false;
+  }
+}
+
 class SlackServiceSession extends SimpleServiceSession {
   /** Token seen in a response that did not carry the `d` cookie. */
   private pendingToken: string | null = null;
 
-  /** When the browser was first seen to be signed in, or null until then. */
-  private signedInSince: number | null = null;
-
-  private noteSignedIn(): void {
-    this.signedInSince ??= Date.now();
-  }
+  /** When the Slack client was first seen fully loaded, or null until then. */
+  private clientLoadedAt: number | null = null;
 
   protected async getApiCredentialsFromResponse(
     response: Response
@@ -145,9 +159,6 @@ class SlackServiceSession extends SimpleServiceSession {
       return null;
     }
 
-    // A token means Slack has signed the user in, whether or not the cookie is
-    // there to go with it.
-    this.noteSignedIn();
     this.pendingToken = token;
 
     const cookieHeader = (await request.allHeaders()).cookie;
@@ -160,36 +171,38 @@ class SlackServiceSession extends SimpleServiceSession {
    * Notice a login that is stuck: Slack has signed the user in, yet the two
    * things the credentials are made of have not both turned up.
    *
-   * A token whose request did not carry the `d` cookie is first paired with the
-   * cookie from the browser's jar, if it is there. Only when the browser has
-   * been signed in for a while and the credentials are still incomplete is the
-   * login abandoned, with the missing half named.
+   * A token whose request did not carry the `d` cookie is paired with the
+   * cookie from the browser's jar. If the jar has none either, the login is
+   * given up on at once: the cookie is set at sign-in, before Slack serves
+   * anything containing a token, so it is not still coming.
+   *
+   * Without a token, the login is given up on once the client has finished
+   * loading and has then had ample time to make its own requests without any
+   * of them carrying one.
    */
   override async whileWaitingForLogin(page: Page): Promise<void> {
     if (this.apiCredentials !== null) {
       return;
     }
-    if (SLACK_CLIENT_URL_PATTERN.test(page.url())) {
-      this.noteSignedIn();
-    }
-    if (this.signedInSince === null) {
-      return;
-    }
 
     if (this.pendingToken !== null) {
       const dCookie = await readDCookieFromJar(page);
-      if (dCookie !== null) {
-        this.apiCredentials = new SlackApiCredentials(this.pendingToken, dCookie);
-        return;
+      if (dCookie === null) {
+        throw new SlackSessionCookieMissingError();
       }
-    }
-
-    if (Date.now() - this.signedInSince < SIGNED_IN_GRACE_PERIOD_MS) {
+      this.apiCredentials = new SlackApiCredentials(this.pendingToken, dCookie);
       return;
     }
-    throw this.pendingToken === null
-      ? new SlackTokenMissingError()
-      : new SlackSessionCookieMissingError();
+
+    if (this.clientLoadedAt === null) {
+      if (await isSlackClientLoaded(page)) {
+        this.clientLoadedAt = Date.now();
+      }
+      return;
+    }
+    if (Date.now() - this.clientLoadedAt >= TOKEN_SETTLE_PERIOD_MS) {
+      throw new SlackTokenMissingError();
+    }
   }
 }
 
