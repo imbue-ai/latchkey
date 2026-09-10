@@ -547,8 +547,9 @@ describe('gateway extensions integration', () => {
     gateway = await createTestGateway();
     const response = await fetch('/anything');
     expect(response.status).toBe(403);
-    const body = (await response.json()) as { error: string };
+    const body = (await response.json()) as { error: string; latchkeyError: boolean };
     expect(body.error.toLowerCase()).toContain('not permitted');
+    expect(body.latchkeyError).toBe(true);
   });
 
   it('returns 500 and logs when an extension throws', async () => {

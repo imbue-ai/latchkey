@@ -258,8 +258,9 @@ describe('/latchkey/ endpoint', () => {
       gateway = await createTestGateway();
       const response = await postLatchkey({ command: 'unknown' });
       expect(response.status).toBe(400);
-      const body = (await response.json()) as { error: string };
+      const body = (await response.json()) as { error: string; latchkeyError: boolean };
       expect(body.error).toBe("unknown command 'unknown'");
+      expect(body.latchkeyError).toBe(true);
     });
 
     it('should return 400 for missing command', async () => {

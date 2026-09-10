@@ -503,8 +503,9 @@ describe('gateway server', () => {
       const response = await fetch('/gateway/https://unknown-api.example.com/test');
 
       expect(response.status).toBe(400);
-      const body = (await response.json()) as { error: string };
+      const body = (await response.json()) as { error: string; latchkeyError: boolean };
       expect(body.error).toContain('No service matches URL');
+      expect(body.latchkeyError).toBe(true);
     });
 
     it('should return 400 for missing credentials', async () => {
@@ -800,8 +801,9 @@ describe('gateway server', () => {
       const response = await fetch('/gateway/https://slack.com/api/auth.test');
 
       expect(response.status).toBe(401);
-      const body = (await response.json()) as { error: string };
+      const body = (await response.json()) as { error: string; latchkeyError: boolean };
       expect(body.error).toContain('Unauthorized');
+      expect(body.latchkeyError).toBe(true);
     });
 
     it('rejects requests with the wrong password', async () => {
