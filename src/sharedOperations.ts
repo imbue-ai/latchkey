@@ -81,7 +81,7 @@ function buildAccountNotFoundMessage(
   return (
     `Service '${serviceName}' has no credentials stored for account '${account}'. ` +
     `${stored} ` +
-    "If you intend to log in to a new account rather than finalizing or refreshing an existing one, " +
+    'If you intend to log in to a new account rather than finalizing or refreshing an existing one, ' +
     suggestion +
     `'${serviceName}' works out which account a browser login belongs to on its own.`
   );
