@@ -75,15 +75,15 @@ function buildAccountNotFoundMessage(
       : `Stored accounts: ${storedAccounts.map(formatAccount).join(', ')}.`;
   const suggestion =
     storedAccounts.length === 0
-      ? `Run 'latchkey auth browser ${serviceName}' without --account to log in.`
-      : `Run 'latchkey auth browser ${serviceName}' without ` +
-        '--account and sign in as that account.';
+      ? `run 'latchkey auth browser ${serviceName}' without --account to log in. `
+      : `run 'latchkey auth browser ${serviceName}' without ` +
+        '--account and sign in as that account. ';
   return (
     `Service '${serviceName}' has no credentials stored for account '${account}'. ` +
     `${stored} ` +
-    "If you intend to log into a new account (as opposed to finalizing or refreshing an existing login), " +
-    `'${serviceName}' works out which account a browser login belongs to on its own. ` +
-    suggestion
+    "If you intend to log in to a new account rather than finalizing or refreshing an existing one, " +
+    suggestion +
+    `'${serviceName}' works out which account a browser login belongs to on its own.`
   );
 }
 
