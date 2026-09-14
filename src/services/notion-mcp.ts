@@ -291,7 +291,7 @@ class NotionMcpSession extends ServiceSession {
           // Prefer the full e-mail resolved via the MCP get-users tool; fall
           // back to the coarser identity riding along in the token response.
           account:
-            (await this.service.getAccount(credentials)) ?? parseAccountFromTokenResponse(tokens),
+            (await this.service.getAccount?.(credentials)) ?? parseAccountFromTokenResponse(tokens),
         };
       } catch (error: unknown) {
         if (error instanceof Error && isBrowserClosedError(error)) {
@@ -354,7 +354,7 @@ export class NotionMcp extends Service {
   // MCP-audienced tokens cannot call the classic REST API, but the MCP
   // endpoint itself can reveal the identity: the `get-users` tool returns the
   // current user's name and e-mail when asked for `self`.
-  getAccount(apiCredentials: ApiCredentials): Promise<string | null> {
+  override getAccount(apiCredentials: ApiCredentials): Promise<string | null> {
     return fetchAccountFromEndpoint(
       apiCredentials,
       GET_SELF_CURL_ARGUMENTS,

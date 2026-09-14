@@ -512,6 +512,268 @@ describe('operations', () => {
       ).rejects.toThrow(AccountNotFoundError);
     });
 
+    // The short version of this error ("no credentials stored for account X")
+    // read as an instruction to go and create that account, which is the one
+    // thing that cannot help here.
+    describe('the AccountNotFoundError message', () => {
+      async function captureMessage(storedAccounts: readonly string[]): Promise<string> {
+        const service = createMockService({
+          getSession: vi.fn().mockReturnValue({ login: vi.fn() }),
+        });
+        const registry = new ServiceRegistry([service]);
+        const store = createApiCredentialStore();
+        for (const storedAccount of storedAccounts) {
+          store.save('slack', new SlackApiCredentials('token', 'cookie'), storedAccount);
+        }
+        const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
+
+        try {
+          await authBrowser(
+            registry,
+            store,
+            encryptedStorage,
+            createMockConfig(),
+            'slack',
+            'missing@example.com'
+          );
+        } catch (error) {
+          return (error as Error).message;
+        }
+        throw new Error('expected authBrowser to reject');
+      }
+
+      it('says what --account does here instead of implying an account must be created', async () => {
+        const message = await captureMessage([]);
+        expect(message).toContain('selects an existing account whose stored credentials');
+        expect(message).toContain('does not name an account to create');
+      });
+
+      it('lists the accounts that are stored, ready to be passed back', async () => {
+        const message = await captureMessage(['', 'bob@example.com']);
+        expect(message).toContain("Stored accounts: '', 'bob@example.com'.");
+      });
+
+      it('points at a login without --account as the way to add an account', async () => {
+        const message = await captureMessage(['bob@example.com']);
+        expect(message).toContain("run 'latchkey auth browser slack' without --account");
+      });
+
+      it('does not offer to add "another" account when none are stored', async () => {
+        const message = await captureMessage([]);
+        expect(message).toContain("No accounts are stored for 'slack' yet.");
+        expect(message).not.toContain('another account');
+      });
+    });
+
+    // A service that leaves getAccount unimplemented has no identity to
+    // report, so --account names the account instead of merely selecting the
+    // OAuth client to reuse. Without that, such a service could only ever hold
+    // a single account's worth of credentials.
+    describe('for a service that cannot name its own accounts', () => {
+      // The login reports an account even though the service declares no
+      // identity: that is what a registered service built on a family does,
+      // since it runs the family's session and the family names accounts from
+      // its own public API host. The name is meaningless here, so it is
+      // discarded.
+      function createAccountlessService(sessionOverrides: Record<string, unknown> = {}): Service {
+        const login = vi.fn().mockResolvedValue({
+          credentials: new SlackApiCredentials('fresh-token', 'fresh-cookie'),
+          account: 'family@example.com',
+        });
+        return createMockService({
+          getAccount: undefined,
+          getSession: vi.fn().mockReturnValue({ login, ...sessionOverrides }),
+        });
+      }
+
+      function prepareBrowserConfig(): Config {
+        const config = createMockConfig({ directory: tempDir });
+        saveBrowserConfig(config.configPath, {
+          executablePath: process.execPath,
+          source: 'system',
+          discoveredAt: new Date().toISOString(),
+        });
+        return config;
+      }
+
+      let originalPlatform: NodeJS.Platform;
+
+      beforeEach(() => {
+        originalPlatform = process.platform;
+        Object.defineProperty(process, 'platform', { value: 'darwin' });
+      });
+
+      afterEach(() => {
+        Object.defineProperty(process, 'platform', { value: originalPlatform });
+      });
+
+      it('stores the login under the account the user named', async () => {
+        const service = createAccountlessService();
+        const registry = new ServiceRegistry([service]);
+        const store = createApiCredentialStore();
+        const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
+
+        const result = await authBrowser(
+          registry,
+          store,
+          encryptedStorage,
+          prepareBrowserConfig(),
+          'slack',
+          'work'
+        );
+
+        expect(result).toEqual({ account: 'work' });
+        expect(store.listAccounts('slack')).toEqual(['work']);
+      });
+
+      it('keeps several accounts side by side', async () => {
+        const service = createAccountlessService();
+        const registry = new ServiceRegistry([service]);
+        const store = createApiCredentialStore();
+        store.save(
+          'slack',
+          new SlackApiCredentials('personal-token', 'personal-cookie'),
+          'personal'
+        );
+        const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
+
+        await authBrowser(
+          registry,
+          store,
+          encryptedStorage,
+          prepareBrowserConfig(),
+          'slack',
+          'work'
+        );
+
+        expect(store.listAccounts('slack')).toEqual(['personal', 'work']);
+      });
+
+      it('falls back to the default account when no account is named', async () => {
+        const service = createAccountlessService();
+        const registry = new ServiceRegistry([service]);
+        const store = createApiCredentialStore();
+        const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
+
+        const result = await authBrowser(
+          registry,
+          store,
+          encryptedStorage,
+          prepareBrowserConfig(),
+          'slack'
+        );
+
+        expect(result).toEqual({ account: '' });
+        expect(store.listAccounts('slack')).toEqual(['']);
+      });
+
+      it('discards the account the login reported when one is named', async () => {
+        const service = createAccountlessService();
+        const registry = new ServiceRegistry([service]);
+        const store = createApiCredentialStore();
+        const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
+
+        await authBrowser(
+          registry,
+          store,
+          encryptedStorage,
+          prepareBrowserConfig(),
+          'slack',
+          'work'
+        );
+
+        expect(store.listAccounts('slack')).toEqual(['work']);
+      });
+
+      it('replaces the default account on a second login without --account', async () => {
+        const service = createAccountlessService();
+        const registry = new ServiceRegistry([service]);
+        const store = createApiCredentialStore();
+        const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
+        const config = prepareBrowserConfig();
+
+        await authBrowser(registry, store, encryptedStorage, config, 'slack');
+        await authBrowser(registry, store, encryptedStorage, config, 'slack');
+
+        expect(store.listAccounts('slack')).toEqual(['']);
+      });
+
+      it('reuses the preparation when the named account is new', async () => {
+        const login = vi.fn().mockResolvedValue({
+          credentials: new OAuthCredentials('client-id', 'client-secret', 'access-token'),
+          account: '',
+        });
+        const service = createMockService({
+          getAccount: undefined,
+          getSession: vi.fn().mockReturnValue({ prepare: vi.fn(), login }),
+        });
+        const registry = new ServiceRegistry([service]);
+        const store = createApiCredentialStore();
+        store.savePreparation('slack', new OAuthCredentials('client-id', 'client-secret'));
+        const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
+
+        const result = await authBrowser(
+          registry,
+          store,
+          encryptedStorage,
+          prepareBrowserConfig(),
+          'slack',
+          'work'
+        );
+
+        expect(result).toEqual({ account: 'work' });
+        const reusedCredentials = login.mock.calls[0]?.[2] as OAuthCredentials;
+        expect(reusedCredentials.clientId).toBe('client-id');
+      });
+
+      it("prefers the named account's own credentials over the preparation", async () => {
+        const login = vi.fn().mockResolvedValue({
+          credentials: new OAuthCredentials('work-client', 'work-secret', 'new-access-token'),
+          account: '',
+        });
+        const service = createMockService({
+          getAccount: undefined,
+          getSession: vi.fn().mockReturnValue({ prepare: vi.fn(), login }),
+        });
+        const registry = new ServiceRegistry([service]);
+        const store = createApiCredentialStore();
+        store.savePreparation('slack', new OAuthCredentials('prepared-client', 'prepared-secret'));
+        store.save(
+          'slack',
+          new OAuthCredentials('work-client', 'work-secret', 'old-access-token'),
+          'work'
+        );
+        const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
+
+        await authBrowser(
+          registry,
+          store,
+          encryptedStorage,
+          prepareBrowserConfig(),
+          'slack',
+          'work'
+        );
+
+        const reusedCredentials = login.mock.calls[0]?.[2] as OAuthCredentials;
+        expect(reusedCredentials.clientId).toBe('work-client');
+        expect(reusedCredentials.accessToken).toBe('old-access-token');
+      });
+
+      it('still requires a preparation when the service has none', async () => {
+        const service = createMockService({
+          getAccount: undefined,
+          getSession: vi.fn().mockReturnValue({ prepare: vi.fn(), login: vi.fn() }),
+        });
+        const registry = new ServiceRegistry([service]);
+        const store = createApiCredentialStore();
+        const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
+
+        await expect(
+          authBrowser(registry, store, encryptedStorage, createMockConfig(), 'slack', 'work')
+        ).rejects.toThrow(PreparationRequiredError);
+      });
+    });
+
     it('keeps complete default-account credentials when a login adds a named account', async () => {
       const originalPlatform = process.platform;
       Object.defineProperty(process, 'platform', { value: 'darwin' });

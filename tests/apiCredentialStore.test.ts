@@ -283,6 +283,31 @@ describe('ApiCredentialStore', () => {
           store.save('github', new AuthorizationBearer('c'));
         }).toThrow(AmbiguousAccountError);
       });
+
+      // The listed accounts exist to be passed back as --account, so the
+      // default account is listed as the '' that --account takes rather than
+      // described in prose.
+      it('lists the default account as the empty string --account takes', () => {
+        const store = new ApiCredentialStore(storePath, encryptedStorage);
+        store.save('github', new AuthorizationBearer('default'), '');
+        store.save('github', new AuthorizationBearer('b'), 'b@example.com');
+
+        expect(() => store.get('github')).toThrow(
+          "Multiple accounts are stored for service 'github': '', 'b@example.com'. " +
+            'Specify which one to use with --account.'
+        );
+      });
+
+      it('lists named accounts the same way', () => {
+        const store = new ApiCredentialStore(storePath, encryptedStorage);
+        store.save('github', new AuthorizationBearer('a'), 'a@example.com');
+        store.save('github', new AuthorizationBearer('b'), 'b@example.com');
+
+        expect(() => store.get('github')).toThrow(
+          "Multiple accounts are stored for service 'github': 'a@example.com', " +
+            "'b@example.com'. Specify which one to use with --account."
+        );
+      });
     });
 
     describe('delete', () => {

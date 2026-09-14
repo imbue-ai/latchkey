@@ -6,6 +6,7 @@
  * rather than writing to stdout or calling process.exit.
  */
 
+import { DEFAULT_ACCOUNT, formatAccount } from './apiCredentials/account.js';
 import { ApiCredentialStatus, type ApiCredentials } from './apiCredentials/base.js';
 import type { ApiCredentialStore } from './apiCredentials/store.js';
 import { getCredentialStatus } from './apiCredentials/utils.js';
@@ -58,11 +59,47 @@ export class PreparationRequiredError extends Error {
 }
 
 /**
- * Thrown when an explicitly named account has no stored credentials.
+ * Explain a rejected `--account` on `auth browser`: what the service actually
+ * has, what the option does here, and what to run instead. A service with
+ * nothing stored yet needs a different closing suggestion from one where the
+ * user simply named the wrong account.
+ */
+function buildAccountNotFoundMessage(
+  serviceName: string,
+  account: string,
+  storedAccounts: readonly string[]
+): string {
+  const stored =
+    storedAccounts.length === 0
+      ? `No accounts are stored for '${serviceName}' yet.`
+      : `Stored accounts: ${storedAccounts.map(formatAccount).join(', ')}.`;
+  const suggestion =
+    storedAccounts.length === 0
+      ? `Run 'latchkey auth browser ${serviceName}' without --account to log in.`
+      : `Run 'latchkey auth browser ${serviceName}' without ` +
+        '--account and sign in as that account.';
+  return (
+    `Service '${serviceName}' has no credentials stored for account '${account}'. ` +
+    `${stored} ` +
+    "If you intend to log into a new account (as opposed to finalizing or refreshing an existing login), " +
+    `'${serviceName}' works out which account a browser login belongs to on its own. ` +
+    suggestion
+  );
+}
+
+/**
+ * Thrown when `auth browser` is pointed at an account that has no stored
+ * credentials to take an OAuth client from.
+ *
+ * The message spells out what `--account` does here, because the short version
+ * ("no credentials stored for account X") read to users and agents as an
+ * instruction to go and create that account — which is the one thing that
+ * cannot help, since a service that names its own accounts assigns them after
+ * the login rather than being told one up front.
  */
 export class AccountNotFoundError extends Error {
-  constructor(serviceName: string, account: string) {
-    super(`No credentials stored for account '${account}' of service '${serviceName}'.`);
+  constructor(serviceName: string, account: string, storedAccounts: readonly string[]) {
+    super(buildAccountNotFoundMessage(serviceName, account, storedAccounts));
     this.name = 'AccountNotFoundError';
   }
 }
@@ -272,37 +309,53 @@ export async function authBrowser(
     throw new BrowserFlowsNotSupportedError(serviceName);
   }
 
+  // A service that implements getAccount owns its account names: the login
+  // reports who the user signed in as, and that is where the credentials go.
+  // A service that does not has no identity to report, so the user names the
+  // account with --account — which is what lets such a service hold more than
+  // one set of credentials.
+  const namesItsOwnAccounts = service.getAccount !== undefined;
+
   // Login reuses previously stored credentials only for service-level
   // artifacts (e.g. an OAuth client), which all of a service's accounts can
   // share. By default the service's preparation (created by `auth prepare` or
   // `auth browser-prepare`) is used; with an explicit account, that account's
-  // stored credentials carry the client instead. Either way the login may
-  // still end up stored under a different account — whichever the user logs
-  // in as.
-  let oldCredentials: ApiCredentials | null;
+  // stored credentials carry the client instead.
+  let oldCredentials: ApiCredentials | null = null;
   if (account !== undefined) {
     oldCredentials = apiCredentialStore.get(service.name, account);
-    if (oldCredentials === null) {
-      throw new AccountNotFoundError(serviceName, account);
+    // When the user names the account, naming one that does not exist yet is
+    // how a second account is created, so the client falls back to the
+    // preparation below instead of being an error.
+    if (oldCredentials === null && namesItsOwnAccounts) {
+      throw new AccountNotFoundError(
+        serviceName,
+        account,
+        apiCredentialStore.listAccounts(service.name)
+      );
     }
-  } else {
-    oldCredentials = apiCredentialStore.getPreparation(service.name);
   }
+  oldCredentials ??= apiCredentialStore.getPreparation(service.name);
   if (session.prepare && oldCredentials === null) {
     throw new PreparationRequiredError(serviceName);
   }
 
   const launchOptions = getBrowserLaunchOptions(config);
 
-  // The browser flow reports which account the user logged in as, so the
-  // credentials are stored under that account.
   const { credentials, account: loggedInAccount } = await session.login(
     encryptedStorage,
     launchOptions,
     oldCredentials ?? undefined
   );
-  apiCredentialStore.save(service.name, credentials, loggedInAccount);
-  return { account: loggedInAccount };
+  // A service that names its own accounts decides where the login goes. For
+  // one that does not, the account the login reported means nothing: a
+  // registered service built on a family runs the family's session, so the
+  // name comes from the family's own public API host rather than from the
+  // instance that was actually logged into. So the user's --account decides,
+  // and without one the credentials go to the default account.
+  const targetAccount = namesItsOwnAccounts ? loggedInAccount : (account ?? DEFAULT_ACCOUNT);
+  apiCredentialStore.save(service.name, credentials, targetAccount);
+  return { account: targetAccount };
 }
 
 export interface AuthBrowserPrepareResult {

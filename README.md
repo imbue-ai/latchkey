@@ -187,6 +187,12 @@ to specify which existing OAuth client configuration to use for
 the login (selecting one associated with an existing account) if
 needed.
 
+The only exceptions are services that cannot determine the
+account for the completed browser login. For those, `--account`
+also names the account the new credentials are stored under. All
+services registered at runtime (see "Entirely new services"
+below) fall into this category.
+
 ### Self-hosted services
 
 For services that can be self-hosted, like GitLab, first make Latchkey aware of your service instance:

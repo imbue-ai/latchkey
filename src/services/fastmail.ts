@@ -297,7 +297,7 @@ class FastmailSession extends ServiceSession {
           // account; Fastmail's token response carries no identity. A session
           // fetch that fails still leaves usable credentials, so fall back to
           // the placeholder rather than failing the whole login.
-          account: (await this.service.getAccount(credentials)) ?? DEFAULT_ACCOUNT,
+          account: (await this.service.getAccount?.(credentials)) ?? DEFAULT_ACCOUNT,
         };
       } catch (error: unknown) {
         if (error instanceof Error && isBrowserClosedError(error)) {

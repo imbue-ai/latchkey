@@ -173,11 +173,8 @@ export class Openrouter extends Service {
     return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
   }
 
-  // An OpenRouter API key has no queryable user-identity endpoint, so the account
-  // is left as the default rather than guessed.
-  override getAccount(_apiCredentials: ApiCredentials): Promise<string | null> {
-    return Promise.resolve(null);
-  }
+  // No getAccount: an OpenRouter API key has no queryable user-identity
+  // endpoint, so accounts here are named by the user via `--account`.
 
   override getSession(appNamePrefix: string): OpenrouterServiceSession {
     return new OpenrouterServiceSession(this, appNamePrefix);

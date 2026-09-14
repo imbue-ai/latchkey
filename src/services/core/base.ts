@@ -247,16 +247,23 @@ export abstract class Service {
   /**
    * Determine which account the given credentials belong to: an e-mail when
    * available, otherwise a human-readable handle, otherwise an opaque id.
-   * Returns null when the account cannot be determined.
+   * Returns null when the account cannot be determined this time.
    *
    * Best-effort and entirely separate from the credential check: services
    * typically implement it via `fetchAccountFromEndpoint()`, asking an
    * identity-revealing endpoint and parsing the account from its body.
-   * Services whose credentials carry no queryable identity (e.g. app-scoped
-   * API keys) must still implement this — explicitly returning null — so that
-   * the decision is a conscious one for every service.
+   *
+   * Optional, and the two ways of not naming an account mean different things.
+   * A service that implements this owns its accounts: `auth browser` stores a
+   * login under whatever this reports, and null merely means this particular
+   * lookup came up empty. A service that leaves it unimplemented has no
+   * concept of identity at all (app-scoped API keys, a self-hosted instance of
+   * an unknown API), and the user names the account instead — `latchkey
+   * --account <name> auth browser <service>` stores the login under `<name>`,
+   * which is what lets such a service hold more than one set of credentials.
+   * Without a `--account`, such a login goes to the default account.
    */
-  abstract getAccount(apiCredentials: ApiCredentials): Promise<string | null>;
+  getAccount?(apiCredentials: ApiCredentials): Promise<string | null>;
 
   /**
    * Return an example showing how to set credentials for this service via the CLI.
@@ -434,9 +441,12 @@ export abstract class ServiceSession {
         throw new LoginFailedError();
       }
 
-      // Ask the service which account the fresh credentials belong to,
-      // falling back to the unnamed default account.
-      const account = (await this.service.getAccount(apiCredentials)) ?? DEFAULT_ACCOUNT;
+      // Ask the service which account the fresh credentials belong to, falling
+      // back to the unnamed default account. This is what the service makes of
+      // the login, not the last word on where the credentials are stored: a
+      // caller whose service declares no identity of its own disregards it and
+      // uses the account the user named.
+      const account = (await this.service.getAccount?.(apiCredentials)) ?? DEFAULT_ACCOUNT;
       return { credentials: apiCredentials, account };
     });
   }
