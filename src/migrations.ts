@@ -107,7 +107,9 @@ async function resolveCredentialViaServiceRegistry(
     const credentials = await refreshIfExpired(service, originalCredentials);
     const [status, account] = await Promise.all([
       service.checkApiCredentials(credentials),
-      service.getAccount(credentials),
+      // A service without getAccount has no identity to ask about, so its
+      // credentials keep the account they were already stored under.
+      service.getAccount?.(credentials) ?? null,
     ]);
     return {
       status,

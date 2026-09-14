@@ -32,11 +32,8 @@ export class GoogleDirections extends Service {
     return `latchkey auth set-nocurl ${serviceName} <api-key>`;
   }
 
-  // API keys are project-scoped and the Routes API has no endpoint that
-  // reveals the account behind them.
-  getAccount(): Promise<string | null> {
-    return Promise.resolve(null);
-  }
+  // No getAccount: API keys are project-scoped and the Routes API has no
+  // endpoint that reveals the account behind them.
 
   override getCredentialsNoCurl(arguments_: readonly string[]): ApiCredentials {
     if (arguments_.length !== 1 || arguments_[0] === undefined) {

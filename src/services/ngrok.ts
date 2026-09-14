@@ -159,11 +159,8 @@ export class Ngrok extends Service {
     return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>" -H "ngrok-version: ${NGROK_API_VERSION}"`;
   }
 
-  // An ngrok API key carries no queryable identity endpoint, so the account is
-  // left as the default rather than guessed.
-  override getAccount(_apiCredentials: ApiCredentials): Promise<string | null> {
-    return Promise.resolve(null);
-  }
+  // No getAccount: an ngrok API key carries no queryable identity endpoint, so
+  // accounts here are named by the user via `--account` rather than guessed.
 
   override getSession(appNamePrefix: string): NgrokServiceSession {
     return new NgrokServiceSession(this, appNamePrefix);

@@ -15,11 +15,8 @@ export class Yelp extends Service {
     return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
   }
 
-  // Yelp API keys are app-scoped and the Fusion API has no endpoint that
-  // reveals the account behind them.
-  getAccount(): Promise<string | null> {
-    return Promise.resolve(null);
-  }
+  // No getAccount: Yelp API keys are app-scoped and the Fusion API has no
+  // endpoint that reveals the account behind them.
 }
 
 export const YELP = new Yelp();

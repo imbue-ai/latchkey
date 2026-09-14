@@ -19,7 +19,7 @@
  * accounts exist and the caller must disambiguate.
  */
 
-import { DEFAULT_ACCOUNT } from './account.js';
+import { DEFAULT_ACCOUNT, formatAccount } from './account.js';
 import type { ApiCredentials } from './base.js';
 import {
   ApiCredentialsSchema,
@@ -46,7 +46,7 @@ export class AmbiguousAccountError extends Error {
   constructor(serviceName: string, accounts: readonly string[]) {
     super(
       `Multiple accounts are stored for service '${serviceName}': ` +
-        `${accounts.map((account) => `'${account}'`).join(', ')}. ` +
+        `${accounts.map(formatAccount).join(', ')}. ` +
         'Specify which one to use with --account.'
     );
     this.name = 'AmbiguousAccountError';

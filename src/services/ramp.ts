@@ -182,7 +182,7 @@ class RampOAuthServiceSession extends ServiceSession {
           tokens.refresh_token,
           accessTokenExpiresAt
         );
-        const account = (await this.service.getAccount(credentials)) ?? DEFAULT_ACCOUNT;
+        const account = (await this.service.getAccount?.(credentials)) ?? DEFAULT_ACCOUNT;
         return { credentials, account };
       } catch (error: unknown) {
         if (error instanceof Error && isBrowserClosedError(error)) {

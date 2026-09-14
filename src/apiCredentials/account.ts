@@ -17,6 +17,19 @@ import { runCapturedAsync } from '../curl.js';
 export const DEFAULT_ACCOUNT = '';
 
 /**
+ * Name an account in a message to the user.
+ *
+ * Accounts are quoted verbatim, which renders the default account as `''`.
+ * That is deliberate: these names are listed so the user can pass one back as
+ * `--account`, and `--account ''` is exactly how the default account is asked
+ * for. Spelling it out in prose would read better and leave the one account in
+ * the list that cannot be copied out of it.
+ */
+export function formatAccount(account: string): string {
+  return `'${account}'`;
+}
+
+/**
  * Parse a JSON response body, returning null instead of throwing on malformed
  * input. Response bodies come from arbitrary servers, so account parsing must
  * never crash on unexpected content.

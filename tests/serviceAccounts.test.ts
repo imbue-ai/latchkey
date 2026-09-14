@@ -96,10 +96,9 @@ describe('base account determination', () => {
     expect(account).toBeNull();
   });
 
-  it('returns null for registered services without a request', async () => {
+  it('is left unimplemented by registered services, so users can name accounts', () => {
     const registered = new RegisteredService('my-service', 'https://example.com/api/');
-    const account = await registered.getAccount();
-    expect(account).toBeNull();
+    expect('getAccount' in registered).toBe(false);
   });
 });
 
