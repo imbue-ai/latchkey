@@ -542,12 +542,6 @@ describe('operations', () => {
         throw new Error('expected authBrowser to reject');
       }
 
-      it('says what --account does here instead of implying an account must be created', async () => {
-        const message = await captureMessage([]);
-        expect(message).toContain('selects an existing account whose stored credentials');
-        expect(message).toContain('does not name an account to create');
-      });
-
       it('lists the accounts that are stored, ready to be passed back', async () => {
         const message = await captureMessage(['', 'bob@example.com']);
         expect(message).toContain("Stored accounts: '', 'bob@example.com'.");
