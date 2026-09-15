@@ -275,42 +275,67 @@ describe('account determination via a separate endpoint', () => {
   });
 });
 
-describe('notion-mcp account determination via the get-users MCP tool', () => {
-  // SSE-framed response as actually returned by mcp.notion.com.
-  const recordedGetSelfResponse =
-    'event: message\n' +
-    'data: {"result":{"content":[{"type":"text","text":"{\\"results\\":[{\\"type\\":\\"person\\",\\"id\\":\\"uuid-1\\",\\"name\\":\\"Jane Doe\\",\\"email\\":\\"jane@example.com\\"}],\\"has_more\\":false}"}]},"jsonrpc":"2.0","id":2}\n';
+describe('notion-mcp account determination via the fetch-self MCP tool', () => {
+  function fetchSelfResponse(toolResult: unknown): string {
+    // SSE-framed, as mcp.notion.com returns tool calls.
+    const message = { result: { content: [{ type: 'text', text: JSON.stringify(toolResult) }] } };
+    return `event: message\ndata: ${JSON.stringify({ ...message, jsonrpc: '2.0', id: 2 })}\n`;
+  }
 
-  it('resolves the e-mail via a single stateless tools/call', async () => {
+  const janeInAcme = {
+    workspace: { id: 'ws-1', name: 'Acme Inc' },
+    user: { id: 'uuid-1', name: 'Jane Doe', type: 'person', email: 'jane@example.com' },
+  };
+
+  it('combines the e-mail and the workspace name via a single stateless tools/call', async () => {
     let observedArguments: readonly string[] = [];
     setAsyncSubprocessRunner((args) => {
       observedArguments = args;
       return Promise.resolve({
         returncode: 0,
-        stdout: Buffer.from(recordedGetSelfResponse),
+        stdout: Buffer.from(fetchSelfResponse(janeInAcme)),
         stderr: '',
       });
     });
     const account = await NOTION_MCP.getAccount(BEARER);
-    expect(account).toBe('jane@example.com');
+    expect(account).toBe('jane@example.com:Acme Inc');
     expect(observedArguments[observedArguments.length - 1]).toBe('https://mcp.notion.com/mcp');
     const payloadArgument = observedArguments[observedArguments.indexOf('-d') + 1] ?? '{}';
     expect(JSON.parse(payloadArgument)).toMatchObject({
       method: 'tools/call',
-      params: { name: 'notion-get-users', arguments: { user_id: 'self' } },
+      params: { name: 'notion-fetch', arguments: { id: 'self' } },
     });
   });
 
-  it('falls back to the name when the user has no e-mail (bots)', async () => {
-    const toolResultText = JSON.stringify({
-      results: [{ type: 'bot', id: 'uuid-2', name: 'My Bot' }],
-      has_more: false,
-    });
+  it('tells the same user apart across workspaces', async () => {
     mockCurlOutput(
-      JSON.stringify({ result: { content: [{ type: 'text', text: toolResultText }] }, id: 2 })
+      fetchSelfResponse({ ...janeInAcme, workspace: { id: 'ws-2', name: 'Jane Personal' } })
     );
     const account = await NOTION_MCP.getAccount(BEARER);
-    expect(account).toBe('My Bot');
+    expect(account).toBe('jane@example.com:Jane Personal');
+  });
+
+  it('accepts the identity wrapped in a self key', async () => {
+    mockCurlOutput(fetchSelfResponse({ self: janeInAcme }));
+    const account = await NOTION_MCP.getAccount(BEARER);
+    expect(account).toBe('jane@example.com:Acme Inc');
+  });
+
+  it('falls back to the name when the user has no e-mail (bots)', async () => {
+    mockCurlOutput(
+      fetchSelfResponse({
+        workspace: { id: 'ws-1', name: 'Acme Inc' },
+        user: { id: 'uuid-2', name: 'My Bot', type: 'bot' },
+      })
+    );
+    const account = await NOTION_MCP.getAccount(BEARER);
+    expect(account).toBe('My Bot:Acme Inc');
+  });
+
+  it('falls back to the user alone when the workspace name is missing', async () => {
+    mockCurlOutput(fetchSelfResponse({ user: { id: 'uuid-1', email: 'jane@example.com' } }));
+    const account = await NOTION_MCP.getAccount(BEARER);
+    expect(account).toBe('jane@example.com');
   });
 
   it('leaves the account undetermined on an error or malformed response', async () => {
