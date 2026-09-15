@@ -1059,6 +1059,24 @@ describe('CLI commands with dependency injection', () => {
       );
     });
 
+    it('shell-quotes an account that needs it in the suggested commands', async () => {
+      // A Notion account is named after its workspace, so it routinely holds
+      // spaces and typographic punctuation. The suggested commands have to
+      // survive a copy-paste into the shell.
+      writeMultiAccountStore({ 'jane@example.com:Jane\u2019s Space': 'workspace' });
+
+      const deps = createMockDependencies();
+      await runCommand(
+        ['--account', 'Jane\u2019s Space', 'curl', 'https://slack.com/api/test'],
+        deps
+      );
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs.join('\n')).toContain(
+        'latchkey --account "Jane\u2019s Space" auth browser slack'
+      );
+    });
+
     it('auth clear keeps the preparation without --all', async () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
