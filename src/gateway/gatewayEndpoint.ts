@@ -394,23 +394,25 @@ export async function handleGatewayRequest(
       await ensureCurlRequestIsPermitted(curlArguments, permissionCheckDependencies, body);
       allArguments = curlArguments;
     } else {
-      allArguments = await prepareCurlInvocation(
-        curlArguments,
-        apiCredentialStore,
-        {
-          ...permissionCheckDependencies,
-          registry: deps.registry,
-          passthroughUnknown: deps.config.passthroughUnknown,
-          credentialsRefreshDisabled: deps.config.credentialsRefreshDisabled,
-          account,
-        },
-        // The gateway forwards the body to curl out-of-band via
-        // `--data-binary @-` on stdin, so the parsed curl arguments only carry
-        // the `@-` placeholder. Hand the real body to the pipeline so the
-        // permission check inspects the actual payload and payload-signing
-        // credentials (AWS SigV4) hash the bytes curl really sends.
-        body
-      );
+      allArguments = (
+        await prepareCurlInvocation(
+          curlArguments,
+          apiCredentialStore,
+          {
+            ...permissionCheckDependencies,
+            registry: deps.registry,
+            passthroughUnknown: deps.config.passthroughUnknown,
+            credentialsRefreshDisabled: deps.config.credentialsRefreshDisabled,
+            account,
+          },
+          // The gateway forwards the body to curl out-of-band via
+          // `--data-binary @-` on stdin, so the parsed curl arguments only carry
+          // the `@-` placeholder. Hand the real body to the pipeline so the
+          // permission check inspects the actual payload and payload-signing
+          // credentials (AWS SigV4) hash the bytes curl really sends.
+          body
+        )
+      ).curlArguments;
     }
   } catch (error) {
     if (error instanceof RequestNotPermittedError) {

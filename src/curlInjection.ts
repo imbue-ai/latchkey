@@ -81,6 +81,15 @@ export interface PermissionCheckDependencies {
   readonly permissionsDoNotUseBuiltinSchemas: boolean;
 }
 
+export interface CurlInvocationPreparation {
+  readonly curlArguments: readonly string[];
+  /**
+   * Name of the service whose credentials were injected, or null when the
+   * request passed through without any injection.
+   */
+  readonly injectedServiceName: string | null;
+}
+
 export interface CurlInjectionDependencies extends PermissionCheckDependencies {
   readonly registry: ServiceRegistry;
   readonly passthroughUnknown: boolean;
@@ -160,9 +169,10 @@ export async function ensureCurlRequestIsPermitted(
 
 /**
  * Run the credential-injection pipeline for a curl invocation and return the
- * final argument list to pass to curl. On problems, throws one of the error
- * classes exported from this module (or a `PermissionCheckError` from the
- * underlying permission check).
+ * final argument list to pass to curl, along with the service that provided
+ * the injected credentials. On problems, throws one of the error classes
+ * exported from this module (or a `PermissionCheckError` from the underlying
+ * permission check).
  */
 export async function prepareCurlInvocation(
   curlArguments: readonly string[],
@@ -178,7 +188,7 @@ export async function prepareCurlInvocation(
    * changing how curl is actually invoked.
    */
   outOfBandRequestBody?: Buffer | null
-): Promise<readonly string[]> {
+): Promise<CurlInvocationPreparation> {
   const parsedRequest = buildPermissionCheckRequest(curlArguments, outOfBandRequestBody);
   // The permission check is deferred until we know which account's credentials
   // the request will use, so that the account can be reported as metadata. It
@@ -210,7 +220,7 @@ export async function prepareCurlInvocation(
   if (firstCandidate === undefined) {
     if (dependencies.passthroughUnknown) {
       await ensureRequestIsPermitted();
-      return [...curlArguments];
+      return { curlArguments: [...curlArguments], injectedServiceName: null };
     }
     throw new NoServiceForUrlError(url);
   }
@@ -258,7 +268,7 @@ export async function prepareCurlInvocation(
   if (chosen === null) {
     if (dependencies.passthroughUnknown) {
       await ensureRequestIsPermitted();
-      return [...curlArguments];
+      return { curlArguments: [...curlArguments], injectedServiceName: null };
     }
     throw new NoCredentialsForServiceError(firstCandidate.name, requestedAccount);
   }
@@ -287,5 +297,8 @@ export async function prepareCurlInvocation(
     apiCredentials = service.adjustCredentials(apiCredentials, url);
   }
 
-  return await apiCredentials.injectIntoCurlCall(curlArguments, outOfBandRequestBody);
+  return {
+    curlArguments: await apiCredentials.injectIntoCurlCall(curlArguments, outOfBandRequestBody),
+    injectedServiceName: service.name,
+  };
 }

@@ -159,7 +159,6 @@ so you can use the same interface you are used to. The return
 code, stdout and stderr are passed back from curl to the caller
 of `latchkey`.
 
-
 ### Multiple accounts
 
 Credentials for a service can be stored under several accounts.
@@ -464,6 +463,24 @@ override `config.json` values.
     "gatewayListenPort": 1989,
     "appNamePrefix": "Latchkey"
   }
+}
+```
+
+### Troubleshooting
+
+For debugging purposes, the global `--dry-run` option (currently
+supported only by `latchkey curl`) resolves the request
+as usual but stops short of sending it, printing a diagnostic
+JSON on stdout instead:
+
+```bash
+latchkey --dry-run curl https://slack.com/api/auth.test
+```
+
+```json
+{
+  "credentialsInjected": true,
+  "service": "slack"
 }
 ```
 
