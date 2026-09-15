@@ -97,29 +97,31 @@ async function registerClient(
 
 /**
  * Fallback account derivation from the token-exchange response, used when the
- * MCP `get-users` lookup fails. Notion's MCP token endpoint reports `user_id`,
+ * MCP `fetch self` lookup fails. Notion's MCP token endpoint reports `user_id`,
  * `workspace_id` and `email_domain` (but not the full e-mail or the workspace
  * name), so the best it can offer is the opaque user id combined with the
- * e-mail domain.
+ * opaque workspace id. The workspace id is preferred over the e-mail domain
+ * because the account must tell the same user's workspaces apart.
  */
 function parseAccountFromTokenResponse(tokens: {
   user_id?: string;
   workspace_id?: string;
   email_domain?: string;
 }): string {
-  const workspacePart = tokens.email_domain ?? tokens.workspace_id;
+  const workspacePart = tokens.workspace_id ?? tokens.email_domain;
   if (tokens.user_id !== undefined && workspacePart !== undefined) {
-    return `${tokens.user_id}@${workspacePart}`;
+    return `${tokens.user_id}:${workspacePart}`;
   }
   return tokens.user_id ?? tokens.workspace_id ?? DEFAULT_ACCOUNT;
 }
 
 /**
- * A single stateless `tools/call` asking the `notion-get-users` tool for the
- * current user. Notion's MCP server does not require the initialize handshake
- * or a session id for this, so one POST is enough.
+ * A single stateless `tools/call` asking the `notion-fetch` tool for the
+ * special id `self`, which reveals the connected workspace and user. Notion's
+ * MCP server does not require the initialize handshake or a session id for
+ * this, so one POST is enough.
  */
-const GET_SELF_CURL_ARGUMENTS = [
+const FETCH_SELF_CURL_ARGUMENTS = [
   '-X',
   'POST',
   '-H',
@@ -131,7 +133,7 @@ const GET_SELF_CURL_ARGUMENTS = [
     jsonrpc: '2.0',
     id: 1,
     method: 'tools/call',
-    params: { name: 'notion-get-users', arguments: { user_id: 'self' } },
+    params: { name: 'notion-fetch', arguments: { id: 'self' } },
   }),
   MCP_ENDPOINT,
 ] as const;
@@ -158,14 +160,25 @@ function parseMcpResponseBody(body: string): unknown {
   return tryParseJson(trimmed);
 }
 
+interface FetchSelfResult {
+  workspace?: { id?: string; name?: string };
+  user?: { id?: string; name?: string; type?: string; email?: string };
+}
+
 /**
- * Extract the current user from a `notion-get-users` tool response. The tool
- * result rides as JSON text inside the MCP content parts, e.g.
- * `{"results":[{"type":"person","id":"...","name":"Hynek Urban","email":
- * "hynek@imbue.com"}],"has_more":false}`. Prefers the e-mail; falls back to
- * the name (bots have no e-mail).
+ * Extract the account from a `notion-fetch` response for the id `self`. The
+ * tool result rides as JSON text inside the MCP content parts and describes
+ * the connected workspace and user, e.g. `{"workspace":{"id":"...","name":
+ * "Acme Inc"},"user":{"id":"...","name":"Jane Doe","type":"person","email":
+ * "jane@example.com"}}` (possibly wrapped in a `self` key).
+ *
+ * A Notion MCP token is scoped to a single workspace and the authorization
+ * screen makes the user pick one, so the same user signed in to two workspaces
+ * holds two unrelated sets of credentials. The account therefore combines the
+ * user (e-mail, or the name for bots which have none) with the workspace name,
+ * as `user:workspace`, so that each workspace login lands in its own account.
  */
-function parseAccountFromGetUsersResponse(responseBody: string): string | null {
+function parseAccountFromFetchSelfResponse(responseBody: string): string | null {
   const message = parseMcpResponseBody(responseBody) as {
     result?: { content?: readonly { type?: string; text?: string }[] };
   } | null;
@@ -177,13 +190,16 @@ function parseAccountFromGetUsersResponse(responseBody: string): string | null {
     if (part.type !== 'text' || typeof part.text !== 'string') {
       continue;
     }
-    const toolResult = tryParseJson(part.text) as {
-      results?: readonly { email?: string; name?: string }[];
-    } | null;
-    const self = toolResult?.results?.[0];
-    if (self !== undefined) {
-      return self.email ?? self.name ?? null;
+    const toolResult = tryParseJson(part.text) as
+      | (FetchSelfResult & { self?: FetchSelfResult })
+      | null;
+    const self = toolResult?.self ?? toolResult;
+    const userIdentity = self?.user?.email ?? self?.user?.name;
+    if (userIdentity === undefined) {
+      continue;
     }
+    const workspaceName = self?.workspace?.name;
+    return workspaceName === undefined ? userIdentity : `${userIdentity}:${workspaceName}`;
   }
   return null;
 }
@@ -288,8 +304,9 @@ class NotionMcpSession extends ServiceSession {
 
         return {
           credentials,
-          // Prefer the full e-mail resolved via the MCP get-users tool; fall
-          // back to the coarser identity riding along in the token response.
+          // Prefer the e-mail and workspace name resolved via the MCP fetch
+          // tool; fall back to the opaque ids riding along in the token
+          // response.
           account:
             (await this.service.getAccount?.(credentials)) ?? parseAccountFromTokenResponse(tokens),
         };
@@ -352,13 +369,13 @@ export class NotionMcp extends Service {
   }
 
   // MCP-audienced tokens cannot call the classic REST API, but the MCP
-  // endpoint itself can reveal the identity: the `get-users` tool returns the
-  // current user's name and e-mail when asked for `self`.
+  // endpoint itself can reveal the identity: the `fetch` tool returns the
+  // connected workspace and the current user when asked for `self`.
   override getAccount(apiCredentials: ApiCredentials): Promise<string | null> {
     return fetchAccountFromEndpoint(
       apiCredentials,
-      GET_SELF_CURL_ARGUMENTS,
-      parseAccountFromGetUsersResponse
+      FETCH_SELF_CURL_ARGUMENTS,
+      parseAccountFromFetchSelfResponse
     );
   }
 
