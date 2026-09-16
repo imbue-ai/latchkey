@@ -17,6 +17,7 @@ import {
   type GatewayOptions,
 } from './gatewayEndpoint.js';
 import { handleLatchkeyRequest } from './latchkeyEndpoint.js';
+import { decodeHeaderValue } from './headerEncoding.js';
 import { GATEWAY_PASSWORD_HEADER, passwordsMatch } from './password.js';
 import { createServiceRegistry } from '../serviceRegistry.js';
 import {
@@ -44,10 +45,12 @@ function sendErrorResponse(
 /**
  * Read a single header value, treating arrays (which Node returns for some
  * headers) as missing because the password header is not allowed to repeat.
+ * The value is decoded out of Node's latin-1 rendering so that a password
+ * containing non-ASCII characters compares equal to the configured one.
  */
 function readSingleHeader(request: http.IncomingMessage, headerName: string): string | undefined {
   const value = request.headers[headerName];
-  if (typeof value === 'string') return value;
+  if (typeof value === 'string') return decodeHeaderValue(value);
   return undefined;
 }
 

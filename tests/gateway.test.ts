@@ -555,6 +555,39 @@ describe('gateway server', () => {
       expect(capturedCurlArgs).toContain('Authorization: Bearer jou-token');
     });
 
+    it('honors an account header carrying non-ASCII text', async () => {
+      // Accounts are named after real things: a Notion account combines the
+      // user with the workspace name, which routinely holds spaces and
+      // typographic punctuation. Node's HTTP parser hands header values back
+      // as latin-1, so without decoding, the UTF-8 the client sent would never
+      // match the stored account.
+      const account = 'jou@example.com:Jane\u2019s Space';
+      gateway = await createTestGateway(
+        {
+          slack: {
+            objectType: 'rawCurl',
+            curlArguments: ['-H', 'Authorization: Bearer jou-token'],
+          },
+        },
+        {},
+        {},
+        {},
+        account
+      );
+
+      const response = await fetch('/gateway/https://slack.com/api/auth.test', {
+        // curl writes the bytes of its argument verbatim; expressing those
+        // UTF-8 bytes as latin-1 characters is how a fetch header reproduces
+        // the same wire bytes.
+        headers: {
+          'X-Latchkey-Gateway-Account': Buffer.from(account, 'utf8').toString('latin1'),
+        },
+      });
+
+      expect(response.status).toBe(200);
+      expect(capturedCurlArgs).toContain('Authorization: Bearer jou-token');
+    });
+
     it('should pass through unknown service when passthroughUnknown is enabled', async () => {
       mockCurlHeaderDump = 'HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\n';
       mockCurlResponse = {
@@ -830,6 +863,29 @@ describe('gateway server', () => {
 
       const response = await fetch('/gateway/https://slack.com/api/auth.test', {
         headers: { [HEADER]: PASSWORD },
+      });
+
+      expect(response.status).toBe(200);
+    });
+
+    it('accepts a correct password containing non-ASCII characters', async () => {
+      // The password travels in a header, which Node decodes as latin-1, so a
+      // passphrase with any non-ASCII character in it would otherwise never
+      // compare equal to the configured one.
+      const password = 'h\u00e6sl\u00f6 \u2014 sekret';
+      gateway = await createTestGateway(
+        {
+          slack: {
+            objectType: 'rawCurl',
+            curlArguments: ['-H', 'Authorization: Bearer test-token'],
+          },
+        },
+        {},
+        { password }
+      );
+
+      const response = await fetch('/gateway/https://slack.com/api/auth.test', {
+        headers: { [HEADER]: Buffer.from(password, 'utf8').toString('latin1') },
       });
 
       expect(response.status).toBe(200);

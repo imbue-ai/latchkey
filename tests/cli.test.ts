@@ -1059,6 +1059,24 @@ describe('CLI commands with dependency injection', () => {
       );
     });
 
+    it('shell-quotes an account that needs it in the suggested commands', async () => {
+      // A Notion account is named after its workspace, so it routinely holds
+      // spaces and typographic punctuation. The suggested commands have to
+      // survive a copy-paste into the shell.
+      writeMultiAccountStore({ 'jane@example.com:Jane\u2019s Space': 'workspace' });
+
+      const deps = createMockDependencies();
+      await runCommand(
+        ['--account', 'Jane\u2019s Space', 'curl', 'https://slack.com/api/test'],
+        deps
+      );
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs.join('\n')).toContain(
+        'latchkey --account "Jane\u2019s Space" auth browser slack'
+      );
+    });
+
     it('auth clear keeps the preparation without --all', async () => {
       const storePath = join(tempDir, 'credentials.json');
       writeSecureFile(
@@ -1163,6 +1181,77 @@ describe('CLI commands with dependency injection', () => {
 
       expect(exitCode).toBe(1);
       expect(errorLogs.join('\n')).toContain('--account option is not supported');
+    });
+  });
+
+  describe('--dry-run option', () => {
+    it('curl reports the injecting service instead of sending the request', async () => {
+      const storePath = join(tempDir, 'credentials.json');
+      writeSecureFile(
+        storePath,
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'slack', token: 'stored-token', dCookie: 'stored-cookie' },
+          })
+        )
+      );
+
+      const deps = createMockDependencies();
+      await runCommand(['--dry-run', 'curl', 'https://slack.com/api/test'], deps);
+
+      expect(exitCode).toBe(0);
+      expect(capturedArgs).toEqual([]);
+      expect(logs).toHaveLength(1);
+      expect(JSON.parse(logs[0] ?? '') as unknown).toEqual({
+        credentialsInjected: true,
+        service: 'slack',
+      });
+    });
+
+    it('curl reports no injection for a passed-through request', async () => {
+      const deps = createMockDependencies({
+        config: createMockConfig({ passthroughUnknown: true }),
+      });
+      await runCommand(['--dry-run', 'curl', 'https://unknown-api.example.com/test'], deps);
+
+      expect(exitCode).toBe(0);
+      expect(capturedArgs).toEqual([]);
+      expect(JSON.parse(logs[0] ?? '') as unknown).toEqual({
+        credentialsInjected: false,
+        service: null,
+      });
+    });
+
+    it('curl still fails when no credentials can be injected', async () => {
+      const deps = createMockDependencies();
+      await runCommand(['--dry-run', 'curl', 'https://slack.com/api/test'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(logs).toHaveLength(0);
+      expect(capturedArgs).toEqual([]);
+    });
+
+    it('rejects --dry-run in gateway mode', async () => {
+      const deps = createMockDependencies({
+        config: createMockConfig({ gatewayUrl: 'http://localhost:9000' }),
+      });
+      await runCommand(['--dry-run', 'curl', 'https://slack.com/api/test'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(capturedArgs).toEqual([]);
+      expect(errorLogs.join('\n')).toContain('--dry-run option is not supported in gateway mode');
+    });
+
+    it.each([
+      ['auth', 'list'],
+      ['services', 'list'],
+      ['auth', 'set', 'slack', '-H', 'X-Token: secret'],
+    ])('rejects --dry-run for the unsupported command: %s %s', async (...commandArgs) => {
+      const deps = createMockDependencies();
+      await runCommand(['--dry-run', ...commandArgs], deps);
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs.join('\n')).toContain('--dry-run option is not supported');
     });
   });
 

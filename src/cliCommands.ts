@@ -21,6 +21,7 @@ import {
   NoCredentialsForServiceError,
   NoServiceForUrlError,
   prepareCurlInvocation,
+  type CurlInvocationPreparation,
   RequestNotPermittedError,
   UrlExtractionFailedError,
 } from './curlInjection.js';
@@ -441,13 +442,20 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       "'auth re-encrypt'. Required when a service has more than one stored account."
   );
 
-  // The account is a global option; commander exposes it on the root program
+  program.option(
+    '--dry-run',
+    "Do not send the request; print diagnostics as JSON instead. Supported by 'curl'."
+  );
+
+  // Both are global options; commander exposes them on the root program
   // regardless of which subcommand is invoked.
   const getAccount = (): string | undefined => program.opts<{ account?: string }>().account;
+  const isDryRun = (): boolean => program.opts<{ dryRun?: boolean }>().dryRun === true;
 
   // Only these commands act on a specific account. Every other command must
   // reject --account rather than silently ignore it, so users are never misled
-  // into thinking it took effect.
+  // into thinking it took effect. The same holds for --dry-run, which for now
+  // only 'curl' knows how to honor.
   const accountAwareCommands = new Set([
     'curl',
     'auth set',
@@ -456,13 +464,15 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     'auth browser',
     'auth re-encrypt',
   ]);
+  const dryRunAwareCommands = new Set(['curl']);
   program.hook('preAction', (_thisCommand, actionCommand) => {
-    if (getAccount() === undefined) {
-      return;
-    }
     const commandPath = fullCommandPath(actionCommand);
-    if (!accountAwareCommands.has(commandPath)) {
+    if (getAccount() !== undefined && !accountAwareCommands.has(commandPath)) {
       deps.errorLog(`Error: The --account option is not supported by 'latchkey ${commandPath}'.`);
+      deps.exit(1);
+    }
+    if (isDryRun() && !dryRunAwareCommands.has(commandPath)) {
+      deps.errorLog(`Error: The --dry-run option is not supported by 'latchkey ${commandPath}'.`);
       deps.exit(1);
     }
   });
@@ -1058,8 +1068,16 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .allowExcessArguments()
     .action(async (_options: unknown, command: { args: string[] }) => {
       const curlArguments = command.args;
+      const dryRun = isDryRun();
 
       if (deps.config.gatewayUrl !== null) {
+        // In gateway mode the credentials are injected by the remote gateway,
+        // so this process cannot tell which service (if any) would provide
+        // them. Refusing is better than reporting diagnostics we cannot back.
+        if (dryRun) {
+          deps.errorLog('Error: The --dry-run option is not supported in gateway mode.');
+          deps.exit(1);
+        }
         let targetUrl: string | null;
         try {
           targetUrl = extractUrlFromCurlArguments(curlArguments);
@@ -1105,9 +1123,9 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         encryptedStorage
       );
 
-      let finalArguments: readonly string[];
+      let preparation: CurlInvocationPreparation;
       try {
-        finalArguments = await prepareCurlInvocation(curlArguments, apiCredentialStore, {
+        preparation = await prepareCurlInvocation(curlArguments, apiCredentialStore, {
           registry: deps.registry,
           checkPermission: deps.checkPermission,
           permissionsConfigPath: deps.config.permissionsConfigPath,
@@ -1139,7 +1157,21 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         throw error;
       }
 
-      const result = deps.runCurl(finalArguments);
+      if (dryRun) {
+        deps.log(
+          JSON.stringify(
+            {
+              credentialsInjected: preparation.injectedServiceName !== null,
+              service: preparation.injectedServiceName,
+            },
+            null,
+            2
+          )
+        );
+        deps.exit(0);
+      }
+
+      const result = deps.runCurl(preparation.curlArguments);
       deps.exit(result.returncode);
     });
 

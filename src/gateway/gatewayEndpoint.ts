@@ -26,6 +26,7 @@ import {
 import { PermissionCheckError } from '../permissions.js';
 import { ErrorMessages } from '../errorMessages.js';
 import { GATEWAY_ACCOUNT_HEADER } from './account.js';
+import { decodeHeaderValue } from './headerEncoding.js';
 import { GATEWAY_PASSWORD_HEADER } from './password.js';
 import {
   InvalidPermissionsOverrideError,
@@ -178,7 +179,10 @@ export function buildCurlArguments(
 function rawHeadersToMap(rawHeaders: readonly string[]): Map<string, string> {
   const map = new Map<string, string>();
   for (let index = 0; index < rawHeaders.length; index += 2) {
-    map.set(rawHeaders[index]!, rawHeaders[index + 1]!);
+    // Values are decoded out of Node's latin-1 rendering so that the header
+    // curl writes upstream carries the same bytes the client sent, instead of
+    // re-encoding the mojibake as UTF-8 a second time.
+    map.set(rawHeaders[index]!, decodeHeaderValue(rawHeaders[index + 1]!));
   }
   return map;
 }
@@ -368,8 +372,10 @@ export async function handleGatewayRequest(
   // it in a gateway-internal header (absent when no account was chosen, so
   // the pipeline auto-resolves). Node lower-cases header names and may return
   // an array for repeats; only a single string value is a valid account.
+  // Accounts routinely carry non-ASCII text, so the value has to be decoded out of Node's latin-1
+  // rendering before it can match a stored account.
   const accountHeader = request.headers[GATEWAY_ACCOUNT_HEADER];
-  const account = typeof accountHeader === 'string' ? accountHeader : undefined;
+  const account = typeof accountHeader === 'string' ? decodeHeaderValue(accountHeader) : undefined;
 
   // An accepted no-credentials request skips the credential side of the
   // pipeline: no service lookup and no injection, since there are no
@@ -394,23 +400,25 @@ export async function handleGatewayRequest(
       await ensureCurlRequestIsPermitted(curlArguments, permissionCheckDependencies, body);
       allArguments = curlArguments;
     } else {
-      allArguments = await prepareCurlInvocation(
-        curlArguments,
-        apiCredentialStore,
-        {
-          ...permissionCheckDependencies,
-          registry: deps.registry,
-          passthroughUnknown: deps.config.passthroughUnknown,
-          credentialsRefreshDisabled: deps.config.credentialsRefreshDisabled,
-          account,
-        },
-        // The gateway forwards the body to curl out-of-band via
-        // `--data-binary @-` on stdin, so the parsed curl arguments only carry
-        // the `@-` placeholder. Hand the real body to the pipeline so the
-        // permission check inspects the actual payload and payload-signing
-        // credentials (AWS SigV4) hash the bytes curl really sends.
-        body
-      );
+      allArguments = (
+        await prepareCurlInvocation(
+          curlArguments,
+          apiCredentialStore,
+          {
+            ...permissionCheckDependencies,
+            registry: deps.registry,
+            passthroughUnknown: deps.config.passthroughUnknown,
+            credentialsRefreshDisabled: deps.config.credentialsRefreshDisabled,
+            account,
+          },
+          // The gateway forwards the body to curl out-of-band via
+          // `--data-binary @-` on stdin, so the parsed curl arguments only carry
+          // the `@-` placeholder. Hand the real body to the pipeline so the
+          // permission check inspects the actual payload and payload-signing
+          // credentials (AWS SigV4) hash the bytes curl really sends.
+          body
+        )
+      ).curlArguments;
     }
   } catch (error) {
     if (error instanceof RequestNotPermittedError) {
