@@ -14,6 +14,18 @@
   "type": "module",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    },
+    "./plugin": {
+      "types": "./dist/src/pluginSdk.d.ts",
+      "default": "./dist/src/pluginSdk.js"
+    },
+    "./package.json": "./package.json",
+    "./dist/*": "./dist/*"
+  },
   "bin": {
     "latchkey": "./dist/src/cli.js"
   },

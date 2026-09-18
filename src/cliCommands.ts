@@ -52,6 +52,8 @@ import {
   canonicalizeServiceName,
 } from './serviceRegistry.js';
 import { buildRegisteredServiceOptions, RegisteredService } from './services/core/registered.js';
+import { combineWithPluginServices, loadPlugins } from './plugins.js';
+import { createLatchkeySdk } from './pluginSdk.js';
 import {
   LOGIN_FLOWS,
   LoginCancelledError,
@@ -126,10 +128,11 @@ export const PERMISSION_DENIED_EXIT_CODE = 126;
 export interface CliDependencies {
   readonly registry: ServiceRegistry;
   /**
-   * The services latchkey ships with, which is what a registry is built on top
-   * of before config.json is applied to it. The gateway rebuilds a registry
-   * from these on every request, so it needs them separately from `registry`,
-   * which has already had config.json applied and the hidden services removed.
+   * The services latchkey ships with plus those its plugins contribute, which
+   * is what a registry is built on top of before config.json is applied to it.
+   * The gateway rebuilds a registry from these on every request, so it needs
+   * them separately from `registry`, which has already had config.json applied
+   * and the hidden services removed.
    */
   readonly builtinServices: readonly Service[];
   readonly config: Config;
@@ -150,19 +153,22 @@ export interface CliDependencies {
 }
 
 /**
- * Default implementation of CLI dependencies.
+ * Default implementation of CLI dependencies. Loads the plugins, which is why
+ * it is asynchronous; throws `PluginLoadError` when one of them is broken.
  */
-export function createDefaultDependencies(): CliDependencies {
+export async function createDefaultDependencies(): Promise<CliDependencies> {
+  const plugins = await loadPlugins(CONFIG.pluginsDirectoryPath, createLatchkeySdk(VERSION));
+  const builtinServices = combineWithPluginServices(BUILTIN_SERVICES, plugins);
   return {
     // Pointed at a remote gateway, the CLI forwards commands rather than
     // resolving services itself, so it leaves the registered ones to the
     // gateway.
     registry: createServiceRegistry(
-      BUILTIN_SERVICES,
+      builtinServices,
       CONFIG.gatewayUrl === null ? CONFIG.configPath : null,
       CONFIG.hideBuiltinServices
     ),
-    builtinServices: BUILTIN_SERVICES,
+    builtinServices,
     config: CONFIG,
     runCurl: curlRun,
     runCurlAsync: curlRunAsync,
