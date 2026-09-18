@@ -170,6 +170,19 @@ export async function ensureCurlRequestIsPermitted(
   );
 }
 
+function buildPreparation(
+  curlArguments: readonly string[],
+  injectedServiceName: string | null,
+  diagnosticHeaders: boolean
+): CurlInvocationPreparation {
+  return {
+    curlArguments: diagnosticHeaders
+      ? addDiagnosticHeaders(curlArguments, { matchedServiceName: injectedServiceName })
+      : [...curlArguments],
+    injectedServiceName,
+  };
+}
+
 /**
  * Run the credential-injection pipeline for a curl invocation and return the
  * final argument list to pass to curl, along with the service that provided
@@ -198,15 +211,6 @@ export async function prepareCurlInvocation(
   // is omitted when no credentials are injected at all (passthrough).
   const ensureRequestIsPermitted = (accountInUse?: string): Promise<void> =>
     checkRequestPermission(parsedRequest, dependencies, accountInUse);
-  const buildPreparation = (
-    finalCurlArguments: readonly string[],
-    injectedServiceName: string | null
-  ): CurlInvocationPreparation => ({
-    curlArguments: dependencies.diagnosticHeaders
-      ? addDiagnosticHeaders(finalCurlArguments, { matchedServiceName: injectedServiceName })
-      : [...finalCurlArguments],
-    injectedServiceName,
-  });
 
   let url: string | null;
   try {
@@ -232,7 +236,7 @@ export async function prepareCurlInvocation(
   if (firstCandidate === undefined) {
     if (dependencies.passthroughUnknown) {
       await ensureRequestIsPermitted();
-      return buildPreparation(curlArguments, null);
+      return buildPreparation(curlArguments, null, dependencies.diagnosticHeaders);
     }
     throw new NoServiceForUrlError(url);
   }
@@ -280,7 +284,7 @@ export async function prepareCurlInvocation(
   if (chosen === null) {
     if (dependencies.passthroughUnknown) {
       await ensureRequestIsPermitted();
-      return buildPreparation(curlArguments, null);
+      return buildPreparation(curlArguments, null, dependencies.diagnosticHeaders);
     }
     throw new NoCredentialsForServiceError(firstCandidate.name, requestedAccount);
   }
@@ -311,6 +315,7 @@ export async function prepareCurlInvocation(
 
   return buildPreparation(
     await apiCredentials.injectIntoCurlCall(curlArguments, outOfBandRequestBody),
-    service.name
+    service.name,
+    dependencies.diagnosticHeaders
   );
 }
