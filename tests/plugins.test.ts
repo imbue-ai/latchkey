@@ -5,25 +5,28 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  PLUGIN_API_VERSION,
   PluginLoadError,
   combineWithPluginServices,
+  isLatchkeyVersionSupported,
   loadPlugins,
   type LoadedPlugin,
 } from '../src/plugins.js';
 import { createLatchkeySdk } from '../src/pluginSdk.js';
 import { Service } from '../src/services/core/base.js';
 import { SLACK } from '../src/services/index.js';
+import { VERSION } from '../src/version.js';
 
-const SDK = createLatchkeySdk('0.0.0-test');
+const SDK_VERSION = '3.15.2';
+const SDK = createLatchkeySdk(SDK_VERSION);
+const SUPPORTED_VERSION_RANGE = '^3.15.0';
 
 interface PluginSourceOptions {
-  readonly apiVersion?: unknown;
+  readonly latchkeyVersion?: unknown;
   readonly asyncFactory?: boolean;
 }
 
 function pluginSource(serviceNames: readonly string[], options: PluginSourceOptions = {}): string {
-  const apiVersion = JSON.stringify(options.apiVersion ?? PLUGIN_API_VERSION);
+  const latchkeyVersion = JSON.stringify(options.latchkeyVersion ?? SUPPORTED_VERSION_RANGE);
   const services = serviceNames.map((name) => `new PluginService(${JSON.stringify(name)})`);
   const factory = options.asyncFactory === true ? 'async (sdk)' : '(sdk)';
   return `
@@ -42,7 +45,7 @@ function pluginSource(serviceNames: readonly string[], options: PluginSourceOpti
           return \`latchkey auth set \${serviceName} -H "Authorization: Bearer <token>"\`;
         }
       }
-      return { apiVersion: ${apiVersion}, services: [${services.join(', ')}] };
+      return { latchkeyVersion: ${latchkeyVersion}, services: [${services.join(', ')}] };
     };
   `;
 }
@@ -107,7 +110,7 @@ describe('loadPlugins', () => {
     expect(plugins[0]!.directory).toBe(pluginDirectory);
     expect(serviceNames(plugins[0]!)).toEqual(['foo', 'foo-admin']);
     expect(plugins[0]!.services[0]).toBeInstanceOf(Service);
-    expect(plugins[0]!.services[0]!.info).toContain('loaded by Latchkey 0.0.0-test');
+    expect(plugins[0]!.services[0]!.info).toContain(`loaded by Latchkey ${SDK_VERSION}`);
   });
 
   it('loads plugins in alphabetical order and ignores what is not a plugin directory', async () => {
@@ -202,7 +205,7 @@ describe('loadPlugins', () => {
     it('rejects a plugin whose entry file is missing, hinting at an unbuilt checkout', async () => {
       writePlugin(pluginsDirectory, 'foo', {
         'package.json': JSON.stringify({ type: 'module', main: 'dist/index.js' }),
-        'src/index.ts': 'export default () => ({ apiVersion: 1, services: [] });',
+        'src/index.ts': 'export default () => ({ latchkeyVersion: "^3.15.0", services: [] });',
       });
 
       await expectLoadError(pluginsDirectory, 'has to be built first');
@@ -224,7 +227,7 @@ describe('loadPlugins', () => {
 
     it('rejects a plugin whose default export is not a function', async () => {
       writePlugin(pluginsDirectory, 'foo', {
-        'index.js': 'export default { apiVersion: 1, services: [] };',
+        'index.js': 'export default { latchkeyVersion: "^3.15.0", services: [] };',
       });
 
       await expectLoadError(pluginsDirectory, 'must have a default export that is a function');
@@ -244,20 +247,63 @@ describe('loadPlugins', () => {
       await expectLoadError(pluginsDirectory, 'did not return an object');
     });
 
-    it('rejects a plugin written against another API version', async () => {
+    it('rejects a plugin that does not declare the Latchkey versions it supports', async () => {
       writePlugin(pluginsDirectory, 'foo', {
-        'index.js': pluginSource(['foo'], { apiVersion: 2 }),
+        'index.js': 'export default () => ({ services: [] });',
+      });
+
+      await expectLoadError(pluginsDirectory, "'latchkeyVersion' must be a string");
+    });
+
+    it('rejects a plugin declaring the Latchkey version as a number', async () => {
+      writePlugin(pluginsDirectory, 'foo', {
+        'index.js': pluginSource(['foo'], { latchkeyVersion: 3 }),
+      });
+
+      await expectLoadError(pluginsDirectory, "'latchkeyVersion' must be a string");
+    });
+
+    it('rejects a plugin declaring an invalid version range', async () => {
+      writePlugin(pluginsDirectory, 'foo', {
+        'index.js': pluginSource(['foo'], { latchkeyVersion: 'latest and greatest' }),
       });
 
       await expectLoadError(
         pluginsDirectory,
-        'it declares plugin API version 2, but this Latchkey provides version 1'
+        "'latest and greatest' is not a valid version range for 'latchkeyVersion'"
       );
     });
 
+    it.each(['^4.0.0', '^3.16.0', '~3.14.0', '<3.15.2', '2.x'])(
+      'rejects a plugin whose version range %s excludes this Latchkey',
+      async (latchkeyVersion) => {
+        writePlugin(pluginsDirectory, 'foo', {
+          'index.js': pluginSource(['foo'], { latchkeyVersion }),
+        });
+
+        await expectLoadError(
+          pluginsDirectory,
+          `it supports Latchkey ${latchkeyVersion}, but this is Latchkey ${SDK_VERSION}.`
+        );
+      }
+    );
+
+    it.each(['^3.15.0', '^3.0.0', '~3.15.0', '3.15.2', '3.x', '>=3.15.0 <4', '*'])(
+      'accepts a plugin whose version range %s includes this Latchkey',
+      async (latchkeyVersion) => {
+        writePlugin(pluginsDirectory, 'foo', {
+          'index.js': pluginSource(['foo'], { latchkeyVersion }),
+        });
+
+        const plugins = await loadPlugins(pluginsDirectory, SDK);
+
+        expect(serviceNames(plugins[0]!)).toEqual(['foo']);
+      }
+    );
+
     it('rejects a plugin without a services array', async () => {
       writePlugin(pluginsDirectory, 'foo', {
-        'index.js': 'export default () => ({ apiVersion: 1, services: {} });',
+        'index.js': 'export default () => ({ latchkeyVersion: "^3.15.0", services: {} });',
       });
 
       await expectLoadError(pluginsDirectory, "'services' must be an array");
@@ -266,7 +312,7 @@ describe('loadPlugins', () => {
     it('rejects a service that does not extend the Service class', async () => {
       writePlugin(pluginsDirectory, 'foo', {
         'index.js': `export default () => ({
-          apiVersion: 1,
+          latchkeyVersion: '^3.15.0',
           services: [{ name: 'foo', displayName: 'Foo', baseApiUrls: [], loginUrl: '', info: '' }],
         });`,
       });
@@ -280,7 +326,7 @@ describe('loadPlugins', () => {
         'index.js': `
           class Service {}
           class Foo extends Service { name = 'foo'; }
-          export default () => ({ apiVersion: 1, services: [new Foo()] });
+          export default () => ({ latchkeyVersion: '^3.15.0', services: [new Foo()] });
         `,
       });
 
@@ -293,6 +339,27 @@ describe('loadPlugins', () => {
 
       await expectLoadError(pluginsDirectory, "Failed to load plugin 'b-broken'");
     });
+  });
+});
+
+describe('isLatchkeyVersionSupported', () => {
+  it('accepts a release within the range', () => {
+    expect(isLatchkeyVersionSupported('^3.15.0', '3.15.0')).toBe(true);
+    expect(isLatchkeyVersionSupported('^3.15.0', '3.99.1')).toBe(true);
+  });
+
+  it('rejects a release outside the range', () => {
+    expect(isLatchkeyVersionSupported('^3.15.0', '3.14.9')).toBe(false);
+    expect(isLatchkeyVersionSupported('^3.15.0', '4.0.0')).toBe(false);
+  });
+
+  it('accepts a prerelease of a version within the range', () => {
+    expect(isLatchkeyVersionSupported('^3.15.0', '3.16.0-dev.1')).toBe(true);
+  });
+
+  it('rejects a prerelease of a version outside the range', () => {
+    expect(isLatchkeyVersionSupported('^3.15.0', '3.15.0-dev.1')).toBe(false);
+    expect(isLatchkeyVersionSupported('^3.15.0', '4.0.0-rc.1')).toBe(false);
   });
 });
 
@@ -382,7 +449,7 @@ const REAL_PLUGIN_SOURCE = `
       }
     }
 
-    return { apiVersion: 1, services: [new Example()] };
+    return { latchkeyVersion: ${JSON.stringify(`^${VERSION}`)}, services: [new Example()] };
   };
 `;
 
@@ -443,13 +510,15 @@ describe('plugins loaded by the CLI', () => {
   it('refuses to start with a broken plugin and names it', () => {
     writePlugin(join(latchkeyDirectory, 'plugins'), 'broken', {
       'package.json': JSON.stringify({ type: 'module' }),
-      'index.js': 'export default () => ({ apiVersion: 2, services: [] });',
+      'index.js': 'export default () => ({ latchkeyVersion: "^1.0.0", services: [] });',
     });
 
     const result = runCli(latchkeyDirectory, ['services', 'list', '--builtin']);
 
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("Error: Failed to load plugin 'broken'");
-    expect(result.stderr).toContain('plugin API version 2');
+    expect(result.stderr).toContain(
+      `it supports Latchkey ^1.0.0, but this is Latchkey ${VERSION}.`
+    );
   }, 60_000);
 });

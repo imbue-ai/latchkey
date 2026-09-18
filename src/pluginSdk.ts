@@ -8,8 +8,10 @@
  * That is the only way a plugin imports from it: the SDK object, not this
  * module, is what carries the classes and helpers.
  *
- * Additions here are welcome and removals are breaking, since plugins are
- * written against this surface.
+ * Plugins declare the Latchkey versions they support as a semver range (see
+ * `src/plugins.ts`), so this surface follows semantic versioning: additions
+ * are welcome in any release, while removing or changing anything here is a
+ * breaking change that calls for a new major version of Latchkey.
  */
 
 import { z } from 'zod';

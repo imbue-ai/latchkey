@@ -8,8 +8,15 @@
  *
  *   export default (sdk) => {
  *     class Foo extends sdk.Service { ... }
- *     return { apiVersion: 1, services: [new Foo()] };
+ *     return { latchkeyVersion: '^3.15.0', services: [new Foo()] };
  *   };
+ *
+ * `latchkeyVersion` is the range of Latchkey versions the plugin was written
+ * for, in the syntax of a package.json dependency. Latchkey follows semantic
+ * versioning with respect to the sdk, so `^3.15.0` means "3.15.0 or newer,
+ * until the next major version", and a plugin whose range excludes the running
+ * Latchkey is refused at load time rather than failing in some subtler way
+ * later.
  *
  * Everything a plugin needs at runtime comes from the sdk, so a bare
  * `git clone` into the plugins directory is a complete installation.
@@ -18,18 +25,16 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { satisfies as satisfiesVersionRange, validRange } from 'semver';
 import type { LatchkeySdk } from './pluginSdk.js';
 import { Service } from './services/core/base.js';
 
-/**
- * The version of the contract between Latchkey and plugins. Plugins declare
- * the version they were written against; a mismatch is refused at load time
- * rather than failing in some subtler way later.
- */
-export const PLUGIN_API_VERSION = 1;
-
 export interface LatchkeyPlugin {
-  readonly apiVersion: typeof PLUGIN_API_VERSION;
+  /**
+   * The Latchkey versions the plugin supports, as a package.json-style
+   * version range such as `^3.15.0`.
+   */
+  readonly latchkeyVersion: string;
   readonly services: readonly Service[];
 }
 
@@ -100,19 +105,47 @@ function resolvePluginEntryFile(pluginName: string, pluginDirectory: string): st
   return entryFile;
 }
 
-function validatePluginManifest(pluginName: string, manifest: unknown): LatchkeyPlugin {
+const EXAMPLE_VERSION_RANGE = '^3.15.0';
+
+/**
+ * Whether the running Latchkey falls within the version range a plugin
+ * declares. A prerelease Latchkey (say a development build) counts too, as
+ * long as the range would admit its release.
+ */
+export function isLatchkeyVersionSupported(versionRange: string, latchkeyVersion: string): boolean {
+  return satisfiesVersionRange(latchkeyVersion, versionRange, { includePrerelease: true });
+}
+
+function validatePluginManifest(
+  pluginName: string,
+  manifest: unknown,
+  latchkeyVersion: string
+): LatchkeyPlugin {
   if (typeof manifest !== 'object' || manifest === null) {
     throw new PluginLoadError(pluginName, 'the plugin factory did not return an object.');
   }
-  const { apiVersion, services } = manifest as {
-    readonly apiVersion?: unknown;
+  const { latchkeyVersion: versionRange, services } = manifest as {
+    readonly latchkeyVersion?: unknown;
     readonly services?: unknown;
   };
-  if (apiVersion !== PLUGIN_API_VERSION) {
+  if (typeof versionRange !== 'string') {
     throw new PluginLoadError(
       pluginName,
-      `it declares plugin API version ${String(apiVersion)}, ` +
-        `but this Latchkey provides version ${String(PLUGIN_API_VERSION)}.`
+      "'latchkeyVersion' must be a string declaring the Latchkey versions the plugin supports, " +
+        `like '${EXAMPLE_VERSION_RANGE}'.`
+    );
+  }
+  if (validRange(versionRange) === null) {
+    throw new PluginLoadError(
+      pluginName,
+      `'${versionRange}' is not a valid version range for 'latchkeyVersion'. ` +
+        `Use the syntax of a package.json dependency, like '${EXAMPLE_VERSION_RANGE}'.`
+    );
+  }
+  if (!isLatchkeyVersionSupported(versionRange, latchkeyVersion)) {
+    throw new PluginLoadError(
+      pluginName,
+      `it supports Latchkey ${versionRange}, but this is Latchkey ${latchkeyVersion}.`
     );
   }
   if (!Array.isArray(services)) {
@@ -128,7 +161,7 @@ function validatePluginManifest(pluginName: string, manifest: unknown): Latchkey
       );
     }
   }
-  return { apiVersion: PLUGIN_API_VERSION, services: services as readonly Service[] };
+  return { latchkeyVersion: versionRange, services: services as readonly Service[] };
 }
 
 async function loadPlugin(
@@ -160,7 +193,7 @@ async function loadPlugin(
     const message = error instanceof Error ? error.message : String(error);
     throw new PluginLoadError(pluginName, `the plugin factory threw: ${message}`);
   }
-  const { services } = validatePluginManifest(pluginName, manifest);
+  const { services } = validatePluginManifest(pluginName, manifest, sdk.latchkeyVersion);
   return { name: pluginName, directory: pluginDirectory, services };
 }
 
