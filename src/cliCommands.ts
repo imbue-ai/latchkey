@@ -1132,7 +1132,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           permissionsDoNotUseBuiltinSchemas: deps.config.permissionsDoNotUseBuiltinSchemas,
           passthroughUnknown: deps.config.passthroughUnknown,
           credentialsRefreshDisabled: deps.config.credentialsRefreshDisabled,
-          populateHeadersForCurl: deps.config.populateHeadersForCurl,
+          diagnosticHeaders: deps.config.diagnosticHeaders,
           account: getAccount(),
         });
       } catch (error) {

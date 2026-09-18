@@ -19,7 +19,7 @@ import { CurlParseError, extractUrlFromCurlArguments } from './curl.js';
 import { parseCurlArgs } from '@imbue-ai/detent';
 import { ErrorMessages } from './errorMessages.js';
 import type { PermissionCheckMetadata } from './permissions.js';
-import { populateHeadersForCurl } from './populatedHeaders.js';
+import { addDiagnosticHeaders } from './diagnosticHeaders.js';
 import type { ServiceRegistry } from './serviceRegistry.js';
 import type { Service } from './services/core/base.js';
 
@@ -95,8 +95,8 @@ export interface CurlInjectionDependencies extends PermissionCheckDependencies {
   readonly registry: ServiceRegistry;
   readonly passthroughUnknown: boolean;
   readonly credentialsRefreshDisabled: boolean;
-  /** Names of the headers to add to the curl invocation, in canonical spelling. */
-  readonly populateHeadersForCurl: readonly string[];
+  /** Whether to add Latchkey's diagnostic headers to the curl invocation. */
+  readonly diagnosticHeaders: boolean;
   /**
    * Account to use for the credentials. When omitted, the single stored
    * account is used automatically; if a service has multiple accounts an
@@ -202,9 +202,9 @@ export async function prepareCurlInvocation(
     finalCurlArguments: readonly string[],
     injectedServiceName: string | null
   ): CurlInvocationPreparation => ({
-    curlArguments: populateHeadersForCurl(finalCurlArguments, dependencies.populateHeadersForCurl, {
-      matchedServiceName: injectedServiceName,
-    }),
+    curlArguments: dependencies.diagnosticHeaders
+      ? addDiagnosticHeaders(finalCurlArguments, { matchedServiceName: injectedServiceName })
+      : [...finalCurlArguments],
     injectedServiceName,
   });
 

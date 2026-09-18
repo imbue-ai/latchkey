@@ -660,7 +660,7 @@ describe('gateway server', () => {
       expect(capturedCurlArgs).toContain('Authorization: Bearer test-token');
     });
 
-    it('should report the matched service to curl when asked to populate that header', async () => {
+    it('should report the matched service to curl when diagnostic headers are on', async () => {
       gateway = await createTestGateway(
         {
           slack: {
@@ -670,12 +670,10 @@ describe('gateway server', () => {
         },
         {},
         {},
-        { populateHeadersForCurl: ['X-Latchkey-Matched-Service'] }
+        { diagnosticHeaders: true }
       );
 
-      const response = await fetch('/gateway/https://slack.com/api/auth.test', {
-        headers: { 'X-Latchkey-Matched-Service': 'github' },
-      });
+      const response = await fetch('/gateway/https://slack.com/api/auth.test');
 
       expect(response.status).toBe(200);
       const matchedServiceHeaders = capturedCurlArgs.filter((argument) =>
@@ -689,12 +687,10 @@ describe('gateway server', () => {
         {},
         {},
         {},
-        { passthroughUnknown: true, populateHeadersForCurl: ['X-Latchkey-Matched-Service'] }
+        { passthroughUnknown: true, diagnosticHeaders: true }
       );
 
-      const response = await fetch('/gateway/https://unknown-api.example.com/test', {
-        headers: { 'X-Latchkey-Matched-Service': 'slack' },
-      });
+      const response = await fetch('/gateway/https://unknown-api.example.com/test');
 
       expect(response.status).toBe(200);
       expect(capturedCurlArgs.join('\n').toLowerCase()).not.toContain('x-latchkey-matched-service');

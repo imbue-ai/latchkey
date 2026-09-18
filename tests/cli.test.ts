@@ -454,7 +454,7 @@ describe('CLI commands with dependency injection', () => {
       permissionsDoNotUseBuiltinSchemas: overrides.permissionsDoNotUseBuiltinSchemas ?? false,
       passthroughUnknown: overrides.passthroughUnknown ?? false,
       hideBuiltinServices: overrides.hideBuiltinServices ?? [],
-      populateHeadersForCurl: overrides.populateHeadersForCurl ?? [],
+      diagnosticHeaders: overrides.diagnosticHeaders ?? false,
       gatewayUrl: overrides.gatewayUrl ?? null,
       gatewayListenHost: overrides.gatewayListenHost ?? 'localhost',
       gatewayListenPort: overrides.gatewayListenPort ?? 1989,
@@ -2295,7 +2295,7 @@ describe('CLI commands with dependency injection', () => {
       expect(errorLogs.some((line) => line.includes('google-drive'))).toBe(true);
     });
 
-    it('should report the matched service to curl when asked to populate that header', async () => {
+    it('should report the matched service to curl when diagnostic headers are on', async () => {
       writeSecureFile(
         join(tempDir, 'credentials.json'),
         JSON.stringify(
@@ -2305,13 +2305,10 @@ describe('CLI commands with dependency injection', () => {
         )
       );
       const deps = createMockDependencies({
-        config: createMockConfig({ populateHeadersForCurl: ['X-Latchkey-Matched-Service'] }),
+        config: createMockConfig({ diagnosticHeaders: true }),
       });
 
-      await runCommand(
-        ['curl', '-H', 'X-Latchkey-Matched-Service: github', 'https://slack.com/api/test'],
-        deps
-      );
+      await runCommand(['curl', 'https://slack.com/api/test'], deps);
 
       expect(exitCode).toBe(0);
       expect(capturedArgs).toEqual([
@@ -2325,16 +2322,10 @@ describe('CLI commands with dependency injection', () => {
 
     it('should not report a matched service for a request that passes through', async () => {
       const deps = createMockDependencies({
-        config: createMockConfig({
-          passthroughUnknown: true,
-          populateHeadersForCurl: ['X-Latchkey-Matched-Service'],
-        }),
+        config: createMockConfig({ passthroughUnknown: true, diagnosticHeaders: true }),
       });
 
-      await runCommand(
-        ['curl', '-H', 'X-Latchkey-Matched-Service: slack', 'https://unknown-api.example.com/test'],
-        deps
-      );
+      await runCommand(['curl', 'https://unknown-api.example.com/test'], deps);
 
       expect(exitCode).toBe(0);
       expect(capturedArgs).toEqual(['https://unknown-api.example.com/test']);

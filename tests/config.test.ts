@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { UnknownPopulatedHeaderError } from '../src/populatedHeaders.js';
 import {
   Config,
   DEFAULT_GATEWAY_LISTEN_HOST,
@@ -48,7 +47,7 @@ describe('Config with config.json settings', () => {
     expect(config.permissionsDoNotUseBuiltinSchemas).toBe(false);
     expect(config.passthroughUnknown).toBe(false);
     expect(config.hideBuiltinServices).toEqual([]);
-    expect(config.populateHeadersForCurl).toEqual([]);
+    expect(config.diagnosticHeaders).toBe(false);
     expect(config.gatewayUrl).toBeNull();
     expect(config.gatewayListenHost).toBe(DEFAULT_GATEWAY_LISTEN_HOST);
     expect(config.gatewayListenPort).toBe(DEFAULT_GATEWAY_LISTEN_PORT);
@@ -158,26 +157,13 @@ describe('Config with config.json settings', () => {
     );
   });
 
-  it('reads the headers to populate for curl from config.json', () => {
-    writeSettings({ populateHeadersForCurl: ['x-latchkey-matched-service'] });
+  it('turns diagnostic headers on from config.json or from a non-empty env var', () => {
+    expect(makeConfig({ LATCHKEY_DIAGNOSTIC_HEADERS: '1' }).diagnosticHeaders).toBe(true);
+    expect(makeConfig({ LATCHKEY_DIAGNOSTIC_HEADERS: '' }).diagnosticHeaders).toBe(false);
 
-    expect(makeConfig().populateHeadersForCurl).toEqual(['X-Latchkey-Matched-Service']);
-  });
+    writeSettings({ diagnosticHeaders: true });
 
-  it('reads the headers to populate for curl from a comma-separated env var, over config.json', () => {
-    writeSettings({ populateHeadersForCurl: [] });
-
-    const config = makeConfig({
-      LATCHKEY_POPULATE_HEADERS_FOR_CURL: ' X-Latchkey-Matched-Service ,, ',
-    });
-
-    expect(config.populateHeadersForCurl).toEqual(['X-Latchkey-Matched-Service']);
-  });
-
-  it('refuses a header to populate for curl that Latchkey does not know', () => {
-    expect(() =>
-      makeConfig({ LATCHKEY_POPULATE_HEADERS_FOR_CURL: 'X-Latchkey-Matched-Service,X-Other' })
-    ).toThrow(UnknownPopulatedHeaderError);
+    expect(makeConfig().diagnosticHeaders).toBe(true);
   });
 
   it('an empty LATCHKEY_GATEWAY_LISTEN_PORT env var falls through to config.json', () => {
