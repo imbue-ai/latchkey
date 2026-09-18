@@ -64,6 +64,11 @@ API credentials via `latchkey auth set` or `latchkey auth
 set-nocurl`.
 - With support for browser-based authentication.
 
+For a service to be supported out of the box, Latchkey's policy
+requires the implementation to talk to a documented, public
+API. You can still add support for services that require using
+private APIs via the plugin system - see more details [here](./plugins.md).
+
 ### Basic support
 
 If you only want to make Latchkey aware of the existence of

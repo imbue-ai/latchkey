@@ -6,7 +6,11 @@
 
 import { existsSync } from 'node:fs';
 import { program } from 'commander';
-import { registerCommands, createDefaultDependencies } from './cliCommands.js';
+import {
+  registerCommands,
+  createDefaultDependencies,
+  type CliDependencies,
+} from './cliCommands.js';
 import { CurlNotFoundError, InsecureFilePermissionsError } from './config.js';
 import { EncryptedStorage } from './encryptedStorage.js';
 import {
@@ -17,9 +21,19 @@ import {
 import { KeychainTimeoutError } from './keychain.js';
 import { MigrationError, runMigrations } from './migrations.js';
 import { countDailyIfNeeded } from './dailyCounting.js';
+import { PluginLoadError } from './plugins.js';
 import { VERSION } from './version.js';
 
-const deps = createDefaultDependencies();
+let deps: CliDependencies;
+try {
+  deps = await createDefaultDependencies();
+} catch (error) {
+  if (error instanceof PluginLoadError) {
+    console.error(`Error: ${error.message}`);
+    process.exit(1);
+  }
+  throw error;
+}
 const gatewayMode = deps.config.gatewayUrl !== null;
 
 try {

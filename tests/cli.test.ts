@@ -443,6 +443,9 @@ describe('CLI commands with dependency injection', () => {
       get extensionsDirectoryPath() {
         return join(directory, 'extensions');
       },
+      get pluginsDirectoryPath() {
+        return join(directory, 'plugins');
+      },
       curlCommand: overrides.curlCommand ?? defaultConfig.curlCommand,
       encryptionKeyOverride: overrides.encryptionKeyOverride ?? TEST_ENCRYPTION_KEY,
       serviceName: overrides.serviceName ?? defaultConfig.serviceName,
