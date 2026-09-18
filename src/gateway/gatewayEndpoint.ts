@@ -409,6 +409,7 @@ export async function handleGatewayRequest(
             registry: deps.registry,
             passthroughUnknown: deps.config.passthroughUnknown,
             credentialsRefreshDisabled: deps.config.credentialsRefreshDisabled,
+            diagnosticHeaders: deps.config.diagnosticHeaders,
             account,
           },
           // The gateway forwards the body to curl out-of-band via

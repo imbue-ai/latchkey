@@ -47,6 +47,7 @@ const LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS_ENV_VAR =
   'LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS';
 const LATCHKEY_PASSTHROUGH_UNKNOWN_ENV_VAR = 'LATCHKEY_PASSTHROUGH_UNKNOWN';
 const LATCHKEY_HIDE_BUILTIN_SERVICES_ENV_VAR = 'LATCHKEY_HIDE_BUILTIN_SERVICES';
+const LATCHKEY_DIAGNOSTIC_HEADERS_ENV_VAR = 'LATCHKEY_DIAGNOSTIC_HEADERS';
 const LATCHKEY_GATEWAY_ENV_VAR = 'LATCHKEY_GATEWAY';
 const LATCHKEY_GATEWAY_LISTEN_HOST_ENV_VAR = 'LATCHKEY_GATEWAY_LISTEN_HOST';
 const LATCHKEY_GATEWAY_LISTEN_PORT_ENV_VAR = 'LATCHKEY_GATEWAY_LISTEN_PORT';
@@ -238,6 +239,11 @@ export class Config {
    */
   readonly hideBuiltinServices: readonly string[];
   /**
+   * When true, Latchkey adds its diagnostic headers (such as the name of the
+   * matched service) to the curl invocations it makes.
+   */
+  readonly diagnosticHeaders: boolean;
+  /**
    * When set, the CLI delegates commands to a remote latchkey gateway instead
    * of running them locally. `latchkey curl` is proxied through the gateway's
    * `/gateway/` endpoint; most other commands are forwarded to `/latchkey/`.
@@ -340,6 +346,10 @@ export class Config {
     this.hideBuiltinServices = resolveStringList(
       getEnv(LATCHKEY_HIDE_BUILTIN_SERVICES_ENV_VAR),
       settings.hideBuiltinServices
+    );
+    this.diagnosticHeaders = resolveBoolean(
+      getEnv(LATCHKEY_DIAGNOSTIC_HEADERS_ENV_VAR),
+      settings.diagnosticHeaders
     );
 
     const permissionsConfig = resolveOptionalString(
