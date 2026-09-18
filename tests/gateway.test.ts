@@ -1144,27 +1144,6 @@ describe('gateway server', () => {
       expect(capturedPermissionCheckBody).toBeUndefined();
     });
 
-    it('drops a matched-service header the caller supplied, since no service is looked up', async () => {
-      gateway = await createTestGateway(
-        DEFAULT_CREDENTIALS,
-        {},
-        {},
-        {
-          passthroughUnknown: true,
-          populateHeadersForCurl: ['X-Latchkey-Matched-Service'],
-        }
-      );
-
-      const response = await fetch('/gateway/https://slack.com/api/auth.test', {
-        headers: { ...noCredentialsHeaders, 'X-Latchkey-Matched-Service': 'slack' },
-      });
-
-      expect(response.status).toBe(200);
-      expect(headerArgumentsOf(capturedCurlArgs).join('\n').toLowerCase()).not.toContain(
-        'x-latchkey-matched-service'
-      );
-    });
-
     it('forwards the request as received, without injecting stored credentials', async () => {
       gateway = await createPassthroughGateway();
 

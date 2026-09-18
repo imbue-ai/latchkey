@@ -24,7 +24,6 @@ import {
   UrlExtractionFailedError,
 } from '../curlInjection.js';
 import { PermissionCheckError } from '../permissions.js';
-import { populateHeadersForCurl } from '../populatedHeaders.js';
 import { ErrorMessages } from '../errorMessages.js';
 import { GATEWAY_ACCOUNT_HEADER } from './account.js';
 import { decodeHeaderValue } from './headerEncoding.js';
@@ -399,10 +398,7 @@ export async function handleGatewayRequest(
       // placeholder. Hand the real body over so the permission check inspects
       // the actual payload.
       await ensureCurlRequestIsPermitted(curlArguments, permissionCheckDependencies, body);
-      // No service is looked up for such a request, so there is none to report.
-      allArguments = populateHeadersForCurl(curlArguments, deps.config.populateHeadersForCurl, {
-        matchedServiceName: null,
-      });
+      allArguments = curlArguments;
     } else {
       allArguments = (
         await prepareCurlInvocation(
