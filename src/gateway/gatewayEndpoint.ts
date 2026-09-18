@@ -24,6 +24,7 @@ import {
   UrlExtractionFailedError,
 } from '../curlInjection.js';
 import { PermissionCheckError } from '../permissions.js';
+import { populateHeadersForCurl } from '../populatedHeaders.js';
 import { ErrorMessages } from '../errorMessages.js';
 import { GATEWAY_ACCOUNT_HEADER } from './account.js';
 import { decodeHeaderValue } from './headerEncoding.js';
@@ -398,7 +399,10 @@ export async function handleGatewayRequest(
       // placeholder. Hand the real body over so the permission check inspects
       // the actual payload.
       await ensureCurlRequestIsPermitted(curlArguments, permissionCheckDependencies, body);
-      allArguments = curlArguments;
+      // No service is looked up for such a request, so there is none to report.
+      allArguments = populateHeadersForCurl(curlArguments, deps.config.populateHeadersForCurl, {
+        matchedServiceName: null,
+      });
     } else {
       allArguments = (
         await prepareCurlInvocation(
@@ -409,6 +413,7 @@ export async function handleGatewayRequest(
             registry: deps.registry,
             passthroughUnknown: deps.config.passthroughUnknown,
             credentialsRefreshDisabled: deps.config.credentialsRefreshDisabled,
+            populateHeadersForCurl: deps.config.populateHeadersForCurl,
             account,
           },
           // The gateway forwards the body to curl out-of-band via

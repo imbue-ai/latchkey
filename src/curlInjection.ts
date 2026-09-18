@@ -19,6 +19,7 @@ import { CurlParseError, extractUrlFromCurlArguments } from './curl.js';
 import { parseCurlArgs } from '@imbue-ai/detent';
 import { ErrorMessages } from './errorMessages.js';
 import type { PermissionCheckMetadata } from './permissions.js';
+import { populateHeadersForCurl } from './populatedHeaders.js';
 import type { ServiceRegistry } from './serviceRegistry.js';
 import type { Service } from './services/core/base.js';
 
@@ -94,6 +95,8 @@ export interface CurlInjectionDependencies extends PermissionCheckDependencies {
   readonly registry: ServiceRegistry;
   readonly passthroughUnknown: boolean;
   readonly credentialsRefreshDisabled: boolean;
+  /** Names of the headers to add to the curl invocation, in canonical spelling. */
+  readonly populateHeadersForCurl: readonly string[];
   /**
    * Account to use for the credentials. When omitted, the single stored
    * account is used automatically; if a service has multiple accounts an
@@ -195,6 +198,15 @@ export async function prepareCurlInvocation(
   // is omitted when no credentials are injected at all (passthrough).
   const ensureRequestIsPermitted = (accountInUse?: string): Promise<void> =>
     checkRequestPermission(parsedRequest, dependencies, accountInUse);
+  const buildPreparation = (
+    finalCurlArguments: readonly string[],
+    injectedServiceName: string | null
+  ): CurlInvocationPreparation => ({
+    curlArguments: populateHeadersForCurl(finalCurlArguments, dependencies.populateHeadersForCurl, {
+      matchedServiceName: injectedServiceName,
+    }),
+    injectedServiceName,
+  });
 
   let url: string | null;
   try {
@@ -220,7 +232,7 @@ export async function prepareCurlInvocation(
   if (firstCandidate === undefined) {
     if (dependencies.passthroughUnknown) {
       await ensureRequestIsPermitted();
-      return { curlArguments: [...curlArguments], injectedServiceName: null };
+      return buildPreparation(curlArguments, null);
     }
     throw new NoServiceForUrlError(url);
   }
@@ -268,7 +280,7 @@ export async function prepareCurlInvocation(
   if (chosen === null) {
     if (dependencies.passthroughUnknown) {
       await ensureRequestIsPermitted();
-      return { curlArguments: [...curlArguments], injectedServiceName: null };
+      return buildPreparation(curlArguments, null);
     }
     throw new NoCredentialsForServiceError(firstCandidate.name, requestedAccount);
   }
@@ -297,8 +309,8 @@ export async function prepareCurlInvocation(
     apiCredentials = service.adjustCredentials(apiCredentials, url);
   }
 
-  return {
-    curlArguments: await apiCredentials.injectIntoCurlCall(curlArguments, outOfBandRequestBody),
-    injectedServiceName: service.name,
-  };
+  return buildPreparation(
+    await apiCredentials.injectIntoCurlCall(curlArguments, outOfBandRequestBody),
+    service.name
+  );
 }

@@ -454,6 +454,7 @@ describe('CLI commands with dependency injection', () => {
       permissionsDoNotUseBuiltinSchemas: overrides.permissionsDoNotUseBuiltinSchemas ?? false,
       passthroughUnknown: overrides.passthroughUnknown ?? false,
       hideBuiltinServices: overrides.hideBuiltinServices ?? [],
+      populateHeadersForCurl: overrides.populateHeadersForCurl ?? [],
       gatewayUrl: overrides.gatewayUrl ?? null,
       gatewayListenHost: overrides.gatewayListenHost ?? 'localhost',
       gatewayListenPort: overrides.gatewayListenPort ?? 1989,
@@ -2292,6 +2293,51 @@ describe('CLI commands with dependency injection', () => {
 
       expect(exitCode).toBe(1);
       expect(errorLogs.some((line) => line.includes('google-drive'))).toBe(true);
+    });
+
+    it('should report the matched service to curl when asked to populate that header', async () => {
+      writeSecureFile(
+        join(tempDir, 'credentials.json'),
+        JSON.stringify(
+          nestAccounts({
+            slack: { objectType: 'rawCurl', curlArguments: ['-H', 'X-Custom: header'] },
+          })
+        )
+      );
+      const deps = createMockDependencies({
+        config: createMockConfig({ populateHeadersForCurl: ['X-Latchkey-Matched-Service'] }),
+      });
+
+      await runCommand(
+        ['curl', '-H', 'X-Latchkey-Matched-Service: github', 'https://slack.com/api/test'],
+        deps
+      );
+
+      expect(exitCode).toBe(0);
+      expect(capturedArgs).toEqual([
+        '-H',
+        'X-Latchkey-Matched-Service: slack',
+        '-H',
+        'X-Custom: header',
+        'https://slack.com/api/test',
+      ]);
+    });
+
+    it('should not report a matched service for a request that passes through', async () => {
+      const deps = createMockDependencies({
+        config: createMockConfig({
+          passthroughUnknown: true,
+          populateHeadersForCurl: ['X-Latchkey-Matched-Service'],
+        }),
+      });
+
+      await runCommand(
+        ['curl', '-H', 'X-Latchkey-Matched-Service: slack', 'https://unknown-api.example.com/test'],
+        deps
+      );
+
+      expect(exitCode).toBe(0);
+      expect(capturedArgs).toEqual(['https://unknown-api.example.com/test']);
     });
 
     it('should pass through unknown service when passthroughUnknown is enabled', async () => {

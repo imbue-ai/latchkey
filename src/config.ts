@@ -6,6 +6,7 @@ import { accessSync, constants, existsSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { delimiter, isAbsolute, join, resolve } from 'node:path';
 import { loadSettings, type Settings } from './configDataStore.js';
+import { resolvePopulatedHeaderNames } from './populatedHeaders.js';
 
 export class InsecureFilePermissionsError extends Error {
   constructor(filePath: string, permissions: number) {
@@ -47,6 +48,7 @@ const LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS_ENV_VAR =
   'LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS';
 const LATCHKEY_PASSTHROUGH_UNKNOWN_ENV_VAR = 'LATCHKEY_PASSTHROUGH_UNKNOWN';
 const LATCHKEY_HIDE_BUILTIN_SERVICES_ENV_VAR = 'LATCHKEY_HIDE_BUILTIN_SERVICES';
+const LATCHKEY_POPULATE_HEADERS_FOR_CURL_ENV_VAR = 'LATCHKEY_POPULATE_HEADERS_FOR_CURL';
 const LATCHKEY_GATEWAY_ENV_VAR = 'LATCHKEY_GATEWAY';
 const LATCHKEY_GATEWAY_LISTEN_HOST_ENV_VAR = 'LATCHKEY_GATEWAY_LISTEN_HOST';
 const LATCHKEY_GATEWAY_LISTEN_PORT_ENV_VAR = 'LATCHKEY_GATEWAY_LISTEN_PORT';
@@ -238,6 +240,14 @@ export class Config {
    */
   readonly hideBuiltinServices: readonly string[];
   /**
+   * Names of the headers Latchkey adds to the curl invocations it makes, in
+   * canonical spelling. Sourced from the comma-separated
+   * `LATCHKEY_POPULATE_HEADERS_FOR_CURL` env var or the
+   * `populateHeadersForCurl` config.json array. Every listed name must be one
+   * Latchkey knows how to populate.
+   */
+  readonly populateHeadersForCurl: readonly string[];
+  /**
    * When set, the CLI delegates commands to a remote latchkey gateway instead
    * of running them locally. `latchkey curl` is proxied through the gateway's
    * `/gateway/` endpoint; most other commands are forwarded to `/latchkey/`.
@@ -340,6 +350,12 @@ export class Config {
     this.hideBuiltinServices = resolveStringList(
       getEnv(LATCHKEY_HIDE_BUILTIN_SERVICES_ENV_VAR),
       settings.hideBuiltinServices
+    );
+    this.populateHeadersForCurl = resolvePopulatedHeaderNames(
+      resolveStringList(
+        getEnv(LATCHKEY_POPULATE_HEADERS_FOR_CURL_ENV_VAR),
+        settings.populateHeadersForCurl
+      )
     );
 
     const permissionsConfig = resolveOptionalString(
