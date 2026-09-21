@@ -19,6 +19,7 @@ import { CurlParseError, extractUrlFromCurlArguments } from './curl.js';
 import { parseCurlArgs } from '@imbue-ai/detent';
 import { ErrorMessages } from './errorMessages.js';
 import type { PermissionCheckMetadata } from './permissions.js';
+import { addDiagnosticHeaders } from './diagnosticHeaders.js';
 import type { ServiceRegistry } from './serviceRegistry.js';
 import type { Service } from './services/core/base.js';
 
@@ -94,6 +95,8 @@ export interface CurlInjectionDependencies extends PermissionCheckDependencies {
   readonly registry: ServiceRegistry;
   readonly passthroughUnknown: boolean;
   readonly credentialsRefreshDisabled: boolean;
+  /** Whether to add Latchkey's diagnostic headers to the curl invocation. */
+  readonly diagnosticHeaders: boolean;
   /**
    * Account to use for the credentials. When omitted, the single stored
    * account is used automatically; if a service has multiple accounts an
@@ -167,6 +170,19 @@ export async function ensureCurlRequestIsPermitted(
   );
 }
 
+function buildPreparation(
+  curlArguments: readonly string[],
+  injectedServiceName: string | null,
+  diagnosticHeaders: boolean
+): CurlInvocationPreparation {
+  return {
+    curlArguments: diagnosticHeaders
+      ? addDiagnosticHeaders(curlArguments, { matchedServiceName: injectedServiceName })
+      : [...curlArguments],
+    injectedServiceName,
+  };
+}
+
 /**
  * Run the credential-injection pipeline for a curl invocation and return the
  * final argument list to pass to curl, along with the service that provided
@@ -220,7 +236,7 @@ export async function prepareCurlInvocation(
   if (firstCandidate === undefined) {
     if (dependencies.passthroughUnknown) {
       await ensureRequestIsPermitted();
-      return { curlArguments: [...curlArguments], injectedServiceName: null };
+      return buildPreparation(curlArguments, null, dependencies.diagnosticHeaders);
     }
     throw new NoServiceForUrlError(url);
   }
@@ -268,7 +284,7 @@ export async function prepareCurlInvocation(
   if (chosen === null) {
     if (dependencies.passthroughUnknown) {
       await ensureRequestIsPermitted();
-      return { curlArguments: [...curlArguments], injectedServiceName: null };
+      return buildPreparation(curlArguments, null, dependencies.diagnosticHeaders);
     }
     throw new NoCredentialsForServiceError(firstCandidate.name, requestedAccount);
   }
@@ -297,8 +313,9 @@ export async function prepareCurlInvocation(
     apiCredentials = service.adjustCredentials(apiCredentials, url);
   }
 
-  return {
-    curlArguments: await apiCredentials.injectIntoCurlCall(curlArguments, outOfBandRequestBody),
-    injectedServiceName: service.name,
-  };
+  return buildPreparation(
+    await apiCredentials.injectIntoCurlCall(curlArguments, outOfBandRequestBody),
+    service.name,
+    dependencies.diagnosticHeaders
+  );
 }

@@ -660,6 +660,42 @@ describe('gateway server', () => {
       expect(capturedCurlArgs).toContain('Authorization: Bearer test-token');
     });
 
+    it('should report the matched service to curl when diagnostic headers are on', async () => {
+      gateway = await createTestGateway(
+        {
+          slack: {
+            objectType: 'rawCurl',
+            curlArguments: ['-H', 'Authorization: Bearer test-token'],
+          },
+        },
+        {},
+        {},
+        { diagnosticHeaders: true }
+      );
+
+      const response = await fetch('/gateway/https://slack.com/api/auth.test');
+
+      expect(response.status).toBe(200);
+      const matchedServiceHeaders = capturedCurlArgs.filter((argument) =>
+        argument.toLowerCase().startsWith('x-latchkey-matched-service')
+      );
+      expect(matchedServiceHeaders).toEqual(['X-Latchkey-Matched-Service: slack']);
+    });
+
+    it('should not report a matched service for a request that passes through', async () => {
+      gateway = await createTestGateway(
+        {},
+        {},
+        {},
+        { passthroughUnknown: true, diagnosticHeaders: true }
+      );
+
+      const response = await fetch('/gateway/https://unknown-api.example.com/test');
+
+      expect(response.status).toBe(200);
+      expect(capturedCurlArgs.join('\n').toLowerCase()).not.toContain('x-latchkey-matched-service');
+    });
+
     it('should return 400 for invalid target URL scheme', async () => {
       gateway = await createTestGateway();
 
