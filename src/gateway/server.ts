@@ -168,7 +168,7 @@ export async function startGateway(
     const requestDeps: CliDependencies = {
       ...deps,
       registry: createServiceRegistry(
-        deps.builtinServices,
+        deps.baseServices,
         deps.config.configPath,
         deps.config.hideBuiltinServices
       ),

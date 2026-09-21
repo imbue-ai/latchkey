@@ -134,7 +134,7 @@ export interface CliDependencies {
    * them separately from `registry`, which has already had config.json applied
    * and the hidden services removed.
    */
-  readonly builtinServices: readonly Service[];
+  readonly baseServices: readonly Service[];
   readonly config: Config;
   readonly runCurl: (args: readonly string[]) => CurlResult;
   readonly runCurlAsync: typeof curlRunAsync;
@@ -158,17 +158,17 @@ export interface CliDependencies {
  */
 export async function createDefaultDependencies(): Promise<CliDependencies> {
   const plugins = await loadPlugins(CONFIG.pluginsDirectoryPath, createLatchkeySdk(VERSION));
-  const builtinServices = combineWithPluginServices(BUILTIN_SERVICES, plugins);
+  const baseServices = combineWithPluginServices(BUILTIN_SERVICES, plugins);
   return {
     // Pointed at a remote gateway, the CLI forwards commands rather than
     // resolving services itself, so it leaves the registered ones to the
     // gateway.
     registry: createServiceRegistry(
-      builtinServices,
+      baseServices,
       CONFIG.gatewayUrl === null ? CONFIG.configPath : null,
       CONFIG.hideBuiltinServices
     ),
-    builtinServices,
+    baseServices,
     config: CONFIG,
     runCurl: curlRun,
     runCurlAsync: curlRunAsync,

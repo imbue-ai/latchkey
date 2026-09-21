@@ -476,7 +476,7 @@ describe('CLI commands with dependency injection', () => {
 
     return {
       registry: mockRegistry,
-      builtinServices: [mockSlackService],
+      baseServices: [mockSlackService],
       config: createMockConfig(),
       runCurl: (args: readonly string[]): CurlResult => {
         capturedArgs.push(...args);

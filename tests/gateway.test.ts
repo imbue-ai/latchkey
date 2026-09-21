@@ -246,9 +246,9 @@ describe('gateway server', () => {
 
     // One source for both, so that overriding the services a test runs against
     // cannot leave the registry describing a different set.
-    const services: readonly Service[] = overrides.builtinServices ?? [mockSlackService];
+    const services: readonly Service[] = overrides.baseServices ?? [mockSlackService];
     const deps: CliDependencies = {
-      builtinServices: services,
+      baseServices: services,
       registry: new ServiceRegistry(services),
       config: createMockConfig(configOverrides),
       runCurl: (): CurlResult => ({ returncode: 0, stdout: '', stderr: '' }),
@@ -422,7 +422,7 @@ describe('gateway server', () => {
             secretAccessKey: 'wJalrXUtnFEMI/K7MDENG',
           },
         },
-        { builtinServices: [AWS] }
+        { baseServices: [AWS] }
       );
       const requestBody = '{"logGroupName":"/aws/lambda/test","limit":1}';
 
@@ -1294,7 +1294,7 @@ describe('gateway CLI command registration', () => {
 
     const mockDeps: CliDependencies = {
       registry: new ServiceRegistry([]),
-      builtinServices: [],
+      baseServices: [],
       config: new Config(() => undefined),
       runCurl: (): CurlResult => ({ returncode: 0, stdout: '', stderr: '' }),
       runCurlAsync: () => Promise.resolve({ returncode: 0, stdout: Buffer.from(''), stderr: '' }),
