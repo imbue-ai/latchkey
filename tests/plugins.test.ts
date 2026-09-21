@@ -6,12 +6,15 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   PluginLoadError,
+  combineWithPluginApiCredentialsTypes,
   combineWithPluginServices,
   isLatchkeyVersionSupported,
   loadPlugins,
   type LoadedPlugin,
 } from '../src/plugins.js';
 import { createLatchkeySdk } from '../src/pluginSdk.js';
+import { type ApiCredentialsType, AuthorizationBearer } from '../src/apiCredentials/base.js';
+import { BUILTIN_API_CREDENTIALS_TYPES } from '../src/apiCredentials/serialization.js';
 import { Service } from '../src/services/core/base.js';
 import { SLACK } from '../src/services/index.js';
 import { VERSION } from '../src/version.js';
@@ -23,6 +26,8 @@ const SUPPORTED_VERSION_RANGE = '^3.15.0';
 interface PluginSourceOptions {
   readonly latchkeyVersion?: unknown;
   readonly asyncFactory?: boolean;
+  /** JavaScript for the manifest's `apiCredentialsTypes`, evaluated with `sdk` in scope. */
+  readonly apiCredentialsTypes?: string;
 }
 
 function pluginSource(serviceNames: readonly string[], options: PluginSourceOptions = {}): string {
@@ -45,7 +50,11 @@ function pluginSource(serviceNames: readonly string[], options: PluginSourceOpti
           return \`latchkey auth set \${serviceName} -H "Authorization: Bearer <token>"\`;
         }
       }
-      return { latchkeyVersion: ${latchkeyVersion}, services: [${services.join(', ')}] };
+      return {
+        latchkeyVersion: ${latchkeyVersion},
+        services: [${services.join(', ')}],
+        ${options.apiCredentialsTypes === undefined ? '' : `apiCredentialsTypes: ${options.apiCredentialsTypes},`}
+      };
     };
   `;
 }
@@ -144,6 +153,37 @@ describe('loadPlugins', () => {
     const plugins = await loadPlugins(pluginsDirectory, SDK);
 
     expect(serviceNames(plugins[0]!)).toEqual(['foo']);
+  });
+
+  it('loads a plugin without credentials types as contributing none', async () => {
+    writePlugin(pluginsDirectory, 'foo', { 'index.js': pluginSource(['foo']) });
+
+    const plugins = await loadPlugins(pluginsDirectory, SDK);
+
+    expect(plugins[0]!.apiCredentialsTypes).toEqual([]);
+  });
+
+  it('loads the credentials classes a plugin defines', async () => {
+    writePlugin(pluginsDirectory, 'foo', {
+      'index.js': pluginSource(['foo'], {
+        apiCredentialsTypes: `[
+          class FooToken extends sdk.AuthorizationBearer {
+            static objectType = 'fooToken';
+            static fromJSON(data) {
+              return new FooToken(data.token);
+            }
+          },
+        ]`,
+      }),
+    });
+
+    const plugins = await loadPlugins(pluginsDirectory, SDK);
+
+    const [type] = plugins[0]!.apiCredentialsTypes;
+    expect(type!.objectType).toBe('fooToken');
+    expect(type!.fromJSON({ objectType: 'fooToken', token: 't' })).toBeInstanceOf(
+      AuthorizationBearer
+    );
   });
 
   describe('entry file', () => {
@@ -333,6 +373,28 @@ describe('loadPlugins', () => {
       await expectLoadError(pluginsDirectory, 'separately installed latchkey');
     });
 
+    it('rejects credentials types that are not an array', async () => {
+      writePlugin(pluginsDirectory, 'foo', {
+        'index.js': pluginSource(['foo'], { apiCredentialsTypes: '{}' }),
+      });
+
+      await expectLoadError(pluginsDirectory, "'apiCredentialsTypes' must be an array");
+    });
+
+    it('rejects a credentials class without a static fromJSON', async () => {
+      writePlugin(pluginsDirectory, 'foo', {
+        'index.js': pluginSource(['foo'], {
+          apiCredentialsTypes: "[class FooToken { static objectType = 'fooToken'; }]",
+        }),
+      });
+
+      await expectLoadError(
+        pluginsDirectory,
+        "every entry of 'apiCredentialsTypes' must be a credentials class with a static " +
+          "'objectType' and a static 'fromJSON'."
+      );
+    });
+
     it('reports the first broken plugin and loads none', async () => {
       writePlugin(pluginsDirectory, 'a-fine', { 'index.js': pluginSource(['fine']) });
       writePlugin(pluginsDirectory, 'b-broken', { 'index.js': 'export default 42;' });
@@ -364,8 +426,12 @@ describe('isLatchkeyVersionSupported', () => {
 });
 
 describe('combineWithPluginServices', () => {
-  function loadedPlugin(name: string, services: readonly Service[]): LoadedPlugin {
-    return { name, directory: `/plugins/${name}`, services };
+  function loadedPlugin(
+    name: string,
+    services: readonly Service[],
+    apiCredentialsTypes: readonly ApiCredentialsType[] = []
+  ): LoadedPlugin {
+    return { name, directory: `/plugins/${name}`, services, apiCredentialsTypes };
   }
 
   class NamedService extends Service {
@@ -413,6 +479,49 @@ describe('combineWithPluginServices', () => {
   });
 });
 
+describe('combineWithPluginApiCredentialsTypes', () => {
+  function loadedPlugin(name: string, apiCredentialsTypes: readonly ApiCredentialsType[]) {
+    return { name, directory: `/plugins/${name}`, services: [], apiCredentialsTypes };
+  }
+
+  function namedType(objectType: string): ApiCredentialsType {
+    return { objectType, fromJSON: () => new AuthorizationBearer('') };
+  }
+
+  it('appends plugin credentials types after the built-in ones, in plugin order', () => {
+    const foo = namedType('foo');
+    const bar = namedType('bar');
+
+    const combined = combineWithPluginApiCredentialsTypes(BUILTIN_API_CREDENTIALS_TYPES, [
+      loadedPlugin('a', [foo]),
+      loadedPlugin('b', [bar]),
+    ]);
+
+    expect(combined).toEqual([...BUILTIN_API_CREDENTIALS_TYPES, foo, bar]);
+  });
+
+  it('refuses a plugin credentials type named like a built-in one', () => {
+    expect(() =>
+      combineWithPluginApiCredentialsTypes(BUILTIN_API_CREDENTIALS_TYPES, [
+        loadedPlugin('a', [namedType('oauth')]),
+      ])
+    ).toThrow(
+      "Failed to load plugin 'a': credentials type 'oauth' is already provided by Latchkey itself."
+    );
+  });
+
+  it('refuses a plugin credentials type named like one from an earlier plugin', () => {
+    expect(() =>
+      combineWithPluginApiCredentialsTypes(
+        [],
+        [loadedPlugin('a', [namedType('foo')]), loadedPlugin('b', [namedType('foo')])]
+      )
+    ).toThrow(
+      "Failed to load plugin 'b': credentials type 'foo' is already provided by plugin 'a'."
+    );
+  });
+});
+
 // ─── End to end: a plugin served by the real CLI ──────────────────────────────
 
 const TEST_ENCRYPTION_KEY = 'dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q=';
@@ -421,11 +530,34 @@ const devShimPath = join(projectRoot, 'scripts', 'latchkey');
 
 /**
  * What a real plugin looks like: an ES module package with nothing installed
- * in its own node_modules, taking everything, zod included, from the sdk.
+ * in its own node_modules, taking everything, zod included, from the sdk. It
+ * also brings a credentials class of its own, which the sdk lets it register.
  */
 const REAL_PLUGIN_SOURCE = `
   export default (sdk) => {
     const { Service, AuthorizationBearer, buildPreparedCredentials, z } = sdk;
+
+    const ExampleTokenSchema = z.object({ objectType: z.literal('exampleToken'), token: z.string() });
+
+    class ExampleToken {
+      static objectType = 'exampleToken';
+      objectType = ExampleToken.objectType;
+      constructor(token) {
+        this.token = token;
+      }
+      static fromJSON(data) {
+        return new ExampleToken(ExampleTokenSchema.parse(data).token);
+      }
+      injectIntoCurlCall(curlArguments) {
+        return Promise.resolve(['-H', \`X-Example-Token: \${this.token}\`, ...curlArguments]);
+      }
+      isExpired() {
+        return undefined;
+      }
+      toJSON() {
+        return { objectType: this.objectType, token: this.token };
+      }
+    }
 
     class Example extends Service {
       name = 'example';
@@ -447,9 +579,17 @@ const REAL_PLUGIN_SOURCE = `
           (input) => new AuthorizationBearer(input.token)
         );
       }
+
+      getCredentialsNoCurl(noCurlArguments) {
+        return new ExampleToken(noCurlArguments[0]);
+      }
     }
 
-    return { latchkeyVersion: ${JSON.stringify(`^${VERSION}`)}, services: [new Example()] };
+    return {
+      latchkeyVersion: ${JSON.stringify(`^${VERSION}`)},
+      services: [new Example()],
+      apiCredentialsTypes: [ExampleToken],
+    };
   };
 `;
 
@@ -505,6 +645,20 @@ describe('plugins loaded by the CLI', () => {
     const parsedInfo = JSON.parse(info.stdout) as { type: string; developerNotes: string };
     expect(parsedInfo.type).toBe('built-in');
     expect(parsedInfo.developerNotes).toBe('Example plugin service.');
+  }, 60_000);
+
+  it('stores and reads back credentials of a class the plugin defines', () => {
+    const setting = runCli(latchkeyDirectory, ['auth', 'set-nocurl', 'example', 't0ken']);
+    expect(setting.stderr).toBe('');
+    expect(setting.exitCode).toBe(0);
+
+    const info = runCli(latchkeyDirectory, ['services', 'info', 'example', '--offline']);
+    expect(info.stderr).toBe('');
+    expect(info.exitCode).toBe(0);
+    const parsedInfo = JSON.parse(info.stdout) as { credentials: Record<string, unknown> };
+    expect(Object.values(parsedInfo.credentials)).toEqual([
+      { credentialStatus: 'unknown', credentialType: 'exampleToken' },
+    ]);
   }, 60_000);
 
   it('refuses to start with a broken plugin and names it', () => {

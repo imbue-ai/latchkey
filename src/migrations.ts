@@ -4,7 +4,7 @@ import { writeFileAtomic } from './atomicWrite.js';
 import { DEFAULT_ACCOUNT } from './apiCredentials/account.js';
 import { ApiCredentialStatus, type ApiCredentials } from './apiCredentials/base.js';
 import {
-  ApiCredentialsSchema,
+  BUILTIN_API_CREDENTIALS_TYPES,
   deserializeCredentials,
   serializeCredentials,
 } from './apiCredentials/serialization.js';
@@ -16,7 +16,9 @@ import { BUILTIN_SERVICES, ServiceRegistry } from './serviceRegistry.js';
 /**
  * Migrations run before the CLI has built its own registry, and only ever need
  * to recognize the services latchkey ships with: a credential stored under a
- * name that is not one of them is left with an unknown status.
+ * name that is not one of them is left with an unknown status. The same goes
+ * for credentials of a type only a plugin knows, which are parsed with the
+ * built-in types below and left alone when that fails.
  */
 const BUILTIN_SERVICE_REGISTRY = new ServiceRegistry(BUILTIN_SERVICES);
 
@@ -97,13 +99,11 @@ async function resolveCredentialViaServiceRegistry(
     return { status: ApiCredentialStatus.Unknown, account: null };
   }
 
-  const parsed = ApiCredentialsSchema.safeParse(credentialData);
-  if (!parsed.success) {
-    return { status: ApiCredentialStatus.Unknown, account: null };
-  }
-
   try {
-    const originalCredentials = deserializeCredentials(parsed.data);
+    const originalCredentials = deserializeCredentials(
+      credentialData,
+      BUILTIN_API_CREDENTIALS_TYPES
+    );
     const credentials = await refreshIfExpired(service, originalCredentials);
     const [status, account] = await Promise.all([
       service.checkApiCredentials(credentials),
@@ -115,7 +115,9 @@ async function resolveCredentialViaServiceRegistry(
       status,
       account: status === ApiCredentialStatus.Valid ? account : null,
       credentialData:
-        credentials === originalCredentials ? undefined : serializeCredentials(credentials),
+        credentials === originalCredentials
+          ? undefined
+          : serializeCredentials(credentials, BUILTIN_API_CREDENTIALS_TYPES),
     };
   } catch {
     return { status: ApiCredentialStatus.Unknown, account: null };

@@ -261,7 +261,8 @@ function signAwsRequest(
 }
 
 export class AwsCredentials implements ApiCredentials {
-  readonly objectType = 'aws' as const;
+  static readonly objectType = 'aws' as const;
+  readonly objectType = AwsCredentials.objectType;
   readonly accessKeyId: string;
   readonly secretAccessKey: string;
 
@@ -314,8 +315,9 @@ export class AwsCredentials implements ApiCredentials {
     };
   }
 
-  static fromJSON(data: AwsCredentialsData): AwsCredentials {
-    return new AwsCredentials(data.accessKeyId, data.secretAccessKey);
+  static fromJSON(data: unknown): AwsCredentials {
+    const parsed = AwsCredentialsSchema.parse(data);
+    return new AwsCredentials(parsed.accessKeyId, parsed.secretAccessKey);
   }
 }
 

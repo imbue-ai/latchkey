@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { BUILTIN_API_CREDENTIALS_TYPES } from '../src/apiCredentials/serialization.js';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -477,6 +478,7 @@ describe('CLI commands with dependency injection', () => {
     return {
       registry: mockRegistry,
       baseServices: [mockSlackService],
+      apiCredentialsTypes: BUILTIN_API_CREDENTIALS_TYPES,
       config: createMockConfig(),
       runCurl: (args: readonly string[]): CurlResult => {
         capturedArgs.push(...args);

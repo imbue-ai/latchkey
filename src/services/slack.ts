@@ -20,7 +20,8 @@ export const SlackApiCredentialsSchema = z.object({
 export type SlackApiCredentialsData = z.infer<typeof SlackApiCredentialsSchema>;
 
 export class SlackApiCredentials implements ApiCredentials {
-  readonly objectType = 'slack' as const;
+  static readonly objectType = 'slack' as const;
+  readonly objectType = SlackApiCredentials.objectType;
   readonly token: string;
   readonly dCookie: string;
 
@@ -51,8 +52,9 @@ export class SlackApiCredentials implements ApiCredentials {
     };
   }
 
-  static fromJSON(data: SlackApiCredentialsData): SlackApiCredentials {
-    return new SlackApiCredentials(data.token, data.dCookie);
+  static fromJSON(data: unknown): SlackApiCredentials {
+    const parsed = SlackApiCredentialsSchema.parse(data);
+    return new SlackApiCredentials(parsed.token, parsed.dCookie);
   }
 }
 

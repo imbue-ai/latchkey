@@ -11,6 +11,11 @@
  *     return { latchkeyVersion: '^3.15.0', services: [new Foo()] };
  *   };
  *
+ * A plugin whose services use a credentials class of their own also lists
+ * that class under `apiCredentialsTypes`, which is what lets such credentials
+ * be stored. The class carries a static `objectType` and a static `fromJSON`
+ * that validates stored data (see the built-in credentials classes).
+ *
  * `latchkeyVersion` is the range of Latchkey versions the plugin was written
  * for, in the syntax of a package.json dependency. Latchkey follows semantic
  * versioning with respect to the sdk, so `^3.15.0` means "3.15.0 or newer,
@@ -26,6 +31,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { satisfies as satisfiesVersionRange, validRange } from 'semver';
+import type { ApiCredentialsType } from './apiCredentials/base.js';
 import type { LatchkeySdk } from './pluginSdk.js';
 import { Service } from './services/core/base.js';
 
@@ -36,6 +42,8 @@ export interface LatchkeyPlugin {
    */
   readonly latchkeyVersion: string;
   readonly services: readonly Service[];
+  /** The credentials classes the plugin defines, if any. */
+  readonly apiCredentialsTypes?: readonly ApiCredentialsType[];
 }
 
 export type LatchkeyPluginFactory = (sdk: LatchkeySdk) => LatchkeyPlugin | Promise<LatchkeyPlugin>;
@@ -45,6 +53,7 @@ export interface LoadedPlugin {
   readonly name: string;
   readonly directory: string;
   readonly services: readonly Service[];
+  readonly apiCredentialsTypes: readonly ApiCredentialsType[];
 }
 
 export class PluginLoadError extends Error {
@@ -120,13 +129,18 @@ function validatePluginManifest(
   pluginName: string,
   manifest: unknown,
   latchkeyVersion: string
-): LatchkeyPlugin {
+): Required<LatchkeyPlugin> {
   if (typeof manifest !== 'object' || manifest === null) {
     throw new PluginLoadError(pluginName, 'the plugin factory did not return an object.');
   }
-  const { latchkeyVersion: versionRange, services } = manifest as {
+  const {
+    latchkeyVersion: versionRange,
+    services,
+    apiCredentialsTypes,
+  } = manifest as {
     readonly latchkeyVersion?: unknown;
     readonly services?: unknown;
+    readonly apiCredentialsTypes?: unknown;
   };
   if (typeof versionRange !== 'string') {
     throw new PluginLoadError(
@@ -161,7 +175,44 @@ function validatePluginManifest(
       );
     }
   }
-  return { latchkeyVersion: versionRange, services: services as readonly Service[] };
+  return {
+    latchkeyVersion: versionRange,
+    services: services as readonly Service[],
+    apiCredentialsTypes: validateApiCredentialsTypes(pluginName, apiCredentialsTypes),
+  };
+}
+
+function isApiCredentialsType(value: unknown): value is ApiCredentialsType {
+  if ((typeof value !== 'object' && typeof value !== 'function') || value === null) {
+    return false;
+  }
+  const { objectType, fromJSON } = value as {
+    readonly objectType?: unknown;
+    readonly fromJSON?: unknown;
+  };
+  return typeof objectType === 'string' && typeof fromJSON === 'function';
+}
+
+function validateApiCredentialsTypes(
+  pluginName: string,
+  apiCredentialsTypes: unknown
+): readonly ApiCredentialsType[] {
+  if (apiCredentialsTypes === undefined) {
+    return [];
+  }
+  if (!Array.isArray(apiCredentialsTypes)) {
+    throw new PluginLoadError(pluginName, "'apiCredentialsTypes' must be an array when present.");
+  }
+  for (const type of apiCredentialsTypes as readonly unknown[]) {
+    if (!isApiCredentialsType(type)) {
+      throw new PluginLoadError(
+        pluginName,
+        "every entry of 'apiCredentialsTypes' must be a credentials class with a static " +
+          "'objectType' and a static 'fromJSON'."
+      );
+    }
+  }
+  return apiCredentialsTypes as readonly ApiCredentialsType[];
 }
 
 async function loadPlugin(
@@ -193,8 +244,12 @@ async function loadPlugin(
     const message = error instanceof Error ? error.message : String(error);
     throw new PluginLoadError(pluginName, `the plugin factory threw: ${message}`);
   }
-  const { services } = validatePluginManifest(pluginName, manifest, sdk.latchkeyVersion);
-  return { name: pluginName, directory: pluginDirectory, services };
+  const { services, apiCredentialsTypes } = validatePluginManifest(
+    pluginName,
+    manifest,
+    sdk.latchkeyVersion
+  );
+  return { name: pluginName, directory: pluginDirectory, services, apiCredentialsTypes };
 }
 
 function isDirectory(path: string): boolean {
@@ -228,6 +283,35 @@ export async function loadPlugins(
 }
 
 /**
+ * The built-in items followed by every plugin's, refusing a plugin item whose
+ * key is already taken.
+ */
+function combineWithPluginContributions<Item>(
+  kind: string,
+  builtinItems: readonly Item[],
+  plugins: readonly LoadedPlugin[],
+  itemsOf: (plugin: LoadedPlugin) => readonly Item[],
+  keyOf: (item: Item) => string
+): readonly Item[] {
+  const providers = new Map<string, string>(
+    builtinItems.map((item) => [keyOf(item), 'Latchkey itself'])
+  );
+  for (const plugin of plugins) {
+    for (const item of itemsOf(plugin)) {
+      const provider = providers.get(keyOf(item));
+      if (provider !== undefined) {
+        throw new PluginLoadError(
+          plugin.name,
+          `${kind} '${keyOf(item)}' is already provided by ${provider}.`
+        );
+      }
+      providers.set(keyOf(item), `plugin '${plugin.name}'`);
+    }
+  }
+  return [...builtinItems, ...plugins.flatMap(itemsOf)];
+}
+
+/**
  * The built-in services followed by every plugin's, refusing a plugin service
  * whose name is already taken. The registry itself only checks names as
  * services are added one by one, and these all go in together.
@@ -236,20 +320,24 @@ export function combineWithPluginServices(
   builtinServices: readonly Service[],
   plugins: readonly LoadedPlugin[]
 ): readonly Service[] {
-  const providers = new Map<string, string>(
-    builtinServices.map((service) => [service.name, 'Latchkey itself'])
+  return combineWithPluginContributions(
+    'service',
+    builtinServices,
+    plugins,
+    (plugin) => plugin.services,
+    (service) => service.name
   );
-  for (const plugin of plugins) {
-    for (const service of plugin.services) {
-      const provider = providers.get(service.name);
-      if (provider !== undefined) {
-        throw new PluginLoadError(
-          plugin.name,
-          `service '${service.name}' is already provided by ${provider}.`
-        );
-      }
-      providers.set(service.name, `plugin '${plugin.name}'`);
-    }
-  }
-  return [...builtinServices, ...plugins.flatMap((plugin) => plugin.services)];
+}
+
+export function combineWithPluginApiCredentialsTypes(
+  builtinTypes: readonly ApiCredentialsType[],
+  plugins: readonly LoadedPlugin[]
+): readonly ApiCredentialsType[] {
+  return combineWithPluginContributions(
+    'credentials type',
+    builtinTypes,
+    plugins,
+    (plugin) => plugin.apiCredentialsTypes,
+    (type) => type.objectType
+  );
 }

@@ -164,10 +164,12 @@ export type { GoogleService } from './services/google/base.js';
 
 export type {
   ApiCredentials,
+  ApiCredentialsType,
   AuthorizationBare,
   AuthorizationBearer,
   OAuthCredentials,
   RawCurlCredentials,
+  SerializedApiCredentials,
 } from './apiCredentials/base.js';
 export type { EncryptedStorage } from './encryptedStorage.js';
 

@@ -13,9 +13,11 @@ import {
 } from './apiCredentials/store.js';
 import {
   ApiCredentials,
+  ApiCredentialsType,
   ApiCredentialsUsageError,
   RawCurlCredentials,
 } from './apiCredentials/base.js';
+import { BUILTIN_API_CREDENTIALS_TYPES } from './apiCredentials/serialization.js';
 import {
   CredentialsExpiredError,
   NoCredentialsForServiceError,
@@ -52,7 +54,11 @@ import {
   canonicalizeServiceName,
 } from './serviceRegistry.js';
 import { buildRegisteredServiceOptions, RegisteredService } from './services/core/registered.js';
-import { combineWithPluginServices, loadPlugins } from './plugins.js';
+import {
+  combineWithPluginApiCredentialsTypes,
+  combineWithPluginServices,
+  loadPlugins,
+} from './plugins.js';
 import { createLatchkeySdk } from './pluginSdk.js';
 import {
   LOGIN_FLOWS,
@@ -135,6 +141,11 @@ export interface CliDependencies {
    * and the hidden services removed.
    */
   readonly baseServices: readonly Service[];
+  /**
+   * Every credentials type that can be stored: the ones latchkey ships with
+   * plus those its plugins define.
+   */
+  readonly apiCredentialsTypes: readonly ApiCredentialsType[];
   readonly config: Config;
   readonly runCurl: (args: readonly string[]) => CurlResult;
   readonly runCurlAsync: typeof curlRunAsync;
@@ -169,6 +180,10 @@ export async function createDefaultDependencies(): Promise<CliDependencies> {
       CONFIG.hideBuiltinServices
     ),
     baseServices,
+    apiCredentialsTypes: combineWithPluginApiCredentialsTypes(
+      BUILTIN_API_CREDENTIALS_TYPES,
+      plugins
+    ),
     config: CONFIG,
     runCurl: curlRun,
     runCurlAsync: curlRunAsync,
@@ -374,6 +389,17 @@ async function createEncryptedStorageFromConfig(config: Config): Promise<Encrypt
   return new EncryptedStorage(key);
 }
 
+function createApiCredentialStore(
+  deps: CliDependencies,
+  encryptedStorage: EncryptedStorage
+): ApiCredentialStore {
+  return new ApiCredentialStore(
+    deps.config.credentialStorePath,
+    encryptedStorage,
+    deps.apiCredentialsTypes
+  );
+}
+
 async function clearService(
   deps: CliDependencies,
   serviceName: string,
@@ -388,10 +414,7 @@ async function clearService(
   }
 
   const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
-  const apiCredentialStore = new ApiCredentialStore(
-    deps.config.credentialStorePath,
-    encryptedStorage
-  );
+  const apiCredentialStore = createApiCredentialStore(deps, encryptedStorage);
 
   let deleted: boolean;
   try {
@@ -505,10 +528,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         return;
       }
       const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
-      const apiCredentialStore = new ApiCredentialStore(
-        deps.config.credentialStorePath,
-        encryptedStorage
-      );
+      const apiCredentialStore = createApiCredentialStore(deps, encryptedStorage);
       const result = servicesList(deps.registry, apiCredentialStore, deps.config, options);
       deps.log(JSON.stringify(result, null, 2));
     });
@@ -532,10 +552,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       }
       try {
         const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
-        const apiCredentialStore = new ApiCredentialStore(
-          deps.config.credentialStorePath,
-          encryptedStorage
-        );
+        const apiCredentialStore = createApiCredentialStore(deps, encryptedStorage);
         const info = await servicesInfo(
           deps.registry,
           apiCredentialStore,
@@ -698,10 +715,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       }
 
       const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
-      const apiCredentialStore = new ApiCredentialStore(
-        deps.config.credentialStorePath,
-        encryptedStorage
-      );
+      const apiCredentialStore = createApiCredentialStore(deps, encryptedStorage);
       if (
         apiCredentialStore.listAccounts(serviceName).length > 0 ||
         apiCredentialStore.getPreparation(serviceName) !== null
@@ -761,10 +775,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         return;
       }
       const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
-      const apiCredentialStore = new ApiCredentialStore(
-        deps.config.credentialStorePath,
-        encryptedStorage
-      );
+      const apiCredentialStore = createApiCredentialStore(deps, encryptedStorage);
       const entries = await authList(
         deps.registry,
         apiCredentialStore,
@@ -810,10 +821,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       }
 
       const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
-      const apiCredentialStore = new ApiCredentialStore(
-        deps.config.credentialStorePath,
-        encryptedStorage
-      );
+      const apiCredentialStore = createApiCredentialStore(deps, encryptedStorage);
 
       const credentials = new RawCurlCredentials(curlArguments);
       try {
@@ -858,10 +866,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       }
 
       const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
-      const apiCredentialStore = new ApiCredentialStore(
-        deps.config.credentialStorePath,
-        encryptedStorage
-      );
+      const apiCredentialStore = createApiCredentialStore(deps, encryptedStorage);
 
       let credentials: ApiCredentials;
       try {
@@ -901,10 +906,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       }
       try {
         const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
-        const apiCredentialStore = new ApiCredentialStore(
-          deps.config.credentialStorePath,
-          encryptedStorage
-        );
+        const apiCredentialStore = createApiCredentialStore(deps, encryptedStorage);
         const { account } = await authBrowser(
           deps.registry,
           apiCredentialStore,
@@ -974,10 +976,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       }
       try {
         const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
-        const apiCredentialStore = new ApiCredentialStore(
-          deps.config.credentialStorePath,
-          encryptedStorage
-        );
+        const apiCredentialStore = createApiCredentialStore(deps, encryptedStorage);
         const result = await authBrowserPrepare(
           deps.registry,
           apiCredentialStore,
@@ -1048,10 +1047,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       }
       try {
         const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
-        const apiCredentialStore = new ApiCredentialStore(
-          deps.config.credentialStorePath,
-          encryptedStorage
-        );
+        const apiCredentialStore = createApiCredentialStore(deps, encryptedStorage);
         prepareService(deps.registry, apiCredentialStore, serviceName, json);
         deps.log(`Done`);
       } catch (error) {
@@ -1124,10 +1120,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       }
 
       const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
-      const apiCredentialStore = new ApiCredentialStore(
-        deps.config.credentialStorePath,
-        encryptedStorage
-      );
+      const apiCredentialStore = createApiCredentialStore(deps, encryptedStorage);
 
       let preparation: CurlInvocationPreparation;
       try {
@@ -1214,10 +1207,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
 
       const encryptionKey = await resolveEncryptionKeyFromConfig(deps.config);
       const encryptedStorage = new EncryptedStorage(encryptionKey);
-      const apiCredentialStore = new ApiCredentialStore(
-        deps.config.credentialStorePath,
-        encryptedStorage
-      );
+      const apiCredentialStore = createApiCredentialStore(deps, encryptedStorage);
 
       const gateway = await startGateway(deps, apiCredentialStore, encryptedStorage, {
         port,

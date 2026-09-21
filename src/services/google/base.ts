@@ -53,7 +53,8 @@ export const GoogleApiKeyCredentialsSchema = z.object({
 export type GoogleApiKeyCredentialsData = z.infer<typeof GoogleApiKeyCredentialsSchema>;
 
 export class GoogleApiKeyCredentials implements ApiCredentials {
-  readonly objectType = 'googleApiKey' as const;
+  static readonly objectType = 'googleApiKey' as const;
+  readonly objectType = GoogleApiKeyCredentials.objectType;
   readonly apiKey: string;
 
   constructor(apiKey: string) {
@@ -79,8 +80,9 @@ export class GoogleApiKeyCredentials implements ApiCredentials {
     };
   }
 
-  static fromJSON(data: GoogleApiKeyCredentialsData): GoogleApiKeyCredentials {
-    return new GoogleApiKeyCredentials(data.apiKey);
+  static fromJSON(data: unknown): GoogleApiKeyCredentials {
+    const parsed = GoogleApiKeyCredentialsSchema.parse(data);
+    return new GoogleApiKeyCredentials(parsed.apiKey);
   }
 }
 

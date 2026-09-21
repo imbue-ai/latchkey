@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { BUILTIN_API_CREDENTIALS_TYPES } from '../src/apiCredentials/serialization.js';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -249,6 +250,7 @@ describe('gateway server', () => {
     const services: readonly Service[] = overrides.baseServices ?? [mockSlackService];
     const deps: CliDependencies = {
       baseServices: services,
+      apiCredentialsTypes: BUILTIN_API_CREDENTIALS_TYPES,
       registry: new ServiceRegistry(services),
       config: createMockConfig(configOverrides),
       runCurl: (): CurlResult => ({ returncode: 0, stdout: '', stderr: '' }),
@@ -1295,6 +1297,7 @@ describe('gateway CLI command registration', () => {
     const mockDeps: CliDependencies = {
       registry: new ServiceRegistry([]),
       baseServices: [],
+      apiCredentialsTypes: BUILTIN_API_CREDENTIALS_TYPES,
       config: new Config(() => undefined),
       runCurl: (): CurlResult => ({ returncode: 0, stdout: '', stderr: '' }),
       runCurlAsync: () => Promise.resolve({ returncode: 0, stdout: Buffer.from(''), stderr: '' }),
