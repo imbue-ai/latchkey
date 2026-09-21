@@ -1,8 +1,6 @@
 /**
- * Headers Latchkey can add to the curl invocation it makes, to tell whatever
- * runs as curl (see `LATCHKEY_CURL`) what Latchkey decided about the request.
- * They are off by default, because a stock curl would send them on to the
- * third party.
+ * Headers Latchkey can add to the curl invocation it makes, to
+ * help downstream consumers understand Latchkey's behavior.
  */
 
 export const MATCHED_SERVICE_HEADER = 'X-Latchkey-Matched-Service';
