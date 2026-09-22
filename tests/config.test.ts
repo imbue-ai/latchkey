@@ -47,6 +47,7 @@ describe('Config with config.json settings', () => {
     expect(config.permissionsDoNotUseBuiltinSchemas).toBe(false);
     expect(config.passthroughUnknown).toBe(false);
     expect(config.hideBuiltinServices).toEqual([]);
+    expect(config.diagnosticHeaders).toBe(false);
     expect(config.gatewayUrl).toBeNull();
     expect(config.gatewayListenHost).toBe(DEFAULT_GATEWAY_LISTEN_HOST);
     expect(config.gatewayListenPort).toBe(DEFAULT_GATEWAY_LISTEN_PORT);
@@ -154,6 +155,15 @@ describe('Config with config.json settings', () => {
     expect(() => makeConfig({ LATCHKEY_GATEWAY_LISTEN_PORT: '70000' })).toThrow(
       InvalidGatewayListenPortError
     );
+  });
+
+  it('turns diagnostic headers on from config.json or from a non-empty env var', () => {
+    expect(makeConfig({ LATCHKEY_DIAGNOSTIC_HEADERS: '1' }).diagnosticHeaders).toBe(true);
+    expect(makeConfig({ LATCHKEY_DIAGNOSTIC_HEADERS: '' }).diagnosticHeaders).toBe(false);
+
+    writeSettings({ diagnosticHeaders: true });
+
+    expect(makeConfig().diagnosticHeaders).toBe(true);
   });
 
   it('an empty LATCHKEY_GATEWAY_LISTEN_PORT env var falls through to config.json', () => {

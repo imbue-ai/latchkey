@@ -73,7 +73,8 @@ export const TailscaleCredentialsSchema = z.object({
 export type TailscaleCredentialsData = z.infer<typeof TailscaleCredentialsSchema>;
 
 export class TailscaleCredentials implements ApiCredentials {
-  readonly objectType = 'tailscale' as const;
+  static readonly objectType = 'tailscale' as const;
+  readonly objectType = TailscaleCredentials.objectType;
   readonly token: string;
   readonly tailnet: string;
 
@@ -101,8 +102,9 @@ export class TailscaleCredentials implements ApiCredentials {
     };
   }
 
-  static fromJSON(data: TailscaleCredentialsData): TailscaleCredentials {
-    return new TailscaleCredentials(data.token, data.tailnet);
+  static fromJSON(data: unknown): TailscaleCredentials {
+    const parsed = TailscaleCredentialsSchema.parse(data);
+    return new TailscaleCredentials(parsed.token, parsed.tailnet);
   }
 }
 

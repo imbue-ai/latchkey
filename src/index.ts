@@ -5,11 +5,16 @@
 // Core types and utilities
 export {
   ApiCredentials,
+  ApiCredentialsType,
   ApiCredentialStatus,
   AuthorizationBearer,
   AuthorizationBare,
 } from './apiCredentials/base.js';
-export { deserializeCredentials, serializeCredentials } from './apiCredentials/serialization.js';
+export {
+  BUILTIN_API_CREDENTIALS_TYPES,
+  deserializeCredentials,
+  serializeCredentials,
+} from './apiCredentials/serialization.js';
 export { SlackApiCredentials } from './services/slack.js';
 
 export { ApiCredentialStore, ApiCredentialStoreError } from './apiCredentials/store.js';

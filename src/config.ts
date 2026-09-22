@@ -47,6 +47,7 @@ const LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS_ENV_VAR =
   'LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS';
 const LATCHKEY_PASSTHROUGH_UNKNOWN_ENV_VAR = 'LATCHKEY_PASSTHROUGH_UNKNOWN';
 const LATCHKEY_HIDE_BUILTIN_SERVICES_ENV_VAR = 'LATCHKEY_HIDE_BUILTIN_SERVICES';
+const LATCHKEY_DIAGNOSTIC_HEADERS_ENV_VAR = 'LATCHKEY_DIAGNOSTIC_HEADERS';
 const LATCHKEY_GATEWAY_ENV_VAR = 'LATCHKEY_GATEWAY';
 const LATCHKEY_GATEWAY_LISTEN_HOST_ENV_VAR = 'LATCHKEY_GATEWAY_LISTEN_HOST';
 const LATCHKEY_GATEWAY_LISTEN_PORT_ENV_VAR = 'LATCHKEY_GATEWAY_LISTEN_PORT';
@@ -68,6 +69,7 @@ const BROWSER_STATE_FILENAME = 'browser_state.json.enc';
 const CONFIG_FILENAME = 'config.json';
 const PERMISSIONS_CONFIG_FILENAME = 'permissions.json';
 const EXTENSIONS_DIRECTORY_NAME = 'extensions';
+const PLUGINS_DIRECTORY_NAME = 'plugins';
 
 function resolvePathWithTildeExpansion(path: string): string {
   if (path.startsWith('~')) {
@@ -238,6 +240,11 @@ export class Config {
    */
   readonly hideBuiltinServices: readonly string[];
   /**
+   * When true, Latchkey adds its diagnostic headers (such as the name of the
+   * matched service) to the curl invocations it makes.
+   */
+  readonly diagnosticHeaders: boolean;
+  /**
    * When set, the CLI delegates commands to a remote latchkey gateway instead
    * of running them locally. `latchkey curl` is proxied through the gateway's
    * `/gateway/` endpoint; most other commands are forwarded to `/latchkey/`.
@@ -341,6 +348,10 @@ export class Config {
       getEnv(LATCHKEY_HIDE_BUILTIN_SERVICES_ENV_VAR),
       settings.hideBuiltinServices
     );
+    this.diagnosticHeaders = resolveBoolean(
+      getEnv(LATCHKEY_DIAGNOSTIC_HEADERS_ENV_VAR),
+      settings.diagnosticHeaders
+    );
 
     const permissionsConfig = resolveOptionalString(
       getEnv(LATCHKEY_PERMISSIONS_CONFIG_ENV_VAR),
@@ -406,6 +417,14 @@ export class Config {
    */
   get extensionsDirectoryPath(): string {
     return join(this.directory, EXTENSIONS_DIRECTORY_NAME);
+  }
+
+  /**
+   * Directory whose subdirectories are loaded as plugins at startup.
+   * See `src/plugins.ts`.
+   */
+  get pluginsDirectoryPath(): string {
+    return join(this.directory, PLUGINS_DIRECTORY_NAME);
   }
 
   /**

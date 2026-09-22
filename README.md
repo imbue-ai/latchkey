@@ -228,6 +228,15 @@ You can also configure browser login flows for registered services. For details,
 see `latchkey services register --help`.
 
 
+### Plugins
+
+It is also possible to add support for a new service by
+installing a plugin that implements it. A Latchkey plugin is
+a git repository; installation is a matter of running `git
+clone` in `~/.latchkey/plugins/`. For more details, see the
+[plugins docs](./docs/plugins.md).
+
+
 ### Indirect credentials
 
 Some services can't express their credentials as static curl
@@ -436,6 +445,7 @@ defaults:
 - `LATCHKEY_GATEWAY_LISTEN_PASSWORD`: optional shared secret used by the server side. When set, `latchkey gateway` rejects (with `401`) any request that does not present the same value in the `X-Latchkey-Gateway-Password` header. The header is stripped before requests are forwarded upstream.
 - `LATCHKEY_GATEWAY_PERMISSIONS_OVERRIDE`: optional permissions-override JWT (see `latchkey gateway create-jwt`) used by the client side. When set together with `LATCHKEY_GATEWAY`, the CLI sends the value in the `X-Latchkey-Gateway-Permissions-Override` header on every outgoing gateway request, causing the remote gateway to enforce the permissions.json file referenced by the JWT instead of its default one.
 - `LATCHKEY_APP_NAME_PREFIX`: prefix used for the app, project, and OAuth client names that Latchkey creates on your behalf inside third-party consoles (defaults to `Latchkey`).
+- `LATCHKEY_LATCKEY_DIAGNOSTIC_HEADERS`: if set, Latchkey adds special headers with diagnostic information to the outgoing requests. This currently includes `X-Latchkey-Matched-Service`, indicating the service that Latchkey matched the request to and injected credentials for.
 
 All of the above settings, except for `LATCHKEY_DIRECTORY`,
 `LATCHKEY_ENCRYPTION_KEY`, `LATCHKEY_GATEWAY_PASSWORD`,

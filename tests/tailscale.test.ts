@@ -4,7 +4,6 @@ import { ApiCredentialStatus } from '../src/apiCredentials/base.js';
 import {
   serializeCredentials,
   deserializeCredentials,
-  ApiCredentialsSchema,
 } from '../src/apiCredentials/serialization.js';
 import { BUILTIN_SERVICE_REGISTRY } from './builtinServiceRegistry.js';
 import { resetAsyncSubprocessRunner, setAsyncSubprocessRunner } from '../src/curl.js';
@@ -61,8 +60,6 @@ describe('Tailscale credentials', () => {
   it('survives a serialization round-trip', () => {
     const credentials = new TailscaleCredentials('tskey-api-kRound11CNTRL-secret', 'example.com');
     const data = serializeCredentials(credentials);
-    // The discriminated union accepts the serialized form.
-    ApiCredentialsSchema.parse(data);
     const restored = deserializeCredentials(data);
     expect(restored).toBeInstanceOf(TailscaleCredentials);
     expect((restored as TailscaleCredentials).token).toBe('tskey-api-kRound11CNTRL-secret');

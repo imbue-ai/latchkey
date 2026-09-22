@@ -4,117 +4,98 @@
  * This module is separate from base.ts to avoid circular dependencies:
  * service files import base types from base.ts, and this module imports
  * from both base.ts and service files.
+ *
+ * Which credentials can be read back is decided by a list of
+ * {@link ApiCredentialsType}s. {@link BUILTIN_API_CREDENTIALS_TYPES} covers
+ * everything Latchkey ships with and is the default; the CLI passes the
+ * combined built-in and plugin list instead.
  */
 
 import { z } from 'zod';
 import {
   type ApiCredentials,
+  type ApiCredentialsType,
+  type SerializedApiCredentials,
   AuthorizationBare,
-  AuthorizationBareSchema,
   AuthorizationBearer,
-  AuthorizationBearerSchema,
   OAuthCredentials,
-  OAuthCredentialsSchema,
   RawCurlCredentials,
-  RawCurlCredentialsSchema,
 } from './base.js';
-import { AwsCredentials, AwsCredentialsSchema } from '../services/aws.js';
-import { GoogleApiKeyCredentials, GoogleApiKeyCredentialsSchema } from '../services/google/base.js';
-import { SlackApiCredentials, SlackApiCredentialsSchema } from '../services/slack.js';
-import { TelegramBotCredentials, TelegramBotCredentialsSchema } from '../services/telegram.js';
-import {
+import { AwsCredentials } from '../services/aws.js';
+import { GoogleApiKeyCredentials } from '../services/google/base.js';
+import { SlackApiCredentials } from '../services/slack.js';
+import { TelegramBotCredentials } from '../services/telegram.js';
+import { ZoomServerToServerCredentials } from '../services/zoom.js';
+import { TailscaleCredentials } from '../services/tailscale.js';
+
+export const BUILTIN_API_CREDENTIALS_TYPES: readonly ApiCredentialsType[] = [
+  AuthorizationBearer,
+  AuthorizationBare,
+  SlackApiCredentials,
+  OAuthCredentials,
+  RawCurlCredentials,
+  TelegramBotCredentials,
+  AwsCredentials,
+  GoogleApiKeyCredentials,
   ZoomServerToServerCredentials,
-  ZoomServerToServerCredentialsSchema,
-} from '../services/zoom.js';
-import { TailscaleCredentials, TailscaleCredentialsSchema } from '../services/tailscale.js';
+  TailscaleCredentials,
+];
 
-/**
- * Union schema for all credential types.
- */
-export const ApiCredentialsSchema = z.discriminatedUnion('objectType', [
-  AuthorizationBearerSchema,
-  AuthorizationBareSchema,
-  SlackApiCredentialsSchema,
-  OAuthCredentialsSchema,
-  RawCurlCredentialsSchema,
-  TelegramBotCredentialsSchema,
-  AwsCredentialsSchema,
-  GoogleApiKeyCredentialsSchema,
-  ZoomServerToServerCredentialsSchema,
-  TailscaleCredentialsSchema,
-]);
+const OBJECT_TYPE_SCHEMA = z.object({ objectType: z.string() });
 
-export type ApiCredentialsData = z.infer<typeof ApiCredentialsSchema>;
+function findApiCredentialsType(
+  objectType: string,
+  apiCredentialsTypes: readonly ApiCredentialsType[]
+): ApiCredentialsType | undefined {
+  return apiCredentialsTypes.find((type) => type.objectType === objectType);
+}
 
-/**
- * Deserialize credentials from JSON data.
- */
-export function deserializeCredentials(data: ApiCredentialsData): ApiCredentials {
-  switch (data.objectType) {
-    case 'authorizationBearer':
-      return AuthorizationBearer.fromJSON(data);
-    case 'authorizationBare':
-      return AuthorizationBare.fromJSON(data);
-    case 'slack':
-      return SlackApiCredentials.fromJSON(data);
-    case 'oauth':
-      return OAuthCredentials.fromJSON(data);
-    case 'rawCurl':
-      return RawCurlCredentials.fromJSON(data);
-    case 'telegramBot':
-      return TelegramBotCredentials.fromJSON(data);
-    case 'aws':
-      return AwsCredentials.fromJSON(data);
-    case 'googleApiKey':
-      return GoogleApiKeyCredentials.fromJSON(data);
-    case 'zoomServerToServer':
-      return ZoomServerToServerCredentials.fromJSON(data);
-    case 'tailscale':
-      return TailscaleCredentials.fromJSON(data);
-    default: {
-      const exhaustiveCheck: never = data;
-      throw new ApiCredentialsSerializationError(
-        `Unknown credential type: ${(exhaustiveCheck as { objectType: string }).objectType}`
-      );
-    }
+export function deserializeCredentials(
+  data: unknown,
+  apiCredentialsTypes: readonly ApiCredentialsType[] = BUILTIN_API_CREDENTIALS_TYPES
+): ApiCredentials {
+  const header = OBJECT_TYPE_SCHEMA.safeParse(data);
+  if (!header.success) {
+    throw new ApiCredentialsSerializationError('Credential data does not name an objectType.');
+  }
+  const objectType = header.data.objectType;
+  const type = findApiCredentialsType(objectType, apiCredentialsTypes);
+  if (type === undefined) {
+    throw new ApiCredentialsSerializationError(
+      `Unknown credential type '${objectType}'. Credentials of a type defined by a plugin ` +
+        'can only be used while that plugin is installed.'
+    );
+  }
+  try {
+    return type.fromJSON(data);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new ApiCredentialsSerializationError(
+      `Invalid '${objectType}' credential data: ${message}`
+    );
   }
 }
 
 /**
- * Serialize credentials to JSON data.
+ * Refuses credentials that could not be read back afterwards, so that the
+ * mistake surfaces when they are stored rather than when they are needed.
  */
-export function serializeCredentials(credentials: ApiCredentials): ApiCredentialsData {
-  if (credentials instanceof AuthorizationBearer) {
-    return credentials.toJSON();
+export function serializeCredentials(
+  credentials: ApiCredentials,
+  apiCredentialsTypes: readonly ApiCredentialsType[] = BUILTIN_API_CREDENTIALS_TYPES
+): SerializedApiCredentials {
+  if (credentials.toJSON === undefined) {
+    throw new ApiCredentialsSerializationError(
+      `Credentials of type '${credentials.objectType}' are never stored.`
+    );
   }
-  if (credentials instanceof AuthorizationBare) {
-    return credentials.toJSON();
+  if (findApiCredentialsType(credentials.objectType, apiCredentialsTypes) === undefined) {
+    throw new ApiCredentialsSerializationError(
+      `Unknown credential type '${credentials.objectType}'. A plugin defining its own ` +
+        "credentials class has to list its type in 'apiCredentialsTypes'."
+    );
   }
-  if (credentials instanceof SlackApiCredentials) {
-    return credentials.toJSON();
-  }
-  if (credentials instanceof OAuthCredentials) {
-    return credentials.toJSON();
-  }
-  if (credentials instanceof RawCurlCredentials) {
-    return credentials.toJSON();
-  }
-  if (credentials instanceof TelegramBotCredentials) {
-    return credentials.toJSON();
-  }
-  if (credentials instanceof AwsCredentials) {
-    return credentials.toJSON();
-  }
-  if (credentials instanceof GoogleApiKeyCredentials) {
-    return credentials.toJSON();
-  }
-  if (credentials instanceof ZoomServerToServerCredentials) {
-    return credentials.toJSON();
-  }
-  if (credentials instanceof TailscaleCredentials) {
-    return credentials.toJSON();
-  }
-  throw new ApiCredentialsSerializationError(`Unknown credential type: ${credentials.objectType}`);
+  return credentials.toJSON();
 }
 
 export class ApiCredentialsSerializationError extends Error {

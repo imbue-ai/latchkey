@@ -19,7 +19,8 @@ export const TelegramBotCredentialsSchema = z.object({
 export type TelegramBotCredentialsData = z.infer<typeof TelegramBotCredentialsSchema>;
 
 export class TelegramBotCredentials implements ApiCredentials {
-  readonly objectType = 'telegramBot' as const;
+  static readonly objectType = 'telegramBot' as const;
+  readonly objectType = TelegramBotCredentials.objectType;
   readonly token: string;
 
   constructor(token: string) {
@@ -49,8 +50,9 @@ export class TelegramBotCredentials implements ApiCredentials {
     };
   }
 
-  static fromJSON(data: TelegramBotCredentialsData): TelegramBotCredentials {
-    return new TelegramBotCredentials(data.token);
+  static fromJSON(data: unknown): TelegramBotCredentials {
+    const parsed = TelegramBotCredentialsSchema.parse(data);
+    return new TelegramBotCredentials(parsed.token);
   }
 }
 

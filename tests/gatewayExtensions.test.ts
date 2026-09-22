@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { BUILTIN_API_CREDENTIALS_TYPES } from '../src/apiCredentials/serialization.js';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -182,7 +183,8 @@ describe('startExtensions / stopExtensions', () => {
   function makeFakeDeps(errorLogs: string[]): CliDependencies {
     return {
       registry: new ServiceRegistry([]),
-      builtinServices: [],
+      baseServices: [],
+      apiCredentialsTypes: BUILTIN_API_CREDENTIALS_TYPES,
       config: new Config(() => undefined),
       runCurl: (): CurlResult => ({ returncode: 0, stdout: '', stderr: '' }),
       runCurlAsync: (): Promise<AsyncCurlResult> =>
@@ -353,7 +355,8 @@ describe('gateway extensions integration', () => {
     const config = createMockConfig();
     const deps: CliDependencies = {
       registry: new ServiceRegistry([]),
-      builtinServices: [],
+      baseServices: [],
+      apiCredentialsTypes: BUILTIN_API_CREDENTIALS_TYPES,
       config,
       runCurl: (): CurlResult => ({ returncode: 0, stdout: '', stderr: '' }),
       runCurlAsync: (): Promise<AsyncCurlResult> =>

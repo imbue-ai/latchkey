@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { BUILTIN_API_CREDENTIALS_TYPES } from '../src/apiCredentials/serialization.js';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -246,9 +247,10 @@ describe('gateway server', () => {
 
     // One source for both, so that overriding the services a test runs against
     // cannot leave the registry describing a different set.
-    const services: readonly Service[] = overrides.builtinServices ?? [mockSlackService];
+    const services: readonly Service[] = overrides.baseServices ?? [mockSlackService];
     const deps: CliDependencies = {
-      builtinServices: services,
+      baseServices: services,
+      apiCredentialsTypes: BUILTIN_API_CREDENTIALS_TYPES,
       registry: new ServiceRegistry(services),
       config: createMockConfig(configOverrides),
       runCurl: (): CurlResult => ({ returncode: 0, stdout: '', stderr: '' }),
@@ -422,7 +424,7 @@ describe('gateway server', () => {
             secretAccessKey: 'wJalrXUtnFEMI/K7MDENG',
           },
         },
-        { builtinServices: [AWS] }
+        { baseServices: [AWS] }
       );
       const requestBody = '{"logGroupName":"/aws/lambda/test","limit":1}';
 
@@ -658,6 +660,42 @@ describe('gateway server', () => {
 
       expect(response.status).toBe(200);
       expect(capturedCurlArgs).toContain('Authorization: Bearer test-token');
+    });
+
+    it('should report the matched service to curl when diagnostic headers are on', async () => {
+      gateway = await createTestGateway(
+        {
+          slack: {
+            objectType: 'rawCurl',
+            curlArguments: ['-H', 'Authorization: Bearer test-token'],
+          },
+        },
+        {},
+        {},
+        { diagnosticHeaders: true }
+      );
+
+      const response = await fetch('/gateway/https://slack.com/api/auth.test');
+
+      expect(response.status).toBe(200);
+      const matchedServiceHeaders = capturedCurlArgs.filter((argument) =>
+        argument.toLowerCase().startsWith('x-latchkey-matched-service')
+      );
+      expect(matchedServiceHeaders).toEqual(['X-Latchkey-Matched-Service: slack']);
+    });
+
+    it('should not report a matched service for a request that passes through', async () => {
+      gateway = await createTestGateway(
+        {},
+        {},
+        {},
+        { passthroughUnknown: true, diagnosticHeaders: true }
+      );
+
+      const response = await fetch('/gateway/https://unknown-api.example.com/test');
+
+      expect(response.status).toBe(200);
+      expect(capturedCurlArgs.join('\n').toLowerCase()).not.toContain('x-latchkey-matched-service');
     });
 
     it('should return 400 for invalid target URL scheme', async () => {
@@ -1294,7 +1332,8 @@ describe('gateway CLI command registration', () => {
 
     const mockDeps: CliDependencies = {
       registry: new ServiceRegistry([]),
-      builtinServices: [],
+      baseServices: [],
+      apiCredentialsTypes: BUILTIN_API_CREDENTIALS_TYPES,
       config: new Config(() => undefined),
       runCurl: (): CurlResult => ({ returncode: 0, stdout: '', stderr: '' }),
       runCurlAsync: () => Promise.resolve({ returncode: 0, stdout: Buffer.from(''), stderr: '' }),

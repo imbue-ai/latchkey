@@ -1,13 +1,17 @@
 import { describe, it, expect } from 'vitest';
+import { z } from 'zod';
 import {
+  type ApiCredentials,
   AuthorizationBearer,
   AuthorizationBare,
+  OAuthCredentials,
   RawCurlCredentials,
 } from '../src/apiCredentials/base.js';
 import {
+  ApiCredentialsSerializationError,
+  BUILTIN_API_CREDENTIALS_TYPES,
   deserializeCredentials,
   serializeCredentials,
-  ApiCredentialsSchema,
 } from '../src/apiCredentials/serialization.js';
 import { SlackApiCredentials } from '../src/services/slack.js';
 import { TelegramBotCredentials } from '../src/services/telegram.js';
@@ -325,6 +329,19 @@ describe('serialization roundtrip', () => {
       credentials: () => new GoogleApiKeyCredentials('AIzaSyTestKey123'),
     },
     {
+      name: 'OAuthCredentials with a prepared redirect URI',
+      credentials: () =>
+        new OAuthCredentials(
+          'client-id',
+          'client-secret',
+          'access-token',
+          'refresh-token',
+          new Date(Date.now() + 3600_000).toISOString(),
+          undefined,
+          'https://example.com/oauth-callback/'
+        ),
+    },
+    {
       name: 'ZoomServerToServerCredentials',
       credentials: () =>
         new ZoomServerToServerCredentials(
@@ -345,19 +362,117 @@ describe('serialization roundtrip', () => {
       expect(deserialized).toBeInstanceOf(original.constructor);
       expect(serializeCredentials(deserialized)).toEqual(serialized);
     });
-
-    it(`should validate ${name} with ApiCredentialsSchema`, () => {
-      const original = createCredentials();
-      const serialized = serializeCredentials(original);
-      expect(ApiCredentialsSchema.safeParse(serialized).success).toBe(true);
-    });
   }
 
-  it('should reject invalid object type', () => {
-    const result = ApiCredentialsSchema.safeParse({
-      objectType: 'invalid',
-      token: 'test',
+  it('should keep a prepared redirect URI through serialize/deserialize', () => {
+    const original = new OAuthCredentials(
+      'client-id',
+      '',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      'https://example.com/oauth-callback/'
+    );
+
+    const deserialized = deserializeCredentials(serializeCredentials(original));
+
+    expect((deserialized as OAuthCredentials).redirectUri).toBe(
+      'https://example.com/oauth-callback/'
+    );
+  });
+
+  it('should leave the redirect URI unset for credentials stored without one', () => {
+    const deserialized = deserializeCredentials(
+      serializeCredentials(new OAuthCredentials('client-id', 'client-secret'))
+    );
+
+    expect((deserialized as OAuthCredentials).redirectUri).toBeUndefined();
+  });
+
+  it('should reject data of an unknown object type', () => {
+    expect(() => deserializeCredentials({ objectType: 'invalid', token: 'test' })).toThrow(
+      new ApiCredentialsSerializationError(
+        "Unknown credential type 'invalid'. Credentials of a type defined by a plugin " +
+          'can only be used while that plugin is installed.'
+      )
+    );
+  });
+
+  it('should reject data without an object type', () => {
+    expect(() => deserializeCredentials({ token: 'test' })).toThrow(
+      ApiCredentialsSerializationError
+    );
+  });
+
+  it('should reject data that does not match the schema of its object type', () => {
+    expect(() => deserializeCredentials({ objectType: 'authorizationBearer' })).toThrow(
+      /Invalid 'authorizationBearer' credential data/
+    );
+  });
+
+  it('should refuse to serialize credentials that are never stored', () => {
+    const transient: ApiCredentials = {
+      objectType: 'transient',
+      injectIntoCurlCall: (curlArguments) => Promise.resolve(curlArguments),
+      isExpired: () => undefined,
+    };
+    expect(() => serializeCredentials(transient)).toThrow(
+      "Credentials of type 'transient' are never stored."
+    );
+  });
+
+  describe('with a custom credentials type', () => {
+    const CustomCredentialsSchema = z.object({
+      objectType: z.literal('custom'),
+      secret: z.string(),
     });
-    expect(result.success).toBe(false);
+
+    class CustomCredentials implements ApiCredentials {
+      static readonly objectType = 'custom' as const;
+      readonly objectType = CustomCredentials.objectType;
+
+      constructor(readonly secret: string) {}
+
+      static fromJSON(data: unknown): CustomCredentials {
+        return new CustomCredentials(CustomCredentialsSchema.parse(data).secret);
+      }
+
+      injectIntoCurlCall(curlArguments: readonly string[]): Promise<readonly string[]> {
+        return Promise.resolve(['-H', `X-Secret: ${this.secret}`, ...curlArguments]);
+      }
+
+      isExpired(): undefined {
+        return undefined;
+      }
+
+      toJSON(): z.infer<typeof CustomCredentialsSchema> {
+        return { objectType: this.objectType, secret: this.secret };
+      }
+    }
+
+    const apiCredentialsTypes = [...BUILTIN_API_CREDENTIALS_TYPES, CustomCredentials];
+
+    it('round-trips through serialize and deserialize when the type is known', () => {
+      const serialized = serializeCredentials(new CustomCredentials('s3cret'), apiCredentialsTypes);
+      const restored = deserializeCredentials(serialized, apiCredentialsTypes);
+      expect(restored).toBeInstanceOf(CustomCredentials);
+      expect((restored as CustomCredentials).secret).toBe('s3cret');
+    });
+
+    it('refuses to serialize credentials whose type is not registered', () => {
+      expect(() => serializeCredentials(new CustomCredentials('s3cret'))).toThrow(
+        "Unknown credential type 'custom'. A plugin defining its own credentials class " +
+          "has to list its type in 'apiCredentialsTypes'."
+      );
+    });
+
+    it('still reads the built-in types', () => {
+      const restored = deserializeCredentials(
+        serializeCredentials(new AuthorizationBearer('t')),
+        apiCredentialsTypes
+      );
+      expect(restored).toBeInstanceOf(AuthorizationBearer);
+    });
   });
 });

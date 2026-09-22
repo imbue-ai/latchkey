@@ -5,7 +5,7 @@
  * This is separate from the existing Notion service which uses internal integration tokens.
  */
 
-import { z } from 'zod';
+import { randomUUID } from 'node:crypto';
 import type { Browser, BrowserContext, Response } from 'playwright';
 import { type ApiCredentials, OAuthCredentials } from '../apiCredentials/base.js';
 import {
@@ -15,9 +15,11 @@ import {
 } from '../apiCredentials/account.js';
 import { runCapturedAsync } from '../curl.js';
 import {
+  buildLoopbackRedirectUri,
   exchangeCodeForTokens,
   generateCodeChallenge,
   generateCodeVerifier,
+  readRedirectUriOverride,
   refreshAccessToken,
   startOAuthCallbackServer,
 } from '../oauthUtils.js';
@@ -27,29 +29,34 @@ import {
   type LoginResult,
   LoginFailedError,
   LoginCancelledError,
+  DynamicClientPrepareInputSchema,
+  buildDynamicClientPreparation,
   buildPreparedCredentials,
   isBrowserClosedError,
 } from './core/base.js';
-
-/**
- * JSON accepted by `latchkey auth prepare notion-mcp`: the OAuth client id to
- * reuse instead of registering a new client dynamically at mcp.notion.com.
- * Notion MCP is a public client, so no secret is needed. `.strict()` rejects
- * unknown keys so typos are reported instead of silently ignored.
- */
-export const NotionMcpPrepareInputSchema = z
-  .object({
-    clientId: z.string().min(1),
-  })
-  .strict();
-
-export type NotionMcpPrepareInput = z.infer<typeof NotionMcpPrepareInputSchema>;
 
 const MCP_ENDPOINT = 'https://mcp.notion.com/mcp';
 const TOKEN_ENDPOINT = 'https://mcp.notion.com/token';
 const REGISTRATION_ENDPOINT = 'https://mcp.notion.com/register';
 const AUTHORIZATION_ENDPOINT = 'https://mcp.notion.com/authorize';
 const LOGIN_TIMEOUT_MS = 120000;
+
+/**
+ * The `state` for an authorization request, carrying the loopback port login
+ * is waiting on in its last dot-separated segment.
+ *
+ * A prepared redirect URI (see `OAuthCredentials.redirectUri`) points Notion
+ * at a page latchkey does not control, and that page has to forward the result
+ * to a loopback port it cannot know in advance — `startOAuthCallbackServer`
+ * picks a free one per login. Notion echoes `state` back unchanged, so it is
+ * the one channel available for telling the page where to forward to. The
+ * random prefix keeps the value unguessable, which is what `state` is for
+ * (RFC 6749 §10.12); it is sent for loopback logins too, so that both paths
+ * look alike.
+ */
+export function buildAuthorizationState(loopbackPort: number): string {
+  return `${randomUUID()}.${loopbackPort.toString()}`;
+}
 
 interface RegistrationResponse {
   client_id: string;
@@ -246,7 +253,12 @@ class NotionMcpSession extends ServiceSession {
           LOGIN_TIMEOUT_MS,
           abortController.signal
         );
-        const redirectUri = `http://localhost:${port.toString()}/oauth2callback`;
+        // A prepared redirect URI wins over the loopback one; the page it
+        // serves forwards the authorization result to the loopback callback,
+        // whose port it reads out of the state below.
+        const redirectUriOverride = readRedirectUriOverride(oldCredentials);
+        const redirectUri = redirectUriOverride ?? buildLoopbackRedirectUri(port);
+        const state = buildAuthorizationState(port);
 
         // 2. Register client or reuse existing client_id
         let clientId: string;
@@ -268,6 +280,7 @@ class NotionMcpSession extends ServiceSession {
         authUrl.searchParams.set('response_type', 'code');
         authUrl.searchParams.set('code_challenge', codeChallenge);
         authUrl.searchParams.set('code_challenge_method', 'S256');
+        authUrl.searchParams.set('state', state);
 
         await page.goto(authUrl.toString());
 
@@ -299,7 +312,11 @@ class NotionMcpSession extends ServiceSession {
           '', // public client
           tokens.access_token,
           tokens.refresh_token,
-          accessTokenExpiresAt
+          accessTokenExpiresAt,
+          undefined,
+          // Carried over so that a re-login reuses the prepared redirect URI
+          // alongside the prepared client id.
+          redirectUriOverride
         );
 
         return {
@@ -355,16 +372,17 @@ export class NotionMcp extends Service {
   }
 
   /**
-   * Notion MCP accepts an OAuth client id prepared in advance via
-   * `latchkey auth prepare`, stored as token-less OAuth credentials until login.
-   * The login flow reuses this client id instead of registering a new client.
+   * Notion MCP accepts an OAuth client id to reuse instead of registering a
+   * new client at mcp.notion.com, and/or the redirect URI to use — prepared in
+   * advance via `latchkey auth prepare` and stored as token-less OAuth
+   * credentials until login (see `DynamicClientPrepareInputSchema`).
    */
   override prepareFromJson(parsedJson: unknown): ApiCredentials {
     return buildPreparedCredentials(
       this.name,
-      NotionMcpPrepareInputSchema,
+      DynamicClientPrepareInputSchema,
       parsedJson,
-      ({ clientId }) => new OAuthCredentials(clientId, '')
+      buildDynamicClientPreparation
     );
   }
 
@@ -413,7 +431,8 @@ export class NotionMcp extends Service {
       tokens.access_token,
       tokens.refresh_token ?? apiCredentials.refreshToken,
       accessTokenExpiresAt,
-      apiCredentials.refreshTokenExpiresAt
+      apiCredentials.refreshTokenExpiresAt,
+      apiCredentials.redirectUri
     );
   }
 }

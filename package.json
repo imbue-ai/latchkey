@@ -1,6 +1,6 @@
 {
   "name": "latchkey",
-  "version": "3.14.0",
+  "version": "3.15.0",
   "description": "A CLI tool that injects API credentials into curl requests to third-party services",
   "author": "Imbue <hynek@imbue.com>",
   "repository": {
@@ -14,6 +14,18 @@
   "type": "module",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    },
+    "./plugin": {
+      "types": "./dist/src/pluginSdk.d.ts",
+      "default": "./dist/src/pluginSdk.js"
+    },
+    "./package.json": "./package.json",
+    "./dist/*": "./dist/*"
+  },
   "bin": {
     "latchkey": "./dist/src/cli.js"
   },
@@ -64,11 +76,13 @@
     "@napi-rs/keyring": "^1.2.0",
     "commander": "^12.0.0",
     "playwright": "~1.63.0",
+    "semver": "^7.8.5",
     "zod": "^3.22.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^20.0.0",
+    "@types/semver": "^7.8.0",
     "eslint": "^10.8.0",
     "prettier": "^3.8.1",
     "tsx": "^4.23.12",

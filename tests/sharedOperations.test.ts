@@ -14,6 +14,7 @@ import {
 import { MockService } from './mockService.js';
 import { GOOGLE_GMAIL } from '../src/services/google/gmail.js';
 import { NOTION_MCP } from '../src/services/notion-mcp.js';
+import { FASTMAIL } from '../src/services/fastmail.js';
 import { RegisteredService } from '../src/services/core/registered.js';
 import { ServiceRegistry } from '../src/serviceRegistry.js';
 import { saveBrowserConfig } from '../src/configDataStore.js';
@@ -1056,14 +1057,127 @@ describe('operations', () => {
       expect(store.getPreparation('notion-mcp')).toBeNull();
     });
 
-    it('rejects notion-mcp input missing clientId', () => {
+    it('stores a prepared redirect URI alongside the client for a Google service', () => {
+      const registry = new ServiceRegistry([GOOGLE_GMAIL]);
+      const store = createApiCredentialStore();
+
+      prepareService(
+        registry,
+        store,
+        'google-gmail',
+        JSON.stringify({
+          clientId: 'cid',
+          clientSecret: 'csecret',
+          redirectUri: 'https://example.com/oauth-callback/',
+        })
+      );
+
+      expect((store.getPreparation('google-gmail') as OAuthCredentials).redirectUri).toBe(
+        'https://example.com/oauth-callback/'
+      );
+    });
+
+    it('stores a prepared redirect URI for notion-mcp', () => {
+      const registry = new ServiceRegistry([NOTION_MCP]);
+      const store = createApiCredentialStore();
+
+      prepareService(
+        registry,
+        store,
+        'notion-mcp',
+        JSON.stringify({
+          clientId: 'notion-client-id',
+          redirectUri: 'https://example.com/oauth-callback/',
+        })
+      );
+
+      expect((store.getPreparation('notion-mcp') as OAuthCredentials).redirectUri).toBe(
+        'https://example.com/oauth-callback/'
+      );
+    });
+
+    it('leaves the redirect URI unset when the preparation omits it', () => {
+      const registry = new ServiceRegistry([NOTION_MCP]);
+      const store = createApiCredentialStore();
+
+      prepareService(registry, store, 'notion-mcp', JSON.stringify({ clientId: 'notion-client' }));
+
+      expect((store.getPreparation('notion-mcp') as OAuthCredentials).redirectUri).toBeUndefined();
+    });
+
+    it('rejects a redirect URI that is not a URL, storing nothing', () => {
+      const registry = new ServiceRegistry([NOTION_MCP]);
+      const store = createApiCredentialStore();
+
+      expect(() =>
+        prepareService(
+          registry,
+          store,
+          'notion-mcp',
+          JSON.stringify({ clientId: 'notion-client', redirectUri: 'example.com/callback' })
+        )
+      ).toThrow(PrepareInputInvalidError);
+      expect(store.getPreparation('notion-mcp')).toBeNull();
+    });
+
+    it('rejects a redirect URI that is not http(s)', () => {
+      const registry = new ServiceRegistry([NOTION_MCP]);
+      const store = createApiCredentialStore();
+
+      expect(() =>
+        prepareService(
+          registry,
+          store,
+          'notion-mcp',
+          JSON.stringify({ clientId: 'notion-client', redirectUri: 'mailto:someone@example.com' })
+        )
+      ).toThrow(PrepareInputInvalidError);
+      expect(store.getPreparation('notion-mcp')).toBeNull();
+    });
+
+    it('rejects notion-mcp input with neither clientId nor redirectUri', () => {
       const registry = new ServiceRegistry([NOTION_MCP]);
       const store = createApiCredentialStore();
 
       expect(() => prepareService(registry, store, 'notion-mcp', '{}')).toThrow(
-        PrepareInputInvalidError
+        /at least one of clientId or redirectUri/
       );
       expect(store.getPreparation('notion-mcp')).toBeNull();
+    });
+
+    it('rejects an empty notion-mcp clientId', () => {
+      const registry = new ServiceRegistry([NOTION_MCP]);
+      const store = createApiCredentialStore();
+
+      expect(() =>
+        prepareService(registry, store, 'notion-mcp', JSON.stringify({ clientId: '' }))
+      ).toThrow(PrepareInputInvalidError);
+      expect(store.getPreparation('notion-mcp')).toBeNull();
+    });
+
+    // Given only a redirect URI, login still registers a client dynamically —
+    // an empty client id is how the preparation says so — but with that
+    // redirect URI instead of the loopback one.
+    it.each([
+      ['notion-mcp', NOTION_MCP],
+      ['fastmail', FASTMAIL],
+    ])('stores a redirect URI without a client id for %s', (serviceName, service) => {
+      const registry = new ServiceRegistry([service]);
+      const store = createApiCredentialStore();
+
+      prepareService(
+        registry,
+        store,
+        serviceName,
+        JSON.stringify({ redirectUri: 'https://example.com/oauth-callback/' })
+      );
+
+      const preparation = store.getPreparation(serviceName) as OAuthCredentials;
+      expect(preparation).toBeInstanceOf(OAuthCredentials);
+      expect(preparation.clientId).toBe('');
+      expect(preparation.clientSecret).toBe('');
+      expect(preparation.redirectUri).toBe('https://example.com/oauth-callback/');
+      expect(preparation.accessToken).toBeUndefined();
     });
   });
 });

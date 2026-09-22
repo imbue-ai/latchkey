@@ -4,6 +4,7 @@
 
 import * as crypto from 'node:crypto';
 import * as http from 'node:http';
+import { type ApiCredentials, OAuthCredentials } from './apiCredentials/base.js';
 import { runCapturedAsync } from './curl.js';
 import { LoginCancelledError, LoginFailedError } from './services/core/base.js';
 
@@ -32,6 +33,32 @@ export class OAuthCallbackServerTimeoutError extends Error {
   }
 }
 
+/**
+ * The path the loopback callback server listens on by default.
+ */
+export const DEFAULT_OAUTH_CALLBACK_PATH = '/oauth2callback';
+
+/**
+ * The loopback redirect URI for a login that receives the authorization code
+ * itself, on the port {@link startOAuthCallbackServer} picked.
+ */
+export function buildLoopbackRedirectUri(
+  port: number,
+  callbackPath: string = DEFAULT_OAUTH_CALLBACK_PATH
+): string {
+  return `http://localhost:${port.toString()}${callbackPath}`;
+}
+
+/**
+ * The pre-registered redirect URI to use instead of a loopback one, as stored
+ * by `latchkey auth prepare`; undefined when there is none and login should
+ * receive the authorization code directly. See
+ * {@link OAuthCredentials.redirectUri}.
+ */
+export function readRedirectUriOverride(credentials?: ApiCredentials): string | undefined {
+  return credentials instanceof OAuthCredentials ? credentials.redirectUri : undefined;
+}
+
 export interface OAuthCallbackServer {
   /** The port the server is listening on */
   port: number;
@@ -50,7 +77,7 @@ export interface OAuthCallbackServer {
 export function startOAuthCallbackServer(
   timeoutMs: number,
   signal?: AbortSignal,
-  callbackPath = '/oauth2callback'
+  callbackPath: string = DEFAULT_OAUTH_CALLBACK_PATH
 ): Promise<OAuthCallbackServer> {
   const server = http.createServer();
 

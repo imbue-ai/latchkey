@@ -20,9 +20,10 @@
  */
 
 import { DEFAULT_ACCOUNT, formatAccount } from './account.js';
-import type { ApiCredentials } from './base.js';
+import type { ApiCredentials, ApiCredentialsType } from './base.js';
 import {
-  ApiCredentialsSchema,
+  ApiCredentialsSerializationError,
+  BUILTIN_API_CREDENTIALS_TYPES,
   deserializeCredentials,
   serializeCredentials,
 } from './serialization.js';
@@ -65,10 +66,20 @@ interface StoreData {
 export class ApiCredentialStore {
   readonly path: string;
   private readonly encryptedStorage: EncryptedStorage;
+  private readonly apiCredentialsTypes: readonly ApiCredentialsType[];
 
-  constructor(path: string, encryptedStorage: EncryptedStorage) {
+  /**
+   * `apiCredentialsTypes` is every credentials type the store can hold. The
+   * CLI passes the built-in ones plus those its plugins define.
+   */
+  constructor(
+    path: string,
+    encryptedStorage: EncryptedStorage,
+    apiCredentialsTypes: readonly ApiCredentialsType[] = BUILTIN_API_CREDENTIALS_TYPES
+  ) {
     this.path = path;
     this.encryptedStorage = encryptedStorage;
+    this.apiCredentialsTypes = apiCredentialsTypes;
   }
 
   private loadStoreData(): StoreData {
@@ -100,13 +111,16 @@ export class ApiCredentialStore {
   }
 
   private parseCredentials(serviceName: string, credentialData: unknown): ApiCredentials {
-    const parseResult = ApiCredentialsSchema.safeParse(credentialData);
-    if (!parseResult.success) {
-      throw new ApiCredentialStoreError(
-        `Invalid credential data for service ${serviceName}: ${parseResult.error.message}`
-      );
+    try {
+      return deserializeCredentials(credentialData, this.apiCredentialsTypes);
+    } catch (error) {
+      if (error instanceof ApiCredentialsSerializationError) {
+        throw new ApiCredentialStoreError(
+          `Invalid credential data for service ${serviceName}: ${error.message}`
+        );
+      }
+      throw error;
     }
-    return deserializeCredentials(parseResult.data);
   }
 
   /**
@@ -150,7 +164,7 @@ export class ApiCredentialStore {
       account ?? this.resolveImplicitAccount(serviceName, accounts) ?? DEFAULT_ACCOUNT;
     data.credentials[serviceName] = {
       ...serviceData,
-      [resolvedAccount]: serializeCredentials(apiCredentials),
+      [resolvedAccount]: serializeCredentials(apiCredentials, this.apiCredentialsTypes),
     };
     this.saveStoreData(data);
   }
@@ -174,7 +188,7 @@ export class ApiCredentialStore {
    */
   savePreparation(serviceName: string, apiCredentials: ApiCredentials): void {
     const data = this.loadStoreData();
-    data.preparations[serviceName] = serializeCredentials(apiCredentials);
+    data.preparations[serviceName] = serializeCredentials(apiCredentials, this.apiCredentialsTypes);
     this.saveStoreData(data);
   }
 
