@@ -30,11 +30,14 @@ import {
 } from './apiCredentials/account.js';
 import { runCapturedAsync } from './curl.js';
 import {
+  DEFAULT_OAUTH_CALLBACK_PATH,
   OAuthCallbackServerTimeoutError,
   OAuthTokenExchangeError,
+  buildLoopbackRedirectUri,
   exchangeCodeForTokens,
   generateCodeChallenge,
   generateCodeVerifier,
+  readRedirectUriOverride,
   refreshAccessToken,
   startOAuthCallbackServer,
 } from './oauthUtils.js';
@@ -55,15 +58,18 @@ import {
 import { BUILTIN_SERVICES } from './serviceRegistry.js';
 import {
   BrowserFollowupServiceSession,
+  DynamicClientPrepareInputSchema,
   FollowupWork,
   LoginCancelledError,
   LoginFailedError,
   NoCurlCredentialsNotSupportedError,
   PrepareInputInvalidError,
   PrepareNotSupportedError,
+  RedirectUriOverrideSchema,
   Service,
   ServiceSession,
   SimpleServiceSession,
+  buildDynamicClientPreparation,
   buildFollowupSpinnerDetails,
   buildPreparedCredentials,
   describeSchemaIssues,
@@ -92,6 +98,7 @@ export function createLatchkeySdk(latchkeyVersion: string) {
     GoogleService,
     CookieCaptureLoginFlow,
     TokenCaptureLoginFlow,
+    buildDynamicClientPreparation,
     buildFollowupSpinnerDetails,
     buildPreparedCredentials,
     describeSchemaIssues,
@@ -103,6 +110,8 @@ export function createLatchkeySdk(latchkeyVersion: string) {
     NoCurlCredentialsNotSupportedError,
     PrepareNotSupportedError,
     PrepareInputInvalidError,
+    RedirectUriOverrideSchema,
+    DynamicClientPrepareInputSchema,
 
     // Credentials
     ApiCredentialStatus,
@@ -132,6 +141,9 @@ export function createLatchkeySdk(latchkeyVersion: string) {
 
     // OAuth
     startOAuthCallbackServer,
+    DEFAULT_OAUTH_CALLBACK_PATH,
+    buildLoopbackRedirectUri,
+    readRedirectUriOverride,
     exchangeCodeForTokens,
     refreshAccessToken,
     generateCodeVerifier,

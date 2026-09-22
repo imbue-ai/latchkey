@@ -1,13 +1,16 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   startOAuthCallbackServer,
+  buildLoopbackRedirectUri,
   generateCodeVerifier,
   generateCodeChallenge,
   exchangeCodeForTokens,
+  readRedirectUriOverride,
   refreshAccessToken,
   OAuthTokenExchangeError,
   OAuthCallbackServerTimeoutError,
 } from '../src/oauthUtils.js';
+import { AuthorizationBearer, OAuthCredentials } from '../src/apiCredentials/base.js';
 import * as curl from '../src/curl.js';
 
 afterEach(() => {
@@ -20,6 +23,43 @@ void OAuthCallbackServerTimeoutError;
 
 describe('startOAuthCallbackServer', () => {
   it.todo('add tests');
+});
+
+describe('buildLoopbackRedirectUri', () => {
+  it('points at the callback path the server listens on by default', () => {
+    expect(buildLoopbackRedirectUri(54321)).toBe('http://localhost:54321/oauth2callback');
+  });
+
+  it('accepts a service-specific callback path', () => {
+    expect(buildLoopbackRedirectUri(54321, '/ramp-callback')).toBe(
+      'http://localhost:54321/ramp-callback'
+    );
+  });
+});
+
+describe('readRedirectUriOverride', () => {
+  it('reports the redirect URI of prepared OAuth credentials', () => {
+    const prepared = new OAuthCredentials(
+      'client-id',
+      '',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      'https://example.com/oauth-callback/'
+    );
+
+    expect(readRedirectUriOverride(prepared)).toBe('https://example.com/oauth-callback/');
+  });
+
+  it('reports nothing for OAuth credentials without one', () => {
+    expect(readRedirectUriOverride(new OAuthCredentials('client-id', 'secret'))).toBeUndefined();
+  });
+
+  it('reports nothing for credentials of another type, or for none at all', () => {
+    expect(readRedirectUriOverride(new AuthorizationBearer('token'))).toBeUndefined();
+    expect(readRedirectUriOverride()).toBeUndefined();
+  });
 });
 
 describe('generateCodeVerifier', () => {

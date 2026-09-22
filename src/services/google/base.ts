@@ -20,6 +20,7 @@ import {
   type BrowserLaunchOptions,
 } from '../../playwrightUtils.js';
 import {
+  buildLoopbackRedirectUri,
   exchangeCodeForTokens,
   generateCodeChallenge,
   generateCodeVerifier,
@@ -31,6 +32,7 @@ import {
   BrowserFollowupServiceSession,
   buildFollowupSpinnerDetails,
   FollowupWork,
+  RedirectUriOverrideSchema,
   buildPreparedCredentials,
   LoginFailedError,
   LoginCancelledError,
@@ -709,9 +711,13 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
 
     const clientId = oldCredentials.clientId;
     const clientSecret = oldCredentials.clientSecret;
+    // Only a client prepared by hand can carry a redirect URI: the client this
+    // service creates itself is a desktop client, which Google restricts to
+    // loopback redirect URIs anyway.
+    const redirectUriOverride = oldCredentials.redirectUri;
 
     const { accessToken, refreshToken, accessTokenExpiresAt, refreshTokenExpiresAt } =
-      await this.performOAuthFlow(context, page, clientId, clientSecret);
+      await this.performOAuthFlow(context, page, clientId, clientSecret, redirectUriOverride);
 
     await page.close();
 
@@ -721,7 +727,8 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
       accessToken,
       refreshToken,
       accessTokenExpiresAt,
-      refreshTokenExpiresAt
+      refreshTokenExpiresAt,
+      redirectUriOverride
     );
   }
 
@@ -821,14 +828,15 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
       this.appNamePrefix
     );
     await page.close();
-    return new OAuthCredentials(clientId, clientSecret);
+    return OAuthCredentials.prepared(clientId, clientSecret);
   }
 
   private async performOAuthFlow(
     context: BrowserContext,
     page: Page,
     clientId: string,
-    clientSecret: string
+    clientSecret: string,
+    redirectUriOverride?: string
   ): Promise<{
     accessToken: string;
     refreshToken: string;
@@ -849,7 +857,9 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
         LOGIN_TIMEOUT_MS,
         abortController.signal
       );
-      const redirectUri = `http://localhost:${port.toString()}/oauth2callback`;
+      // A prepared redirect URI wins over the loopback one; the page it serves
+      // has to forward the authorization result to the loopback callback.
+      const redirectUri = redirectUriOverride ?? buildLoopbackRedirectUri(port);
 
       // PKCE (RFC 7636): bind the authorization code to a one-time verifier so a
       // stolen code cannot be redeemed without it. We keep sending the client
@@ -906,6 +916,7 @@ export const GooglePrepareInputSchema = z
   .object({
     clientId: z.string().min(1),
     clientSecret: z.string().min(1),
+    redirectUri: RedirectUriOverrideSchema.optional(),
   })
   .strict();
 
@@ -948,15 +959,17 @@ export abstract class GoogleService extends Service {
   protected abstract readonly config: GoogleServiceConfig;
 
   /**
-   * Google services accept an OAuth client's id/secret prepared
-   * in advance via `latchkey auth prepare`, stored as token-less OAuth credentials until login.
+   * Google services accept an OAuth client's id/secret — and optionally the
+   * redirect URI that client is registered with — prepared in advance via
+   * `latchkey auth prepare`, stored as token-less OAuth credentials until login.
    */
   override prepareFromJson(parsedJson: unknown): ApiCredentials {
     return buildPreparedCredentials(
       this.name,
       GooglePrepareInputSchema,
       parsedJson,
-      ({ clientId, clientSecret }) => new OAuthCredentials(clientId, clientSecret)
+      ({ clientId, clientSecret, redirectUri }) =>
+        OAuthCredentials.prepared(clientId, clientSecret, redirectUri)
     );
   }
 
@@ -998,7 +1011,8 @@ export abstract class GoogleService extends Service {
       tokens.access_token,
       tokens.refresh_token ?? apiCredentials.refreshToken,
       accessTokenExpiresAt,
-      apiCredentials.refreshTokenExpiresAt
+      apiCredentials.refreshTokenExpiresAt,
+      apiCredentials.redirectUri
     );
   }
 }
