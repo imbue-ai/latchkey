@@ -4,6 +4,7 @@ import {
   type ApiCredentials,
   AuthorizationBearer,
   AuthorizationBare,
+  OAuthCredentials,
   RawCurlCredentials,
 } from '../src/apiCredentials/base.js';
 import {
@@ -328,6 +329,19 @@ describe('serialization roundtrip', () => {
       credentials: () => new GoogleApiKeyCredentials('AIzaSyTestKey123'),
     },
     {
+      name: 'OAuthCredentials with a prepared redirect URI',
+      credentials: () =>
+        new OAuthCredentials(
+          'client-id',
+          'client-secret',
+          'access-token',
+          'refresh-token',
+          new Date(Date.now() + 3600_000).toISOString(),
+          undefined,
+          'https://example.com/oauth-callback/'
+        ),
+    },
+    {
       name: 'ZoomServerToServerCredentials',
       credentials: () =>
         new ZoomServerToServerCredentials(
@@ -349,6 +363,32 @@ describe('serialization roundtrip', () => {
       expect(serializeCredentials(deserialized)).toEqual(serialized);
     });
   }
+
+  it('should keep a prepared redirect URI through serialize/deserialize', () => {
+    const original = new OAuthCredentials(
+      'client-id',
+      '',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      'https://example.com/oauth-callback/'
+    );
+
+    const deserialized = deserializeCredentials(serializeCredentials(original));
+
+    expect((deserialized as OAuthCredentials).redirectUri).toBe(
+      'https://example.com/oauth-callback/'
+    );
+  });
+
+  it('should leave the redirect URI unset for credentials stored without one', () => {
+    const deserialized = deserializeCredentials(
+      serializeCredentials(new OAuthCredentials('client-id', 'client-secret'))
+    );
+
+    expect((deserialized as OAuthCredentials).redirectUri).toBeUndefined();
+  });
 
   it('should reject data of an unknown object type', () => {
     expect(() => deserializeCredentials({ objectType: 'invalid', token: 'test' })).toThrow(

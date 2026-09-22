@@ -20,9 +20,11 @@ import {
 } from '../apiCredentials/account.js';
 import { runCapturedAsync } from '../curl.js';
 import {
+  buildLoopbackRedirectUri,
   exchangeCodeForTokens,
   generateCodeChallenge,
   generateCodeVerifier,
+  readRedirectUriOverride,
   refreshAccessToken,
   startOAuthCallbackServer,
 } from '../oauthUtils.js';
@@ -32,6 +34,7 @@ import {
   type LoginResult,
   LoginFailedError,
   LoginCancelledError,
+  RedirectUriOverrideSchema,
   buildPreparedCredentials,
   isBrowserClosedError,
 } from './core/base.js';
@@ -45,6 +48,7 @@ import {
 export const FastmailPrepareInputSchema = z
   .object({
     clientId: z.string().min(1),
+    redirectUri: RedirectUriOverrideSchema.optional(),
   })
   .strict();
 
@@ -232,7 +236,11 @@ class FastmailSession extends ServiceSession {
           LOGIN_TIMEOUT_MS,
           abortController.signal
         );
-        const redirectUri = `http://localhost:${port.toString()}/oauth2callback`;
+        // A prepared redirect URI wins over the loopback one; the page it
+        // serves has to forward the authorization result to the loopback
+        // callback.
+        const redirectUriOverride = readRedirectUriOverride(oldCredentials);
+        const redirectUri = redirectUriOverride ?? buildLoopbackRedirectUri(port);
 
         // 2. Register client or reuse existing client_id.
         //
@@ -288,7 +296,11 @@ class FastmailSession extends ServiceSession {
           '', // public client
           tokens.access_token,
           tokens.refresh_token,
-          accessTokenExpiresAt
+          accessTokenExpiresAt,
+          undefined,
+          // Carried over so that a re-login reuses the prepared redirect URI
+          // alongside the prepared client id.
+          redirectUriOverride
         );
 
         return {
@@ -358,7 +370,8 @@ export class Fastmail extends Service {
   }
 
   /**
-   * Fastmail accepts an OAuth client id prepared in advance via
+   * Fastmail accepts an OAuth client id — and optionally the redirect URI that
+   * client is registered with — prepared in advance via
    * `latchkey auth prepare`, stored as token-less OAuth credentials until
    * login. The login flow reuses this client id instead of registering a new
    * client dynamically.
@@ -368,7 +381,7 @@ export class Fastmail extends Service {
       this.name,
       FastmailPrepareInputSchema,
       parsedJson,
-      ({ clientId }) => new OAuthCredentials(clientId, '')
+      ({ clientId, redirectUri }) => OAuthCredentials.prepared(clientId, '', redirectUri)
     );
   }
 
@@ -415,7 +428,8 @@ export class Fastmail extends Service {
       tokens.access_token,
       tokens.refresh_token ?? apiCredentials.refreshToken,
       accessTokenExpiresAt,
-      apiCredentials.refreshTokenExpiresAt
+      apiCredentials.refreshTokenExpiresAt,
+      apiCredentials.redirectUri
     );
   }
 }

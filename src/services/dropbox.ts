@@ -6,6 +6,7 @@ import type { Response, BrowserContext, Page } from 'playwright';
 import { ApiCredentials, OAuthCredentials } from '../apiCredentials/base.js';
 import { typeLikeHuman } from '../playwrightUtils.js';
 import {
+  buildLoopbackRedirectUri,
   exchangeCodeForTokens,
   generateCodeChallenge,
   generateCodeVerifier,
@@ -287,7 +288,7 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
         AUTHORIZATION_TIMEOUT_MS,
         abortController.signal
       );
-      const redirectUri = `http://localhost:${port.toString()}/oauth2callback`;
+      const redirectUri = buildLoopbackRedirectUri(port);
 
       await this.registerRedirectUri(page, redirectUri);
 

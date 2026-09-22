@@ -198,6 +198,7 @@ export const OAuthCredentialsSchema = z.object({
   clientSecret: z.string(),
   accessTokenExpiresAt: z.string().optional(),
   refreshTokenExpiresAt: z.string().optional(),
+  redirectUri: z.string().optional(),
 });
 
 export type OAuthCredentialsData = z.infer<typeof OAuthCredentialsSchema>;
@@ -211,14 +212,31 @@ export class OAuthCredentials implements ApiCredentials {
   readonly clientSecret: string;
   readonly accessTokenExpiresAt?: string;
   readonly refreshTokenExpiresAt?: string;
+  /**
+   * Where the authorization server sends the user back to, when the OAuth
+   * client only permits a pre-registered redirect URI. Left unset in the usual
+   * case, where login stands up its own loopback server and uses
+   * `http://localhost:<port>/oauth2callback`.
+   *
+   * An application that embeds latchkey sets this via `latchkey auth prepare`,
+   * pointing at a page of its own. That page has to forward the query string
+   * the authorization server appended (`code` and friends) to latchkey's
+   * loopback callback; the port is not fixed, so services that support an
+   * override pass it in the `state` parameter for the page to read back.
+   */
+  readonly redirectUri?: string;
 
+  // `redirectUri` trails the token fields, out of its natural place next to
+  // the client id and secret, so that existing positional callers — including
+  // plugins built against an earlier version — keep working.
   constructor(
     clientId: string,
     clientSecret: string,
     accessToken?: string,
     refreshToken?: string,
     accessTokenExpiresAt?: string,
-    refreshTokenExpiresAt?: string
+    refreshTokenExpiresAt?: string,
+    redirectUri?: string
   ) {
     this.clientId = clientId;
     this.clientSecret = clientSecret;
@@ -226,6 +244,23 @@ export class OAuthCredentials implements ApiCredentials {
     this.refreshToken = refreshToken;
     this.accessTokenExpiresAt = accessTokenExpiresAt;
     this.refreshTokenExpiresAt = refreshTokenExpiresAt;
+    this.redirectUri = redirectUri;
+  }
+
+  /**
+   * The token-less form a preparation is stored in: the OAuth client the next
+   * login should use, optionally with the redirect URI it is registered with.
+   */
+  static prepared(clientId: string, clientSecret: string, redirectUri?: string): OAuthCredentials {
+    return new OAuthCredentials(
+      clientId,
+      clientSecret,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      redirectUri
+    );
   }
 
   injectIntoCurlCall(curlArguments: readonly string[]): Promise<readonly string[]> {
@@ -254,6 +289,7 @@ export class OAuthCredentials implements ApiCredentials {
       refreshToken: this.refreshToken,
       accessTokenExpiresAt: this.accessTokenExpiresAt,
       refreshTokenExpiresAt: this.refreshTokenExpiresAt,
+      redirectUri: this.redirectUri,
     };
     return result;
   }
@@ -266,7 +302,8 @@ export class OAuthCredentials implements ApiCredentials {
       parsed.accessToken,
       parsed.refreshToken,
       parsed.accessTokenExpiresAt,
-      parsed.refreshTokenExpiresAt
+      parsed.refreshTokenExpiresAt,
+      parsed.redirectUri
     );
   }
 }

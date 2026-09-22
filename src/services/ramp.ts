@@ -21,6 +21,7 @@ import {
   tryParseJson,
 } from '../apiCredentials/account.js';
 import {
+  buildLoopbackRedirectUri,
   exchangeCodeForTokens,
   generateCodeChallenge,
   generateCodeVerifier,
@@ -138,7 +139,7 @@ class RampOAuthServiceSession extends ServiceSession {
           abortController.signal,
           RAMP_OAUTH_CALLBACK_PATH
         );
-        const redirectUri = `http://localhost:${port.toString()}${RAMP_OAUTH_CALLBACK_PATH}`;
+        const redirectUri = buildLoopbackRedirectUri(port, RAMP_OAUTH_CALLBACK_PATH);
 
         // 2. PKCE verifier/challenge.
         const codeVerifier = generateCodeVerifier();

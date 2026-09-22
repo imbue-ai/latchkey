@@ -30,11 +30,14 @@ import {
 } from './apiCredentials/account.js';
 import { runCapturedAsync } from './curl.js';
 import {
+  DEFAULT_OAUTH_CALLBACK_PATH,
   OAuthCallbackServerTimeoutError,
   OAuthTokenExchangeError,
+  buildLoopbackRedirectUri,
   exchangeCodeForTokens,
   generateCodeChallenge,
   generateCodeVerifier,
+  readRedirectUriOverride,
   refreshAccessToken,
   startOAuthCallbackServer,
 } from './oauthUtils.js';
@@ -61,6 +64,7 @@ import {
   NoCurlCredentialsNotSupportedError,
   PrepareInputInvalidError,
   PrepareNotSupportedError,
+  RedirectUriOverrideSchema,
   Service,
   ServiceSession,
   SimpleServiceSession,
@@ -103,6 +107,7 @@ export function createLatchkeySdk(latchkeyVersion: string) {
     NoCurlCredentialsNotSupportedError,
     PrepareNotSupportedError,
     PrepareInputInvalidError,
+    RedirectUriOverrideSchema,
 
     // Credentials
     ApiCredentialStatus,
@@ -132,6 +137,9 @@ export function createLatchkeySdk(latchkeyVersion: string) {
 
     // OAuth
     startOAuthCallbackServer,
+    DEFAULT_OAUTH_CALLBACK_PATH,
+    buildLoopbackRedirectUri,
+    readRedirectUriOverride,
     exchangeCodeForTokens,
     refreshAccessToken,
     generateCodeVerifier,

@@ -3,7 +3,7 @@
  */
 
 import type { Browser, BrowserContext, Page, Response } from 'playwright';
-import type { z, ZodError, ZodTypeAny } from 'zod';
+import { z, type ZodError, type ZodTypeAny } from 'zod';
 import {
   ApiCredentialStatus,
   ApiCredentials,
@@ -88,6 +88,28 @@ export class PrepareInputInvalidError extends Error {
     this.name = 'PrepareInputInvalidError';
   }
 }
+
+function isHttpUrl(value: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return false;
+  }
+  return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+}
+
+/**
+ * A redirect URI handed to `latchkey auth prepare` by an application that
+ * embeds latchkey, for OAuth clients that only permit a pre-registered one
+ * (see `OAuthCredentials.redirectUri`). It has to be an absolute http(s) URL:
+ * the authorization server must be able to send the user there, and the page
+ * it serves must be able to forward the result to latchkey's loopback
+ * callback.
+ */
+export const RedirectUriOverrideSchema = z.string().refine(isHttpUrl, {
+  message: 'must be an absolute http:// or https:// URL',
+});
 
 /**
  * Validate a parsed JSON value against a service's prepare schema and build the
