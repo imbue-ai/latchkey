@@ -8,6 +8,7 @@ import {
   ApiCredentialStatus,
   ApiCredentials,
   ApiCredentialsUsageError,
+  OAuthCredentials,
 } from '../../apiCredentials/base.js';
 import { DEFAULT_ACCOUNT } from '../../apiCredentials/account.js';
 import { runCapturedAsync } from '../../curl.js';
@@ -110,6 +111,38 @@ function isHttpUrl(value: string): boolean {
 export const RedirectUriOverrideSchema = z.string().refine(isHttpUrl, {
   message: 'must be an absolute http:// or https:// URL',
 });
+
+/**
+ * JSON accepted by `latchkey auth prepare` for services that register their
+ * OAuth client dynamically (RFC 7591) at login: an existing client id to reuse
+ * instead of registering, the redirect URI the client is (or is to be)
+ * registered with, or both. Given only a redirect URI, login still registers a
+ * fresh client, but with that redirect URI rather than the loopback one. Such
+ * clients are public, so no secret is accepted. `.strict()` rejects unknown
+ * keys so typos are reported instead of silently ignored.
+ */
+export const DynamicClientPrepareInputSchema = z
+  .object({
+    clientId: z.string().min(1).optional(),
+    redirectUri: RedirectUriOverrideSchema.optional(),
+  })
+  .strict()
+  .refine((input) => input.clientId !== undefined || input.redirectUri !== undefined, {
+    message: 'at least one of clientId or redirectUri is required',
+  });
+
+export type DynamicClientPrepareInput = z.infer<typeof DynamicClientPrepareInputSchema>;
+
+/**
+ * The preparation for a dynamically registered client: token-less OAuth
+ * credentials whose client id is empty when login is to register one itself.
+ */
+export function buildDynamicClientPreparation({
+  clientId,
+  redirectUri,
+}: DynamicClientPrepareInput): OAuthCredentials {
+  return OAuthCredentials.prepared(clientId ?? '', '', redirectUri);
+}
 
 /**
  * Validate a parsed JSON value against a service's prepare schema and build the

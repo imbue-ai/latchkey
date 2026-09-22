@@ -10,7 +10,6 @@
  * fastmail` is enough.
  */
 
-import { z } from 'zod';
 import type { Browser, BrowserContext, Response } from 'playwright';
 import { type ApiCredentials, OAuthCredentials } from '../apiCredentials/base.js';
 import {
@@ -34,25 +33,11 @@ import {
   type LoginResult,
   LoginFailedError,
   LoginCancelledError,
-  RedirectUriOverrideSchema,
+  DynamicClientPrepareInputSchema,
+  buildDynamicClientPreparation,
   buildPreparedCredentials,
   isBrowserClosedError,
 } from './core/base.js';
-
-/**
- * JSON accepted by `latchkey auth prepare fastmail`: an OAuth client id to
- * reuse instead of registering a new client dynamically. Fastmail issues
- * public clients, so no secret is needed. `.strict()` rejects unknown keys so
- * typos are reported instead of silently ignored.
- */
-export const FastmailPrepareInputSchema = z
-  .object({
-    clientId: z.string().min(1),
-    redirectUri: RedirectUriOverrideSchema.optional(),
-  })
-  .strict();
-
-export type FastmailPrepareInput = z.infer<typeof FastmailPrepareInputSchema>;
 
 // The session document, requested directly. Not `/.well-known/jmap`: that
 // 302s to this URL on a *different* host, and curl drops the Authorization
@@ -370,18 +355,17 @@ export class Fastmail extends Service {
   }
 
   /**
-   * Fastmail accepts an OAuth client id — and optionally the redirect URI that
-   * client is registered with — prepared in advance via
-   * `latchkey auth prepare`, stored as token-less OAuth credentials until
-   * login. The login flow reuses this client id instead of registering a new
-   * client dynamically.
+   * Fastmail accepts an OAuth client id to reuse instead of registering a new
+   * client dynamically, and/or the redirect URI to use — prepared in advance
+   * via `latchkey auth prepare` and stored as token-less OAuth credentials
+   * until login (see `DynamicClientPrepareInputSchema`).
    */
   override prepareFromJson(parsedJson: unknown): ApiCredentials {
     return buildPreparedCredentials(
       this.name,
-      FastmailPrepareInputSchema,
+      DynamicClientPrepareInputSchema,
       parsedJson,
-      ({ clientId, redirectUri }) => OAuthCredentials.prepared(clientId, '', redirectUri)
+      buildDynamicClientPreparation
     );
   }
 

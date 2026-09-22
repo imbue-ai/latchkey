@@ -6,7 +6,6 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { z } from 'zod';
 import type { Browser, BrowserContext, Response } from 'playwright';
 import { type ApiCredentials, OAuthCredentials } from '../apiCredentials/base.js';
 import {
@@ -30,26 +29,11 @@ import {
   type LoginResult,
   LoginFailedError,
   LoginCancelledError,
-  RedirectUriOverrideSchema,
+  DynamicClientPrepareInputSchema,
+  buildDynamicClientPreparation,
   buildPreparedCredentials,
   isBrowserClosedError,
 } from './core/base.js';
-
-/**
- * JSON accepted by `latchkey auth prepare notion-mcp`: the OAuth client id to
- * reuse instead of registering a new client dynamically at mcp.notion.com, and
- * optionally the redirect URI that client is registered with. Notion MCP is a
- * public client, so no secret is needed. `.strict()` rejects unknown keys so
- * typos are reported instead of silently ignored.
- */
-export const NotionMcpPrepareInputSchema = z
-  .object({
-    clientId: z.string().min(1),
-    redirectUri: RedirectUriOverrideSchema.optional(),
-  })
-  .strict();
-
-export type NotionMcpPrepareInput = z.infer<typeof NotionMcpPrepareInputSchema>;
 
 const MCP_ENDPOINT = 'https://mcp.notion.com/mcp';
 const TOKEN_ENDPOINT = 'https://mcp.notion.com/token';
@@ -388,17 +372,17 @@ export class NotionMcp extends Service {
   }
 
   /**
-   * Notion MCP accepts an OAuth client id — and optionally the redirect URI
-   * that client is registered with — prepared in advance via
-   * `latchkey auth prepare`, stored as token-less OAuth credentials until login.
-   * The login flow reuses this client id instead of registering a new client.
+   * Notion MCP accepts an OAuth client id to reuse instead of registering a
+   * new client at mcp.notion.com, and/or the redirect URI to use — prepared in
+   * advance via `latchkey auth prepare` and stored as token-less OAuth
+   * credentials until login (see `DynamicClientPrepareInputSchema`).
    */
   override prepareFromJson(parsedJson: unknown): ApiCredentials {
     return buildPreparedCredentials(
       this.name,
-      NotionMcpPrepareInputSchema,
+      DynamicClientPrepareInputSchema,
       parsedJson,
-      ({ clientId, redirectUri }) => OAuthCredentials.prepared(clientId, '', redirectUri)
+      buildDynamicClientPreparation
     );
   }
 

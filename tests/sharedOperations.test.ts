@@ -14,6 +14,7 @@ import {
 import { MockService } from './mockService.js';
 import { GOOGLE_GMAIL } from '../src/services/google/gmail.js';
 import { NOTION_MCP } from '../src/services/notion-mcp.js';
+import { FASTMAIL } from '../src/services/fastmail.js';
 import { RegisteredService } from '../src/services/core/registered.js';
 import { ServiceRegistry } from '../src/serviceRegistry.js';
 import { saveBrowserConfig } from '../src/configDataStore.js';
@@ -1134,14 +1135,49 @@ describe('operations', () => {
       expect(store.getPreparation('notion-mcp')).toBeNull();
     });
 
-    it('rejects notion-mcp input missing clientId', () => {
+    it('rejects notion-mcp input with neither clientId nor redirectUri', () => {
       const registry = new ServiceRegistry([NOTION_MCP]);
       const store = createApiCredentialStore();
 
       expect(() => prepareService(registry, store, 'notion-mcp', '{}')).toThrow(
-        PrepareInputInvalidError
+        /at least one of clientId or redirectUri/
       );
       expect(store.getPreparation('notion-mcp')).toBeNull();
+    });
+
+    it('rejects an empty notion-mcp clientId', () => {
+      const registry = new ServiceRegistry([NOTION_MCP]);
+      const store = createApiCredentialStore();
+
+      expect(() =>
+        prepareService(registry, store, 'notion-mcp', JSON.stringify({ clientId: '' }))
+      ).toThrow(PrepareInputInvalidError);
+      expect(store.getPreparation('notion-mcp')).toBeNull();
+    });
+
+    // Given only a redirect URI, login still registers a client dynamically —
+    // an empty client id is how the preparation says so — but with that
+    // redirect URI instead of the loopback one.
+    it.each([
+      ['notion-mcp', NOTION_MCP],
+      ['fastmail', FASTMAIL],
+    ])('stores a redirect URI without a client id for %s', (serviceName, service) => {
+      const registry = new ServiceRegistry([service]);
+      const store = createApiCredentialStore();
+
+      prepareService(
+        registry,
+        store,
+        serviceName,
+        JSON.stringify({ redirectUri: 'https://example.com/oauth-callback/' })
+      );
+
+      const preparation = store.getPreparation(serviceName) as OAuthCredentials;
+      expect(preparation).toBeInstanceOf(OAuthCredentials);
+      expect(preparation.clientId).toBe('');
+      expect(preparation.clientSecret).toBe('');
+      expect(preparation.redirectUri).toBe('https://example.com/oauth-callback/');
+      expect(preparation.accessToken).toBeUndefined();
     });
   });
 });

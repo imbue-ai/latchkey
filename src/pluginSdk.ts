@@ -58,6 +58,7 @@ import {
 import { BUILTIN_SERVICES } from './serviceRegistry.js';
 import {
   BrowserFollowupServiceSession,
+  DynamicClientPrepareInputSchema,
   FollowupWork,
   LoginCancelledError,
   LoginFailedError,
@@ -68,6 +69,7 @@ import {
   Service,
   ServiceSession,
   SimpleServiceSession,
+  buildDynamicClientPreparation,
   buildFollowupSpinnerDetails,
   buildPreparedCredentials,
   describeSchemaIssues,
@@ -96,6 +98,7 @@ export function createLatchkeySdk(latchkeyVersion: string) {
     GoogleService,
     CookieCaptureLoginFlow,
     TokenCaptureLoginFlow,
+    buildDynamicClientPreparation,
     buildFollowupSpinnerDetails,
     buildPreparedCredentials,
     describeSchemaIssues,
@@ -108,6 +111,7 @@ export function createLatchkeySdk(latchkeyVersion: string) {
     PrepareNotSupportedError,
     PrepareInputInvalidError,
     RedirectUriOverrideSchema,
+    DynamicClientPrepareInputSchema,
 
     // Credentials
     ApiCredentialStatus,
