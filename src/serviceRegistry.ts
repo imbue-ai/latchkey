@@ -213,7 +213,7 @@ export function loadRegisteredServicesIntoServiceRegistry(
 }
 
 /**
- * Build a registry holding `builtinServices` plus the services registered in
+ * Build a registry holding `baseServices` plus the services registered in
  * config.json, with the named services removed. This is how both the CLI and
  * every gateway request get their registry.
  *
@@ -225,11 +225,11 @@ export function loadRegisteredServicesIntoServiceRegistry(
  * services there, and the local CLI only forwards commands to it.
  */
 export function createServiceRegistry(
-  builtinServices: readonly Service[],
+  baseServices: readonly Service[],
   configPath: string | null,
   hiddenServiceNames: readonly string[]
 ): ServiceRegistry {
-  const registry = new ServiceRegistry(builtinServices);
+  const registry = new ServiceRegistry(baseServices);
   if (configPath !== null) {
     loadRegisteredServicesIntoServiceRegistry(configPath, registry);
   }

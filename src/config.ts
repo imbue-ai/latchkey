@@ -69,6 +69,7 @@ const BROWSER_STATE_FILENAME = 'browser_state.json.enc';
 const CONFIG_FILENAME = 'config.json';
 const PERMISSIONS_CONFIG_FILENAME = 'permissions.json';
 const EXTENSIONS_DIRECTORY_NAME = 'extensions';
+const PLUGINS_DIRECTORY_NAME = 'plugins';
 
 function resolvePathWithTildeExpansion(path: string): string {
   if (path.startsWith('~')) {
@@ -416,6 +417,14 @@ export class Config {
    */
   get extensionsDirectoryPath(): string {
     return join(this.directory, EXTENSIONS_DIRECTORY_NAME);
+  }
+
+  /**
+   * Directory whose subdirectories are loaded as plugins at startup.
+   * See `src/plugins.ts`.
+   */
+  get pluginsDirectoryPath(): string {
+    return join(this.directory, PLUGINS_DIRECTORY_NAME);
   }
 
   /**

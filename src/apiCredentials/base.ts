@@ -12,11 +12,24 @@ export enum ApiCredentialStatus {
 }
 
 /**
+ * The stored form of credentials: plain JSON whose `objectType` names the
+ * {@link ApiCredentialsType} that can read it back.
+ */
+export interface SerializedApiCredentials {
+  readonly objectType: string;
+}
+
+/**
  * Base interface for all API credentials.
  * Each credential type must specify how to inject itself into a curl call.
  */
 export interface ApiCredentials {
   readonly objectType: string;
+  /**
+   * The form the credentials are stored in. Left out by credentials that are
+   * only ever built on the fly from stored ones and never stored themselves.
+   */
+  toJSON?(): SerializedApiCredentials;
   /**
    * Inject credentials into a curl call by modifying the given arguments array.
    * Implementations may add headers, change the URL, or transform arguments in any way.
@@ -39,6 +52,18 @@ export interface ApiCredentials {
 }
 
 /**
+ * How stored credentials of one `objectType` are read back. This is the static
+ * side of a credentials class: `fromJSON` validates the stored JSON and builds
+ * the credentials from it, throwing on data it does not accept. Every
+ * credentials class latchkey ships with is one, and a plugin that defines its
+ * own class lists it in its manifest so that its credentials can be stored.
+ */
+export interface ApiCredentialsType {
+  readonly objectType: string;
+  fromJSON(data: unknown): ApiCredentials;
+}
+
+/**
  * Bearer token authentication (Authorization: Bearer <token>).
  */
 export const AuthorizationBearerSchema = z.object({
@@ -49,7 +74,8 @@ export const AuthorizationBearerSchema = z.object({
 export type AuthorizationBearerData = z.infer<typeof AuthorizationBearerSchema>;
 
 export class AuthorizationBearer implements ApiCredentials {
-  readonly objectType = 'authorizationBearer' as const;
+  static readonly objectType = 'authorizationBearer' as const;
+  readonly objectType = AuthorizationBearer.objectType;
   readonly token: string;
 
   constructor(token: string) {
@@ -71,8 +97,9 @@ export class AuthorizationBearer implements ApiCredentials {
     };
   }
 
-  static fromJSON(data: AuthorizationBearerData): AuthorizationBearer {
-    return new AuthorizationBearer(data.token);
+  static fromJSON(data: unknown): AuthorizationBearer {
+    const parsed = AuthorizationBearerSchema.parse(data);
+    return new AuthorizationBearer(parsed.token);
   }
 }
 
@@ -87,7 +114,8 @@ export const AuthorizationBareSchema = z.object({
 export type AuthorizationBareData = z.infer<typeof AuthorizationBareSchema>;
 
 export class AuthorizationBare implements ApiCredentials {
-  readonly objectType = 'authorizationBare' as const;
+  static readonly objectType = 'authorizationBare' as const;
+  readonly objectType = AuthorizationBare.objectType;
   readonly token: string;
 
   constructor(token: string) {
@@ -109,8 +137,9 @@ export class AuthorizationBare implements ApiCredentials {
     };
   }
 
-  static fromJSON(data: AuthorizationBareData): AuthorizationBare {
-    return new AuthorizationBare(data.token);
+  static fromJSON(data: unknown): AuthorizationBare {
+    const parsed = AuthorizationBareSchema.parse(data);
+    return new AuthorizationBare(parsed.token);
   }
 }
 
@@ -126,7 +155,8 @@ export const RawCurlCredentialsSchema = z.object({
 export type RawCurlCredentialsData = z.infer<typeof RawCurlCredentialsSchema>;
 
 export class RawCurlCredentials implements ApiCredentials {
-  readonly objectType = 'rawCurl' as const;
+  static readonly objectType = 'rawCurl' as const;
+  readonly objectType = RawCurlCredentials.objectType;
   readonly curlArguments: readonly string[];
 
   constructor(curlArguments: readonly string[]) {
@@ -148,8 +178,9 @@ export class RawCurlCredentials implements ApiCredentials {
     };
   }
 
-  static fromJSON(data: RawCurlCredentialsData): RawCurlCredentials {
-    return new RawCurlCredentials(data.curlArguments);
+  static fromJSON(data: unknown): RawCurlCredentials {
+    const parsed = RawCurlCredentialsSchema.parse(data);
+    return new RawCurlCredentials(parsed.curlArguments);
   }
 }
 
@@ -172,7 +203,8 @@ export const OAuthCredentialsSchema = z.object({
 export type OAuthCredentialsData = z.infer<typeof OAuthCredentialsSchema>;
 
 export class OAuthCredentials implements ApiCredentials {
-  readonly objectType = 'oauth' as const;
+  static readonly objectType = 'oauth' as const;
+  readonly objectType = OAuthCredentials.objectType;
   readonly accessToken?: string;
   readonly refreshToken?: string;
   readonly clientId: string;
@@ -226,14 +258,15 @@ export class OAuthCredentials implements ApiCredentials {
     return result;
   }
 
-  static fromJSON(data: OAuthCredentialsData): OAuthCredentials {
+  static fromJSON(data: unknown): OAuthCredentials {
+    const parsed = OAuthCredentialsSchema.parse(data);
     return new OAuthCredentials(
-      data.clientId,
-      data.clientSecret,
-      data.accessToken,
-      data.refreshToken,
-      data.accessTokenExpiresAt,
-      data.refreshTokenExpiresAt
+      parsed.clientId,
+      parsed.clientSecret,
+      parsed.accessToken,
+      parsed.refreshToken,
+      parsed.accessTokenExpiresAt,
+      parsed.refreshTokenExpiresAt
     );
   }
 }

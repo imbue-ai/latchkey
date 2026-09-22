@@ -228,6 +228,15 @@ You can also configure browser login flows for registered services. For details,
 see `latchkey services register --help`.
 
 
+### Plugins
+
+It is also possible to add support for a new service by
+installing a plugin that implements it. A Latchkey plugin is
+a git repository; installation is a matter of running `git
+clone` in `~/.latchkey/plugins/`. For more details, see the
+[plugins docs](./docs/plugins.md).
+
+
 ### Indirect credentials
 
 Some services can't express their credentials as static curl

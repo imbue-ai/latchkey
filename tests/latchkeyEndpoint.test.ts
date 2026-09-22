@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { BUILTIN_API_CREDENTIALS_TYPES } from '../src/apiCredentials/serialization.js';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -160,9 +161,10 @@ describe('/latchkey/ endpoint', () => {
 
     // One source for both, so that overriding the services a test runs against
     // cannot leave the registry describing a different set.
-    const services: readonly Service[] = overrides.builtinServices ?? [mockSlackService];
+    const services: readonly Service[] = overrides.baseServices ?? [mockSlackService];
     const deps: CliDependencies = {
-      builtinServices: services,
+      baseServices: services,
+      apiCredentialsTypes: BUILTIN_API_CREDENTIALS_TYPES,
       registry: new ServiceRegistry(services),
       config: createMockConfig(configOverrides),
       runCurl: (): CurlResult => ({ returncode: 0, stdout: '', stderr: '' }),
@@ -345,7 +347,7 @@ describe('/latchkey/ endpoint', () => {
 
   describe('prepare', () => {
     it('stores OAuth client credentials for a Google service', async () => {
-      gateway = await createTestGateway({}, { builtinServices: [GOOGLE_GMAIL] });
+      gateway = await createTestGateway({}, { baseServices: [GOOGLE_GMAIL] });
       const response = await postLatchkey({
         command: 'auth prepare',
         params: {
@@ -374,7 +376,7 @@ describe('/latchkey/ endpoint', () => {
     });
 
     it('returns 400 for malformed prepare JSON', async () => {
-      gateway = await createTestGateway({}, { builtinServices: [GOOGLE_GMAIL] });
+      gateway = await createTestGateway({}, { baseServices: [GOOGLE_GMAIL] });
       const response = await postLatchkey({
         command: 'auth prepare',
         params: { serviceName: 'google-gmail', json: '{not valid' },
@@ -440,7 +442,7 @@ describe('/latchkey/ endpoint', () => {
       });
       gateway = await createTestGateway(
         {},
-        { builtinServices: [browserSlack] },
+        { baseServices: [browserSlack] },
         { browserDisabled: true }
       );
       const response = await postLatchkey({
@@ -467,7 +469,7 @@ describe('/latchkey/ endpoint', () => {
         getSession: undefined,
       });
 
-      gateway = await createTestGateway({}, { builtinServices: [noLoginService] });
+      gateway = await createTestGateway({}, { baseServices: [noLoginService] });
       const response = await postLatchkey({
         command: 'auth browser',
         params: { serviceName: 'nologin' },

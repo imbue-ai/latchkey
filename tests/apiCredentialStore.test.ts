@@ -2,17 +2,52 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { AmbiguousAccountError, ApiCredentialStore } from '../src/apiCredentials/store.js';
 import {
+  AmbiguousAccountError,
+  ApiCredentialStore,
+  ApiCredentialStoreError,
+} from '../src/apiCredentials/store.js';
+import {
+  type ApiCredentials,
   AuthorizationBearer,
   AuthorizationBare,
   OAuthCredentials,
 } from '../src/apiCredentials/base.js';
+import { BUILTIN_API_CREDENTIALS_TYPES } from '../src/apiCredentials/serialization.js';
+import { z } from 'zod';
 import { SlackApiCredentials } from '../src/services/slack.js';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { generateKey } from '../src/encryption.js';
 
 describe('ApiCredentialStore', () => {
+  const PluginCredentialsSchema = z.object({
+    objectType: z.literal('pluginToken'),
+    token: z.string(),
+  });
+
+  class PluginCredentials implements ApiCredentials {
+    static readonly objectType = 'pluginToken' as const;
+    readonly objectType = PluginCredentials.objectType;
+
+    constructor(readonly token: string) {}
+
+    static fromJSON(data: unknown): PluginCredentials {
+      return new PluginCredentials(PluginCredentialsSchema.parse(data).token);
+    }
+
+    injectIntoCurlCall(curlArguments: readonly string[]): Promise<readonly string[]> {
+      return Promise.resolve(['-H', `X-Token: ${this.token}`, ...curlArguments]);
+    }
+
+    isExpired(): undefined {
+      return undefined;
+    }
+
+    toJSON(): z.infer<typeof PluginCredentialsSchema> {
+      return { objectType: this.objectType, token: this.token };
+    }
+  }
+
   let tempDir: string;
   let storePath: string;
   let encryptedStorage: EncryptedStorage;
@@ -31,6 +66,22 @@ describe('ApiCredentialStore', () => {
     it('should return null for non-existent store file', () => {
       const store = new ApiCredentialStore(storePath, encryptedStorage);
       expect(store.get('slack')).toBeNull();
+    });
+
+    it('reports credentials of a type it does not know, like those of an uninstalled plugin', () => {
+      encryptedStorage.writeFile(
+        storePath,
+        JSON.stringify({
+          credentials: { spotify: { '': { objectType: 'spotifySession', sp_dc: 'x' } } },
+        })
+      );
+      const store = new ApiCredentialStore(storePath, encryptedStorage);
+      expect(() => store.get('spotify')).toThrow(
+        new ApiCredentialStoreError(
+          "Invalid credential data for service spotify: Unknown credential type 'spotifySession'. " +
+            'Credentials of a type defined by a plugin can only be used while that plugin is installed.'
+        )
+      );
     });
 
     it('should return null for non-existent service', () => {
@@ -68,6 +119,28 @@ describe('ApiCredentialStore', () => {
       expect(retrieved).toBeInstanceOf(SlackApiCredentials);
       expect((retrieved as SlackApiCredentials).token).toBe('xoxc-token');
       expect((retrieved as SlackApiCredentials).dCookie).toBe('d-cookie');
+    });
+  });
+
+  describe('credentials types', () => {
+    it('stores and reads back credentials of a type it was given', () => {
+      const store = new ApiCredentialStore(storePath, encryptedStorage, [
+        ...BUILTIN_API_CREDENTIALS_TYPES,
+        PluginCredentials,
+      ]);
+      store.save('plugin-service', new PluginCredentials('t'));
+
+      const restored = store.get('plugin-service');
+      expect(restored).toBeInstanceOf(PluginCredentials);
+      expect((restored as PluginCredentials).token).toBe('t');
+    });
+
+    it('refuses to store credentials of a type it was not given', () => {
+      const store = new ApiCredentialStore(storePath, encryptedStorage);
+      expect(() => {
+        store.save('plugin-service', new PluginCredentials('t'));
+      }).toThrow("Unknown credential type 'pluginToken'");
+      expect(existsSync(storePath)).toBe(false);
     });
   });
 

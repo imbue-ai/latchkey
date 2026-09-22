@@ -92,7 +92,8 @@ export const ZoomServerToServerCredentialsSchema = z.object({
 export type ZoomServerToServerCredentialsData = z.infer<typeof ZoomServerToServerCredentialsSchema>;
 
 export class ZoomServerToServerCredentials implements ApiCredentials {
-  readonly objectType = 'zoomServerToServer' as const;
+  static readonly objectType = 'zoomServerToServer' as const;
+  readonly objectType = ZoomServerToServerCredentials.objectType;
   readonly accountId: string;
   readonly clientId: string;
   readonly clientSecret: string;
@@ -163,13 +164,14 @@ export class ZoomServerToServerCredentials implements ApiCredentials {
     };
   }
 
-  static fromJSON(data: ZoomServerToServerCredentialsData): ZoomServerToServerCredentials {
+  static fromJSON(data: unknown): ZoomServerToServerCredentials {
+    const parsed = ZoomServerToServerCredentialsSchema.parse(data);
     return new ZoomServerToServerCredentials(
-      data.accountId,
-      data.clientId,
-      data.clientSecret,
-      data.accessToken,
-      data.accessTokenExpiresAt
+      parsed.accountId,
+      parsed.clientId,
+      parsed.clientSecret,
+      parsed.accessToken,
+      parsed.accessTokenExpiresAt
     );
   }
 }
