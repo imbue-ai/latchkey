@@ -52,6 +52,7 @@ import { join } from 'node:path';
 import type { Browser, BrowserContext, Page, Locator, LaunchOptions } from 'playwright';
 import { EncryptedStorage } from './encryptedStorage.js';
 import { loadPlaywright } from './playwrightLoader.js';
+import { launchBrowserAsMacApp, logBestEffortError, macOSAppBundlePath } from './playwrightMacLaunch.js';
 
 export interface BrowserWithContext {
   readonly browser: Browser;
@@ -138,24 +139,53 @@ export async function withTempBrowserContext<T>(
   }
 
   const { chromium } = await loadPlaywright();
-  // Strip the most obvious automation tells so services like Google's sign-in let us through.
-  const playwrightLaunchOptions: LaunchOptions = {
-    headless: false,
-    args: ['--disable-blink-features=AutomationControlled'],
-    ignoreDefaultArgs: ['--enable-automation'],
-  };
-  if (options.executablePath) {
-    playwrightLaunchOptions.executablePath = options.executablePath;
-  }
-  const browser = await chromium.launch(playwrightLaunchOptions);
 
-  let context: BrowserContext | undefined;
-  try {
-    const contextOptions: { storageState?: string } = {
-      storageState: initialStorageState,
+  let browser: Browser;
+  // On macOS, launch the browser as a proper application via `open`/LaunchServices
+  // and connect over CDP. `chromium.launch()` execs the binary as a raw subprocess
+  // that macOS does not register as an application, so its window opens behind the
+  // foreground app and cannot receive keyboard input. Other platforms launch
+  // directly, where this is not an issue.
+  let cleanup: () => Promise<void> = () => Promise.resolve();
+  if (process.platform === 'darwin') {
+    const launched = await launchBrowserAsMacApp(
+      chromium,
+      macOSAppBundlePath(options.executablePath),
+      tempDir,
+      []
+    );
+    browser = launched.browser;
+    cleanup = launched.cleanup;
+    // `open` opens a startup tab in the default context. Close those pages so
+    // only the caller's context and its pages remain.
+    const defaultContext = browser.contexts()[0];
+    if (defaultContext !== undefined) {
+      for (const page of defaultContext.pages()) {
+        await page.close().catch((error: unknown) => {
+          logBestEffortError('failed to close startup page', error);
+        });
+      }
+    }
+  } else {
+    // Strip the most obvious automation tells so services like Google's sign-in let us through.
+    const playwrightLaunchOptions: LaunchOptions = {
+      headless: false,
+      args: ['--disable-blink-features=AutomationControlled'],
+      ignoreDefaultArgs: ['--enable-automation'],
     };
-    context = await browser.newContext(contextOptions);
+    if (options.executablePath) {
+      playwrightLaunchOptions.executablePath = options.executablePath;
+    }
+    browser = await chromium.launch(playwrightLaunchOptions);
+  }
 
+  // Both paths land here: a browser is open, and a fresh context with the saved
+  // storage state is created the same way on every platform.
+  const context: BrowserContext = await browser.newContext({
+    storageState: initialStorageState,
+  });
+
+  try {
     const result = await callback({ browser, context });
 
     // Persist browser state back to encrypted storage
@@ -168,13 +198,11 @@ export async function withTempBrowserContext<T>(
     return result;
   } catch (error) {
     if (process.env.LATCHKEY_DEBUG === '1') {
-      if (context) {
-        const artifactsDir = await captureFailureArtifacts(context);
-        if (artifactsDir) {
-          console.error(
-            `[latchkey] Browser flow failed. Debug artifacts saved to: ${artifactsDir}`
-          );
-        }
+      const artifactsDir = await captureFailureArtifacts(context);
+      if (artifactsDir) {
+        console.error(
+          `[latchkey] Browser flow failed. Debug artifacts saved to: ${artifactsDir}`
+        );
       }
       console.error(
         '[latchkey] LATCHKEY_DEBUG=1: browser left open for inspection. Press Ctrl+C to exit.'
@@ -185,7 +213,16 @@ export async function withTempBrowserContext<T>(
     }
     throw error;
   } finally {
-    await browser.close();
+    try {
+      await browser.close();
+    } catch (error) {
+      logBestEffortError('failed to disconnect browser', error);
+    }
+    try {
+      await cleanup();
+    } catch (error) {
+      logBestEffortError('failed to clean up launched browser process', error);
+    }
     try {
       rmSync(tempDir, { recursive: true, force: true });
     } catch {
