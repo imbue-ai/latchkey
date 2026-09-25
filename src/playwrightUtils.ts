@@ -9,6 +9,124 @@ export class BrowserDisabledError extends Error {
   }
 }
 
+/**
+ * Find a free TCP port on the loopback interface by opening a listening socket
+ * on port 0 and reading back the assigned port. Used to pick a unique
+ * `--remote-debugging-port` for the macOS app-style browser launch.
+ */
+function findFreePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.unref();
+    server.on('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      if (address !== null && typeof address === 'object') {
+        const port = address.port;
+        server.close(() => {
+          resolve(port);
+        });
+      } else {
+        server.close();
+        reject(new Error('Could not find a free port.'));
+      }
+    });
+  });
+}
+
+/**
+ * Derive the macOS `.app` bundle path from a browser executable path, e.g.
+ * `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome` ->
+ * `/Applications/Google Chrome.app`. Falls back to the app name `Google Chrome`
+ * (resolved by LaunchServices) when no bundle can be inferred.
+ */
+function macOSAppBundlePath(executablePath: string | undefined): string {
+  const match = executablePath !== undefined ? /(^.*\.app)\//.exec(executablePath) : null;
+  return match?.[1] ?? 'Google Chrome';
+}
+
+/**
+ * Wait for a Chromium CDP endpoint to answer on the given port, returning the
+ * endpoint URL once it is up. Throws if the browser never exposes CDP.
+ */
+async function waitForCdpEndpoint(port: number): Promise<string> {
+  const endpoint = `http://127.0.0.1:${String(port)}`;
+  for (let attempt = 0; attempt < 80; attempt++) {
+    try {
+      const response = await fetch(`${endpoint}/json/version`);
+      if (response.ok) {
+ return endpoint; }
+    } catch {
+ /* not up yet */ }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(`Browser did not expose a CDP endpoint on port ${String(port)}.`);
+}
+
+/**
+ * Launch a browser as a proper macOS application via `open`/LaunchServices and
+ * connect to it over CDP.
+ *
+ * `chromium.launch()` execs the browser binary directly as a child of the
+ * node process. On macOS that child is not registered with LaunchServices, so
+ * System Events cannot raise it, its window opens behind the foreground app,
+ * and the user cannot type into it. Launching through `open -na` makes the
+ * browser a real application process that comes to the front and accepts
+ * keyboard input.
+ *
+ * Returns the connected browser and a cleanup function that disconnects and
+ * terminates the launched process (Playwright's `browser.close()` only
+ * disconnects a CDP-connected browser, leaving the process running).
+ */
+async function launchBrowserAsMacApp(
+  chromium: NonNullable<import('playwright').BrowserType>,
+  appBundlePath: string,
+  profileDir: string,
+  extraArgs: string[]
+): Promise<{ browser: Browser; cleanup: () => Promise<void> }> {
+  const port = await findFreePort();
+  const browserArgs = [
+    `--remote-debugging-port=${String(port)}`,
+    `--user-data-dir=${profileDir}`,
+    '--no-first-run',
+    '--no-default-browser-check',
+    '--disable-blink-features=AutomationControlled',
+    ...extraArgs,
+  ];
+  await new Promise<void>((resolve, reject) => {
+    execFile('open', ['-na', appBundlePath, '--args', ...browserArgs], (error) => {
+      if (error === null) {
+        resolve();
+      } else {
+        reject(
+          new Error(
+            `Failed to launch the browser application${error instanceof Error ? `: ${error.message}` : ''}`
+          )
+        );
+      }
+    });
+  });
+  const endpoint = await waitForCdpEndpoint(port);
+  const browser = await chromium.connectOverCDP(endpoint);
+  // `browser.close()` only disconnects a CDP-connected browser; it does not
+  // quit the process. Kill whatever is listening on the debug port so the
+  // profile is released. The caller disconnects via `browser.close()` first.
+  const cleanup = async (): Promise<void> => {
+    await new Promise<void>((resolve) => {
+      execFile('lsof', ['-ti', `tcp:${String(port)}`], (_error, stdout) => {
+        for (const pid of stdout.trim().split(/\s+/).filter(Boolean)) {
+          try {
+            process.kill(Number(pid), 'SIGKILL');
+          } catch {
+ /* best-effort */ }
+        }
+        resolve();
+      });
+    });
+  };
+  return { browser, cleanup };
+}
+
 export class GraphicalEnvironmentNotFoundError extends Error {
   constructor() {
     super(
@@ -49,6 +167,8 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { execFile } from 'node:child_process';
+import { createServer } from 'node:net';
 import type { Browser, BrowserContext, Page, Locator, LaunchOptions } from 'playwright';
 import { EncryptedStorage } from './encryptedStorage.js';
 import { loadPlaywright } from './playwrightLoader.js';
@@ -138,24 +258,49 @@ export async function withTempBrowserContext<T>(
   }
 
   const { chromium } = await loadPlaywright();
-  // Strip the most obvious automation tells so services like Google's sign-in let us through.
-  const playwrightLaunchOptions: LaunchOptions = {
-    headless: false,
-    args: ['--disable-blink-features=AutomationControlled'],
-    ignoreDefaultArgs: ['--enable-automation'],
-  };
-  if (options.executablePath) {
-    playwrightLaunchOptions.executablePath = options.executablePath;
-  }
-  const browser = await chromium.launch(playwrightLaunchOptions);
 
-  let context: BrowserContext | undefined;
-  try {
-    const contextOptions: { storageState?: string } = {
-      storageState: initialStorageState,
+  let browser: Browser;
+  let context: BrowserContext;
+  // On macOS, launch the browser as a proper application via `open`/LaunchServices
+  // and connect over CDP. `chromium.launch()` execs the binary as a raw subprocess
+  // that macOS does not register as an application, so its window opens behind the
+  // foreground app and cannot receive keyboard input. Other platforms launch
+  // directly, where this is not an issue.
+  let cleanup: () => Promise<void> = () => Promise.resolve();
+  if (process.platform === 'darwin') {
+    const appBundlePath = macOSAppBundlePath(options.executablePath);
+    const launched = await launchBrowserAsMacApp(chromium, appBundlePath, tempDir, []);
+    browser = launched.browser;
+    cleanup = launched.cleanup;
+    // `open` launches the browser with a startup tab in its default context.
+    // Close those pages so only the caller's context and its pages remain, then
+    // create a fresh context with the saved storage state — the same call the
+    // non-darwin path makes. A fresh context over CDP accepts `storageState` at
+    // creation, so there is no need to inject cookies by hand.
+    const defaultContext = browser.contexts()[0];
+    if (defaultContext !== undefined) {
+      for (const page of defaultContext.pages()) {
+        await page.close().catch(() => {
+          /* best-effort */
+        });
+      }
+    }
+    context = await browser.newContext({ storageState: initialStorageState });
+  } else {
+    // Strip the most obvious automation tells so services like Google's sign-in let us through.
+    const playwrightLaunchOptions: LaunchOptions = {
+      headless: false,
+      args: ['--disable-blink-features=AutomationControlled'],
+      ignoreDefaultArgs: ['--enable-automation'],
     };
-    context = await browser.newContext(contextOptions);
+    if (options.executablePath) {
+      playwrightLaunchOptions.executablePath = options.executablePath;
+    }
+    browser = await chromium.launch(playwrightLaunchOptions);
+    context = await browser.newContext({ storageState: initialStorageState });
+  }
 
+  try {
     const result = await callback({ browser, context });
 
     // Persist browser state back to encrypted storage
@@ -168,13 +313,11 @@ export async function withTempBrowserContext<T>(
     return result;
   } catch (error) {
     if (process.env.LATCHKEY_DEBUG === '1') {
-      if (context) {
-        const artifactsDir = await captureFailureArtifacts(context);
-        if (artifactsDir) {
-          console.error(
-            `[latchkey] Browser flow failed. Debug artifacts saved to: ${artifactsDir}`
-          );
-        }
+      const artifactsDir = await captureFailureArtifacts(context);
+      if (artifactsDir) {
+        console.error(
+          `[latchkey] Browser flow failed. Debug artifacts saved to: ${artifactsDir}`
+        );
       }
       console.error(
         '[latchkey] LATCHKEY_DEBUG=1: browser left open for inspection. Press Ctrl+C to exit.'
@@ -185,7 +328,16 @@ export async function withTempBrowserContext<T>(
     }
     throw error;
   } finally {
-    await browser.close();
+    try {
+      await browser.close();
+    } catch {
+      /* best-effort */
+    }
+    try {
+      await cleanup();
+    } catch {
+      /* best-effort */
+    }
     try {
       rmSync(tempDir, { recursive: true, force: true });
     } catch {
