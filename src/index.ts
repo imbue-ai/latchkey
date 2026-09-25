@@ -70,6 +70,7 @@ export {
   type LoginResult,
   LoginCancelledError,
   LoginFailedError,
+  UnrecoverableLoginFailedError,
   Slack,
   SLACK,
   Discord,

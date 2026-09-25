@@ -21,6 +21,7 @@ import {
   LoginCancelledError,
   LoginFailedError,
   Service,
+  UnrecoverableLoginFailedError,
   type ManualCredentialForm,
 } from './core/base.js';
 
@@ -63,13 +64,14 @@ export class ZoomCredentialError extends Error {
 
 /**
  * Raised when the signed-in user is not allowed to create apps in their Zoom
- * account. Extends {@link LoginFailedError} so the CLI reports the message on
- * stderr instead of a stack trace.
+ * account. Unrecoverable: creating the app by hand takes the same privilege,
+ * so the CLI reports the message on stderr rather than offering the manual
+ * credential form.
  */
-export class ZoomAppCreationNotPermittedError extends LoginFailedError {
+export class ZoomAppCreationNotPermittedError extends UnrecoverableLoginFailedError {
   constructor() {
     super(
-      'Your Zoom user is not allowed to create apps in the Zoom App Marketplace. Ask an administrator ' +
+      'Your Zoom user is not allowed to create connections/apps. Ask an administrator ' +
         'of your Zoom account to grant you the developer privilege, then try again.'
     );
     this.name = 'ZoomAppCreationNotPermittedError';
@@ -428,7 +430,7 @@ async function selectServerToServerAppKind(appKindDialog: Locator): Promise<void
     .locator('input[type="radio"]')
     .first();
   if ((await serverToServerOption.count()) === 0) {
-    throw new LoginFailedError(
+    throw new UnrecoverableLoginFailedError(
       'Zoom does not offer the "Server to Server OAuth" app type to your user. ' +
         'Ask an administrator of your Zoom account to enable it for you.'
     );

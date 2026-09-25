@@ -14,6 +14,7 @@ export {
 export {
   LoginCancelledError,
   LoginFailedError,
+  UnrecoverableLoginFailedError,
   NoCurlCredentialsNotSupportedError,
   PrepareNotSupportedError,
   PrepareInputInvalidError,

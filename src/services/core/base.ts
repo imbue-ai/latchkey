@@ -65,6 +65,19 @@ export class LoginFailedError extends Error {
 }
 
 /**
+ * A login failure the user cannot work around by finishing the flow by hand,
+ * e.g. because their account lacks the privilege the credentials require. It
+ * is reported straight away instead of being followed by the manual
+ * credential form, whose instructions the user could not carry out anyway.
+ */
+export class UnrecoverableLoginFailedError extends LoginFailedError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'UnrecoverableLoginFailedError';
+  }
+}
+
+/**
  * Thrown when `latchkey auth prepare` is run for a service that does not declare a
  * prepare schema (the base default — services opt in by setting one).
  */
@@ -684,7 +697,8 @@ export abstract class BrowserFollowupServiceSession extends ServiceSession {
    *
    * This needs somewhere to put them, so sessions without a
    * {@link manualCredentialForm} report the failure straight away rather than
-   * asking for work latchkey could not accept.
+   * asking for work latchkey could not accept. So does a failure the user could
+   * not fix by hand either (an {@link UnrecoverableLoginFailedError}).
    */
   private async recoverFromFailedFollowup(
     context: BrowserContext,
@@ -697,7 +711,7 @@ export abstract class BrowserFollowupServiceSession extends ServiceSession {
       : error;
 
     const form = this.manualCredentialForm;
-    if (form === undefined) {
+    if (form === undefined || failure instanceof UnrecoverableLoginFailedError) {
       throw failure;
     }
 
