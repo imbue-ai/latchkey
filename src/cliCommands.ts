@@ -1071,6 +1071,52 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       }
     });
 
+  authCommand
+    .command('import-chrome')
+    .description(
+      'Import cookies, and the localStorage of the login pages of known services, from your ' +
+        "default Google Chrome profile into Latchkey's browser state, so that browser logins " +
+        'can reuse your existing sessions.'
+    )
+    .action(async () => {
+      refuseInGatewayMode(deps, 'auth import-chrome');
+      if (deps.config.browserDisabled) {
+        deps.errorLog(new BrowserDisabledError().message);
+        deps.exit(1);
+      }
+      try {
+        const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
+        const { importedCookieCount, importedLocalStorageOrigins } = await importChromeBrowserState(
+          encryptedStorage,
+          deps.config.browserStatePath,
+          collectLoginOrigins(deps.registry.services)
+        );
+        deps.log(
+          `Imported ${String(importedCookieCount)} cookie(s) and the localStorage of ` +
+            `${String(importedLocalStorageOrigins.length)} origin(s) into ${deps.config.browserStatePath}.`
+        );
+        for (const origin of importedLocalStorageOrigins) {
+          deps.log(`  ${origin}`);
+        }
+      } catch (error) {
+        if (
+          error instanceof ChromeNotFoundError ||
+          error instanceof ChromeProfileNotFoundError ||
+          error instanceof ChromeProfileTooLargeError ||
+          error instanceof InvalidBrowserStateError ||
+          error instanceof EncryptedStorageError
+        ) {
+          deps.errorLog(`Error: ${error.message}`);
+          deps.exit(1);
+        }
+        if (error instanceof BrowserFeaturesUnavailableError) {
+          deps.errorLog(error.message);
+          deps.exit(1);
+        }
+        throw error;
+      }
+    });
+
   program
     .command('curl')
     .description('Run curl with API credential injection.')
@@ -1518,53 +1564,6 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         writeDataFormatVersionOfDirectory(destinationDirectory, LATEST_VERSION);
       }
     );
-
-  program
-    .command('import-browser-state')
-    .description(
-      'Import cookies, and the localStorage of the login pages of known services, from your ' +
-        "default Google Chrome profile into Latchkey's browser state, so that browser logins " +
-        'can reuse your existing sessions. The profile is copied to a temporary location ' +
-        'first, so Chrome may keep running.'
-    )
-    .action(async () => {
-      refuseInGatewayMode(deps, 'import-browser-state');
-      if (deps.config.browserDisabled) {
-        deps.errorLog(new BrowserDisabledError().message);
-        deps.exit(1);
-      }
-      try {
-        const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
-        const { importedCookieCount, importedLocalStorageOrigins } = await importChromeBrowserState(
-          encryptedStorage,
-          deps.config.browserStatePath,
-          collectLoginOrigins(deps.registry.services)
-        );
-        deps.log(
-          `Imported ${String(importedCookieCount)} cookie(s) and the localStorage of ` +
-            `${String(importedLocalStorageOrigins.length)} origin(s) into ${deps.config.browserStatePath}.`
-        );
-        for (const origin of importedLocalStorageOrigins) {
-          deps.log(`  ${origin}`);
-        }
-      } catch (error) {
-        if (
-          error instanceof ChromeNotFoundError ||
-          error instanceof ChromeProfileNotFoundError ||
-          error instanceof ChromeProfileTooLargeError ||
-          error instanceof InvalidBrowserStateError ||
-          error instanceof EncryptedStorageError
-        ) {
-          deps.errorLog(`Error: ${error.message}`);
-          deps.exit(1);
-        }
-        if (error instanceof BrowserFeaturesUnavailableError) {
-          deps.errorLog(error.message);
-          deps.exit(1);
-        }
-        throw error;
-      }
-    });
 
   program
     .command('skill-md')
