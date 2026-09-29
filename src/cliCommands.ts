@@ -37,6 +37,7 @@ import {
 import {
   ChromeNotFoundError,
   ChromeProfileNotFoundError,
+  collectLoginOrigins,
   importChromeBrowserState,
   InvalidBrowserStateError,
 } from './browserStateImport.js';
@@ -1520,9 +1521,10 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
   program
     .command('import-browser-state')
     .description(
-      "Import cookies from your default Google Chrome profile into Latchkey's browser state, " +
-        'so that browser logins can reuse your existing sessions. The profile is copied to a ' +
-        'temporary location first, so Chrome may keep running.'
+      'Import cookies, and the localStorage of the login pages of known services, from your ' +
+        "default Google Chrome profile into Latchkey's browser state, so that browser logins " +
+        'can reuse your existing sessions. The profile is copied to a temporary location ' +
+        'first, so Chrome may keep running.'
     )
     .action(async () => {
       refuseInGatewayMode(deps, 'import-browser-state');
@@ -1532,13 +1534,18 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       }
       try {
         const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
-        const { importedCookieCount } = await importChromeBrowserState(
+        const { importedCookieCount, importedLocalStorageOrigins } = await importChromeBrowserState(
           encryptedStorage,
-          deps.config.browserStatePath
+          deps.config.browserStatePath,
+          collectLoginOrigins(deps.registry.services)
         );
         deps.log(
-          `Imported ${String(importedCookieCount)} cookie(s) into ${deps.config.browserStatePath}.`
+          `Imported ${String(importedCookieCount)} cookie(s) and the localStorage of ` +
+            `${String(importedLocalStorageOrigins.length)} origin(s) into ${deps.config.browserStatePath}.`
         );
+        for (const origin of importedLocalStorageOrigins) {
+          deps.log(`  ${origin}`);
+        }
       } catch (error) {
         if (
           error instanceof ChromeNotFoundError ||

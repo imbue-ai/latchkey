@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  collectLoginOrigins,
   InvalidBrowserStateError,
   mergeBrowserStorageStates,
   parseBrowserStorageState,
   type BrowserStorageState,
 } from '../src/browserStateImport.js';
+import type { Service } from '../src/services/index.js';
 
 function cookie(
   name: string,
@@ -62,5 +64,19 @@ describe('parseBrowserStorageState', () => {
 
   it('rejects invalid JSON', () => {
     expect(() => parseBrowserStorageState('not json')).toThrow(InvalidBrowserStateError);
+  });
+});
+
+describe('collectLoginOrigins', () => {
+  it('returns the distinct web origins of the login URLs', () => {
+    const services = [
+      { loginUrl: 'https://example.com/login' },
+      { loginUrl: 'https://example.com/other' },
+      { loginUrl: 'http://localhost:8080/sign-in' },
+      { loginUrl: '' },
+      { loginUrl: 'mailto:someone@example.com' },
+    ] as unknown as Service[];
+
+    expect(collectLoginOrigins(services)).toEqual(['http://localhost:8080', 'https://example.com']);
   });
 });

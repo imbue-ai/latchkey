@@ -1,6 +1,7 @@
 /**
- * Import cookies from the user's regular Google Chrome profile into Latchkey's
- * encrypted browser state, so that browser flows start out logged in.
+ * Import cookies (and the localStorage of the services Latchkey knows) from the
+ * user's regular Google Chrome profile into Latchkey's encrypted browser state,
+ * so that browser flows start out logged in.
  *
  * The profile is copied to a temporary location first: Chrome refuses to be
  * automated on its default user data directory, and it would clash with a
@@ -13,6 +14,7 @@ import { basename, join } from 'node:path';
 import type { BrowserContext } from 'playwright';
 import type { EncryptedStorage } from './encryptedStorage.js';
 import { loadPlaywright } from './playwrightLoader.js';
+import type { Service } from './services/index.js';
 
 export class ChromeNotFoundError extends Error {
   constructor() {
@@ -38,6 +40,8 @@ export class InvalidBrowserStateError extends Error {
 export type BrowserStorageState = Awaited<ReturnType<BrowserContext['storageState']>>;
 
 type Cookie = BrowserStorageState['cookies'][number];
+
+type OriginStorage = BrowserStorageState['origins'][number];
 
 const DEFAULT_PROFILE_DIRECTORY_NAME = 'Default';
 
@@ -104,6 +108,16 @@ export function getChromeUserDataDirectory(): string {
   }
 }
 
+/** The distinct web origins of the services' login URLs. */
+export function collectLoginOrigins(services: readonly Service[]): readonly string[] {
+  const origins = services
+    .filter((service) => URL.canParse(service.loginUrl))
+    .map((service) => new URL(service.loginUrl))
+    .filter((url) => url.protocol === 'https:' || url.protocol === 'http:')
+    .map((url) => url.origin);
+  return [...new Set(origins)].sort();
+}
+
 function cookieKey(cookie: Cookie): string {
   return JSON.stringify([cookie.name, cookie.domain, cookie.path]);
 }
@@ -120,7 +134,7 @@ export function mergeBrowserStorageStates(
   for (const cookie of [...existing.cookies, ...imported.cookies]) {
     cookies.set(cookieKey(cookie), cookie);
   }
-  const origins = new Map<string, BrowserStorageState['origins'][number]>();
+  const origins = new Map<string, OriginStorage>();
   for (const origin of [...existing.origins, ...imported.origins]) {
     origins.set(origin.origin, origin);
   }
@@ -140,7 +154,7 @@ export function parseBrowserStorageState(content: string): BrowserStorageState {
   const { cookies, origins } = parsed as Partial<Record<keyof BrowserStorageState, unknown>>;
   return {
     cookies: Array.isArray(cookies) ? (cookies as Cookie[]) : [],
-    origins: Array.isArray(origins) ? (origins as BrowserStorageState['origins']) : [],
+    origins: Array.isArray(origins) ? (origins as OriginStorage[]) : [],
   };
 }
 
@@ -162,9 +176,43 @@ function copyDefaultProfile(chromeUserDataDirectory: string): string {
   return temporaryUserDataDirectory;
 }
 
+/**
+ * Read the localStorage of the given origins. Every request is answered with an
+ * empty page, so each origin is visited without any network traffic or site
+ * scripts, and what is read is exactly what the profile has stored.
+ */
+async function readLocalStorage(
+  context: BrowserContext,
+  origins: readonly string[]
+): Promise<readonly OriginStorage[]> {
+  await context.route('**/*', (route) =>
+    route.fulfill({ status: 200, contentType: 'text/html', body: '' })
+  );
+  const page = await context.newPage();
+  try {
+    const originStorages: OriginStorage[] = [];
+    for (const origin of origins) {
+      await page.goto(origin);
+      const entries = await page.evaluate<[string, string][]>(
+        'Object.entries(window.localStorage)'
+      );
+      if (entries.length > 0) {
+        originStorages.push({
+          origin,
+          localStorage: entries.map(([name, value]) => ({ name, value })),
+        });
+      }
+    }
+    return originStorages;
+  } finally {
+    await page.close();
+  }
+}
+
 async function readChromeProfileStorageState(
   chromeExecutablePath: string,
-  userDataDirectory: string
+  userDataDirectory: string,
+  localStorageOrigins: readonly string[]
 ): Promise<BrowserStorageState> {
   const { chromium } = await loadPlaywright();
   const context = await chromium.launchPersistentContext(userDataDirectory, {
@@ -174,9 +222,14 @@ async function readChromeProfileStorageState(
     // Playwright's defaults keep Chrome away from the OS keychain, which holds
     // the key needed to decrypt the copied cookies.
     ignoreDefaultArgs: ['--password-store=basic', '--use-mock-keychain', '--enable-automation'],
+    // A service worker from the profile could otherwise answer instead of the
+    // route that keeps the origin visits offline.
+    serviceWorkers: 'block',
   });
   try {
-    return await context.storageState();
+    const cookies = await context.cookies();
+    const origins = await readLocalStorage(context, localStorageOrigins);
+    return { cookies, origins: [...origins] };
   } finally {
     await context.close();
   }
@@ -184,15 +237,19 @@ async function readChromeProfileStorageState(
 
 export interface BrowserStateImportResult {
   readonly importedCookieCount: number;
+  /** Origins (among those asked for) that had localStorage to import. */
+  readonly importedLocalStorageOrigins: readonly string[];
 }
 
 /**
- * Read the cookies of the user's default Chrome profile and merge them into
- * the encrypted browser state at `browserStatePath`.
+ * Read the cookies of the user's default Chrome profile, and the localStorage
+ * of `localStorageOrigins`, and merge them into the encrypted browser state at
+ * `browserStatePath`.
  */
 export async function importChromeBrowserState(
   encryptedStorage: EncryptedStorage,
-  browserStatePath: string
+  browserStatePath: string,
+  localStorageOrigins: readonly string[]
 ): Promise<BrowserStateImportResult> {
   const chromeExecutablePath = findChromeExecutable();
   if (chromeExecutablePath === null) {
@@ -209,7 +266,8 @@ export async function importChromeBrowserState(
   try {
     importedState = await readChromeProfileStorageState(
       chromeExecutablePath,
-      temporaryUserDataDirectory
+      temporaryUserDataDirectory,
+      localStorageOrigins
     );
   } finally {
     rmSync(temporaryUserDataDirectory, { recursive: true, force: true });
@@ -217,5 +275,8 @@ export async function importChromeBrowserState(
 
   const mergedState = mergeBrowserStorageStates(existingState, importedState);
   encryptedStorage.writeFile(browserStatePath, JSON.stringify(mergedState, null, 2));
-  return { importedCookieCount: importedState.cookies.length };
+  return {
+    importedCookieCount: importedState.cookies.length,
+    importedLocalStorageOrigins: importedState.origins.map((origin) => origin.origin),
+  };
 }
