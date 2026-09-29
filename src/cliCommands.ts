@@ -34,6 +34,12 @@ import {
   ensureBrowser,
   type BrowserSource,
 } from './browserConfig.js';
+import {
+  ChromeNotFoundError,
+  ChromeProfileNotFoundError,
+  importChromeBrowserState,
+  InvalidBrowserStateError,
+} from './browserStateImport.js';
 import { Config, CONFIG } from './config.js';
 import { deleteRegisteredService, saveRegisteredService } from './configDataStore.js';
 import {
@@ -1510,6 +1516,46 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         writeDataFormatVersionOfDirectory(destinationDirectory, LATEST_VERSION);
       }
     );
+
+  program
+    .command('import-browser-state')
+    .description(
+      "Import cookies from your default Google Chrome profile into Latchkey's browser state, " +
+        'so that browser logins can reuse your existing sessions. The profile is copied to a ' +
+        'temporary location first, so Chrome may keep running.'
+    )
+    .action(async () => {
+      refuseInGatewayMode(deps, 'import-browser-state');
+      if (deps.config.browserDisabled) {
+        deps.errorLog(new BrowserDisabledError().message);
+        deps.exit(1);
+      }
+      try {
+        const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
+        const { importedCookieCount } = await importChromeBrowserState(
+          encryptedStorage,
+          deps.config.browserStatePath
+        );
+        deps.log(
+          `Imported ${String(importedCookieCount)} cookie(s) into ${deps.config.browserStatePath}.`
+        );
+      } catch (error) {
+        if (
+          error instanceof ChromeNotFoundError ||
+          error instanceof ChromeProfileNotFoundError ||
+          error instanceof InvalidBrowserStateError ||
+          error instanceof EncryptedStorageError
+        ) {
+          deps.errorLog(`Error: ${error.message}`);
+          deps.exit(1);
+        }
+        if (error instanceof BrowserFeaturesUnavailableError) {
+          deps.errorLog(error.message);
+          deps.exit(1);
+        }
+        throw error;
+      }
+    });
 
   program
     .command('skill-md')

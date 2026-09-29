@@ -1,0 +1,221 @@
+/**
+ * Import cookies from the user's regular Google Chrome profile into Latchkey's
+ * encrypted browser state, so that browser flows start out logged in.
+ *
+ * The profile is copied to a temporary location first: Chrome refuses to be
+ * automated on its default user data directory, and it would clash with a
+ * Chrome instance the user may have running.
+ */
+
+import { cpSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { homedir, platform, tmpdir } from 'node:os';
+import { basename, join } from 'node:path';
+import type { BrowserContext } from 'playwright';
+import type { EncryptedStorage } from './encryptedStorage.js';
+import { loadPlaywright } from './playwrightLoader.js';
+
+export class ChromeNotFoundError extends Error {
+  constructor() {
+    super('Google Chrome is not installed in any of the standard locations.');
+    this.name = 'ChromeNotFoundError';
+  }
+}
+
+export class ChromeProfileNotFoundError extends Error {
+  constructor(profilePath: string) {
+    super(`No default Google Chrome profile found at ${profilePath}.`);
+    this.name = 'ChromeProfileNotFoundError';
+  }
+}
+
+export class InvalidBrowserStateError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidBrowserStateError';
+  }
+}
+
+export type BrowserStorageState = Awaited<ReturnType<BrowserContext['storageState']>>;
+
+type Cookie = BrowserStorageState['cookies'][number];
+
+const DEFAULT_PROFILE_DIRECTORY_NAME = 'Default';
+
+/** Chrome keeps the key cookies are encrypted with (on Windows) in this file. */
+const LOCAL_STATE_FILENAME = 'Local State';
+
+/** Profile subdirectories that hold nothing worth importing and can be huge. */
+const SKIPPED_PROFILE_DIRECTORY_NAMES: ReadonlySet<string> = new Set([
+  'Cache',
+  'Code Cache',
+  'DawnGraphiteCache',
+  'DawnWebGPUCache',
+  'GPUCache',
+  'GrShaderCache',
+  'ShaderCache',
+  'Service Worker',
+]);
+
+/**
+ * Google Chrome specifically (not Chromium or Edge): the copied cookies can only
+ * be decrypted by the browser whose OS keychain entry they were encrypted with.
+ */
+function chromeExecutableCandidates(): readonly string[] {
+  switch (platform()) {
+    case 'darwin':
+      return ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'];
+    case 'linux':
+      return [
+        '/opt/google/chrome/chrome',
+        '/usr/bin/google-chrome',
+        '/usr/bin/google-chrome-stable',
+      ];
+    case 'win32':
+      return [process.env.PROGRAMFILES, process.env['PROGRAMFILES(X86)'], process.env.LOCALAPPDATA]
+        .filter((prefix): prefix is string => prefix !== undefined && prefix !== '')
+        .map((prefix) => join(prefix, 'Google', 'Chrome', 'Application', 'chrome.exe'));
+    default:
+      return [];
+  }
+}
+
+export function findChromeExecutable(): string | null {
+  return chromeExecutableCandidates().find((candidate) => existsSync(candidate)) ?? null;
+}
+
+export function getChromeUserDataDirectory(): string {
+  switch (platform()) {
+    case 'darwin':
+      return join(homedir(), 'Library', 'Application Support', 'Google', 'Chrome');
+    case 'win32':
+      return join(
+        process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local'),
+        'Google',
+        'Chrome',
+        'User Data'
+      );
+    default: {
+      const configHome = process.env.XDG_CONFIG_HOME;
+      return join(
+        configHome !== undefined && configHome !== '' ? configHome : join(homedir(), '.config'),
+        'google-chrome'
+      );
+    }
+  }
+}
+
+function cookieKey(cookie: Cookie): string {
+  return JSON.stringify([cookie.name, cookie.domain, cookie.path]);
+}
+
+/**
+ * Combine two storage states. Where both have the same cookie (by name, domain
+ * and path) or the same origin, the imported one wins.
+ */
+export function mergeBrowserStorageStates(
+  existing: BrowserStorageState,
+  imported: BrowserStorageState
+): BrowserStorageState {
+  const cookies = new Map<string, Cookie>();
+  for (const cookie of [...existing.cookies, ...imported.cookies]) {
+    cookies.set(cookieKey(cookie), cookie);
+  }
+  const origins = new Map<string, BrowserStorageState['origins'][number]>();
+  for (const origin of [...existing.origins, ...imported.origins]) {
+    origins.set(origin.origin, origin);
+  }
+  return { cookies: [...cookies.values()], origins: [...origins.values()] };
+}
+
+export function parseBrowserStorageState(content: string): BrowserStorageState {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    throw new InvalidBrowserStateError('The stored browser state is not valid JSON.');
+  }
+  if (typeof parsed !== 'object' || parsed === null) {
+    throw new InvalidBrowserStateError('The stored browser state is not a JSON object.');
+  }
+  const { cookies, origins } = parsed as Partial<Record<keyof BrowserStorageState, unknown>>;
+  return {
+    cookies: Array.isArray(cookies) ? (cookies as Cookie[]) : [],
+    origins: Array.isArray(origins) ? (origins as BrowserStorageState['origins']) : [],
+  };
+}
+
+/** Copy the default profile into a fresh user data directory and return its path. */
+function copyDefaultProfile(chromeUserDataDirectory: string): string {
+  const profileDirectory = join(chromeUserDataDirectory, DEFAULT_PROFILE_DIRECTORY_NAME);
+  if (!existsSync(profileDirectory)) {
+    throw new ChromeProfileNotFoundError(profileDirectory);
+  }
+  const temporaryUserDataDirectory = mkdtempSync(join(tmpdir(), 'latchkey-chrome-profile-'));
+  cpSync(profileDirectory, join(temporaryUserDataDirectory, DEFAULT_PROFILE_DIRECTORY_NAME), {
+    recursive: true,
+    filter: (source) => !SKIPPED_PROFILE_DIRECTORY_NAMES.has(basename(source)),
+  });
+  const localStatePath = join(chromeUserDataDirectory, LOCAL_STATE_FILENAME);
+  if (existsSync(localStatePath)) {
+    cpSync(localStatePath, join(temporaryUserDataDirectory, LOCAL_STATE_FILENAME));
+  }
+  return temporaryUserDataDirectory;
+}
+
+async function readChromeProfileStorageState(
+  chromeExecutablePath: string,
+  userDataDirectory: string
+): Promise<BrowserStorageState> {
+  const { chromium } = await loadPlaywright();
+  const context = await chromium.launchPersistentContext(userDataDirectory, {
+    executablePath: chromeExecutablePath,
+    headless: true,
+    args: [`--profile-directory=${DEFAULT_PROFILE_DIRECTORY_NAME}`],
+    // Playwright's defaults keep Chrome away from the OS keychain, which holds
+    // the key needed to decrypt the copied cookies.
+    ignoreDefaultArgs: ['--password-store=basic', '--use-mock-keychain', '--enable-automation'],
+  });
+  try {
+    return await context.storageState();
+  } finally {
+    await context.close();
+  }
+}
+
+export interface BrowserStateImportResult {
+  readonly importedCookieCount: number;
+}
+
+/**
+ * Read the cookies of the user's default Chrome profile and merge them into
+ * the encrypted browser state at `browserStatePath`.
+ */
+export async function importChromeBrowserState(
+  encryptedStorage: EncryptedStorage,
+  browserStatePath: string
+): Promise<BrowserStateImportResult> {
+  const chromeExecutablePath = findChromeExecutable();
+  if (chromeExecutablePath === null) {
+    throw new ChromeNotFoundError();
+  }
+  const existingContent = encryptedStorage.readFile(browserStatePath);
+  const existingState =
+    existingContent === null
+      ? { cookies: [], origins: [] }
+      : parseBrowserStorageState(existingContent);
+
+  const temporaryUserDataDirectory = copyDefaultProfile(getChromeUserDataDirectory());
+  let importedState: BrowserStorageState;
+  try {
+    importedState = await readChromeProfileStorageState(
+      chromeExecutablePath,
+      temporaryUserDataDirectory
+    );
+  } finally {
+    rmSync(temporaryUserDataDirectory, { recursive: true, force: true });
+  }
+
+  const mergedState = mergeBrowserStorageStates(existingState, importedState);
+  encryptedStorage.writeFile(browserStatePath, JSON.stringify(mergedState, null, 2));
+  return { importedCookieCount: importedState.cookies.length };
+}
