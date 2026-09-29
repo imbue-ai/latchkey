@@ -297,11 +297,6 @@ export async function importChromeBrowserState(
   if (chromeExecutablePath === null) {
     throw new ChromeNotFoundError();
   }
-  const existingContent = encryptedStorage.readFile(browserStatePath);
-  const existingState =
-    existingContent === null
-      ? { cookies: [], origins: [] }
-      : parseBrowserStorageState(existingContent);
 
   const temporaryUserDataDirectory = copyDefaultProfile(getChromeUserDataDirectory());
   let importedState: BrowserStorageState;
@@ -315,6 +310,13 @@ export async function importChromeBrowserState(
     rmSync(temporaryUserDataDirectory, { recursive: true, force: true });
   }
 
+  // Read only now, right before writing, so that changes other processes made
+  // to the browser state while Chrome was running are not overwritten.
+  const existingContent = encryptedStorage.readFile(browserStatePath);
+  const existingState =
+    existingContent === null
+      ? { cookies: [], origins: [] }
+      : parseBrowserStorageState(existingContent);
   const mergedState = mergeBrowserStorageStates(existingState, importedState);
   encryptedStorage.writeFile(browserStatePath, JSON.stringify(mergedState, null, 2));
   return {
