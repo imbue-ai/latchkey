@@ -1,7 +1,11 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   collectLoginOrigins,
   InvalidBrowserStateError,
+  measureCopiedUserDataSizeInBytes,
   mergeBrowserStorageStates,
   parseBrowserStorageState,
   type BrowserStorageState,
@@ -78,5 +82,31 @@ describe('collectLoginOrigins', () => {
     ] as unknown as Service[];
 
     expect(collectLoginOrigins(services)).toEqual(['http://localhost:8080', 'https://example.com']);
+  });
+});
+
+describe('measureCopiedUserDataSizeInBytes', () => {
+  it('counts only the copied paths', () => {
+    const userDataDirectory = mkdtempSync(join(tmpdir(), 'latchkey-chrome-user-data-test-'));
+    try {
+      mkdirSync(join(userDataDirectory, 'Default', 'Network'), { recursive: true });
+      mkdirSync(join(userDataDirectory, 'Default', 'Local Storage', 'leveldb'), {
+        recursive: true,
+      });
+      mkdirSync(join(userDataDirectory, 'Default', 'Cache'), { recursive: true });
+      mkdirSync(join(userDataDirectory, 'OptGuideOnDeviceModel'), { recursive: true });
+      writeFileSync(join(userDataDirectory, 'Local State'), 'a'.repeat(10));
+      writeFileSync(join(userDataDirectory, 'Default', 'Network', 'Cookies'), 'b'.repeat(20));
+      writeFileSync(
+        join(userDataDirectory, 'Default', 'Local Storage', 'leveldb', '000003.log'),
+        'c'.repeat(30)
+      );
+      writeFileSync(join(userDataDirectory, 'Default', 'Cache', 'data_0'), 'd'.repeat(1000));
+      writeFileSync(join(userDataDirectory, 'OptGuideOnDeviceModel', 'model'), 'e'.repeat(1000));
+
+      expect(measureCopiedUserDataSizeInBytes(userDataDirectory)).toBe(60);
+    } finally {
+      rmSync(userDataDirectory, { recursive: true, force: true });
+    }
   });
 });

@@ -3,14 +3,15 @@
  * user's regular Google Chrome profile into Latchkey's encrypted browser state,
  * so that browser flows start out logged in.
  *
- * The profile is copied to a temporary location first: Chrome refuses to be
- * automated on its default user data directory, and it would clash with a
- * Chrome instance the user may have running.
+ * The parts of the profile that hold this data are copied to a temporary
+ * location first: Chrome refuses to be automated on its default user data
+ * directory, and it would clash with a Chrome instance the user may have
+ * running.
  */
 
-import { cpSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { homedir, platform, tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { join } from 'node:path';
 import type { BrowserContext } from 'playwright';
 import type { EncryptedStorage } from './encryptedStorage.js';
 import { loadPlaywright } from './playwrightLoader.js';
@@ -30,6 +31,17 @@ export class ChromeProfileNotFoundError extends Error {
   }
 }
 
+export class ChromeProfileTooLargeError extends Error {
+  constructor(sizeInBytes: number, limitInBytes: number) {
+    const toMebibytes = (bytes: number) => String(Math.round(bytes / 1024 / 1024));
+    super(
+      `The Google Chrome profile data to copy takes ${toMebibytes(sizeInBytes)} MiB, ` +
+        `more than the limit of ${toMebibytes(limitInBytes)} MiB.`
+    );
+    this.name = 'ChromeProfileTooLargeError';
+  }
+}
+
 export class InvalidBrowserStateError extends Error {
   constructor(message: string) {
     super(message);
@@ -45,20 +57,21 @@ type OriginStorage = BrowserStorageState['origins'][number];
 
 const DEFAULT_PROFILE_DIRECTORY_NAME = 'Default';
 
-/** Chrome keeps the key cookies are encrypted with (on Windows) in this file. */
-const LOCAL_STATE_FILENAME = 'Local State';
-
-/** Profile subdirectories that hold nothing worth importing and can be huge. */
-const SKIPPED_PROFILE_DIRECTORY_NAMES: ReadonlySet<string> = new Set([
-  'Cache',
-  'Code Cache',
-  'DawnGraphiteCache',
-  'DawnWebGPUCache',
-  'GPUCache',
-  'GrShaderCache',
-  'ShaderCache',
-  'Service Worker',
-]);
+/**
+ * What gets copied, relative to the user data directory. The rest of it (caches,
+ * on-device models, ...) can be huge and is not needed to read cookies and
+ * localStorage. Paths that do not exist are skipped.
+ */
+const COPIED_USER_DATA_PATHS: readonly string[] = [
+  // Holds the key cookies are encrypted with on Windows.
+  'Local State',
+  `${DEFAULT_PROFILE_DIRECTORY_NAME}/Network/Cookies`,
+  `${DEFAULT_PROFILE_DIRECTORY_NAME}/Network/Cookies-journal`,
+  // Where cookies lived before Chrome 96.
+  `${DEFAULT_PROFILE_DIRECTORY_NAME}/Cookies`,
+  `${DEFAULT_PROFILE_DIRECTORY_NAME}/Cookies-journal`,
+  `${DEFAULT_PROFILE_DIRECTORY_NAME}/Local Storage`,
+];
 
 /**
  * Google Chrome specifically (not Chromium or Edge): the copied cookies can only
@@ -158,20 +171,49 @@ export function parseBrowserStorageState(content: string): BrowserStorageState {
   };
 }
 
-/** Copy the default profile into a fresh user data directory and return its path. */
+/**
+ * Sanity limit on how much gets copied. The copied data is normally a few
+ * megabytes; anything near this means something unexpected is in there.
+ */
+const MAXIMUM_COPY_SIZE_IN_BYTES = 1024 * 1024 * 1024;
+
+function measureSizeInBytes(path: string): number {
+  const stats = statSync(path);
+  if (!stats.isDirectory()) {
+    return stats.size;
+  }
+  return readdirSync(path)
+    .map((entry) => measureSizeInBytes(join(path, entry)))
+    .reduce((total, size) => total + size, 0);
+}
+
+/** Total size of what {@link copyDefaultProfile} would copy. */
+export function measureCopiedUserDataSizeInBytes(chromeUserDataDirectory: string): number {
+  return COPIED_USER_DATA_PATHS.map((relativePath) => join(chromeUserDataDirectory, relativePath))
+    .filter((path) => existsSync(path))
+    .map(measureSizeInBytes)
+    .reduce((total, size) => total + size, 0);
+}
+
+/**
+ * Copy the cookies and localStorage of the default profile into a fresh user
+ * data directory and return its path.
+ */
 function copyDefaultProfile(chromeUserDataDirectory: string): string {
   const profileDirectory = join(chromeUserDataDirectory, DEFAULT_PROFILE_DIRECTORY_NAME);
   if (!existsSync(profileDirectory)) {
     throw new ChromeProfileNotFoundError(profileDirectory);
   }
+  const copySizeInBytes = measureCopiedUserDataSizeInBytes(chromeUserDataDirectory);
+  if (copySizeInBytes > MAXIMUM_COPY_SIZE_IN_BYTES) {
+    throw new ChromeProfileTooLargeError(copySizeInBytes, MAXIMUM_COPY_SIZE_IN_BYTES);
+  }
   const temporaryUserDataDirectory = mkdtempSync(join(tmpdir(), 'latchkey-chrome-profile-'));
-  cpSync(profileDirectory, join(temporaryUserDataDirectory, DEFAULT_PROFILE_DIRECTORY_NAME), {
-    recursive: true,
-    filter: (source) => !SKIPPED_PROFILE_DIRECTORY_NAMES.has(basename(source)),
-  });
-  const localStatePath = join(chromeUserDataDirectory, LOCAL_STATE_FILENAME);
-  if (existsSync(localStatePath)) {
-    cpSync(localStatePath, join(temporaryUserDataDirectory, LOCAL_STATE_FILENAME));
+  for (const relativePath of COPIED_USER_DATA_PATHS) {
+    const source = join(chromeUserDataDirectory, relativePath);
+    if (existsSync(source)) {
+      cpSync(source, join(temporaryUserDataDirectory, relativePath), { recursive: true });
+    }
   }
   return temporaryUserDataDirectory;
 }

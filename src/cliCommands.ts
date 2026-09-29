@@ -37,6 +37,7 @@ import {
 import {
   ChromeNotFoundError,
   ChromeProfileNotFoundError,
+  ChromeProfileTooLargeError,
   collectLoginOrigins,
   importChromeBrowserState,
   InvalidBrowserStateError,
@@ -1550,6 +1551,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         if (
           error instanceof ChromeNotFoundError ||
           error instanceof ChromeProfileNotFoundError ||
+          error instanceof ChromeProfileTooLargeError ||
           error instanceof InvalidBrowserStateError ||
           error instanceof EncryptedStorageError
         ) {
