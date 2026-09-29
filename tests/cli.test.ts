@@ -3931,6 +3931,7 @@ describe('CLI commands with dependency injection', () => {
       ['gateway', ['gateway']],
       ['ensure-browser', ['ensure-browser']],
       ['auth re-encrypt', ['auth', 're-encrypt', '/tmp/does-not-matter-dir']],
+      ['auth import-chrome', ['auth', 'import-chrome']],
     ])('refuses to run `%s` in gateway mode', async (_name, argv) => {
       const deps = createMockDependencies({
         config: createMockConfig({ gatewayUrl: GATEWAY_URL }),
