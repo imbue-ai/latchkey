@@ -76,6 +76,7 @@
     "@napi-rs/keyring": "^1.2.0",
     "commander": "^12.0.0",
     "playwright": "~1.63.0",
+    "playwright-core": "1.63.0",
     "semver": "^7.8.5",
     "zod": "^3.22.0"
   },
