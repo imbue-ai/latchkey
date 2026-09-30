@@ -24,6 +24,10 @@ const WORKSPACE_URL_TIMEOUT_MS = 30000;
 const WORKSPACE_URL_STABLE_MS = 1000;
 const WORKSPACE_URL_POLL_INTERVAL_MS = 200;
 
+// How long the page has to sit on the marketing root before it counts as a
+// dead end rather than a hop in a redirect chain.
+const MARKETING_ROOT_STABLE_MS = 1000;
+
 // First path segments of linear.app URLs that are not workspace names.
 const NON_WORKSPACE_PATH_SEGMENTS = new Set([
   'login',
@@ -54,6 +58,11 @@ function parseWorkspaceName(url: string): string | null {
   return workspaceName === '' || NON_WORKSPACE_PATH_SEGMENTS.has(workspaceName)
     ? null
     : workspaceName;
+}
+
+// The bare linear.app homepage, regardless of query string or fragment.
+function isMarketingRoot(url: string): boolean {
+  return /^https:\/\/linear\.app\/?(?:[?#]|$)/.test(url);
 }
 
 function newApiKeyUrl(workspaceName: string): string {
@@ -105,6 +114,7 @@ class LinearServiceSession extends BrowserFollowupServiceSession {
     buildCredentials: (values) => new AuthorizationBare(values.get('apiKey')),
   };
   private isLoggedIn = false;
+  private onMarketingRootSince: number | null = null;
 
   onResponse(response: Response): void {
     if (this.isLoggedIn) {
@@ -138,6 +148,36 @@ class LinearServiceSession extends BrowserFollowupServiceSession {
 
   protected isLoginComplete(): boolean {
     return this.isLoggedIn;
+  }
+
+  /**
+   * With stale cookies, Linear sometimes bounces the user from the login page
+   * (through a few intermediate pages) to the marketing homepage, which is a
+   * dead end for the login. Once the page has settled there, send it back to
+   * the login page.
+   */
+  override async whileWaitingForLogin(page: Page): Promise<void> {
+    if (this.isLoggedIn || !isMarketingRoot(page.url())) {
+      this.onMarketingRootSince = null;
+      return;
+    }
+
+    const now = Date.now();
+    if (this.onMarketingRootSince === null) {
+      this.onMarketingRootSince = now;
+      return;
+    }
+    if (now - this.onMarketingRootSince < MARKETING_ROOT_STABLE_MS) {
+      return;
+    }
+
+    this.onMarketingRootSince = null;
+    try {
+      await page.goto(LINEAR_LOGIN_URL);
+    } catch {
+      // The navigation may race with one the page started itself; the next
+      // poll sees where things ended up.
+    }
   }
 
   protected async performBrowserFollowup(
