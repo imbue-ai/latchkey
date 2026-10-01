@@ -23,13 +23,7 @@ import { CredentialFormValues } from '../src/playwrightUtils.js';
 const SERVICES_WITHOUT_A_PASTEABLE_CREDENTIAL = ['dropbox'];
 
 function isOAuthOnlyService(service: Service): boolean {
-  return (
-    SERVICES_WITHOUT_A_PASTEABLE_CREDENTIAL.includes(service.name) ||
-    // Google's services all share one flow: latchkey prepares an OAuth client,
-    // then trades a consent for tokens.
-    service.name === 'google' ||
-    service.name.startsWith('google-')
-  );
+  return SERVICES_WITHOUT_A_PASTEABLE_CREDENTIAL.includes(service.name);
 }
 
 interface NamedSession {
