@@ -3,9 +3,9 @@ import { macOSAppBundlePath } from '../src/playwrightMacLaunch.js';
 
 describe('macOSAppBundlePath', () => {
   it('derives the .app bundle from a Chrome executable path', () => {
-    expect(
-      macOSAppBundlePath('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome')
-    ).toBe('/Applications/Google Chrome.app');
+    expect(macOSAppBundlePath('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome')).toBe(
+      '/Applications/Google Chrome.app'
+    );
   });
 
   it('derives the bundle for Chromium', () => {

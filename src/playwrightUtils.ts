@@ -52,7 +52,11 @@ import { join } from 'node:path';
 import type { Browser, BrowserContext, Page, Locator, LaunchOptions } from 'playwright';
 import { EncryptedStorage } from './encryptedStorage.js';
 import { loadPlaywright } from './playwrightLoader.js';
-import { launchBrowserAsMacApp, logBestEffortError, macOSAppBundlePath } from './playwrightMacLaunch.js';
+import {
+  launchBrowserAsMacApp,
+  logBestEffortError,
+  macOSAppBundlePath,
+} from './playwrightMacLaunch.js';
 
 export interface BrowserWithContext {
   readonly browser: Browser;
@@ -200,9 +204,7 @@ export async function withTempBrowserContext<T>(
     if (process.env.LATCHKEY_DEBUG === '1') {
       const artifactsDir = await captureFailureArtifacts(context);
       if (artifactsDir) {
-        console.error(
-          `[latchkey] Browser flow failed. Debug artifacts saved to: ${artifactsDir}`
-        );
+        console.error(`[latchkey] Browser flow failed. Debug artifacts saved to: ${artifactsDir}`);
       }
       console.error(
         '[latchkey] LATCHKEY_DEBUG=1: browser left open for inspection. Press Ctrl+C to exit.'

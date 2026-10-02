@@ -20,7 +20,9 @@ import type { Browser, BrowserType } from 'playwright';
  */
 export function logBestEffortError(context: string, error: unknown): void {
   if (process.env.LATCHKEY_DEBUG === '1') {
-    console.error(`[latchkey] ${context}: ${error instanceof Error ? error.message : String(error)}`);
+    console.error(
+      `[latchkey] ${context}: ${error instanceof Error ? error.message : String(error)}`
+    );
   }
 }
 
