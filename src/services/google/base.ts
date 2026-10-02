@@ -11,7 +11,11 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { Browser, BrowserContext, Locator, Page, Response } from 'playwright';
 import { type ApiCredentials, OAuthCredentials } from '../../apiCredentials/base.js';
-import { fetchAccountFromEndpoint, tryParseJson } from '../../apiCredentials/account.js';
+import {
+  DEFAULT_ACCOUNT,
+  fetchAccountFromEndpoint,
+  tryParseJson,
+} from '../../apiCredentials/account.js';
 import { extractUrlFromCurlArguments } from '../../curl.js';
 import {
   showSpinnerPage,
@@ -29,7 +33,8 @@ import {
 } from '../../oauthUtils.js';
 import {
   Service,
-  BrowserFollowupServiceSession,
+  ServiceSession,
+  type LoginResult,
   buildFollowupSpinnerDetails,
   FollowupWork,
   RedirectUriOverrideSchema,
@@ -89,7 +94,12 @@ export class GoogleApiKeyCredentials implements ApiCredentials {
 }
 
 const DEFAULT_TIMEOUT_MS = 12000;
-const LOGIN_TIMEOUT_MS = 120000;
+/**
+ * How long the user has to get through the authorization URL. That covers
+ * signing in to Google (password, second factor) as well as the consent
+ * screen, hence the generous limit.
+ */
+const LOGIN_TIMEOUT_MS = 300_000;
 const GOOGLE_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 
 /**
@@ -666,11 +676,7 @@ export interface GoogleServiceConfig {
   readonly scopes: readonly string[];
 }
 
-class GoogleServiceSession extends BrowserFollowupServiceSession {
-  // The OAuth client is created during `prepare` (see below), not during login:
-  // login only runs the OAuth flow against the already prepared client.
-  protected readonly followupWork = FollowupWork.CreateApp;
-  private readonly loginDetector = { isLoggedIn: false };
+class GoogleServiceSession extends ServiceSession {
   private readonly config: GoogleServiceConfig;
 
   constructor(service: GoogleService, config: GoogleServiceConfig, appNamePrefix: string) {
@@ -678,31 +684,37 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     this.config = config;
   }
 
-  onResponse(response: Response): void {
-    checkGoogleLoginResponse(response, this.loginDetector);
+  onResponse(_response: Response): void {
+    // Not used — login completion is signalled by the OAuth callback, not by
+    // inspecting page responses.
   }
 
   protected isLoginComplete(): boolean {
-    return this.loginDetector.isLoggedIn;
+    // Not used — we override login() entirely.
+    return false;
   }
 
-  protected override finalizeCredentials(
+  protected finalizeCredentials(
     _browser: Browser,
-    context: BrowserContext,
-    oldCredentials?: ApiCredentials
+    _context: BrowserContext,
+    _oldCredentials?: ApiCredentials
   ): Promise<ApiCredentials | null> {
-    return this.performBrowserFollowup(context, oldCredentials);
+    // Not used — we override login() entirely.
+    return Promise.resolve(null);
   }
 
-  protected async performBrowserFollowup(
-    context: BrowserContext,
+  /**
+   * The OAuth client is created during `prepare` (see below), not during login:
+   * login only runs the OAuth flow against the already prepared client. So it
+   * opens the authorization URL straight away — which has Google ask the user
+   * to sign in first when they are not — rather than the Cloud Console, which
+   * login has no business with.
+   */
+  override async login(
+    encryptedStorage: EncryptedStorage,
+    launchOptions: BrowserLaunchOptions = {},
     oldCredentials?: ApiCredentials
-  ): Promise<ApiCredentials | null> {
-    const page = context.pages()[0];
-    if (!page) {
-      throw new LoginFailedError('No page available in browser context.');
-    }
-
+  ): Promise<LoginResult> {
     if (!(oldCredentials instanceof OAuthCredentials)) {
       throw new LoginFailedError(
         `${this.service.displayName} login requires existing OAuth client credentials. Run browser-prepare first.`
@@ -716,20 +728,26 @@ class GoogleServiceSession extends BrowserFollowupServiceSession {
     // loopback redirect URIs anyway.
     const redirectUriOverride = oldCredentials.redirectUri;
 
-    const { accessToken, refreshToken, accessTokenExpiresAt, refreshTokenExpiresAt } =
-      await this.performOAuthFlow(context, page, clientId, clientSecret, redirectUriOverride);
+    return withTempBrowserContext(encryptedStorage, launchOptions, async ({ context }) => {
+      const page = await context.newPage();
 
-    await page.close();
+      const { accessToken, refreshToken, accessTokenExpiresAt, refreshTokenExpiresAt } =
+        await this.performOAuthFlow(context, page, clientId, clientSecret, redirectUriOverride);
 
-    return new OAuthCredentials(
-      clientId,
-      clientSecret,
-      accessToken,
-      refreshToken,
-      accessTokenExpiresAt,
-      refreshTokenExpiresAt,
-      redirectUriOverride
-    );
+      await page.close();
+
+      const credentials = new OAuthCredentials(
+        clientId,
+        clientSecret,
+        accessToken,
+        refreshToken,
+        accessTokenExpiresAt,
+        refreshTokenExpiresAt,
+        redirectUriOverride
+      );
+      const account = (await this.service.getAccount?.(credentials)) ?? DEFAULT_ACCOUNT;
+      return { credentials, account };
+    });
   }
 
   override async prepare(
@@ -930,6 +948,7 @@ export type GooglePrepareInput = z.infer<typeof GooglePrepareInputSchema>;
  * to that single API.
  */
 export abstract class GoogleService extends Service {
+  /** Where `prepare` starts; login opens the OAuth authorization URL instead. */
   readonly loginUrl = 'https://console.cloud.google.com/';
 
   /**
