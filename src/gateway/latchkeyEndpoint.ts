@@ -73,6 +73,7 @@ const AuthBrowserRequestSchema = z.object({
   command: z.literal('auth browser'),
   params: serviceNameParams.extend({
     account: z.string().optional(),
+    strict: z.boolean().optional(),
   }),
 });
 
@@ -176,7 +177,8 @@ async function dispatch(
         encryptedStorage,
         deps.config,
         parsed.params.serviceName,
-        parsed.params.account
+        parsed.params.account,
+        { strict: parsed.params.strict ?? false }
       );
 
     case 'auth browser-prepare':

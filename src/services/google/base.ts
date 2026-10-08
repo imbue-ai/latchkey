@@ -26,6 +26,7 @@ import {
 import {
   buildLoopbackRedirectUri,
   exchangeCodeForTokens,
+  findScopesNotGranted,
   generateCodeChallenge,
   generateCodeVerifier,
   refreshAccessToken,
@@ -41,6 +42,8 @@ import {
   buildPreparedCredentials,
   LoginFailedError,
   LoginCancelledError,
+  type LoginOptions,
+  ScopesNotGrantedError,
   isBrowserClosedError,
   isResponseBodyUnavailableError,
   isTimeoutError,
@@ -713,7 +716,8 @@ class GoogleServiceSession extends ServiceSession {
   override async login(
     encryptedStorage: EncryptedStorage,
     launchOptions: BrowserLaunchOptions = {},
-    oldCredentials?: ApiCredentials
+    oldCredentials?: ApiCredentials,
+    loginOptions: LoginOptions = {}
   ): Promise<LoginResult> {
     if (!(oldCredentials instanceof OAuthCredentials)) {
       throw new LoginFailedError(
@@ -732,7 +736,14 @@ class GoogleServiceSession extends ServiceSession {
       const page = await context.newPage();
 
       const { accessToken, refreshToken, accessTokenExpiresAt, refreshTokenExpiresAt } =
-        await this.performOAuthFlow(context, page, clientId, clientSecret, redirectUriOverride);
+        await this.performOAuthFlow(
+          context,
+          page,
+          clientId,
+          clientSecret,
+          redirectUriOverride,
+          loginOptions.strict ?? false
+        );
 
       await page.close();
 
@@ -854,7 +865,8 @@ class GoogleServiceSession extends ServiceSession {
     page: Page,
     clientId: string,
     clientSecret: string,
-    redirectUriOverride?: string
+    redirectUriOverride: string | undefined,
+    strict: boolean
   ): Promise<{
     accessToken: string;
     refreshToken: string;
@@ -906,6 +918,18 @@ class GoogleServiceSession extends ServiceSession {
         redirectUri,
         codeVerifier
       );
+
+      // Google's consent screen lets the user tick only some of the requested
+      // scopes; the token then silently covers just those. The token response
+      // reports what was granted, so a strict login can refuse the partial
+      // grant here rather than store credentials that fail later on the API.
+      if (strict) {
+        const scopesNotGranted = findScopesNotGranted(allScopes, tokens.scope);
+        if (scopesNotGranted.length > 0) {
+          throw new ScopesNotGrantedError(this.service.displayName, scopesNotGranted);
+        }
+      }
+
       const accessTokenExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
       return {

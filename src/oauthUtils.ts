@@ -13,10 +13,32 @@ export interface OAuthTokenResponse {
   refresh_token?: string;
   expires_in: number;
   token_type: string;
+  /**
+   * The scopes actually granted, space-delimited (RFC 6749 §5.1). Servers
+   * must send it when it differs from what was requested, which is how a
+   * user ticking only some of the consent screen's checkboxes shows up.
+   */
+  scope?: string;
 }
 
 export interface OAuthTokenExchangeResponse extends OAuthTokenResponse {
   refresh_token: string;
+}
+
+/**
+ * Which of the requested scopes a token response's `scope` field does not
+ * list. An absent field means the server granted exactly what was requested
+ * (RFC 6749 §5.1), so nothing is missing then.
+ */
+export function findScopesNotGranted(
+  requestedScopes: readonly string[],
+  grantedScopeField: string | undefined
+): readonly string[] {
+  if (grantedScopeField === undefined) {
+    return [];
+  }
+  const grantedScopes = new Set(grantedScopeField.split(/\s+/).filter((scope) => scope !== ''));
+  return requestedScopes.filter((scope) => !grantedScopes.has(scope));
 }
 
 export class OAuthTokenExchangeError extends Error {

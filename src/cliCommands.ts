@@ -903,11 +903,19 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .command('browser')
     .description('Login to a service via the browser and store the API credentials.')
     .argument('<service_name>', 'Name of the service to login to')
-    .action(async (serviceName: string) => {
+    .option(
+      '--strict',
+      'Fail the login if the user grants fewer permissions than requested (e.g. leaves some ' +
+        'of the Google consent checkboxes unticked), instead of storing the partial credentials. ' +
+        'Only services that can tell what was granted enforce this. From the built-in services, ' +
+        'only Google supports this option.'
+    )
+    .action(async (serviceName: string, options: { strict?: boolean }) => {
+      const strict = options.strict === true;
       if (deps.config.gatewayUrl !== null) {
         const result = (await forwardToGateway(deps, {
           command: 'auth browser',
-          params: { serviceName, account: getAccount() },
+          params: { serviceName, account: getAccount(), strict: strict ? true : undefined },
         })) as { account?: string } | null;
         deps.log(loginDoneMessage(result?.account));
         return;
@@ -921,7 +929,8 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           encryptedStorage,
           deps.config,
           serviceName,
-          getAccount()
+          getAccount(),
+          { strict }
         );
         deps.log(loginDoneMessage(account));
       } catch (error) {

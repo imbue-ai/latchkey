@@ -344,6 +344,44 @@ describe('operations', () => {
       }
     });
 
+    it.each([
+      ['passes a strict login on to the session', { strict: true }],
+      ['logs in leniently by default', undefined],
+    ])('%s', async (_name, loginOptions) => {
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+      try {
+        const login = vi.fn().mockResolvedValue({
+          credentials: new SlackApiCredentials('xoxc-token', 'cookie'),
+          account: 'user@example.com',
+        });
+        const service = createMockService({ getSession: vi.fn().mockReturnValue({ login }) });
+        const registry = new ServiceRegistry([service]);
+        const store = createApiCredentialStore();
+        const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
+        const config = createMockConfig({ directory: tempDir });
+        saveBrowserConfig(config.configPath, {
+          executablePath: process.execPath,
+          source: 'system',
+          discoveredAt: new Date().toISOString(),
+        });
+
+        await authBrowser(
+          registry,
+          store,
+          encryptedStorage,
+          config,
+          'slack',
+          undefined,
+          loginOptions
+        );
+
+        expect(login.mock.calls[0]?.[3]).toEqual(loginOptions ?? {});
+      } finally {
+        Object.defineProperty(process, 'platform', { value: originalPlatform });
+      }
+    });
+
     it('passes the browser state path when ephemeral browser mode is disabled', async () => {
       const originalPlatform = process.platform;
       Object.defineProperty(process, 'platform', { value: 'darwin' });
