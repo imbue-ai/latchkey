@@ -22,8 +22,8 @@ latchkey curl -X POST 'https://slack.com/api/conversations.create' \
 ## Overview
 
 Latchkey is a command-line tool that injects credentials into
-curl commands. Its [gateway mode](#Gateway mode) and [permission
-system](#Permissions) can be used to keep tight control over
+curl commands. Its [gateway mode](#gateway-mode) and [permission
+system](#permissions) can be used to keep tight control over
 sandboxed agents' usage of third-party services.
 
 - `latchkey services list`
