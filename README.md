@@ -5,7 +5,7 @@
 [![license](https://img.shields.io/npm/l/latchkey?style=flat-square)](LICENSE)
 [![downloads](https://img.shields.io/npm/dm/latchkey?style=flat-square)](https://npmjs.com/package/latchkey)
 
-Inject API credentials into local agent requests.
+Inject API credentials into agent requests.
 
 ## Quick example
 
@@ -21,7 +21,10 @@ latchkey curl -X POST 'https://slack.com/api/conversations.create' \
 
 ## Overview
 
-Latchkey is a command-line tool that injects credentials into curl commands.
+Latchkey is a command-line tool that injects credentials into
+curl commands. Its [gateway mode](#Gateway mode) and [permission
+system](#Permissions) can be used to keep tight control over
+sandboxed agents' usage of third-party services.
 
 - `latchkey services list`
 	- List third-party services (Slack, Google Workspace, Linear, GitHub, etc.) that are supported out-of-the-box.
