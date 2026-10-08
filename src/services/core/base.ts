@@ -65,6 +65,25 @@ export class LoginFailedError extends Error {
 }
 
 /**
+ * The user granted fewer permissions than the login asked for (e.g. left some
+ * of the consent screen's checkboxes unticked) and the login was strict about
+ * it. Running the login again lets them grant the rest.
+ */
+export class ScopesNotGrantedError extends LoginFailedError {
+  readonly scopesNotGranted: readonly string[];
+
+  constructor(serviceDisplayName: string, scopesNotGranted: readonly string[]) {
+    super(
+      `Error: ${serviceDisplayName} login did not grant all the permissions it asked for. ` +
+        `Not granted: ${scopesNotGranted.join(', ')}. ` +
+        'Run the login again and allow every permission it requests.'
+    );
+    this.name = 'ScopesNotGrantedError';
+    this.scopesNotGranted = scopesNotGranted;
+  }
+}
+
+/**
  * A login failure the user cannot work around by finishing the flow by hand,
  * e.g. because their account lacks the privilege the credentials require. It
  * is reported straight away instead of being followed by the manual
@@ -200,6 +219,16 @@ export function describeSchemaIssues(error: ZodError): string {
  * here rather than accepting it up front. Services that cannot (yet) determine
  * the account use the default account (the empty string).
  */
+export interface LoginOptions {
+  /**
+   * Fail the login when the user grants fewer permissions than it asked for,
+   * instead of storing the partial credentials. Only sessions that can tell
+   * what was granted (e.g. OAuth logins whose token response reports the
+   * granted scopes) honour it; the rest log in as usual.
+   */
+  readonly strict?: boolean;
+}
+
 export interface LoginResult {
   readonly credentials: ApiCredentials;
   readonly account: string;
@@ -472,11 +501,15 @@ export abstract class ServiceSession {
    * @param encryptedStorage - Storage for managing credentials
    * @param launchOptions - Browser launch options
    * @param oldCredentials - Optional existing credentials to reuse (e.g., client ID/secret)
+   * @param loginOptions - How the login behaves, see {@link LoginOptions}
    */
   async login(
     encryptedStorage: EncryptedStorage,
     launchOptions: BrowserLaunchOptions = {},
-    oldCredentials?: ApiCredentials
+    oldCredentials?: ApiCredentials,
+    // Unused here: the base login captures whatever the browser session
+    // yields and has no way to tell whether that is less than it asked for.
+    _loginOptions?: LoginOptions
   ): Promise<LoginResult> {
     return withTempBrowserContext(encryptedStorage, launchOptions, async ({ browser, context }) => {
       const page = await context.newPage();

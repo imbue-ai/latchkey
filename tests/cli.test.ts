@@ -21,6 +21,7 @@ import { Service } from '../src/services/core/base.js';
 import { createMockService, MockService } from './mockService.js';
 import { RegisteredService } from '../src/services/core/registered.js';
 import { GITLAB } from '../src/services/gitlab.js';
+import { SlackApiCredentials } from '../src/services/slack.js';
 import { GITHUB } from '../src/services/github.js';
 import {
   derivePermissionsOverrideSigningKey,
@@ -34,6 +35,7 @@ import {
   deleteRegisteredService,
   loadRegisteredServices,
   saveRegisteredService,
+  saveBrowserConfig,
 } from '../src/configDataStore.js';
 import { loadRegisteredServicesIntoServiceRegistry } from '../src/serviceRegistry.js';
 import type { CurlResult } from '../src/curl.js';
@@ -2679,6 +2681,35 @@ describe('CLI commands with dependency injection', () => {
       }
     });
 
+    it.each([
+      ['--strict asks the session for a strict login', ['--strict'], { strict: true }],
+      ['logs in leniently without --strict', [], { strict: false }],
+    ])('%s', async (_name, extraArguments, expectedLoginOptions) => {
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+      try {
+        const login = vi.fn().mockResolvedValue({
+          credentials: new SlackApiCredentials('xoxc-token', 'cookie'),
+          account: 'user@example.com',
+        });
+        const service = createMockService({ getSession: vi.fn().mockReturnValue({ login }) });
+        const deps = createMockDependencies({ registry: new ServiceRegistry([service]) });
+        saveBrowserConfig(deps.config.configPath, {
+          executablePath: process.execPath,
+          source: 'system',
+          discoveredAt: new Date().toISOString(),
+        });
+
+        await runCommand(['auth', 'browser', 'slack', ...extraArguments], deps);
+
+        expect(exitCode).toBeNull();
+        expect(login.mock.calls[0]?.[3]).toEqual(expectedLoginOptions);
+        expect(logs).toContain("Done. Stored credentials for account 'user@example.com'.");
+      } finally {
+        Object.defineProperty(process, 'platform', { value: originalPlatform });
+      }
+    });
+
     it('should suggest set-nocurl when service supports nocurl credentials', async () => {
       const nocurlService: Service = createMockService({
         name: 'nocurl-only',
@@ -3793,6 +3824,23 @@ describe('CLI commands with dependency injection', () => {
         params: { serviceName: 'slack' },
       });
       expect(logs).toContain('Done');
+    });
+
+    it('forwards `auth browser --strict` to the gateway as a strict login', async () => {
+      const fetchMock = makeFetchMock(
+        new Response(JSON.stringify({ result: null }), { status: 200 })
+      );
+      const deps = createMockDependencies({
+        config: createMockConfig({ gatewayUrl: GATEWAY_URL }),
+      });
+
+      await runCommand(['auth', 'browser', 'slack', '--strict'], deps);
+
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(JSON.parse(init.body as string) as unknown).toEqual({
+        command: 'auth browser',
+        params: { serviceName: 'slack', strict: true },
+      });
     });
 
     it('reports the account returned by the gateway for `auth browser`', async () => {

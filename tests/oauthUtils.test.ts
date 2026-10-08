@@ -9,6 +9,7 @@ import {
   refreshAccessToken,
   OAuthTokenExchangeError,
   OAuthCallbackServerTimeoutError,
+  findScopesNotGranted,
 } from '../src/oauthUtils.js';
 import { AuthorizationBearer, OAuthCredentials } from '../src/apiCredentials/base.js';
 import * as curl from '../src/curl.js';
@@ -133,6 +134,56 @@ describe('exchangeCodeForTokens', () => {
     expect(body).toBe(
       'code=auth-code-abc123&client_id=test-client-id&redirect_uri=http%3A%2F%2Flocalhost%3A12345%2Foauth2callback&grant_type=authorization_code&client_secret=test-client-secret'
     );
+  });
+});
+
+describe('exchangeCodeForTokens scope reporting', () => {
+  it('passes the granted scopes from the token response through', async () => {
+    vi.spyOn(curl, 'runCapturedAsync').mockResolvedValue({
+      returncode: 0,
+      stdout: JSON.stringify({
+        access_token: 'access',
+        refresh_token: 'refresh',
+        expires_in: 3600,
+        token_type: 'Bearer',
+        scope: 'openid https://www.googleapis.com/auth/userinfo.email',
+      }),
+      stderr: '',
+    });
+
+    const tokens = await exchangeCodeForTokens(
+      'https://oauth2.googleapis.com/token',
+      'code',
+      'client-id',
+      'client-secret',
+      'http://localhost:12345/oauth2callback'
+    );
+
+    expect(tokens.scope).toBe('openid https://www.googleapis.com/auth/userinfo.email');
+  });
+});
+
+describe('findScopesNotGranted', () => {
+  const requested = ['scope-a', 'scope-b', 'scope-c'];
+
+  it('reports the requested scopes the response does not list', () => {
+    expect(findScopesNotGranted(requested, 'scope-a scope-c')).toEqual(['scope-b']);
+  });
+
+  it('reports nothing when every requested scope was granted', () => {
+    expect(findScopesNotGranted(requested, 'scope-c scope-b scope-a extra-scope')).toEqual([]);
+  });
+
+  it('treats an absent scope field as everything granted', () => {
+    expect(findScopesNotGranted(requested, undefined)).toEqual([]);
+  });
+
+  it('treats an empty scope field as nothing granted', () => {
+    expect(findScopesNotGranted(requested, '')).toEqual(requested);
+  });
+
+  it('tolerates irregular whitespace between scopes', () => {
+    expect(findScopesNotGranted(requested, '  scope-a \n scope-b\tscope-c ')).toEqual([]);
   });
 });
 

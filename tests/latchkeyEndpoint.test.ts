@@ -75,6 +75,22 @@ describe('LatchkeyRequestSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('should validate auth browser with strict', () => {
+    const result = LatchkeyRequestSchema.safeParse({
+      command: 'auth browser',
+      params: { serviceName: 'slack', strict: true },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('should reject auth browser with a non-boolean strict', () => {
+    const result = LatchkeyRequestSchema.safeParse({
+      command: 'auth browser',
+      params: { serviceName: 'slack', strict: 'yes' },
+    });
+    expect(result.success).toBe(false);
+  });
+
   it('should validate auth browser-prepare', () => {
     const result = LatchkeyRequestSchema.safeParse({
       command: 'auth browser-prepare',

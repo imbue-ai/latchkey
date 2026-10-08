@@ -23,6 +23,7 @@ import type { ServiceRegistry } from './serviceRegistry.js';
 import {
   isBrowserClosedError,
   LoginCancelledError,
+  type LoginOptions,
   PrepareInputInvalidError,
   PrepareNotSupportedError,
 } from './services/core/base.js';
@@ -300,7 +301,8 @@ export async function authBrowser(
   encryptedStorage: EncryptedStorage,
   config: Config,
   serviceName: string,
-  account?: string
+  account?: string,
+  loginOptions: LoginOptions = {}
 ): Promise<AuthBrowserResult> {
   const service = lookupService(registry, serviceName);
 
@@ -345,7 +347,8 @@ export async function authBrowser(
   const { credentials, account: loggedInAccount } = await session.login(
     encryptedStorage,
     launchOptions,
-    oldCredentials ?? undefined
+    oldCredentials ?? undefined,
+    loginOptions
   );
   // A service that names its own accounts decides where the login goes. For
   // one that does not, the account the login reported means nothing: a
