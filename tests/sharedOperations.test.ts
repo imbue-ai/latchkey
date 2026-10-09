@@ -143,8 +143,20 @@ describe('operations', () => {
       expect(info.baseApiUrls).toEqual(['https://slack.com/api/']);
       expect(info.authOptions).toContain('browser');
       expect(info.authOptions).toContain('set');
+      expect(info.capabilities).toEqual({ detectsLoginAccount: true });
       expect(info.credentials).toEqual({});
       expect(info.developerNotes).toBe('Test info for Slack service.');
+    });
+
+    it('should report that a service without getAccount does not detect the login account', async () => {
+      const service = createMockService({ getAccount: undefined });
+      const registry = new ServiceRegistry([service]);
+      const store = createApiCredentialStore();
+      const config = createMockConfig();
+
+      const info = await servicesInfo(registry, store, config, 'slack');
+
+      expect(info.capabilities).toEqual({ detectsLoginAccount: false });
     });
 
     it('should throw UnknownServiceError for unknown service', async () => {
@@ -178,6 +190,7 @@ describe('operations', () => {
       const info = await servicesInfo(registry, store, config, 'my-gitlab');
 
       expect(info.type).toBe('user-registered');
+      expect(info.capabilities).toEqual({ detectsLoginAccount: false });
     });
 
     it('should return stored credentials keyed by account', async () => {

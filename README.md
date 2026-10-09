@@ -193,7 +193,9 @@ The only exceptions are services that cannot determine the
 account for the completed browser login. For those, `--account`
 also names the account the new credentials are stored under. All
 services registered at runtime (see "Entirely new services"
-below) fall into this category.
+below) fall into this category. Whether a service falls into
+this category is indicated by the `detectsLoginAccount`
+capability flag in the output of `latchkey services info`.
 
 ### Self-hosted services
 
@@ -280,6 +282,7 @@ Each entry reports a credentials status of:
 
 A service with no stored credentials shows an empty `credentials`
 object.
+
 
 ### Clearing credentials
 
