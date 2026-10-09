@@ -95,7 +95,7 @@ function buildAccountNotFoundMessage(
  * The message spells out what `--account` does here, because the short version
  * ("no credentials stored for account X") read to users and agents as an
  * instruction to go and create that account — which is the one thing that
- * cannot help, since a service that names its own accounts assigns them after
+ * cannot help, since a service that detects the login account assigns it after
  * the login rather than being told one up front.
  */
 export class AccountNotFoundError extends Error {
@@ -221,13 +221,31 @@ function formatBaseApiUrl(baseApiUrl: string | RegExp): string {
   return typeof baseApiUrl === 'string' ? baseApiUrl : String(baseApiUrl);
 }
 
+/** Per-service traits that callers may need to adapt to. */
+export interface ServiceCapabilities {
+  /**
+   * Whether a browser login can tell which account the fresh credentials
+   * belong to. When false, the user names the account with `--account`.
+   */
+  readonly detectsLoginAccount: boolean;
+}
+
 export interface ServicesInfoResult {
   readonly type: 'built-in' | 'user-registered';
   readonly baseApiUrls: readonly string[];
   readonly authOptions: readonly string[];
+  readonly capabilities: ServiceCapabilities;
   readonly credentials: AccountCredentialStatuses;
   readonly setCredentialsExample: string;
   readonly developerNotes: string;
+}
+
+// A service that implements getAccount detects who a browser login signed in
+// as, and that is where the credentials go. A service that does not has no
+// identity to report, so the user names the account with --account — which is
+// what lets such a service hold more than one set of credentials.
+function detectsLoginAccount(service: Service): boolean {
+  return service.getAccount !== undefined;
 }
 
 export async function servicesInfo(
@@ -258,6 +276,7 @@ export async function servicesInfo(
     type: serviceType,
     baseApiUrls: service.baseApiUrls.map(formatBaseApiUrl),
     authOptions,
+    capabilities: { detectsLoginAccount: detectsLoginAccount(service) },
     credentials,
     setCredentialsExample: service.setCredentialsExample(serviceName),
     developerNotes: service.info,
@@ -311,12 +330,7 @@ export async function authBrowser(
     throw new BrowserFlowsNotSupportedError(serviceName);
   }
 
-  // A service that implements getAccount owns its account names: the login
-  // reports who the user signed in as, and that is where the credentials go.
-  // A service that does not has no identity to report, so the user names the
-  // account with --account — which is what lets such a service hold more than
-  // one set of credentials.
-  const namesItsOwnAccounts = service.getAccount !== undefined;
+  const serviceDetectsLoginAccount = detectsLoginAccount(service);
 
   // Login reuses previously stored credentials only for service-level
   // artifacts (e.g. an OAuth client), which all of a service's accounts can
@@ -329,7 +343,7 @@ export async function authBrowser(
     // When the user names the account, naming one that does not exist yet is
     // how a second account is created, so the client falls back to the
     // preparation below instead of being an error.
-    if (oldCredentials === null && namesItsOwnAccounts) {
+    if (oldCredentials === null && serviceDetectsLoginAccount) {
       throw new AccountNotFoundError(
         serviceName,
         account,
@@ -350,13 +364,13 @@ export async function authBrowser(
     oldCredentials ?? undefined,
     loginOptions
   );
-  // A service that names its own accounts decides where the login goes. For
+  // A service that detects the login account decides where the login goes. For
   // one that does not, the account the login reported means nothing: a
   // registered service built on a family runs the family's session, so the
   // name comes from the family's own public API host rather than from the
   // instance that was actually logged into. So the user's --account decides,
   // and without one the credentials go to the default account.
-  const targetAccount = namesItsOwnAccounts ? loggedInAccount : (account ?? DEFAULT_ACCOUNT);
+  const targetAccount = serviceDetectsLoginAccount ? loggedInAccount : (account ?? DEFAULT_ACCOUNT);
   apiCredentialStore.save(service.name, credentials, targetAccount);
   return { account: targetAccount };
 }

@@ -7,9 +7,9 @@
  * responses fed in by hand instead of by a browser.
  */
 
-import { describe, it, expect } from 'vitest';
-import type { Response } from 'playwright';
-import type { ApiCredentials } from '../src/apiCredentials/base.js';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import type { Page, Response } from 'playwright';
+import { type ApiCredentials, ApiCredentialStatus } from '../src/apiCredentials/base.js';
 import { CookieCaptureLoginFlow } from '../src/services/core/loginFlows/cookieCapture.js';
 import {
   formatLoginFlowsHelp,
@@ -46,6 +46,40 @@ async function headerFrom(credentials: ApiCredentials | null): Promise<string | 
   return curlArguments[1] ?? null;
 }
 
+/** A registered service whose credential check always gives this answer. */
+class CheckedService extends RegisteredService {
+  constructor(
+    options: ConstructorParameters<typeof RegisteredService>[2],
+    private readonly checkResult: ApiCredentialStatus
+  ) {
+    super('my-service', 'https://example.com/api/', options);
+  }
+
+  override checkApiCredentials(): Promise<ApiCredentialStatus> {
+    return Promise.resolve(this.checkResult);
+  }
+}
+
+/** A fresh login session for a service registered with these parameters. */
+function registerSession(
+  cookieKeys: readonly string[],
+  cookieUrl?: string,
+  checkResult: ApiCredentialStatus = ApiCredentialStatus.Unknown
+): SimpleServiceSession {
+  const service = new CheckedService(
+    {
+      loginUrl: LOGIN_URL,
+      loginFlow: new CookieCaptureLoginFlow({ cookieKeys: [...cookieKeys], cookieUrl }),
+    },
+    checkResult
+  );
+  const session = service.getSession!('latchkey');
+  if (!(session instanceof SimpleServiceSession)) {
+    throw new TypeError('the cookie-capture flow should hand out a SimpleServiceSession');
+  }
+  return session;
+}
+
 /**
  * A login in progress for a service registered with these parameters: responses
  * go in, and out comes the `Cookie` header stored so far, or null.
@@ -54,14 +88,7 @@ function startLogin(
   cookieKeys: readonly string[],
   cookieUrl?: string
 ): (setCookieHeaders: readonly string[], responseUrl?: string) => Promise<string | null> {
-  const service = new RegisteredService('my-service', 'https://example.com/api/', {
-    loginUrl: LOGIN_URL,
-    loginFlow: new CookieCaptureLoginFlow({ cookieKeys: [...cookieKeys], cookieUrl }),
-  });
-  const session = service.getSession!('latchkey');
-  if (!(session instanceof SimpleServiceSession)) {
-    throw new TypeError('the cookie-capture flow should hand out a SimpleServiceSession');
-  }
+  const session = registerSession(cookieKeys, cookieUrl);
   return async (setCookieHeaders, responseUrl = LOGIN_URL) => {
     await session.onResponse(responseWith(setCookieHeaders, responseUrl));
     return headerFrom(session.capturedCredentials);
@@ -182,6 +209,170 @@ describe('cookie capture', () => {
     expect(await respond(['sessionid=first; Path=/'])).toBe('Cookie: sessionid=first');
     // The session is done; a later response cannot change what was captured.
     expect(await respond(['sessionid=second; Path=/'])).toBe('Cookie: sessionid=first');
+  });
+});
+
+/** A cookie as the browser holds it, reduced to what decides where it applies. */
+interface BrowserCookie {
+  readonly name: string;
+  readonly value: string;
+  readonly domain: string;
+}
+
+/**
+ * A browser parked at `pageUrl` and holding `cookies`. Its cookie store hands
+ * out only the cookies whose domain covers the URL asked about, as a real one
+ * does.
+ */
+function browserAt(pageUrl: string, cookies: readonly BrowserCookie[]): Page {
+  return {
+    url: () => pageUrl,
+    context: () => ({
+      cookies: (url: string) => {
+        const host = new URL(url).hostname;
+        return Promise.resolve(
+          cookies.filter((cookie) => host === cookie.domain || host.endsWith(`.${cookie.domain}`))
+        );
+      },
+    }),
+  } as unknown as Page;
+}
+
+async function headerAfterWaiting(
+  session: SimpleServiceSession,
+  page: Page
+): Promise<string | null> {
+  await session.whileWaitingForLogin(page);
+  return headerFrom(session.capturedCredentials);
+}
+
+/**
+ * A browser that opens already signed in — from saved browser state, or after
+ * `auth import-chrome` — is never sent its session cookie again, so a login
+ * that only watches `Set-Cookie` would wait forever.
+ */
+describe('cookie capture from a browser already signed in', () => {
+  const START_TIME = new Date('2026-01-01T00:00:00Z').getTime();
+  // Comfortably past the interval between looks, whatever it is set to.
+  const WELL_PAST_THE_INTERVAL_MS = 10_000;
+  const SESSION_COOKIE = { name: 'sessionid', value: 'existing', domain: 'example.com' };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(START_TIME);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('takes the cookie once the page has moved on from the login page', async () => {
+    const session = registerSession(['sessionid']);
+    const page = browserAt('https://example.com/home', [SESSION_COOKIE]);
+    expect(await headerAfterWaiting(session, page)).toBe('Cookie: sessionid=existing');
+  });
+
+  // A stale session stays on the login page, where the user signs in afresh.
+  it('waits while the page is still on the login page', async () => {
+    const session = registerSession(['sessionid']);
+    expect(
+      await headerAfterWaiting(session, browserAt(`${LOGIN_URL}?next=/home`, [SESSION_COOKIE]))
+    ).toBeNull();
+    await session.onResponse(responseWith(['sessionid=fresh; Path=/'], LOGIN_URL));
+    expect(await headerFrom(session.capturedCredentials)).toBe('Cookie: sessionid=fresh');
+  });
+
+  it('takes the cookie after the page leaves the login page', async () => {
+    const session = registerSession(['sessionid']);
+    expect(await headerAfterWaiting(session, browserAt(LOGIN_URL, [SESSION_COOKIE]))).toBeNull();
+    vi.setSystemTime(START_TIME + WELL_PAST_THE_INTERVAL_MS);
+    expect(
+      await headerAfterWaiting(session, browserAt('https://example.com/home', [SESSION_COOKIE]))
+    ).toBe('Cookie: sessionid=existing');
+  });
+
+  // Mid-login the browser is commonly on an identity provider.
+  it('waits while the page is on another site', async () => {
+    const session = registerSession(['sessionid']);
+    const page = browserAt('https://identity-provider.example.net/consent', [SESSION_COOKIE]);
+    expect(await headerAfterWaiting(session, page)).toBeNull();
+  });
+
+  it('waits while the page is not on a URL at all', async () => {
+    const session = registerSession(['sessionid']);
+    expect(
+      await headerAfterWaiting(session, browserAt('about:blank', [SESSION_COOKIE]))
+    ).toBeNull();
+  });
+
+  it('waits when the browser has no such cookie', async () => {
+    const session = registerSession(['sessionid']);
+    const page = browserAt('https://example.com/home', [
+      { name: 'other', value: 'irrelevant', domain: 'example.com' },
+      { name: 'sessionid', value: '', domain: 'example.com' },
+    ]);
+    expect(await headerAfterWaiting(session, page)).toBeNull();
+  });
+
+  it('waits for every requested cookie', async () => {
+    const session = registerSession(['sessionid', 'csrftoken']);
+    expect(
+      await headerAfterWaiting(session, browserAt('https://example.com/home', [SESSION_COOKIE]))
+    ).toBeNull();
+    vi.setSystemTime(START_TIME + WELL_PAST_THE_INTERVAL_MS);
+    expect(
+      await headerAfterWaiting(
+        session,
+        browserAt('https://example.com/home', [
+          SESSION_COOKIE,
+          { name: 'csrftoken', value: 'xyz', domain: 'example.com' },
+        ])
+      )
+    ).toBe('Cookie: sessionid=existing; csrftoken=xyz');
+  });
+
+  it('only takes cookies that apply to the cookie URL', async () => {
+    const session = registerSession(['sessionid'], 'https://api.example.com/');
+    const page = browserAt('https://api.example.com/home', [
+      { name: 'sessionid', value: 'elsewhere', domain: 'sso.example.com' },
+    ]);
+    expect(await headerAfterWaiting(session, page)).toBeNull();
+    vi.setSystemTime(START_TIME + WELL_PAST_THE_INTERVAL_MS);
+    expect(
+      await headerAfterWaiting(
+        session,
+        browserAt('https://api.example.com/home', [
+          { name: 'sessionid', value: 'shared', domain: 'example.com' },
+        ])
+      )
+    ).toBe('Cookie: sessionid=shared');
+  });
+
+  it('does not look again before the interval has passed', async () => {
+    const session = registerSession(['sessionid']);
+    expect(await headerAfterWaiting(session, browserAt('https://example.com/home', []))).toBeNull();
+    expect(
+      await headerAfterWaiting(session, browserAt('https://example.com/home', [SESSION_COOKIE]))
+    ).toBeNull();
+  });
+
+  it('turns down a cookie the service says is invalid', async () => {
+    const session = registerSession(['sessionid'], undefined, ApiCredentialStatus.Invalid);
+    const page = browserAt('https://example.com/home', [SESSION_COOKIE]);
+    expect(await headerAfterWaiting(session, page)).toBeNull();
+  });
+
+  it('takes a cookie the service says is valid', async () => {
+    const session = registerSession(['sessionid'], undefined, ApiCredentialStatus.Valid);
+    const page = browserAt('https://example.com/home', [SESSION_COOKIE]);
+    expect(await headerAfterWaiting(session, page)).toBe('Cookie: sessionid=existing');
+  });
+
+  it('leaves a cookie already captured from a response alone', async () => {
+    const session = registerSession(['sessionid']);
+    await session.onResponse(responseWith(['sessionid=from-response; Path=/'], LOGIN_URL));
+    const page = browserAt('https://example.com/home', [SESSION_COOKIE]);
+    expect(await headerAfterWaiting(session, page)).toBe('Cookie: sessionid=from-response');
   });
 });
 

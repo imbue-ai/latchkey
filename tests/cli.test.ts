@@ -796,6 +796,7 @@ describe('CLI commands with dependency injection', () => {
       expect(info.type).toBe('built-in');
       expect(info.baseApiUrls).toEqual(['https://slack.com/api/']);
       expect(info.authOptions).toEqual(['browser', 'set']);
+      expect(info.capabilities).toEqual({ detectsLoginAccount: true });
       expect(info.credentials).toEqual({});
       expect(info.setCredentialsExample).toBe(
         'latchkey auth set slack -H "Authorization: Bearer xoxb-your-token"'

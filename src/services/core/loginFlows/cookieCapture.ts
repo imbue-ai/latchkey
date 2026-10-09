@@ -1,7 +1,8 @@
 /**
  * A generic browser login that works for any cookie-authenticated service:
  * open a URL, watch the `Set-Cookie` headers of the responses that follow, and
- * capture named cookies as the credentials.
+ * capture named cookies as the credentials — or, when the browser was already
+ * signed in, take them from the browser once the page shows it.
  *
  * The cookie mechanics — reading `Set-Cookie`, deciding where a cookie applies,
  * writing a `Cookie` header — are RFC 6265 and not specific to this flow, but
@@ -16,9 +17,13 @@
  * registered the service, as the parameters of the `cookie-capture` login flow.
  */
 
-import type { Response } from 'playwright';
+import type { Cookie, Page, Response } from 'playwright';
 import { z } from 'zod';
-import { type ApiCredentials, RawCurlCredentials } from '../../../apiCredentials/base.js';
+import {
+  type ApiCredentials,
+  ApiCredentialStatus,
+  RawCurlCredentials,
+} from '../../../apiCredentials/base.js';
 import { Service, SimpleServiceSession, type ServiceSession } from '../base.js';
 import { parseLoginFlowParams, type LoginFlow, type LoginFlowClass } from './base.js';
 
@@ -212,13 +217,30 @@ function setCookieHeaderValues(headers: readonly { name: string; value: string }
 }
 
 /**
+ * How often the browser's own cookies are looked at while waiting. Cheap to
+ * read, but a service with a credential check pays a request for each look.
+ */
+const EXISTING_COOKIE_CHECK_INTERVAL_MS = 1_000;
+
+/** Identity of a page for telling the login page apart: origin and path. */
+function pageIdentity(url: URL): string {
+  return `${url.origin}${url.pathname}`;
+}
+
+/**
  * One run of the flow. A jar remembers the cookies as responses arrive; all
  * this adds is which names the service asked for, and the rule that the login
  * is done once every one of them has turned up.
+ *
+ * A browser that opens already signed in — restored from saved browser state,
+ * or imported from Chrome — never sees those cookies set, so the session also
+ * takes them from the browser itself once the page shows a signed-in session.
  */
 class CookieCaptureSession extends SimpleServiceSession {
   private readonly jar: CookieJar;
+  private readonly cookieUrl: URL;
   private readonly cookieKeys: readonly string[];
+  private lastExistingCookieCheckAt = 0;
 
   constructor(
     service: Service,
@@ -228,6 +250,7 @@ class CookieCaptureSession extends SimpleServiceSession {
   ) {
     super(service, appNamePrefix);
     this.jar = new CookieJar(cookieUrl);
+    this.cookieUrl = cookieUrl;
     this.cookieKeys = cookieKeys;
   }
 
@@ -239,6 +262,87 @@ class CookieCaptureSession extends SimpleServiceSession {
       return null;
     }
     return buildCookieCredentials(this.jar.cookiesNamed(this.cookieKeys));
+  }
+
+  /**
+   * Whether the page shows a session that is already signed in: it is back on
+   * the service, and not on the login page.
+   *
+   * A cookie the browser started out with can be stale server-side, and taking
+   * it the moment the page opens would store a dead credential without the
+   * user ever seeing a login page. An established session redirects away from
+   * the login page; a stale one stays there, the user signs in, and the fresh
+   * cookie arrives through `Set-Cookie` as usual. Off the service altogether
+   * the browser is commonly on an identity provider, mid-login.
+   */
+  private hasLeftLoginPageForService(page: Page): boolean {
+    let pageUrl: URL;
+    try {
+      pageUrl = new URL(page.url());
+    } catch {
+      return false;
+    }
+    const loginUrl = new URL(this.service.loginUrl);
+    if (pageUrl.origin !== loginUrl.origin && pageUrl.origin !== this.cookieUrl.origin) {
+      return false;
+    }
+    return pageIdentity(pageUrl) !== pageIdentity(loginUrl);
+  }
+
+  /**
+   * Take the cookies the browser already holds, for a session that was signed
+   * in before the login started and so never has them set again.
+   *
+   * The browser's cookie store is read rather than `document.cookie`, because
+   * session cookies are commonly HttpOnly. It already reflects every
+   * `Set-Cookie` of this login, deletions included, and only holds cookies
+   * that apply to the cookie URL — the same rules the jar follows.
+   */
+  override async whileWaitingForLogin(page: Page): Promise<void> {
+    if (
+      this.apiCredentials !== null ||
+      Date.now() - this.lastExistingCookieCheckAt < EXISTING_COOKIE_CHECK_INTERVAL_MS ||
+      !this.hasLeftLoginPageForService(page)
+    ) {
+      return;
+    }
+    this.lastExistingCookieCheckAt = Date.now();
+
+    let browserCookies: readonly Cookie[];
+    try {
+      browserCookies = await page.context().cookies(this.cookieUrl.href);
+    } catch {
+      // The browser is going away; the wait loop notices that by itself.
+      return;
+    }
+    const namedCookies = browserCookies.filter(
+      (cookie) => this.cookieKeys.includes(cookie.name) && cookie.value !== ''
+    );
+    if (
+      !this.cookieKeys.every((cookieKey) =>
+        namedCookies.some((cookie) => cookie.name === cookieKey)
+      )
+    ) {
+      return;
+    }
+    const credentials = buildCookieCredentials(
+      namedCookies.map(({ name, value }) => ({ name, value }))
+    );
+
+    // A service that can check credentials gets to turn down a stale session
+    // the page did not give away. Most cannot, and say Unknown.
+    let status: ApiCredentialStatus;
+    try {
+      status = await this.service.checkApiCredentials(credentials);
+    } catch {
+      return;
+    }
+    if (status === ApiCredentialStatus.Invalid) {
+      return;
+    }
+
+    // A response may have completed the login while this was being read.
+    this.apiCredentials ??= credentials;
   }
 }
 
@@ -263,9 +367,12 @@ export class CookieCaptureLoginFlow implements LoginFlow {
     '              on a different host than the API.',
     '',
     'The cookies are read from the Set-Cookie headers of the responses that',
-    'arrive while the user signs in, so a cookie that only a page script sets is',
-    'not seen, and neither is one that an already signed-in session never sends',
-    'again.',
+    'arrive while the user signs in. A browser that opens already signed in',
+    '(from saved browser state, or after `latchkey auth import-chrome`) is never',
+    'sent them again, so they are also taken from the browser itself once the',
+    'page has moved on from the login URL to the service. A service whose login',
+    'URL is also where a signed-in user stays should register a login URL that',
+    'redirects a signed-in user elsewhere.',
     '',
     'Example:',
     '  $ latchkey services register my-intranet \\',
