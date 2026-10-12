@@ -201,7 +201,9 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
       throw new LoginFailedError('No page available in browser context.');
     }
 
-    await page.goto('https://www.dropbox.com/developers/apps/create');
+    await page.goto('https://www.dropbox.com/developers/apps/create', {
+      waitUntil: 'domcontentloaded',
+    });
 
     const scopedInput = page.locator('input#scoped');
     await scopedInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
@@ -308,7 +310,7 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
       // foreground. Bring the working page forward so the user can actually see
       // and confirm the authorization dialog.
       await page.bringToFront();
-      await page.goto(authorizeUrl.toString());
+      await page.goto(authorizeUrl.toString(), { waitUntil: 'domcontentloaded' });
 
       const code = await codePromise;
 

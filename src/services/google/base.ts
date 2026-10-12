@@ -191,6 +191,7 @@ async function findExistingLatchkeyProject(
   spinnerPage: Page | null
 ): Promise<string | null> {
   await page.goto('https://console.cloud.google.com/projectselector2/home/dashboard', {
+    waitUntil: 'domcontentloaded',
     timeout: DEFAULT_TIMEOUT_MS,
   });
 
@@ -280,6 +281,7 @@ async function findExistingLatchkeyProject(
 
 async function createProject(page: Page, appName: string): Promise<string> {
   await page.goto('https://console.cloud.google.com/projectselector2/home/dashboard', {
+    waitUntil: 'domcontentloaded',
     timeout: DEFAULT_TIMEOUT_MS,
   });
 
@@ -342,6 +344,7 @@ async function enableApi(page: Page, projectSlug: string, apiName: string): Prom
   await page.goto(
     `https://console.cloud.google.com/apis/library/${apiName}?project=${projectSlug}`,
     {
+      waitUntil: 'domcontentloaded',
       timeout: DEFAULT_TIMEOUT_MS,
     }
   );
@@ -383,6 +386,7 @@ async function configureBranding(
   appName: string
 ): Promise<BrandingResult | null> {
   await page.goto(`https://console.cloud.google.com/auth/branding?project=${projectSlug}`, {
+    waitUntil: 'domcontentloaded',
     timeout: DEFAULT_TIMEOUT_MS,
   });
   const getStartedButton = page.locator('cfc-empty-state-actions .mdc-button__label');
@@ -473,6 +477,7 @@ async function configureBranding(
  */
 async function addTestUser(page: Page, projectSlug: string, email: string): Promise<void> {
   await page.goto(`https://console.cloud.google.com/auth/audience?project=${projectSlug}`, {
+    waitUntil: 'domcontentloaded',
     timeout: DEFAULT_TIMEOUT_MS,
   });
 
@@ -529,6 +534,7 @@ async function createOAuthClient(
   const clientName = generateOAuthClientName(serviceSuffix, appNamePrefix);
 
   await page.goto('https://console.cloud.google.com/apis/credentials', {
+    waitUntil: 'domcontentloaded',
     timeout: DEFAULT_TIMEOUT_MS,
   });
 
@@ -785,7 +791,7 @@ class GoogleServiceSession extends ServiceSession {
   }
 
   private async runPrepareFlow(context: BrowserContext, page: Page): Promise<ApiCredentials> {
-    await page.goto(this.service.loginUrl);
+    await page.goto(this.service.loginUrl, { waitUntil: 'domcontentloaded' });
     await waitForGoogleLogin(page);
 
     const serviceSuffix = this.service.name.replace(/^google/, '');
@@ -907,7 +913,7 @@ class GoogleServiceSession extends ServiceSession {
       authUrl.searchParams.set('code_challenge', codeChallenge);
       authUrl.searchParams.set('code_challenge_method', 'S256');
 
-      await page.goto(authUrl.toString());
+      await page.goto(authUrl.toString(), { waitUntil: 'domcontentloaded' });
 
       const code = await codePromise;
       const tokens = await exchangeCodeForTokens(

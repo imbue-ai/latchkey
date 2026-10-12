@@ -519,7 +519,7 @@ export abstract class ServiceSession {
       });
 
       try {
-        await page.goto(this.service.loginUrl);
+        await page.goto(this.service.loginUrl, { waitUntil: 'domcontentloaded' });
         await this.waitForLoginComplete(page);
       } catch (error: unknown) {
         if (error instanceof Error && isBrowserClosedError(error)) {

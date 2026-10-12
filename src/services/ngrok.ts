@@ -114,7 +114,7 @@ class NgrokServiceSession extends BrowserFollowupServiceSession {
       throw new LoginFailedError('No page available in browser context.');
     }
 
-    await page.goto(NGROK_NEW_API_KEY_URL);
+    await page.goto(NGROK_NEW_API_KEY_URL, { waitUntil: 'domcontentloaded' });
 
     // The description field comes prefilled; replace it with our own label so
     // the user can recognize and revoke the key later.

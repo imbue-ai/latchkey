@@ -157,7 +157,7 @@ class RampOAuthServiceSession extends ServiceSession {
         authUrl.searchParams.set('code_challenge_method', 'S256');
         authUrl.searchParams.set('auth_level', 'auto');
 
-        await page.goto(authUrl.toString());
+        await page.goto(authUrl.toString(), { waitUntil: 'domcontentloaded' });
 
         // 4. Wait for the user to finish and the callback to deliver the code.
         const code = await codePromise;

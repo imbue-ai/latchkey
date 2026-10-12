@@ -134,7 +134,7 @@ class GithubServiceSession extends BrowserFollowupServiceSession {
       throw new LoginFailedError('No page available in browser context.');
     }
 
-    await page.goto(GITHUB_NEW_TOKEN_URL);
+    await page.goto(GITHUB_NEW_TOKEN_URL, { waitUntil: 'domcontentloaded' });
 
     // Add a note for the token
     const noteInput = page.locator('//*[@id="oauth_access_description"]');

@@ -815,7 +815,7 @@ class ZoomServiceSession extends BrowserFollowupServiceSession {
 
     // Sign-in happened on Zoom itself; the app is created on the Marketplace,
     // which the same session carries over to.
-    await page.goto(ZOOM_MARKETPLACE_BUILD_URL);
+    await page.goto(ZOOM_MARKETPLACE_BUILD_URL, { waitUntil: 'domcontentloaded' });
     await waitForMarketplaceSidebar(page);
 
     const userInfo = await readMarketplaceUserInfo(page);

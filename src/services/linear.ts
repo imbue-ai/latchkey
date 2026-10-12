@@ -173,7 +173,7 @@ class LinearServiceSession extends BrowserFollowupServiceSession {
 
     this.onMarketingRootSince = null;
     try {
-      await page.goto(LINEAR_LOGIN_URL);
+      await page.goto(LINEAR_LOGIN_URL, { waitUntil: 'domcontentloaded' });
     } catch {
       // The navigation may race with one the page started itself; the next
       // poll sees where things ended up.
@@ -190,7 +190,7 @@ class LinearServiceSession extends BrowserFollowupServiceSession {
     }
 
     const workspaceName = await waitForWorkspaceName(page);
-    await page.goto(newApiKeyUrl(workspaceName));
+    await page.goto(newApiKeyUrl(workspaceName), { waitUntil: 'domcontentloaded' });
 
     // Fill in the key name
     const keyName = this.generateAppName();
