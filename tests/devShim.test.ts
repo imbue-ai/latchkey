@@ -80,7 +80,8 @@ function createFakeLatchkeyCheckout(directory: string, options: { includeTsx: bo
   writeFileSync(join(directory, 'src', 'version.ts'), "export const VERSION = '0.0.0-fake';\n");
 }
 
-describe('dev shim (scripts/latchkey)', () => {
+// The shim is a bash script, so this only runs where bash is the norm.
+describe.skipIf(process.platform === 'win32')('dev shim (scripts/latchkey)', () => {
   let tempDir: string;
   let latchkeyDirectory: string;
 

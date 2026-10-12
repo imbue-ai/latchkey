@@ -78,7 +78,7 @@ describe('EncryptedStorage', () => {
   });
 
   describe('file permissions', () => {
-    it('should set chmod 600 on written files', () => {
+    it.skipIf(process.platform === 'win32')('should set chmod 600 on written files', () => {
       const filePath = join(tempDir, 'test.json.enc');
       const content = '{"token": "secret-value"}';
 
