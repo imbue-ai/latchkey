@@ -70,7 +70,7 @@ class TodoistServiceSession extends BrowserFollowupServiceSession {
       throw new LoginFailedError('No page available in browser context.');
     }
 
-    await page.goto(TODOIST_DEVELOPER_SETTINGS_URL);
+    await page.goto(TODOIST_DEVELOPER_SETTINGS_URL, { waitUntil: 'domcontentloaded' });
 
     // The personal API token is shown in a read-only input on the Developer
     // settings page. Read it directly from the element value (never the

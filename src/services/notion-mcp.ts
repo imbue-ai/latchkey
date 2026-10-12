@@ -282,7 +282,7 @@ class NotionMcpSession extends ServiceSession {
         authUrl.searchParams.set('code_challenge_method', 'S256');
         authUrl.searchParams.set('state', state);
 
-        await page.goto(authUrl.toString());
+        await page.goto(authUrl.toString(), { waitUntil: 'domcontentloaded' });
 
         // 5. Wait for user to authorize and callback to receive code
         const code = await codePromise;

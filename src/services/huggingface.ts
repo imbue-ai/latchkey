@@ -128,7 +128,7 @@ class HuggingfaceServiceSession extends BrowserFollowupServiceSession {
     // page first so the password prompt surfaces on the tab the user is looking
     // at, not a background one.
     await page.bringToFront();
-    await page.goto(HF_NEW_TOKEN_URL);
+    await page.goto(HF_NEW_TOKEN_URL, { waitUntil: 'domcontentloaded' });
 
     // Give the token a recognizable name so the user can find and revoke it.
     const tokenName = this.generateAppName();
