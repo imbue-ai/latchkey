@@ -619,7 +619,8 @@ function runCli(latchkeyDirectory: string, args: readonly string[]): CliRunResul
   }
 }
 
-describe('plugins loaded by the CLI', () => {
+// Runs the CLI through the bash dev shim, which is not available on Windows.
+describe.skipIf(process.platform === 'win32')('plugins loaded by the CLI', () => {
   let latchkeyDirectory: string;
 
   beforeEach(() => {

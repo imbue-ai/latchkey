@@ -42,6 +42,8 @@ function defaultDetachedSubprocessRunner(args: readonly string[]): void {
   const child = spawn(CONFIG.curlCommand, args as string[], {
     stdio: 'ignore',
     detached: true,
+    // A detached child gets its own console window on Windows; keep it hidden.
+    windowsHide: true,
   });
   child.unref();
 }

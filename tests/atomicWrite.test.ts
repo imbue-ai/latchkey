@@ -38,7 +38,7 @@ describe('writeFileAtomic', () => {
     expect(readFileSync(filePath, 'utf-8')).toBe('second');
   });
 
-  it('should set file permissions via mode option', () => {
+  it.skipIf(process.platform === 'win32')('should set file permissions via mode option', () => {
     const filePath = join(tempDir, 'secure.txt');
     writeFileAtomic(filePath, 'secret', { mode: 0o600 });
     const permissions = statSync(filePath).mode & 0o777;

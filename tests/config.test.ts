@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { delimiter, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
   Config,
+  CurlNotFoundError,
+  InsecureFilePermissionsError,
   DEFAULT_GATEWAY_LISTEN_HOST,
   DEFAULT_GATEWAY_LISTEN_PORT,
   DEFAULT_KEYRING_ACCOUNT_NAME,
@@ -265,5 +267,130 @@ describe('Config with config.json settings', () => {
     const config = makeConfig();
 
     expect(config.curlCommand).toBe('curl');
+  });
+});
+
+describe('Config system checks across platforms', () => {
+  const originalPlatform = process.platform;
+  const originalPath = process.env.PATH;
+  const originalPathExt = process.env.PATHEXT;
+  let directory: string;
+
+  beforeEach(() => {
+    directory = mkdtempSync(join(tmpdir(), 'latchkey-config-platform-'));
+  });
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
+    process.env.PATH = originalPath;
+    if (originalPathExt === undefined) {
+      delete process.env.PATHEXT;
+    } else {
+      process.env.PATHEXT = originalPathExt;
+    }
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  function pretendPlatform(platform: NodeJS.Platform): void {
+    Object.defineProperty(process, 'platform', { value: platform });
+  }
+
+  function makeConfig(env: Record<string, string | undefined> = {}): Config {
+    return new Config((name) => {
+      if (name === 'LATCHKEY_DIRECTORY') return directory;
+      return env[name];
+    });
+  }
+
+  // Windows file systems are case-insensitive, so `curl.exe` matches the
+  // `.EXE` entry of PATHEXT there. These tests run on POSIX too, where the
+  // file name has to match the extension's casing exactly.
+  function installFakeCurl(fileName: string): string {
+    const binDirectory = join(directory, 'bin');
+    mkdirSync(binDirectory, { recursive: true });
+    const curlPath = join(binDirectory, fileName);
+    writeFileSync(curlPath, '', { mode: 0o755 });
+    return curlPath;
+  }
+
+  describe('checkSystemPrerequisites', () => {
+    it.skipIf(originalPlatform === 'win32')('does not find curl.exe through PATH on POSIX', () => {
+      pretendPlatform('linux');
+      const curlPath = installFakeCurl('curl.exe');
+      process.env.PATH = join(curlPath, '..');
+      expect(() => {
+        makeConfig().checkSystemPrerequisites();
+      }).toThrow(CurlNotFoundError);
+    });
+
+    it('finds curl.exe through PATH on Windows using PATHEXT', () => {
+      pretendPlatform('win32');
+      const curlPath = installFakeCurl('curl.exe');
+      process.env.PATH = ['', join(curlPath, '..')].join(delimiter);
+      process.env.PATHEXT = '.COM;.exe;.BAT;.CMD';
+      expect(() => {
+        makeConfig().checkSystemPrerequisites();
+      }).not.toThrow();
+    });
+
+    it('falls back to the usual executable extensions on Windows when PATHEXT is unset', () => {
+      pretendPlatform('win32');
+      const curlPath = installFakeCurl('curl.EXE');
+      process.env.PATH = join(curlPath, '..');
+      delete process.env.PATHEXT;
+      expect(() => {
+        makeConfig().checkSystemPrerequisites();
+      }).not.toThrow();
+    });
+
+    it('resolves an absolute LATCHKEY_CURL without an extension on Windows', () => {
+      pretendPlatform('win32');
+      const curlPath = installFakeCurl('curl.EXE');
+      process.env.PATH = '';
+      delete process.env.PATHEXT;
+      expect(() => {
+        makeConfig({ LATCHKEY_CURL: curlPath.slice(0, -'.EXE'.length) }).checkSystemPrerequisites();
+      }).not.toThrow();
+    });
+
+    it('uses a command that already has an extension as is', () => {
+      pretendPlatform('win32');
+      installFakeCurl('curl.exe');
+      process.env.PATH = join(directory, 'bin');
+      expect(() => {
+        makeConfig({ LATCHKEY_CURL: 'curl.cmd' }).checkSystemPrerequisites();
+      }).toThrow(CurlNotFoundError);
+    });
+
+    it('does not mistake a directory for the curl executable', () => {
+      pretendPlatform('linux');
+      process.env.PATH = directory;
+      expect(() => {
+        makeConfig({ LATCHKEY_CURL: 'bin' }).checkSystemPrerequisites();
+      }).toThrow(CurlNotFoundError);
+    });
+  });
+
+  describe('checkSensitiveFilePermissions', () => {
+    it.skipIf(originalPlatform === 'win32')(
+      'rejects a world-readable credential store on POSIX',
+      () => {
+        pretendPlatform('linux');
+        const config = makeConfig();
+        writeFileSync(config.credentialStorePath, 'LATCHKEY_ENCRYPTED:', { mode: 0o644 });
+        expect(() => {
+          config.checkSensitiveFilePermissions();
+        }).toThrow(InsecureFilePermissionsError);
+      }
+    );
+
+    it('skips the permission bits check on Windows', () => {
+      pretendPlatform('win32');
+      const config = makeConfig();
+      writeFileSync(config.credentialStorePath, 'LATCHKEY_ENCRYPTED:', { mode: 0o666 });
+      expect(() => {
+        config.checkSensitiveFilePermissions();
+      }).not.toThrow();
+    });
   });
 });

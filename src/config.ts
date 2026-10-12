@@ -3,8 +3,8 @@
  */
 
 import { accessSync, constants, existsSync, statSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { delimiter, isAbsolute, join, resolve } from 'node:path';
+import { homedir, platform } from 'node:os';
+import { delimiter, extname, isAbsolute, join, resolve } from 'node:path';
 import { loadSettings, type Settings } from './configDataStore.js';
 
 export class InsecureFilePermissionsError extends Error {
@@ -78,31 +78,44 @@ function resolvePathWithTildeExpansion(path: string): string {
   return resolve(path);
 }
 
+const DEFAULT_WINDOWS_EXECUTABLE_EXTENSIONS = ['.COM', '.EXE', '.BAT', '.CMD'];
+
 function isExecutable(filePath: string): boolean {
   try {
     accessSync(filePath, constants.X_OK);
-    return true;
+    return statSync(filePath).isFile();
   } catch {
     return false;
   }
 }
 
+/**
+ * The file names a command may resolve to. On Windows, `curl` is found as
+ * `curl.exe` (or any other extension listed in PATHEXT), just as the shell
+ * would resolve it; a command that already has an extension is used as is.
+ */
+function executableCandidates(command: string): readonly string[] {
+  if (platform() !== 'win32' || extname(command) !== '') {
+    return [command];
+  }
+  const pathExtensions = (process.env.PATHEXT ?? '')
+    .split(';')
+    .filter((extension) => extension !== '');
+  const extensions =
+    pathExtensions.length > 0 ? pathExtensions : DEFAULT_WINDOWS_EXECUTABLE_EXTENSIONS;
+  return [command, ...extensions.map((extension) => command + extension)];
+}
+
 function findInPath(command: string): boolean {
+  const candidates = executableCandidates(command);
   if (isAbsolute(command)) {
-    return isExecutable(command);
+    return candidates.some(isExecutable);
   }
 
   const pathEnv = process.env.PATH ?? '';
-  const pathDirs = pathEnv.split(delimiter);
+  const pathDirs = pathEnv.split(delimiter).filter((dir) => dir !== '');
 
-  for (const dir of pathDirs) {
-    const fullPath = join(dir, command);
-    if (isExecutable(fullPath)) {
-      return true;
-    }
-  }
-
-  return false;
+  return pathDirs.some((dir) => candidates.some((candidate) => isExecutable(join(dir, candidate))));
 }
 
 /**
@@ -430,8 +443,16 @@ export class Config {
   /**
    * Check that sensitive files have secure permissions.
    * Throws InsecureFilePermissionsError if any file is readable by group or others.
+   *
+   * Windows has no POSIX permission bits: Node reports every writable file as
+   * 0o666 there and chmod cannot change that, so the check is skipped. Access
+   * is governed by the ACLs of the user's profile directory instead.
    */
   checkSensitiveFilePermissions(): void {
+    if (platform() === 'win32') {
+      return;
+    }
+
     const filesToCheck = [this.credentialStorePath, this.browserStatePath];
 
     for (const filePath of filesToCheck) {
