@@ -7,8 +7,40 @@ import type { ApiCredentialStore } from './store.js';
 import type { Service } from '../services/core/base.js';
 
 /**
+ * Refreshes currently in flight, keyed by service and account. A long-running
+ * process such as the gateway can receive many requests for the same expired
+ * credentials at once; without this, each of them would call the service's
+ * refresh endpoint with the same refresh token, which risks exhausting it
+ * (many providers rotate refresh tokens and invalidate the old one).
+ */
+const inFlightRefreshes = new Map<string, Promise<ApiCredentials | null>>();
+
+function refreshKey(serviceName: string, account: string | undefined): string {
+  // An unspecified account always resolves to the service's single stored
+  // account, so it is safe to treat it as its own key.
+  return `${serviceName}\u0000${account ?? ''}`;
+}
+
+async function refreshAndSave(
+  service: Service,
+  apiCredentials: ApiCredentials,
+  apiCredentialStore: ApiCredentialStore,
+  account: string | undefined
+): Promise<ApiCredentials | null> {
+  const refreshedCredentials = await service.refreshCredentials!(apiCredentials);
+  if (refreshedCredentials !== null) {
+    apiCredentialStore.save(service.name, refreshedCredentials, account);
+  }
+  return refreshedCredentials;
+}
+
+/**
  * Try to refresh expired credentials if the service supports it.
  * Returns refreshed credentials if successful, otherwise returns the original credentials.
+ *
+ * Only one refresh per service and account runs at a time within the process:
+ * concurrent callers wait for the refresh already in flight and share its
+ * result instead of issuing their own refresh request.
  *
  * When `disableRefresh` is true, the credentials are never refreshed. This is
  * used when the credentials are shared with another machine and refreshing here
@@ -24,12 +56,16 @@ export async function maybeRefreshCredentials(
   if (disableRefresh || apiCredentials.isExpired() !== true || !service.refreshCredentials) {
     return apiCredentials;
   }
-  const refreshedCredentials = await service.refreshCredentials(apiCredentials);
-  if (refreshedCredentials !== null) {
-    apiCredentialStore.save(service.name, refreshedCredentials, account);
-    return refreshedCredentials;
+  const key = refreshKey(service.name, account);
+  let refresh = inFlightRefreshes.get(key);
+  if (refresh === undefined) {
+    refresh = refreshAndSave(service, apiCredentials, apiCredentialStore, account).finally(() => {
+      inFlightRefreshes.delete(key);
+    });
+    inFlightRefreshes.set(key, refresh);
   }
-  return apiCredentials;
+  const refreshedCredentials = await refresh;
+  return refreshedCredentials ?? apiCredentials;
 }
 
 export async function getCredentialStatus(
