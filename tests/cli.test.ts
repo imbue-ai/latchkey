@@ -2501,7 +2501,7 @@ describe('CLI commands with dependency injection', () => {
       await runCommand(['curl', 'https://slack.com/api/test'], deps);
 
       expect(exitCode).toBe(126);
-      expect(errorLogs[0]).toBe('Error: Request not permitted by the user.');
+      expect(errorLogs[0]).toBe('Error: Request not permitted.');
       expect(capturedArgs).toHaveLength(0);
     });
 

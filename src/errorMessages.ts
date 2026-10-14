@@ -56,7 +56,7 @@ function accountMessageParts(account: string | undefined): {
 }
 
 export const ErrorMessages = {
-  requestNotPermitted: 'Error: Request not permitted by the user.',
+  requestNotPermitted: 'Error: Request not permitted.',
   couldNotExtractUrl:
     'Error: Could not extract URL from curl arguments. Only http(s) requests are supported.',
   couldNotExtractUrlBrief: 'Error: Could not extract URL from curl arguments.',
