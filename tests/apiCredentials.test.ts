@@ -35,6 +35,31 @@ describe('AuthorizationBearer', () => {
       'Authorization: Bearer test-token-123',
     ]);
   });
+
+  it('should not know whether a token without a lifetime is expired', () => {
+    const credentials = new AuthorizationBearer('test-token-123');
+    expect(credentials.validUntil).toBeUndefined();
+    expect(credentials.isExpired()).toBeUndefined();
+  });
+
+  it('should be expired once past validUntil', () => {
+    const future = new Date(Date.now() + 60_000).toISOString();
+    const past = new Date(Date.now() - 60_000).toISOString();
+    expect(new AuthorizationBearer('t', future).isExpired()).toBe(false);
+    expect(new AuthorizationBearer('t', past).isExpired()).toBe(true);
+  });
+
+  it('should round-trip validUntil through JSON', () => {
+    const validUntil = '2030-01-02T03:04:05.000Z';
+    const restored = AuthorizationBearer.fromJSON(
+      JSON.parse(JSON.stringify(new AuthorizationBearer('t', validUntil)))
+    );
+    expect(restored.validUntil).toBe(validUntil);
+    expect(JSON.parse(JSON.stringify(new AuthorizationBearer('t')))).toEqual({
+      objectType: 'authorizationBearer',
+      token: 't',
+    });
+  });
 });
 
 describe('AuthorizationBare', () => {

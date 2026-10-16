@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { ApiCredentialStore } from '../src/apiCredentials/store.js';
-import { OAuthCredentials } from '../src/apiCredentials/base.js';
+import { AuthorizationBearer, OAuthCredentials } from '../src/apiCredentials/base.js';
 import { SlackApiCredentials } from '../src/services/slack.js';
 import {
   PrepareInputInvalidError,
@@ -207,6 +207,64 @@ describe('operations', () => {
         '': { credentialType: 'slack', credentialStatus: 'valid' },
         'work@example.com': { credentialType: 'slack', credentialStatus: 'valid' },
       });
+    });
+
+    it('should report until when credentials with a known lifetime work', async () => {
+      const service = createMockService({ name: 'github' });
+      const registry = new ServiceRegistry([service]);
+      const store = createApiCredentialStore();
+      const validUntil = '2030-01-02T03:04:05.000Z';
+      store.save('github', new AuthorizationBearer('ghp_token', validUntil));
+      const config = createMockConfig();
+
+      const info = await servicesInfo(registry, store, config, 'github');
+
+      expect(info.credentials).toEqual({
+        '': { credentialType: 'authorizationBearer', credentialStatus: 'valid', validUntil },
+      });
+    });
+
+    it('should leave out validUntil when the lifetime is unknown', async () => {
+      const service = createMockService({ name: 'github' });
+      const registry = new ServiceRegistry([service]);
+      const store = createApiCredentialStore();
+      store.save('github', new AuthorizationBearer('ghp_token'));
+      const config = createMockConfig();
+
+      const info = await servicesInfo(registry, store, config, 'github');
+
+      expect(Object.keys(info.credentials[''] ?? {})).toEqual([
+        'credentialType',
+        'credentialStatus',
+      ]);
+    });
+
+    it('should not report validUntil for refreshable credentials with an expiring access token', async () => {
+      const service = createMockService({
+        name: 'oauth-service',
+        refreshCredentials: vi.fn().mockResolvedValue(null),
+      });
+      const registry = new ServiceRegistry([service]);
+      const store = createApiCredentialStore();
+      const accessTokenExpiresAt = new Date(Date.now() + 3_600_000).toISOString();
+      store.save(
+        'oauth-service',
+        new OAuthCredentials(
+          'client-id',
+          'client-secret',
+          'access',
+          'refresh',
+          accessTokenExpiresAt
+        )
+      );
+      const config = createMockConfig();
+
+      const info = await servicesInfo(registry, store, config, 'oauth-service');
+
+      expect(info.credentials).toEqual({
+        '': { credentialType: 'oauth', credentialStatus: 'valid' },
+      });
+      expect(info.credentials['']).not.toHaveProperty('validUntil');
     });
   });
 

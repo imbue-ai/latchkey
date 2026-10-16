@@ -280,6 +280,9 @@ Each entry reports a credentials status of:
 - `valid`
 - `unknown` (for user-registered services)
 
+When it is known that the credentials stop working after some
+date the entry also carries a `validUntil` timestamp.
+
 A service with no stored credentials shows an empty `credentials`
 object.
 
