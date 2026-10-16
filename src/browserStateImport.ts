@@ -14,6 +14,7 @@ import { homedir, platform, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { BrowserContext } from 'playwright';
 import type { EncryptedStorage } from './encryptedStorage.js';
+import { CodedError, ErrorCodes } from './errorCodes.js';
 import { loadPlaywright } from './playwrightLoader.js';
 import type { Service } from './services/index.js';
 
@@ -39,6 +40,30 @@ export class ChromeProfileTooLargeError extends Error {
         `more than the limit of ${toMebibytes(limitInBytes)} MiB.`
     );
     this.name = 'ChromeProfileTooLargeError';
+  }
+}
+
+/** Opens System Settings on the list of applications with Full Disk Access. */
+const MACOS_FULL_DISK_ACCESS_SETTINGS_URL =
+  'x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles';
+
+function describeUnreadableProfile(profilePath: string, cause: Error): string {
+  const base = `The Google Chrome profile at ${profilePath} could not be read: ${cause.message}.`;
+  if (platform() !== 'darwin') {
+    return base;
+  }
+  return (
+    `${base} On macOS this means that the application running Latchkey (your terminal, ` +
+    'or the application that invoked it) does not have Full Disk Access. Grant it under ' +
+    'System Settings > Privacy & Security > Full Disk Access (or open ' +
+    `${MACOS_FULL_DISK_ACCESS_SETTINGS_URL} ), then restart that application and try again.`
+  );
+}
+
+export class ChromeProfileNotReadableError extends CodedError {
+  constructor(profilePath: string, cause: Error) {
+    super(ErrorCodes.chromeProfileNotReadable, describeUnreadableProfile(profilePath, cause));
+    this.name = 'ChromeProfileNotReadableError';
   }
 }
 
@@ -196,26 +221,46 @@ export function measureCopiedUserDataSizeInBytes(chromeUserDataDirectory: string
 }
 
 /**
+ * Whether the error is the operating system refusing access to a file. On
+ * macOS, privacy protection (the lack of Full Disk Access) shows up as EPERM
+ * even though `stat` on the same path succeeds.
+ */
+function isPermissionDeniedError(error: unknown): error is NodeJS.ErrnoException {
+  return (
+    error instanceof Error &&
+    ((error as NodeJS.ErrnoException).code === 'EPERM' ||
+      (error as NodeJS.ErrnoException).code === 'EACCES')
+  );
+}
+
+/**
  * Copy the cookies and localStorage of the default profile into a fresh user
  * data directory and return its path.
  */
-function copyDefaultProfile(chromeUserDataDirectory: string): string {
+export function copyDefaultProfile(chromeUserDataDirectory: string): string {
   const profileDirectory = join(chromeUserDataDirectory, DEFAULT_PROFILE_DIRECTORY_NAME);
   if (!existsSync(profileDirectory)) {
     throw new ChromeProfileNotFoundError(profileDirectory);
   }
-  const copySizeInBytes = measureCopiedUserDataSizeInBytes(chromeUserDataDirectory);
-  if (copySizeInBytes > MAXIMUM_COPY_SIZE_IN_BYTES) {
-    throw new ChromeProfileTooLargeError(copySizeInBytes, MAXIMUM_COPY_SIZE_IN_BYTES);
-  }
-  const temporaryUserDataDirectory = mkdtempSync(join(tmpdir(), 'latchkey-chrome-profile-'));
-  for (const relativePath of COPIED_USER_DATA_PATHS) {
-    const source = join(chromeUserDataDirectory, relativePath);
-    if (existsSync(source)) {
-      cpSync(source, join(temporaryUserDataDirectory, relativePath), { recursive: true });
+  try {
+    const copySizeInBytes = measureCopiedUserDataSizeInBytes(chromeUserDataDirectory);
+    if (copySizeInBytes > MAXIMUM_COPY_SIZE_IN_BYTES) {
+      throw new ChromeProfileTooLargeError(copySizeInBytes, MAXIMUM_COPY_SIZE_IN_BYTES);
     }
+    const temporaryUserDataDirectory = mkdtempSync(join(tmpdir(), 'latchkey-chrome-profile-'));
+    for (const relativePath of COPIED_USER_DATA_PATHS) {
+      const source = join(chromeUserDataDirectory, relativePath);
+      if (existsSync(source)) {
+        cpSync(source, join(temporaryUserDataDirectory, relativePath), { recursive: true });
+      }
+    }
+    return temporaryUserDataDirectory;
+  } catch (error) {
+    if (isPermissionDeniedError(error)) {
+      throw new ChromeProfileNotReadableError(profileDirectory, error);
+    }
+    throw error;
   }
-  return temporaryUserDataDirectory;
 }
 
 /**

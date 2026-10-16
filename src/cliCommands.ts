@@ -52,6 +52,7 @@ import {
 import { BrowserFeaturesUnavailableError, loadPlaywright } from './playwrightLoader.js';
 import type { CurlResult } from './curl.js';
 import { EncryptedStorage, EncryptedStorageError } from './encryptedStorage.js';
+import { CodedError, formatCodedErrorAsJson } from './errorCodes.js';
 import { encrypt, EncryptionError, resolveEncryptionKey } from './encryption.js';
 import {
   BUILTIN_SERVICES,
@@ -1108,6 +1109,10 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           deps.log(`  ${origin}`);
         }
       } catch (error) {
+        if (error instanceof CodedError) {
+          deps.errorLog(formatCodedErrorAsJson(error));
+          deps.exit(1);
+        }
         if (
           error instanceof ChromeNotFoundError ||
           error instanceof ChromeProfileNotFoundError ||

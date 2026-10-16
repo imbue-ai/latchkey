@@ -1,9 +1,12 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  ChromeProfileNotFoundError,
+  ChromeProfileNotReadableError,
   collectLoginOrigins,
+  copyDefaultProfile,
   InvalidBrowserStateError,
   measureCopiedUserDataSizeInBytes,
   mergeBrowserStorageStates,
@@ -109,4 +112,54 @@ describe('measureCopiedUserDataSizeInBytes', () => {
       rmSync(userDataDirectory, { recursive: true, force: true });
     }
   });
+});
+
+describe('copyDefaultProfile', () => {
+  it('rejects a user data directory without a default profile', () => {
+    const userDataDirectory = mkdtempSync(join(tmpdir(), 'latchkey-chrome-user-data-test-'));
+    try {
+      expect(() => copyDefaultProfile(userDataDirectory)).toThrow(ChromeProfileNotFoundError);
+    } finally {
+      rmSync(userDataDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it('copies only the listed paths', () => {
+    const userDataDirectory = mkdtempSync(join(tmpdir(), 'latchkey-chrome-user-data-test-'));
+    let copiedDirectory: string | null = null;
+    try {
+      mkdirSync(join(userDataDirectory, 'Default', 'Network'), { recursive: true });
+      mkdirSync(join(userDataDirectory, 'Default', 'Cache'), { recursive: true });
+      writeFileSync(join(userDataDirectory, 'Default', 'Network', 'Cookies'), 'cookies');
+      writeFileSync(join(userDataDirectory, 'Default', 'Cache', 'data_0'), 'cache');
+
+      copiedDirectory = copyDefaultProfile(userDataDirectory);
+
+      expect(existsSync(join(copiedDirectory, 'Default', 'Network', 'Cookies'))).toBe(true);
+      expect(existsSync(join(copiedDirectory, 'Default', 'Cache'))).toBe(false);
+    } finally {
+      rmSync(userDataDirectory, { recursive: true, force: true });
+      if (copiedDirectory !== null) {
+        rmSync(copiedDirectory, { recursive: true, force: true });
+      }
+    }
+  });
+
+  // Root bypasses file permissions, so the denial cannot be provoked there.
+  it.skipIf(process.getuid?.() === 0)(
+    'reports a profile the process may not read with a coded error',
+    () => {
+      const userDataDirectory = mkdtempSync(join(tmpdir(), 'latchkey-chrome-user-data-test-'));
+      const localStorageDirectory = join(userDataDirectory, 'Default', 'Local Storage');
+      try {
+        mkdirSync(localStorageDirectory, { recursive: true });
+        chmodSync(localStorageDirectory, 0o000);
+
+        expect(() => copyDefaultProfile(userDataDirectory)).toThrow(ChromeProfileNotReadableError);
+      } finally {
+        chmodSync(localStorageDirectory, 0o700);
+        rmSync(userDataDirectory, { recursive: true, force: true });
+      }
+    }
+  );
 });

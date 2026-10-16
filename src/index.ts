@@ -35,6 +35,8 @@ export {
 
 export { EncryptedStorage, EncryptedStorageError } from './encryptedStorage.js';
 
+export { ErrorCodes, type ErrorCode, CodedError } from './errorCodes.js';
+
 export {
   storeInKeychain,
   retrieveFromKeychain,

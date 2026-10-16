@@ -40,6 +40,16 @@ import {
 import { loadRegisteredServicesIntoServiceRegistry } from '../src/serviceRegistry.js';
 import type { CurlResult } from '../src/curl.js';
 import type { PermissionCheckMetadata } from '../src/permissions.js';
+import {
+  ChromeProfileNotReadableError,
+  importChromeBrowserState,
+} from '../src/browserStateImport.js';
+import { ErrorCodes } from '../src/errorCodes.js';
+
+vi.mock('../src/browserStateImport.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../src/browserStateImport.js')>();
+  return { ...original, importChromeBrowserState: vi.fn(original.importChromeBrowserState) };
+});
 
 // Use a fixed test key for deterministic test behavior (32 bytes = 256 bits, base64 encoded)
 const TEST_ENCRYPTION_KEY = 'dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q=';
@@ -3733,6 +3743,24 @@ describe('CLI commands with dependency injection', () => {
 
       expect(exitCode).toBe(1);
       expect(errorLogs.some((message) => message.includes('reserved key'))).toBe(true);
+    });
+  });
+
+  describe('auth import-chrome command', () => {
+    it('reports an unreadable Chrome profile as JSON on stderr', async () => {
+      vi.mocked(importChromeBrowserState).mockRejectedValueOnce(
+        new ChromeProfileNotReadableError('/Users/jane/Chrome/Default', new Error('EPERM: nope'))
+      );
+      const deps = createMockDependencies();
+
+      await runCommand(['auth', 'import-chrome'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs).toHaveLength(1);
+      const reported = JSON.parse(errorLogs[0]!) as { errorCode: string; errorMessage: string };
+      expect(reported.errorCode).toBe(ErrorCodes.chromeProfileNotReadable);
+      expect(reported.errorMessage).toContain('/Users/jane/Chrome/Default');
+      expect(reported.errorMessage).toContain('EPERM: nope');
     });
   });
 
