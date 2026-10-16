@@ -14,7 +14,7 @@ import { homedir, platform, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { BrowserContext } from 'playwright';
 import type { EncryptedStorage } from './encryptedStorage.js';
-import { CodedError, ErrorCodes } from './errorCodes.js';
+import { CodedError, ErrorCodes } from './errorMessages.js';
 import { loadPlaywright } from './playwrightLoader.js';
 import type { Service } from './services/index.js';
 

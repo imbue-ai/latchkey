@@ -52,7 +52,6 @@ import {
 import { BrowserFeaturesUnavailableError, loadPlaywright } from './playwrightLoader.js';
 import type { CurlResult } from './curl.js';
 import { EncryptedStorage, EncryptedStorageError } from './encryptedStorage.js';
-import { CodedError, formatCodedErrorAsJson } from './errorCodes.js';
 import { encrypt, EncryptionError, resolveEncryptionKey } from './encryption.js';
 import {
   BUILTIN_SERVICES,
@@ -94,7 +93,7 @@ import {
   PermissionCheckError,
   type PermissionCheckMetadata,
 } from './permissions.js';
-import { ErrorMessages } from './errorMessages.js';
+import { CodedError, ErrorMessages, formatCodedErrorAsJson } from './errorMessages.js';
 import {
   LATEST_VERSION,
   MigrationError,

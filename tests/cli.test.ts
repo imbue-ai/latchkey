@@ -44,7 +44,7 @@ import {
   ChromeProfileNotReadableError,
   importChromeBrowserState,
 } from '../src/browserStateImport.js';
-import { ErrorCodes } from '../src/errorCodes.js';
+import { ErrorCodes } from '../src/errorMessages.js';
 
 vi.mock('../src/browserStateImport.js', async (importOriginal) => {
   const original = await importOriginal<typeof import('../src/browserStateImport.js')>();
