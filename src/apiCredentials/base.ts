@@ -49,6 +49,13 @@ export interface ApiCredentials {
    * Returns true if expired, false if valid, or undefined if expiration is unknown.
    */
   isExpired(): boolean | undefined;
+  /**
+   * The ISO 8601 timestamp after which the credentials stop working for good,
+   * when known. Unlike `isExpired()`, which also covers access tokens that a
+   * refresh brings back, this is a hard limit: only a new login helps past it.
+   * Refreshable credentials leave it out.
+   */
+  readonly validUntil?: string;
 }
 
 /**
@@ -69,6 +76,7 @@ export interface ApiCredentialsType {
 export const AuthorizationBearerSchema = z.object({
   objectType: z.literal('authorizationBearer'),
   token: z.string(),
+  validUntil: z.string().optional(),
 });
 
 export type AuthorizationBearerData = z.infer<typeof AuthorizationBearerSchema>;
@@ -77,9 +85,15 @@ export class AuthorizationBearer implements ApiCredentials {
   static readonly objectType = 'authorizationBearer' as const;
   readonly objectType = AuthorizationBearer.objectType;
   readonly token: string;
+  /**
+   * Set by logins that know how long the token they created lasts; a token
+   * supplied by hand has no known lifetime.
+   */
+  readonly validUntil?: string;
 
-  constructor(token: string) {
+  constructor(token: string, validUntil?: string) {
     this.token = token;
+    this.validUntil = validUntil;
   }
 
   injectIntoCurlCall(curlArguments: readonly string[]): Promise<readonly string[]> {
@@ -87,19 +101,23 @@ export class AuthorizationBearer implements ApiCredentials {
   }
 
   isExpired(): boolean | undefined {
-    return undefined;
+    if (this.validUntil === undefined) {
+      return undefined;
+    }
+    return Date.now() >= new Date(this.validUntil).getTime();
   }
 
   toJSON(): AuthorizationBearerData {
     return {
       objectType: this.objectType,
       token: this.token,
+      validUntil: this.validUntil,
     };
   }
 
   static fromJSON(data: unknown): AuthorizationBearer {
     const parsed = AuthorizationBearerSchema.parse(data);
-    return new AuthorizationBearer(parsed.token);
+    return new AuthorizationBearer(parsed.token, parsed.validUntil);
   }
 }
 

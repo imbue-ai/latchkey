@@ -19,6 +19,9 @@ const DEFAULT_TIMEOUT_MS = 8000;
 // URL for creating a new personal access token (also used as login URL to trigger sudo)
 const GITHUB_NEW_TOKEN_URL = 'https://github.com/settings/tokens/new';
 
+// The login leaves the token form's expiration at GitHub's default of 30 days.
+const GITHUB_TOKEN_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
+
 /**
  * Matches the GitHub smart-HTTP endpoints used by git over HTTPS, as opposed to
  * the REST API or a regular website page. The git client only ever talks to
@@ -153,6 +156,7 @@ class GithubServiceSession extends BrowserFollowupServiceSession {
     // Get me button with type="submit" that's somewhere under a form with id="new_oauth_access".
     const generateButton = page.locator('form#new_oauth_access button[type="submit"]');
     await generateButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
+    const createdAt = Date.now();
     await generateButton.click();
 
     // Wait for the page to load and retrieve the generated token
@@ -166,7 +170,8 @@ class GithubServiceSession extends BrowserFollowupServiceSession {
 
     await page.close();
 
-    return new AuthorizationBearer(token);
+    const validUntil = new Date(createdAt + GITHUB_TOKEN_LIFETIME_MS).toISOString();
+    return new AuthorizationBearer(token, validUntil);
   }
 }
 

@@ -93,7 +93,7 @@ import {
   PermissionCheckError,
   type PermissionCheckMetadata,
 } from './permissions.js';
-import { ErrorMessages } from './errorMessages.js';
+import { CodedError, ErrorMessages, formatCodedErrorAsJson } from './errorMessages.js';
 import {
   LATEST_VERSION,
   MigrationError,
@@ -1108,6 +1108,10 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           deps.log(`  ${origin}`);
         }
       } catch (error) {
+        if (error instanceof CodedError) {
+          deps.errorLog(formatCodedErrorAsJson(error));
+          deps.exit(1);
+        }
         if (
           error instanceof ChromeNotFoundError ||
           error instanceof ChromeProfileNotFoundError ||

@@ -173,6 +173,12 @@ export function servicesList(
 export interface CredentialStatusEntry {
   readonly credentialType: string;
   readonly credentialStatus: ApiCredentialStatus;
+  /**
+   * The ISO 8601 timestamp after which the credentials stop working for good,
+   * when known. Credentials that latchkey refreshes by itself do not report
+   * one, since they are renewed before their expiry matters.
+   */
+  readonly validUntil?: string;
 }
 
 /**
@@ -203,7 +209,15 @@ async function computeAccountStatuses(
               account
             )
           : ApiCredentialStatus.Valid;
-      return [account, { credentialType: credentials.objectType, credentialStatus }] as const;
+      const validUntil = credentials.validUntil;
+      return [
+        account,
+        {
+          credentialType: credentials.objectType,
+          credentialStatus,
+          ...(validUntil === undefined ? {} : { validUntil }),
+        },
+      ] as const;
     })
   );
   return Object.fromEntries(entries);
