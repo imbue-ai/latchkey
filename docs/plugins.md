@@ -27,6 +27,7 @@ rm -rf ~/.latchkey/plugins/spotify
 ## Known plugins
 
 - https://github.com/imbue-ai/latchkey-spotify
+- https://github.com/imbue-ai/latchkey-garmin
 
 If you create a plugin, let us know!
 
