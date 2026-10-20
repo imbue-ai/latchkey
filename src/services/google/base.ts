@@ -113,6 +113,16 @@ const GOOGLE_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 const PROJECT_SELECTOR_READINESS_TIMEOUT_MS = 3000;
 
 /**
+ * How long to wait for the billing account selector on the "New Project" form
+ * after a submit attempt failed to navigate. Only paid on that failure path;
+ * see `createProject`.
+ */
+const BILLING_ACCOUNT_SELECTOR_APPEARANCE_TIMEOUT_MS = 3000;
+
+/** How long a "New Project" submission gets to navigate to the dashboard. */
+const PROJECT_CREATION_NAVIGATION_TIMEOUT_MS = 32000;
+
+/**
  * How long to give the user to read the Terms of Service and click
  * "Agree and continue" before timing out.
  */
@@ -279,6 +289,44 @@ async function findExistingLatchkeyProject(
   return projectId;
 }
 
+function billingAccountSelectorLocator(page: Page): Locator {
+  return page.locator('proj-billing-selector cfc-select');
+}
+
+/**
+ * Accounts with more than one billing account get a required "Billing
+ * account" selector on the "New Project" form; it shows up with a small delay
+ * and is absent entirely for everyone else. Without a selection the form
+ * refuses to submit, so pick the first offered account. (The options render
+ * in an overlay outside the form, so they are looked up page-wide.)
+ */
+async function selectFirstBillingAccount(page: Page): Promise<void> {
+  await billingAccountSelectorLocator(page).click();
+  const firstBillingAccountOption = page
+    .locator('[role="listbox"] mat-option.cfctest-accountpicker-name')
+    .first();
+  await firstBillingAccountOption.waitFor({ state: 'visible', timeout: DEFAULT_TIMEOUT_MS });
+  await firstBillingAccountOption.click();
+}
+
+async function selectFirstBillingAccountIfPresent(
+  page: Page,
+  appearanceTimeoutMs: number
+): Promise<void> {
+  try {
+    await billingAccountSelectorLocator(page).waitFor({
+      state: 'visible',
+      timeout: appearanceTimeoutMs,
+    });
+  } catch (error) {
+    if (error instanceof Error && isTimeoutError(error)) {
+      return;
+    }
+    throw error;
+  }
+  await selectFirstBillingAccount(page);
+}
+
 async function createProject(page: Page, appName: string): Promise<string> {
   await page.goto('https://console.cloud.google.com/projectselector2/home/dashboard', {
     waitUntil: 'domcontentloaded',
@@ -307,6 +355,16 @@ async function createProject(page: Page, appName: string): Promise<string> {
   await new Promise((resolve) => setTimeout(resolve, 128));
   await projectNameInput.pressSequentially(lastChar);
 
+  // Typing the project name takes long enough that the billing account
+  // selector, when the account has one, is normally already on the page. Check
+  // for it without waiting so that accounts without it are not slowed down; the
+  // post-submit race below covers the case where it shows up late.
+  let billingAccountSelected = false;
+  if (await billingAccountSelectorLocator(page).isVisible()) {
+    await selectFirstBillingAccount(page);
+    billingAccountSelected = true;
+  }
+
   await new Promise((resolve) => setTimeout(resolve, 256));
   const createButton = page.locator('button[type="submit"]');
   await createButton.click();
@@ -316,21 +374,41 @@ async function createProject(page: Page, appName: string): Promise<string> {
 
   // Submitting the form occasionally surfaces a transient submission error
   // instead of navigating. When that happens, wait a moment and click again.
+  // Submitting may also do nothing at all because a late-appearing billing
+  // account selector is still waiting for a choice.
   const navigation = page
-    .waitForURL(dashboardUrl, { timeout: 32000 })
+    .waitForURL(dashboardUrl, { timeout: PROJECT_CREATION_NAVIGATION_TIMEOUT_MS })
     .then(() => 'navigated' as const);
   const errorAppeared = submissionError
-    .waitFor({ state: 'visible', timeout: 32000 })
+    .waitFor({ state: 'visible', timeout: PROJECT_CREATION_NAVIGATION_TIMEOUT_MS })
     .then(() => 'error' as const)
     .catch(() => 'navigated' as const);
-  const outcome = await Promise.race([navigation, errorAppeared]);
+  const outcomes: Promise<'navigated' | 'error' | 'billingAccountRequired'>[] = [
+    navigation,
+    errorAppeared,
+  ];
+  if (!billingAccountSelected) {
+    outcomes.push(
+      billingAccountSelectorLocator(page)
+        .waitFor({ state: 'visible', timeout: PROJECT_CREATION_NAVIGATION_TIMEOUT_MS })
+        .then(() => 'billingAccountRequired' as const)
+        .catch(() => 'navigated' as const)
+    );
+  }
+  const outcome = await Promise.race(outcomes);
 
-  if (outcome === 'error') {
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+  if (outcome !== 'navigated') {
+    if (outcome === 'error') {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+    if (!billingAccountSelected) {
+      await selectFirstBillingAccountIfPresent(
+        page,
+        BILLING_ACCOUNT_SELECTOR_APPEARANCE_TIMEOUT_MS
+      );
+    }
     await createButton.click();
-    await page.waitForURL(dashboardUrl, {
-      timeout: 32000,
-    });
+    await page.waitForURL(dashboardUrl, { timeout: PROJECT_CREATION_NAVIGATION_TIMEOUT_MS });
   }
   const urlObj = new URL(page.url());
   const projectId = urlObj.searchParams.get('project');
