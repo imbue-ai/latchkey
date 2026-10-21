@@ -35,18 +35,23 @@ function responseWith(params: { url?: string; body?: string; cookieHeader?: stri
 
 /**
  * A browser parked at `pageUrl` whose jar holds the given cookies, with the page
- * either fully loaded or still loading.
+ * either fully loaded or still loading. Any `otherPages` are open in the same
+ * browser alongside it.
  */
 function pageAt(
   pageUrl: string,
   params: {
     cookies?: readonly { name: string; value: string; domain: string }[];
     readyState?: 'loading' | 'complete';
+    otherPages?: readonly Page[];
   } = {}
 ): Page {
-  return {
+  const page = {
     url: () => pageUrl,
-    context: () => ({ cookies: () => Promise.resolve(params.cookies ?? []) }),
+    context: () => ({
+      cookies: () => Promise.resolve(params.cookies ?? []),
+      pages: () => [page, ...(params.otherPages ?? [])],
+    }),
     evaluate: (expression: string) => {
       if (expression !== 'document.readyState') {
         throw new TypeError(`unexpected evaluation: ${expression}`);
@@ -54,6 +59,7 @@ function pageAt(
       return Promise.resolve(params.readyState ?? 'complete');
     },
   } as unknown as Page;
+  return page;
 }
 
 function startLogin(): SimpleServiceSession {
@@ -183,6 +189,18 @@ describe('slack login that is stuck', () => {
     await session.whileWaitingForLogin(pageAt(CLIENT_URL));
     vi.setSystemTime(START_TIME + WELL_PAST_THE_SETTLE_PERIOD_MS);
     await expect(session.whileWaitingForLogin(pageAt(CLIENT_URL))).rejects.toBeInstanceOf(
+      SlackTokenMissingError
+    );
+  });
+
+  // An SSO flow may open the client in a new tab while the first tab stays
+  // behind on the sign-in page.
+  it('gives up on a loaded Slack client in another tab that yielded no token', async () => {
+    const session = startLogin();
+    const signinPageWithClientTab = pageAt(SIGNIN_URL, { otherPages: [pageAt(CLIENT_URL)] });
+    await session.whileWaitingForLogin(signinPageWithClientTab);
+    vi.setSystemTime(START_TIME + WELL_PAST_THE_SETTLE_PERIOD_MS);
+    await expect(session.whileWaitingForLogin(signinPageWithClientTab)).rejects.toBeInstanceOf(
       SlackTokenMissingError
     );
   });
