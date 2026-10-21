@@ -8,11 +8,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { Page, Response } from 'playwright';
 import type { ApiCredentials } from '../src/apiCredentials/base.js';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
-import {
-  LoginCancelledError,
-  Service,
-  SimpleServiceSession,
-} from '../src/services/core/base.js';
+import { LoginCancelledError, Service, SimpleServiceSession } from '../src/services/core/base.js';
 import * as playwrightUtils from '../src/playwrightUtils.js';
 
 const LOGIN_URL = 'https://example.com/login';
@@ -117,9 +113,7 @@ function fakeBrowser(): {
 }
 
 function startLogin(session: FakeSession): Promise<ApiCredentials> {
-  return session
-    .login({} as unknown as EncryptedStorage)
-    .then((result) => result.credentials);
+  return session.login({} as unknown as EncryptedStorage).then((result) => result.credentials);
 }
 
 /** A little over one poll interval. */
