@@ -181,7 +181,8 @@ export async function startGateway(
         response,
         requestDeps,
         apiCredentialStore,
-        encryptedStorage
+        encryptedStorage,
+        options
       ).catch((error: unknown) => {
         deps.errorLog(
           `Unexpected error handling /latchkey/: ${error instanceof Error ? error.message : String(error)}`

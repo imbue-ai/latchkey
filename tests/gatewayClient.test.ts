@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
+  buildCurlDryRunRequest,
   buildGatewayProxyUrl,
   callLatchkeyEndpoint,
+  CurlDryRunBodyUnavailableError,
   GatewayCurlRewriteError,
   GatewayRequestError,
   rewriteCurlArgumentsForGateway,
@@ -41,6 +46,78 @@ describe('buildGatewayProxyUrl', () => {
     expect(
       buildGatewayProxyUrl(GATEWAY_URL, 'https://not-latchkey-self.invalid.example.com/path')
     ).toBe('http://localhost:8000/gateway/https://not-latchkey-self.invalid.example.com/path');
+  });
+});
+
+describe('buildCurlDryRunRequest', () => {
+  it('describes a bodyless GET', async () => {
+    const request = await buildCurlDryRunRequest(
+      ['-H', 'Accept: application/json', 'https://api.example.com/items'],
+      undefined
+    );
+    expect(request).toEqual({
+      command: 'curl dry-run',
+      params: {
+        method: 'GET',
+        url: 'https://api.example.com/items',
+        headers: { accept: 'application/json' },
+        bodyBase64: null,
+      },
+    });
+  });
+
+  it('carries an inline body and the selected account', async () => {
+    const request = await buildCurlDryRunRequest(
+      ['-d', 'a=1&b=2', 'https://api.example.com/items'],
+      'work'
+    );
+    expect(request.command).toBe('curl dry-run');
+    expect(request.params).toMatchObject({
+      method: 'POST',
+      bodyBase64: Buffer.from('a=1&b=2').toString('base64'),
+      account: 'work',
+    });
+  });
+
+  it('reads a body file on the client', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'latchkey-dry-run-'));
+    try {
+      const bodyPath = join(tempDir, 'payload.json');
+      writeFileSync(bodyPath, '{"ok":true}');
+      const request = await buildCurlDryRunRequest(
+        ['--data-binary', `@${bodyPath}`, 'https://api.example.com/items'],
+        undefined
+      );
+      expect(request.params).toMatchObject({
+        bodyBase64: Buffer.from('{"ok":true}').toString('base64'),
+      });
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a body file that cannot be read', async () => {
+    await expect(
+      buildCurlDryRunRequest(
+        ['-d', '@/nonexistent/payload.json', 'https://api.example.com/items'],
+        undefined
+      )
+    ).rejects.toThrow(CurlDryRunBodyUnavailableError);
+  });
+
+  it('refuses a body read from stdin', async () => {
+    await expect(
+      buildCurlDryRunRequest(['-d', '@-', 'https://api.example.com/items'], undefined)
+    ).rejects.toThrow(CurlDryRunBodyUnavailableError);
+  });
+
+  it('refuses a body assembled from several data arguments', async () => {
+    await expect(
+      buildCurlDryRunRequest(
+        ['-d', '@/etc/hostname', '-d', 'b=2', 'https://api.example.com/items'],
+        undefined
+      )
+    ).rejects.toThrow(CurlDryRunBodyUnavailableError);
   });
 });
 

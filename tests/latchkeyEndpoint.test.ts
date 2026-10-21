@@ -17,6 +17,11 @@ import type { CurlResult } from '../src/curl.js';
 import { startGateway, type GatewayServer } from '../src/gateway/server.js';
 import type { GatewayOptions } from '../src/gateway/gatewayEndpoint.js';
 import { LatchkeyRequestSchema } from '../src/gateway/latchkeyEndpoint.js';
+import { writeFileSync } from 'node:fs';
+import {
+  createPermissionsOverrideJwt,
+  PERMISSIONS_OVERRIDE_HEADER,
+} from '../src/gateway/permissionsOverride.js';
 
 const TEST_ENCRYPTION_KEY = 'dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q=';
 
@@ -123,6 +128,28 @@ describe('LatchkeyRequestSchema', () => {
     expect(result.success).toBe(false);
   });
 
+  it('should validate curl dry-run', () => {
+    const result = LatchkeyRequestSchema.safeParse({
+      command: 'curl dry-run',
+      params: {
+        method: 'POST',
+        url: 'https://slack.com/api/chat.postMessage',
+        headers: { 'Content-Type': 'application/json' },
+        bodyBase64: Buffer.from('{}').toString('base64'),
+        account: 'work',
+      },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('should reject curl dry-run without a url', () => {
+    const result = LatchkeyRequestSchema.safeParse({
+      command: 'curl dry-run',
+      params: { method: 'GET', headers: {}, bodyBase64: null },
+    });
+    expect(result.success).toBe(false);
+  });
+
   it('should reject unknown command', () => {
     const result = LatchkeyRequestSchema.safeParse({
       command: 'unknown command',
@@ -224,12 +251,25 @@ describe('/latchkey/ endpoint', () => {
     return `http://${host}:${String(address.port)}`;
   }
 
-  function postLatchkey(body: unknown): Promise<Response> {
+  function postLatchkey(body: unknown, headers: Record<string, string> = {}): Promise<Response> {
     return globalThis.fetch(`${getHost()}/latchkey/`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...headers },
       body: JSON.stringify(body),
     });
+  }
+
+  function dryRunRequest(overrides: Record<string, unknown> = {}): unknown {
+    return {
+      command: 'curl dry-run',
+      params: {
+        method: 'GET',
+        url: 'https://slack.com/api/auth.test',
+        headers: {},
+        bodyBase64: null,
+        ...overrides,
+      },
+    };
   }
 
   beforeEach(() => {
@@ -401,6 +441,107 @@ describe('/latchkey/ endpoint', () => {
       expect(response.status).toBe(400);
       const body = (await response.json()) as { error: string };
       expect(body.error).toContain('Invalid prepare input');
+    });
+  });
+
+  describe('curl dry-run', () => {
+    const storedSlackCredentials = {
+      slack: { objectType: 'slack', token: 'test-token', dCookie: 'test-cookie' },
+    };
+
+    it('reports the injecting service without sending the request', async () => {
+      const runCurlAsync = vi.fn();
+      gateway = await createTestGateway(storedSlackCredentials, { runCurlAsync });
+      const response = await postLatchkey(dryRunRequest());
+
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({
+        result: { credentialsInjected: true, service: 'slack' },
+      });
+      expect(runCurlAsync).not.toHaveBeenCalled();
+    });
+
+    it('reports no injection for a passed-through request', async () => {
+      gateway = await createTestGateway({}, {}, { passthroughUnknown: true });
+      const response = await postLatchkey(
+        dryRunRequest({ url: 'https://unknown-api.example.com/test' })
+      );
+
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({
+        result: { credentialsInjected: false, service: null },
+      });
+    });
+
+    it('returns 400 when no credentials can be injected', async () => {
+      gateway = await createTestGateway();
+      const response = await postLatchkey(dryRunRequest());
+
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as { error: string };
+      expect(body.error).toContain('slack');
+    });
+
+    it('returns 403 when the permission check denies the request', async () => {
+      const seenRequests: { method: string; url: string; body: string }[] = [];
+      gateway = await createTestGateway(storedSlackCredentials, {
+        checkPermission: async (request: Request) => {
+          seenRequests.push({
+            method: request.method,
+            url: request.url,
+            body: await request.text(),
+          });
+          return false;
+        },
+      });
+      const response = await postLatchkey(
+        dryRunRequest({
+          method: 'POST',
+          url: 'https://slack.com/api/chat.postMessage',
+          headers: { 'Content-Type': 'application/json' },
+          bodyBase64: Buffer.from('{"text":"hi"}').toString('base64'),
+        })
+      );
+
+      expect(response.status).toBe(403);
+      expect(seenRequests).toEqual([
+        {
+          method: 'POST',
+          url: 'https://slack.com/api/chat.postMessage',
+          body: '{"text":"hi"}',
+        },
+      ]);
+    });
+
+    it('honors the permissions-override header', async () => {
+      const customPermissionsPath = join(tempDir, 'custom-permissions.json');
+      writeFileSync(customPermissionsPath, '{}');
+      const seenConfigPaths: string[] = [];
+      gateway = await createTestGateway(storedSlackCredentials, {
+        checkPermission: (_request, configPath) => {
+          seenConfigPaths.push(configPath);
+          return Promise.resolve(true);
+        },
+      });
+      const token = createPermissionsOverrideJwt(
+        customPermissionsPath,
+        derivePermissionsOverrideSigningKey(TEST_ENCRYPTION_KEY)
+      );
+      const response = await postLatchkey(dryRunRequest(), {
+        [PERMISSIONS_OVERRIDE_HEADER]: token,
+      });
+
+      expect(response.status).toBe(200);
+      expect(seenConfigPaths).toEqual([customPermissionsPath]);
+    });
+
+    it('returns 401 for an invalid permissions-override header', async () => {
+      gateway = await createTestGateway(storedSlackCredentials);
+      const response = await postLatchkey(dryRunRequest(), {
+        [PERMISSIONS_OVERRIDE_HEADER]: 'not-a-jwt',
+      });
+
+      expect(response.status).toBe(401);
     });
   });
 

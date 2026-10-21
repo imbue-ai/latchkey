@@ -5,7 +5,11 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execSync, ExecSyncOptionsWithStringEncoding } from 'node:child_process';
 import { Command } from 'commander';
-import { registerCommands, type CliDependencies } from '../src/cliCommands.js';
+import {
+  PERMISSION_DENIED_EXIT_CODE,
+  registerCommands,
+  type CliDependencies,
+} from '../src/cliCommands.js';
 import {
   CurlParseError,
   extractUrlFromCurlArguments,
@@ -1248,17 +1252,6 @@ describe('CLI commands with dependency injection', () => {
       expect(exitCode).toBe(1);
       expect(logs).toHaveLength(0);
       expect(capturedArgs).toEqual([]);
-    });
-
-    it('rejects --dry-run in gateway mode', async () => {
-      const deps = createMockDependencies({
-        config: createMockConfig({ gatewayUrl: 'http://localhost:9000' }),
-      });
-      await runCommand(['--dry-run', 'curl', 'https://slack.com/api/test'], deps);
-
-      expect(exitCode).toBe(1);
-      expect(capturedArgs).toEqual([]);
-      expect(errorLogs.join('\n')).toContain('--dry-run option is not supported in gateway mode');
     });
 
     it.each([
@@ -3798,6 +3791,104 @@ describe('CLI commands with dependency injection', () => {
       });
       expect(logs).toHaveLength(1);
       expect(JSON.parse(logs[0] ?? '') as unknown).toEqual(['slack', 'github']);
+    });
+
+    it('asks the gateway for a `--dry-run curl` report over the /latchkey endpoint', async () => {
+      const fetchMock = makeFetchMock(
+        new Response(JSON.stringify({ result: { credentialsInjected: true, service: 'slack' } }), {
+          status: 200,
+        })
+      );
+      const deps = createMockDependencies({
+        config: createMockConfig({ gatewayUrl: GATEWAY_URL }),
+      });
+
+      await runCommand(
+        [
+          '--dry-run',
+          '--account',
+          'work',
+          'curl',
+          '-H',
+          'Content-Type: application/json',
+          '-d',
+          '{"text":"hi"}',
+          'https://slack.com/api/chat.postMessage',
+        ],
+        deps
+      );
+
+      expect(exitCode).toBe(0);
+      expect(capturedArgs).toEqual([]);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe(`${GATEWAY_URL}/latchkey`);
+      expect(JSON.parse(init.body as string) as unknown).toEqual({
+        command: 'curl dry-run',
+        params: {
+          method: 'POST',
+          url: 'https://slack.com/api/chat.postMessage',
+          headers: { 'content-type': 'application/json' },
+          bodyBase64: Buffer.from('{"text":"hi"}').toString('base64'),
+          account: 'work',
+        },
+      });
+      expect(JSON.parse(logs[0] ?? '') as unknown).toEqual({
+        credentialsInjected: true,
+        service: 'slack',
+      });
+    });
+
+    it('exits with the permission-denied code when the gateway denies a dry run', async () => {
+      makeFetchMock(
+        new Response(JSON.stringify({ error: 'Request not permitted.', latchkeyError: true }), {
+          status: 403,
+        })
+      );
+      const deps = createMockDependencies({
+        config: createMockConfig({ gatewayUrl: GATEWAY_URL }),
+      });
+
+      await runCommand(['--dry-run', 'curl', 'https://slack.com/api/test'], deps);
+
+      expect(exitCode).toBe(PERMISSION_DENIED_EXIT_CODE);
+      expect(capturedArgs).toEqual([]);
+      expect(errorLogs.join('\n')).toContain('Request not permitted.');
+    });
+
+    it('fails without sending anything when the gateway does not know dry runs', async () => {
+      makeFetchMock(
+        new Response(
+          JSON.stringify({ error: "unknown command 'curl dry-run'", latchkeyError: true }),
+          { status: 400 }
+        )
+      );
+      const deps = createMockDependencies({
+        config: createMockConfig({ gatewayUrl: GATEWAY_URL }),
+      });
+
+      await runCommand(['--dry-run', 'curl', 'https://slack.com/api/test'], deps);
+
+      expect(exitCode).toBe(1);
+      expect(capturedArgs).toEqual([]);
+      expect(errorLogs.join('\n')).toContain("unknown command 'curl dry-run'");
+    });
+
+    it('refuses a dry run whose body curl would read from stdin', async () => {
+      const fetchMock = makeFetchMock(new Response('{}', { status: 200 }));
+      const deps = createMockDependencies({
+        config: createMockConfig({ gatewayUrl: GATEWAY_URL }),
+      });
+
+      await runCommand(
+        ['--dry-run', 'curl', '-d', '@-', 'https://slack.com/api/chat.postMessage'],
+        deps
+      );
+
+      expect(exitCode).toBe(1);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(capturedArgs).toEqual([]);
+      expect(errorLogs.join('\n')).toContain('stdin');
     });
 
     it('forwards `services info` to the gateway /latchkey endpoint', async () => {

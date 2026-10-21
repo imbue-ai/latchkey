@@ -19,6 +19,7 @@ import {
 } from './apiCredentials/base.js';
 import { BUILTIN_API_CREDENTIALS_TYPES } from './apiCredentials/serialization.js';
 import {
+  buildCurlDryRunReport,
   CredentialsExpiredError,
   NoCredentialsForServiceError,
   NoServiceForUrlError,
@@ -103,7 +104,9 @@ import {
 import { getSkillMdContent } from './skillMd.js';
 import { startGateway } from './gateway/server.js';
 import {
+  buildCurlDryRunRequest,
   callLatchkeyEndpoint,
+  CurlDryRunBodyUnavailableError,
   GatewayCommandNotSupportedError,
   GatewayCurlRewriteError,
   GatewayRequestError,
@@ -1140,13 +1143,6 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       const dryRun = isDryRun();
 
       if (deps.config.gatewayUrl !== null) {
-        // In gateway mode the credentials are injected by the remote gateway,
-        // so this process cannot tell which service (if any) would provide
-        // them. Refusing is better than reporting diagnostics we cannot back.
-        if (dryRun) {
-          deps.errorLog('Error: The --dry-run option is not supported in gateway mode.');
-          deps.exit(1);
-        }
         let targetUrl: string | null;
         try {
           targetUrl = extractUrlFromCurlArguments(curlArguments);
@@ -1164,6 +1160,39 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         if (targetUrl === null) {
           deps.errorLog(ErrorMessages.couldNotExtractUrl);
           deps.exit(1);
+        }
+        // In gateway mode the credentials are injected by the remote gateway,
+        // so only it can tell which service (if any) would provide them. The
+        // dry run is asked over the RPC endpoint rather than the proxy, so a
+        // gateway that does not know the command rejects it instead of
+        // sending the request for real.
+        if (dryRun) {
+          let dryRunRequest: LatchkeyRequest;
+          try {
+            dryRunRequest = await buildCurlDryRunRequest(curlArguments, getAccount());
+          } catch (error) {
+            if (error instanceof CurlDryRunBodyUnavailableError) {
+              deps.errorLog(`Error: ${error.message}`);
+              deps.exit(1);
+            }
+            throw error;
+          }
+          try {
+            const report = await callLatchkeyEndpoint(
+              deps.config.gatewayUrl,
+              dryRunRequest,
+              deps.config.gatewayPassword,
+              deps.config.gatewayPermissionsOverride
+            );
+            deps.log(JSON.stringify(report, null, 2));
+            deps.exit(0);
+          } catch (error) {
+            if (error instanceof GatewayRequestError) {
+              deps.errorLog(`Error: ${error.message}`);
+              deps.exit(error.statusCode === 403 ? PERMISSION_DENIED_EXIT_CODE : 1);
+            }
+            throw error;
+          }
         }
         let rewritten: readonly string[];
         try {
@@ -1225,16 +1254,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       }
 
       if (dryRun) {
-        deps.log(
-          JSON.stringify(
-            {
-              credentialsInjected: preparation.injectedServiceName !== null,
-              service: preparation.injectedServiceName,
-            },
-            null,
-            2
-          )
-        );
+        deps.log(JSON.stringify(buildCurlDryRunReport(preparation), null, 2));
         deps.exit(0);
       }
 
