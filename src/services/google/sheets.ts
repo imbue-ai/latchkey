@@ -12,12 +12,14 @@ export class GoogleSheets extends GoogleService {
   readonly name = 'google-sheets';
   readonly displayName = 'Google Sheets';
   // Sheets workflows also reach into the Drive files API to find, read, and
-  // export spreadsheets, so match that subset of the Drive API too. The
-  // routing layer resolves the overlap with Google Drive by preferring
-  // whichever matching service has usable credentials.
+  // export spreadsheets, so match that subset of the Drive API too, and the
+  // docs.google.com export links Drive hands out for spreadsheets. The routing
+  // layer resolves the overlap with Google Drive by preferring whichever
+  // matching service has usable credentials.
   readonly baseApiUrls = [
     'https://sheets.googleapis.com/',
     /^https:\/\/www\.googleapis\.com\/drive\/v\d+\/files\b/,
+    /^https:\/\/docs\.google\.com\/spreadsheets\/export\?/,
   ] as const;
   readonly info =
     'https://developers.google.com/sheets/api/reference/rest. ' +

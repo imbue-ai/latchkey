@@ -12,12 +12,14 @@ export class GoogleSlides extends GoogleService {
   readonly name = 'google-slides';
   readonly displayName = 'Google Slides';
   // Slides workflows also reach into the Drive files API to find, read, and
-  // export presentations, so match that subset of the Drive API too. The
-  // routing layer resolves the overlap with Google Drive by preferring
-  // whichever matching service has usable credentials.
+  // export presentations, so match that subset of the Drive API too, and the
+  // docs.google.com export links Drive hands out for presentations. The routing
+  // layer resolves the overlap with Google Drive by preferring whichever
+  // matching service has usable credentials.
   readonly baseApiUrls = [
     'https://slides.googleapis.com/',
     /^https:\/\/www\.googleapis\.com\/drive\/v\d+\/files\b/,
+    /^https:\/\/docs\.google\.com\/feeds\/download\/presentations\/Export\?/,
   ] as const;
   readonly info =
     'https://developers.google.com/slides/api/reference/rest. ' +

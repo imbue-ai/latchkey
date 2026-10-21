@@ -8,9 +8,13 @@ const CONFIG: GoogleServiceConfig = {
 export class GoogleDrive extends GoogleService {
   readonly name = 'google-drive';
   readonly displayName = 'Google Drive';
+  // Drive hands out a file's exports, and an older revision's only, as
+  // `exportLinks` on docs.google.com, which take the same bearer token. Only
+  // those export paths are matched, not the rest of docs.google.com.
   readonly baseApiUrls = [
     'https://www.googleapis.com/drive/',
     'https://www.googleapis.com/upload/drive/',
+    /^https:\/\/docs\.google\.com\/(?:feeds\/download\/(?:documents\/export|presentations)\/Export|spreadsheets\/export)\?/,
   ] as const;
   readonly info =
     'https://developers.google.com/drive/api/reference/rest/v3. ' +
