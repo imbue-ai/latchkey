@@ -170,6 +170,23 @@ export async function ensureCurlRequestIsPermitted(
   );
 }
 
+/**
+ * What `latchkey --dry-run curl` reports instead of sending the request. Shared
+ * by the local CLI and the gateway's `curl dry-run` command so both modes
+ * answer in the same shape.
+ */
+export interface CurlDryRunReport {
+  readonly credentialsInjected: boolean;
+  readonly service: string | null;
+}
+
+export function buildCurlDryRunReport(preparation: CurlInvocationPreparation): CurlDryRunReport {
+  return {
+    credentialsInjected: preparation.injectedServiceName !== null,
+    service: preparation.injectedServiceName,
+  };
+}
+
 function buildPreparation(
   curlArguments: readonly string[],
   injectedServiceName: string | null,

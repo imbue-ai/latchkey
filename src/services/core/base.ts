@@ -234,6 +234,31 @@ export interface LoginResult {
   readonly account: string;
 }
 
+/** How often the login phase checks whether it is complete. */
+const LOGIN_POLL_INTERVAL_MS = 100;
+
+function sleep(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
+}
+
+/** Whether the user has left: the browser is gone, or every page in it is closed. */
+function isBrowserGone(context: BrowserContext): boolean {
+  return context.browser()?.isConnected() === false || context.pages().length === 0;
+}
+
+/**
+ * The page a login is best followed on: the one it started on while that is
+ * open, otherwise the most recently opened page still in the browser.
+ */
+function pageToWatch(initialPage: Page): Page {
+  if (!initialPage.isClosed()) {
+    return initialPage;
+  }
+  return initialPage.context().pages().at(-1) ?? initialPage;
+}
+
 export function isBrowserClosedError(error: Error): boolean {
   const message = error.message.toLowerCase();
   return (
@@ -457,6 +482,10 @@ export abstract class ServiceSession {
    * Work the session does itself while the login phase is still going, run
    * between polls of {@link isLoginComplete}.
    *
+   * The page is the one the login started on for as long as it is open, and
+   * the most recently opened page in the browser after that: a login may move
+   * to another tab, and a hook is better off with a live page than a dead one.
+   *
    * The default does nothing, which is right for a session that only has to
    * react to what the browser does. A session whose credential the page never
    * hands over unprompted overrides this and goes and gets it.
@@ -475,11 +504,20 @@ export abstract class ServiceSession {
 
   /**
    * Wait until the browser login phase is complete.
+   *
+   * The wait is deliberately not tied to the page the login started on. A
+   * login may carry on in another tab — an SSO flow commonly opens the signed-in
+   * app in a new one and closes the first — and that is still a login in
+   * progress. Only a browser with no page left means the user has given up.
    */
-  private async waitForLoginComplete(page: Page): Promise<void> {
+  private async waitForLoginComplete(initialPage: Page): Promise<void> {
+    const context = initialPage.context();
     while (!this.isLoginComplete()) {
-      await page.waitForTimeout(100);
-      await this.whileWaitingForLogin(page);
+      await sleep(LOGIN_POLL_INTERVAL_MS);
+      if (isBrowserGone(context)) {
+        throw new LoginCancelledError();
+      }
+      await this.whileWaitingForLogin(pageToWatch(initialPage));
     }
   }
 

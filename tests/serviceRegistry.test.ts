@@ -199,6 +199,42 @@ describe('ServiceRegistry', () => {
       expect(candidates).toEqual([GOOGLE_DRIVE]);
     });
 
+    // The shapes Drive v3 returns as a file's and a revision's `exportLinks`;
+    // an older revision's contents can be downloaded no other way.
+    const exportLinks = [
+      [
+        'https://docs.google.com/feeds/download/documents/export/Export?id=abc&revision=3&exportFormat=odt',
+        GOOGLE_DOCS,
+      ],
+      [
+        'https://docs.google.com/spreadsheets/export?id=abc&revision=3&exportFormat=ods',
+        GOOGLE_SHEETS,
+      ],
+      [
+        'https://docs.google.com/feeds/download/presentations/Export?id=abc&revision=3&exportFormat=odp',
+        GOOGLE_SLIDES,
+      ],
+    ] as const;
+    for (const [url, kindService] of exportLinks) {
+      it(`should match Drive and ${kindService.name} for the export link ${url}`, () => {
+        expect(BUILTIN_SERVICE_REGISTRY.getCandidatesByUrl(url)).toEqual([
+          GOOGLE_DRIVE,
+          kindService,
+        ]);
+      });
+    }
+
+    it('should not match the rest of docs.google.com', () => {
+      for (const url of [
+        'https://docs.google.com/document/d/abc/edit',
+        'https://docs.google.com/spreadsheets/d/abc/export?format=csv',
+        'https://docs.google.com/feeds/download/documents/export/Exporter?id=abc',
+        'https://docs.google.com/forms/d/abc/viewform',
+      ]) {
+        expect(BUILTIN_SERVICE_REGISTRY.getCandidatesByUrl(url)).toEqual([]);
+      }
+    });
+
     it('should return an empty list for unknown URLs', () => {
       expect(BUILTIN_SERVICE_REGISTRY.getCandidatesByUrl('https://example.com/api')).toEqual([]);
     });

@@ -8,9 +8,26 @@
 import * as http from 'node:http';
 import { text } from 'node:stream/consumers';
 import { z } from 'zod';
-import type { ApiCredentialStore } from '../apiCredentials/store.js';
+import { ApiCredentialsUsageError } from '../apiCredentials/base.js';
+import { AmbiguousAccountError, type ApiCredentialStore } from '../apiCredentials/store.js';
 import type { CliDependencies } from '../cliCommands.js';
+import {
+  buildCurlDryRunReport,
+  CredentialsExpiredError,
+  NoCredentialsForServiceError,
+  NoServiceForUrlError,
+  prepareCurlInvocation,
+  RequestNotPermittedError,
+  UrlExtractionFailedError,
+} from '../curlInjection.js';
 import type { EncryptedStorage } from '../encryptedStorage.js';
+import { PermissionCheckError } from '../permissions.js';
+import { buildCurlArguments, type GatewayOptions } from './gatewayEndpoint.js';
+import {
+  InvalidPermissionsOverrideError,
+  PermissionsOverrideFileMissingError,
+  resolveRequestPermissionsConfig,
+} from './permissionsOverride.js';
 import {
   servicesList,
   servicesInfo,
@@ -89,6 +106,23 @@ const PrepareRequestSchema = z.object({
   }),
 });
 
+/**
+ * The request `latchkey --dry-run curl` would send, already parsed out of the
+ * curl arguments on the client. The gateway turns it back into curl arguments
+ * the same way the `/gateway/` proxy does for a real request, so the report
+ * reflects what a real call through this gateway would do.
+ */
+const CurlDryRunRequestSchema = z.object({
+  command: z.literal('curl dry-run'),
+  params: z.object({
+    method: z.string(),
+    url: z.string(),
+    headers: z.record(z.string()),
+    bodyBase64: z.string().nullable(),
+    account: z.string().optional(),
+  }),
+});
+
 export const LatchkeyRequestSchema = z.discriminatedUnion('command', [
   ServicesListRequestSchema,
   ServicesInfoRequestSchema,
@@ -96,6 +130,7 @@ export const LatchkeyRequestSchema = z.discriminatedUnion('command', [
   AuthBrowserRequestSchema,
   AuthBrowserPrepareRequestSchema,
   PrepareRequestSchema,
+  CurlDryRunRequestSchema,
 ]);
 
 export type LatchkeyRequest = z.infer<typeof LatchkeyRequestSchema>;
@@ -112,10 +147,31 @@ const KNOWN_ERROR_CLASSES: readonly (abstract new (...args: never[]) => Error)[]
   LoginFailedError,
   PrepareNotSupportedError,
   PrepareInputInvalidError,
+  PermissionsOverrideFileMissingError,
+  UrlExtractionFailedError,
+  NoServiceForUrlError,
+  NoCredentialsForServiceError,
+  CredentialsExpiredError,
+  AmbiguousAccountError,
+  ApiCredentialsUsageError,
 ];
 
-function isKnownError(error: unknown): error is Error {
-  return KNOWN_ERROR_CLASSES.some((ErrorClass) => error instanceof ErrorClass);
+/**
+ * The HTTP status a known error maps to, or null for an unexpected error.
+ * Permission and override failures use the same statuses the `/gateway/`
+ * proxy uses for them, so a client can tell them apart from other failures.
+ */
+function statusCodeForKnownError(error: unknown): number | null {
+  if (error instanceof RequestNotPermittedError || error instanceof PermissionCheckError) {
+    return 403;
+  }
+  if (error instanceof InvalidPermissionsOverrideError) {
+    return 401;
+  }
+  if (KNOWN_ERROR_CLASSES.some((ErrorClass) => error instanceof ErrorClass)) {
+    return 400;
+  }
+  return null;
 }
 
 function sendJsonResponse(response: http.ServerResponse, statusCode: number, body: unknown): void {
@@ -137,17 +193,59 @@ function sendErrorResponse(
 
 function describeRequest(parsed: LatchkeyRequest): string {
   const command = parsed.command;
+  if (parsed.command === 'curl dry-run') {
+    return `${command} ${parsed.params.method} ${parsed.params.url}`;
+  }
   if ('params' in parsed && parsed.params && 'serviceName' in parsed.params) {
     return `${command} ${parsed.params.serviceName}`;
   }
   return command;
 }
 
-async function dispatch(
-  parsed: LatchkeyRequest,
+async function curlDryRun(
+  params: z.infer<typeof CurlDryRunRequestSchema>['params'],
+  requestHeaders: http.IncomingHttpHeaders,
   deps: CliDependencies,
   apiCredentialStore: ApiCredentialStore,
-  encryptedStorage: EncryptedStorage
+  options: GatewayOptions
+): Promise<unknown> {
+  const permissionsConfigPath = resolveRequestPermissionsConfig(
+    requestHeaders,
+    deps.config.permissionsConfigPath,
+    options.permissionsOverrideSigningKey
+  );
+  const body = params.bodyBase64 === null ? null : Buffer.from(params.bodyBase64, 'base64');
+  const curlArguments = buildCurlArguments(
+    params.method,
+    new Map(Object.entries(params.headers)),
+    params.url,
+    body !== null
+  );
+  const preparation = await prepareCurlInvocation(
+    curlArguments,
+    apiCredentialStore,
+    {
+      registry: deps.registry,
+      checkPermission: deps.checkPermission,
+      permissionsConfigPath,
+      permissionsDoNotUseBuiltinSchemas: deps.config.permissionsDoNotUseBuiltinSchemas,
+      passthroughUnknown: deps.config.passthroughUnknown,
+      credentialsRefreshDisabled: deps.config.credentialsRefreshDisabled,
+      diagnosticHeaders: deps.config.diagnosticHeaders,
+      account: params.account,
+    },
+    body
+  );
+  return buildCurlDryRunReport(preparation);
+}
+
+async function dispatch(
+  parsed: LatchkeyRequest,
+  requestHeaders: http.IncomingHttpHeaders,
+  deps: CliDependencies,
+  apiCredentialStore: ApiCredentialStore,
+  encryptedStorage: EncryptedStorage,
+  options: GatewayOptions
 ): Promise<unknown> {
   switch (parsed.command) {
     case 'services list':
@@ -197,6 +295,9 @@ async function dispatch(
         parsed.params.serviceName,
         parsed.params.json
       );
+
+    case 'curl dry-run':
+      return curlDryRun(parsed.params, requestHeaders, deps, apiCredentialStore, options);
   }
 }
 
@@ -205,7 +306,8 @@ export async function handleLatchkeyRequest(
   response: http.ServerResponse,
   deps: CliDependencies,
   apiCredentialStore: ApiCredentialStore,
-  encryptedStorage: EncryptedStorage
+  encryptedStorage: EncryptedStorage,
+  options: GatewayOptions
 ): Promise<void> {
   if (request.method !== 'POST') {
     sendErrorResponse(response, 405, 'Method not allowed. Use POST.');
@@ -247,13 +349,21 @@ export async function handleLatchkeyRequest(
   const description = describeRequest(parsed);
 
   try {
-    const result = await dispatch(parsed, deps, apiCredentialStore, encryptedStorage);
+    const result = await dispatch(
+      parsed,
+      request.headers,
+      deps,
+      apiCredentialStore,
+      encryptedStorage,
+      options
+    );
     deps.log(`POST /latchkey/ ${description} -> 200`);
     sendSuccess(response, result);
   } catch (error) {
-    if (isKnownError(error)) {
-      deps.log(`POST /latchkey/ ${description} -> 400 (error)`);
-      sendErrorResponse(response, 400, error.message);
+    const statusCode = statusCodeForKnownError(error);
+    if (statusCode !== null && error instanceof Error) {
+      deps.log(`POST /latchkey/ ${description} -> ${String(statusCode)} (error)`);
+      sendErrorResponse(response, statusCode, error.message);
       return;
     }
     deps.errorLog(

@@ -12,7 +12,7 @@ export class Figma extends Service {
   readonly credentialCheckCurlArguments = ['https://api.figma.com/v1/me'] as const;
 
   setCredentialsExample(serviceName: string): string {
-    return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
+    return `latchkey auth set ${serviceName} "-H X-Figma-Token: <token>"`;
   }
 
   override getAccount(apiCredentials: ApiCredentials): Promise<string | null> {

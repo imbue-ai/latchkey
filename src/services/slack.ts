@@ -2,7 +2,7 @@
  * Slack service implementation.
  */
 
-import type { Page, Response } from 'playwright';
+import type { BrowserContext, Page, Response } from 'playwright';
 import { z } from 'zod';
 import type { ApiCredentials } from '../apiCredentials/base.js';
 import { LoginFailedError, Service, SimpleServiceSession } from './core/base.js';
@@ -115,7 +115,7 @@ async function readDCookieFromJar(page: Page): Promise<string | null> {
 }
 
 /**
- * Whether the browser sits on a fully loaded Slack client. Loading counts
+ * Whether the page sits on a fully loaded Slack client. Loading counts
  * subresources too, so on a slow connection this simply takes longer to become
  * true. A page mid-navigation cannot be asked and counts as not loaded.
  */
@@ -129,6 +129,16 @@ async function isSlackClientLoaded(page: Page): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * Whether any open page sits on a fully loaded Slack client. An SSO flow may
+ * open the client in a new tab, so the page the login started on is not the
+ * only one worth asking.
+ */
+async function isSlackClientLoadedInAnyPage(context: BrowserContext): Promise<boolean> {
+  const loadedStates = await Promise.all(context.pages().map(isSlackClientLoaded));
+  return loadedStates.includes(true);
 }
 
 class SlackServiceSession extends SimpleServiceSession {
@@ -177,8 +187,8 @@ class SlackServiceSession extends SimpleServiceSession {
    * anything containing a token, so it is not still coming.
    *
    * Without a token, the login is given up on once the client has finished
-   * loading and has then had ample time to make its own requests without any
-   * of them carrying one.
+   * loading, in whichever tab, and has then had ample time to make its own
+   * requests without any of them carrying one.
    */
   override async whileWaitingForLogin(page: Page): Promise<void> {
     if (this.apiCredentials !== null) {
@@ -195,7 +205,7 @@ class SlackServiceSession extends SimpleServiceSession {
     }
 
     if (this.clientLoadedAt === null) {
-      if (await isSlackClientLoaded(page)) {
+      if (await isSlackClientLoadedInAnyPage(page.context())) {
         this.clientLoadedAt = Date.now();
       }
       return;

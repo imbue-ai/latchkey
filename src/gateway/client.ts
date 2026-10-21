@@ -5,6 +5,8 @@
  * `latchkey curl` has its target URL rewritten to route through `/gateway/`.
  */
 
+import { readFileSync } from 'node:fs';
+import { parseCurlArgs, resolveCurlRequestBodySource } from '../curl.js';
 import { GATEWAY_ACCOUNT_HEADER } from './account.js';
 import { EXTENSION_PLACEHOLDER_HOST } from './extensions.js';
 import type { LatchkeyRequest } from './latchkeyEndpoint.js';
@@ -35,6 +37,13 @@ export class GatewayCurlRewriteError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'GatewayCurlRewriteError';
+  }
+}
+
+export class CurlDryRunBodyUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CurlDryRunBodyUnavailableError';
   }
 }
 
@@ -99,6 +108,65 @@ export async function callLatchkeyEndpoint(
   }
 
   return parsedBody.result ?? null;
+}
+
+/**
+ * Build the `curl dry-run` RPC request for a curl invocation. The invocation
+ * is parsed here, on the client, into the request curl would send, so the
+ * gateway can resolve it exactly as it resolves a real proxied request. A body
+ * that curl would read from a file is read here for the same reason: the file
+ * exists only on the client.
+ *
+ * Throws `CurlParseError` for a malformed invocation and
+ * `CurlDryRunBodyUnavailableError` when the body cannot be reconstructed from
+ * the arguments (it comes from stdin or curl assembles it from several data
+ * arguments).
+ */
+export async function buildCurlDryRunRequest(
+  curlArguments: readonly string[],
+  account: string | undefined
+): Promise<LatchkeyRequest> {
+  const parsedRequest = parseCurlArgs(curlArguments);
+  const headers: Record<string, string> = {};
+  parsedRequest.headers.forEach((value, name) => {
+    headers[name] = value;
+  });
+  const bodyText = await parsedRequest.text();
+  const bodySource = resolveCurlRequestBodySource(curlArguments, bodyText);
+  let body: Buffer | null;
+  switch (bodySource.kind) {
+    case 'inline':
+      body = bodyText === '' ? null : Buffer.from(bodyText, 'utf-8');
+      break;
+    case 'file':
+      try {
+        body = readFileSync(bodySource.path);
+      } catch {
+        throw new CurlDryRunBodyUnavailableError(
+          `Could not read the request body file '${bodySource.path}' for the dry run.`
+        );
+      }
+      break;
+    case 'stdin':
+      throw new CurlDryRunBodyUnavailableError(
+        'A dry run cannot send a request body read from stdin; pass the body inline or as a file.'
+      );
+    case 'unreconstructable':
+      throw new CurlDryRunBodyUnavailableError(
+        'A dry run cannot send a request body curl assembles from several data arguments; ' +
+          'pass the body as a single argument or file.'
+      );
+  }
+  return {
+    command: 'curl dry-run',
+    params: {
+      method: parsedRequest.method,
+      url: parsedRequest.url,
+      headers,
+      bodyBase64: body === null ? null : body.toString('base64'),
+      ...(account === undefined ? {} : { account }),
+    },
+  };
 }
 
 /**
