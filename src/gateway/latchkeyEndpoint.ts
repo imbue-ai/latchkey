@@ -53,11 +53,13 @@ import {
 } from '../services/index.js';
 
 const serviceNameParamsMessage = "missing required argument 'service_name'";
+const serviceNameMissingError = (issue: { input?: unknown }): string | undefined =>
+  issue.input === undefined ? serviceNameParamsMessage : undefined;
 const serviceNameParams = z.object(
   {
-    serviceName: z.string({ required_error: serviceNameParamsMessage }),
+    serviceName: z.string({ error: serviceNameMissingError }),
   },
-  { required_error: serviceNameParamsMessage }
+  { error: serviceNameMissingError }
 );
 
 const ServicesListRequestSchema = z.object({
@@ -117,7 +119,7 @@ const CurlDryRunRequestSchema = z.object({
   params: z.object({
     method: z.string(),
     url: z.string(),
-    headers: z.record(z.string()),
+    headers: z.record(z.string(), z.string()),
     bodyBase64: z.string().nullable(),
     account: z.string().optional(),
   }),
@@ -329,16 +331,16 @@ export async function handleLatchkeyRequest(
 
   const parseResult = LatchkeyRequestSchema.safeParse(bodyJson);
   if (!parseResult.success) {
-    const message = parseResult.error.errors
-      .map((e) => {
-        if (e.code === 'invalid_union_discriminator') {
+    const message = parseResult.error.issues
+      .map((issue) => {
+        if (issue.code === 'invalid_union' && issue.discriminator !== undefined) {
           const received = (bodyJson as Record<string, unknown> | null)?.command;
           if (typeof received === 'string') {
             return `unknown command '${received}'`;
           }
           return "missing required field 'command'";
         }
-        return e.message;
+        return issue.message;
       })
       .join('; ');
     sendErrorResponse(response, 400, message);

@@ -34,7 +34,7 @@ const RegisteredServicesSchema = z.record(z.string(), RegisteredServiceEntrySche
 const BrowserConfigSchema = z.object({
   executablePath: z.string(),
   source: z.enum(['system', 'playwright', 'downloaded']),
-  discoveredAt: z.string().datetime(),
+  discoveredAt: z.iso.datetime(),
 });
 
 export type BrowserConfig = z.infer<typeof BrowserConfigSchema>;

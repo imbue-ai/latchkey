@@ -3,7 +3,7 @@
  */
 
 import type { Browser, BrowserContext, Page, Response } from 'playwright';
-import { z, type ZodError, type ZodTypeAny } from 'zod';
+import { z, type ZodError } from 'zod';
 import {
   ApiCredentialStatus,
   ApiCredentials,
@@ -183,7 +183,7 @@ export function buildDynamicClientPreparation({
  * `PrepareInputInvalidError` (with the failing fields) on any schema mismatch;
  * nothing is built unless the input fully validates.
  */
-export function buildPreparedCredentials<Schema extends ZodTypeAny>(
+export function buildPreparedCredentials<Schema extends z.ZodType>(
   serviceName: string,
   schema: Schema,
   parsedJson: unknown,
@@ -193,7 +193,7 @@ export function buildPreparedCredentials<Schema extends ZodTypeAny>(
   if (!result.success) {
     throw new PrepareInputInvalidError(serviceName, describeSchemaIssues(result.error));
   }
-  return build(result.data as z.infer<Schema>);
+  return build(result.data);
 }
 
 /**

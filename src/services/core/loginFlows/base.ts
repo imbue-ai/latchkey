@@ -23,7 +23,7 @@
  * without the two forming a cycle.
  */
 
-import type { ZodType, ZodTypeAny } from 'zod';
+import type { ZodType } from 'zod';
 import { describeSchemaIssues, Service, type ServiceSession } from '../base.js';
 
 /**
@@ -68,7 +68,7 @@ export interface LoginFlowClass {
   readonly summary: string;
   /** Reference documentation, shown by `services register --help`. */
   readonly details: string;
-  readonly paramsSchema: ZodTypeAny;
+  readonly paramsSchema: ZodType;
 }
 
 /**

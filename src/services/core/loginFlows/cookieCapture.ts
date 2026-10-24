@@ -199,7 +199,7 @@ const CookieCaptureParamsSchema = z
      * URL the cookies must apply to. Defaults to the service's login URL, which
      * is right unless sign-in happens on a different host than the API.
      */
-    cookieUrl: z.string().url().optional(),
+    cookieUrl: z.url().optional(),
   })
   .strict();
 
