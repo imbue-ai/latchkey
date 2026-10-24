@@ -37,7 +37,8 @@ const ZOOM_SIGN_IN_URL = 'https://zoom.us/signin#/login';
 // behind it. Zoom's newer web client serves the home page at /wc/home, and may
 // eventually drop the /wc prefix. The redirect there names the page either as an absolute URL or as
 // a path.
-const SIGNED_IN_LANDING_URL_PATTERN = /^(https:\/\/([\w-]+\.)*zoom\.us)?\/(myhome|profile|(wc\/)?home)\b/i;
+const SIGNED_IN_LANDING_URL_PATTERN =
+  /^(https:\/\/([\w-]+\.)*zoom\.us)?\/(myhome|profile|(wc\/)?home)\b/i;
 
 /**
  * Whether a URL names a page Zoom lands a user on once they are signed in. Also
