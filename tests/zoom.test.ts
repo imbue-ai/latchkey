@@ -108,7 +108,10 @@ describe('isZoomSignedInLandingUrl', () => {
     expect(isZoomSignedInLandingUrl('https://us05web.zoom.us/myhome/setting')).toBe(true);
     expect(isZoomSignedInLandingUrl('https://us06web.zoom.us/profile')).toBe(true);
     expect(isZoomSignedInLandingUrl('https://us06web.zoom.us/profile/setting')).toBe(true);
+    expect(isZoomSignedInLandingUrl('https://app.zoom.us/wc/home?ref_from=waffle_home')).toBe(true);
+    expect(isZoomSignedInLandingUrl('https://app.zoom.us/home')).toBe(true);
     expect(isZoomSignedInLandingUrl('/myhome')).toBe(true);
+    expect(isZoomSignedInLandingUrl('/wc/home')).toBe(true);
     expect(isZoomSignedInLandingUrl('/profile')).toBe(true);
   });
 
@@ -116,6 +119,8 @@ describe('isZoomSignedInLandingUrl', () => {
     expect(isZoomSignedInLandingUrl('https://zoom.us/signin#/login')).toBe(false);
     expect(isZoomSignedInLandingUrl('https://us05web.zoom.us/myhomepage')).toBe(false);
     expect(isZoomSignedInLandingUrl('https://us06web.zoom.us/profiles')).toBe(false);
+    expect(isZoomSignedInLandingUrl('https://app.zoom.us/wc/homepage')).toBe(false);
+    expect(isZoomSignedInLandingUrl('https://app.zoom.us/wc/meetings')).toBe(false);
     expect(isZoomSignedInLandingUrl('https://marketplace.zoom.us/user/build')).toBe(false);
     expect(isZoomSignedInLandingUrl('https://not-zoom.example.com/profile')).toBe(false);
   });
