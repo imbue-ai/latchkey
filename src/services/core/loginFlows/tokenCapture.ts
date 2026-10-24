@@ -97,7 +97,7 @@ const TokenCaptureParamsSchema = z
      * The endpoint whose response carries the token. Compared by origin and
      * path, so a query string does not have to be predicted.
      */
-    tokenUrl: z.string().url(),
+    tokenUrl: z.url(),
     /**
      * Where the token sits in the JSON body. Dotted for a nested field; each
      * segment is a literal key, so a key containing a dot cannot be addressed —
