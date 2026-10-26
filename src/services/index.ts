@@ -72,3 +72,60 @@ export { Ngrok, NGROK } from './ngrok.js';
 export { Huggingface, HUGGINGFACE } from './huggingface.js';
 export { Openrouter, OPENROUTER } from './openrouter.js';
 export { Tailscale, TAILSCALE } from './tailscale.js';
+// Remote MCP servers, see ./core/remoteMcp.ts.
+export * from './core/remoteMcp.js';
+export { AIRTABLE_MCP } from './airtable-mcp.js';
+export { ANYDO_MCP } from './anydo-mcp.js';
+export { AtlassianMcp, ATLASSIAN_MCP } from './atlassian-mcp.js';
+export { AttioMcp, ATTIO_MCP } from './attio-mcp.js';
+export { BEEHIIV_MCP } from './beehiiv-mcp.js';
+export { BuildkiteMcp, BUILDKITE_MCP } from './buildkite-mcp.js';
+export { CalComMcp, CAL_COM_MCP } from './cal-com-mcp.js';
+export { CANVA_MCP } from './canva-mcp.js';
+export { CLICKUP_MCP } from './clickup-mcp.js';
+export {
+  CLOUDFLARE_CONTAINERS_MCP,
+  CLOUDFLARE_BROWSER_MCP,
+  CLOUDFLARE_DEX_MCP,
+  CLOUDFLARE_CASB_MCP,
+  CLOUDFLARE_AI_GATEWAY_MCP,
+  CLOUDFLARE_AUDITLOGS_MCP,
+  CLOUDFLARE_AUTORAG_MCP,
+  CLOUDFLARE_DNS_ANALYTICS_MCP,
+  CLOUDFLARE_GRAPHQL_MCP,
+  CLOUDFLARE_LOGS_MCP,
+  CLOUDFLARE_OBSERVABILITY_MCP,
+  CLOUDFLARE_RADAR_MCP,
+  CLOUDFLARE_BINDINGS_MCP,
+  CLOUDFLARE_BUILDS_MCP,
+  CLOUDFLARE_API_MCP,
+  CLOUDFLARE_MCP_SERVICES,
+} from './cloudflare-mcp.js';
+export { CodaMcp, CODA_MCP } from './coda-mcp.js';
+export { DATADOG_MCP } from './datadog-mcp.js';
+export { EVERNOTE_MCP } from './evernote-mcp.js';
+export { FATHOM_MCP } from './fathom-mcp.js';
+export { GAMMA_MCP } from './gamma-mcp.js';
+export { GranolaMcp, GRANOLA_MCP } from './granola-mcp.js';
+export { INDEED_MCP } from './indeed-mcp.js';
+export { INTERCOM_MCP } from './intercom-mcp.js';
+export { INVIDEO_MCP } from './invideo-mcp.js';
+export { LINKTREE_MCP } from './linktree-mcp.js';
+export { MiroMcp, MIRO_MCP } from './miro-mcp.js';
+export { MIXPANEL_MCP } from './mixpanel-mcp.js';
+export { NEON_MCP } from './neon-mcp.js';
+export { NetlifyMcp, NETLIFY_MCP } from './netlify-mcp.js';
+export { OTTER_MCP } from './otter-mcp.js';
+export { PAYPAL_MCP } from './paypal-mcp.js';
+export { PELOTON_MCP } from './peloton-mcp.js';
+export { POSTHOG_MCP } from './posthog-mcp.js';
+export { READWISE_MCP } from './readwise-mcp.js';
+export { STRAVA_MCP } from './strava-mcp.js';
+export { SUBSTACK_MCP } from './substack-mcp.js';
+export { SUPABASE_MCP } from './supabase-mcp.js';
+export { TICKTICK_MCP } from './ticktick-mcp.js';
+export { TrelloMcp, TRELLO_MCP } from './trello-mcp.js';
+export { VercelMcp, VERCEL_MCP } from './vercel-mcp.js';
+export { WEBFLOW_MCP } from './webflow-mcp.js';
+export { WIX_MCP } from './wix-mcp.js';
+export { WordPressComMcp, WORDPRESS_COM_MCP } from './wordpress-com-mcp.js';

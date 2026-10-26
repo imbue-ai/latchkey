@@ -1,14 +1,11 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
-  startOAuthCallbackServer,
   buildLoopbackRedirectUri,
   generateCodeVerifier,
   generateCodeChallenge,
   exchangeCodeForTokens,
   readRedirectUriOverride,
   refreshAccessToken,
-  OAuthTokenExchangeError,
-  OAuthCallbackServerTimeoutError,
   findScopesNotGranted,
 } from '../src/oauthUtils.js';
 import { AuthorizationBearer, OAuthCredentials } from '../src/apiCredentials/base.js';
@@ -17,10 +14,6 @@ import * as curl from '../src/curl.js';
 afterEach(() => {
   vi.restoreAllMocks();
 });
-
-void startOAuthCallbackServer;
-void OAuthTokenExchangeError;
-void OAuthCallbackServerTimeoutError;
 
 describe('startOAuthCallbackServer', () => {
   it.todo('add tests');

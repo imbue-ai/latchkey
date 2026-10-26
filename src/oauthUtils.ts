@@ -219,6 +219,16 @@ export function generateCodeChallenge(verifier: string): string {
  * @param redirectUri - The redirect URI used in the authorization request
  * @param codeVerifier - Optional PKCE code verifier
  */
+export interface ExchangeCodeForTokensOptions {
+  /**
+   * Accept a token response without a refresh token. The default insists on
+   * one, since credentials that cannot be refreshed are a poor outcome of a
+   * login; a server that is known to issue short-lived tokens only, or that
+   * leaves refresh tokens to the client's discretion, opts out.
+   */
+  readonly refreshTokenRequired?: boolean;
+}
+
 export async function exchangeCodeForTokens(
   tokenEndpoint: string,
   code: string,
@@ -227,7 +237,28 @@ export async function exchangeCodeForTokens(
   redirectUri: string,
   codeVerifier?: string,
   extraParams?: Readonly<Record<string, string>>
-): Promise<OAuthTokenExchangeResponse> {
+): Promise<OAuthTokenExchangeResponse>;
+export async function exchangeCodeForTokens(
+  tokenEndpoint: string,
+  code: string,
+  clientId: string,
+  clientSecret: string,
+  redirectUri: string,
+  codeVerifier: string | undefined,
+  extraParams: Readonly<Record<string, string>> | undefined,
+  options: ExchangeCodeForTokensOptions
+): Promise<OAuthTokenResponse>;
+export async function exchangeCodeForTokens(
+  tokenEndpoint: string,
+  code: string,
+  clientId: string,
+  clientSecret: string,
+  redirectUri: string,
+  codeVerifier?: string,
+  extraParams?: Readonly<Record<string, string>>,
+  options: ExchangeCodeForTokensOptions = {}
+): Promise<OAuthTokenResponse> {
+  const refreshTokenRequired = options.refreshTokenRequired ?? true;
   // Extras first, so the protocol fields below always win: a caller cannot
   // accidentally replace `grant_type` or `code` with its own value. Servers that
   // pin tokens to a named audience need their own parameters here, e.g. RFC
@@ -269,17 +300,19 @@ export async function exchangeCodeForTokens(
       error?: string;
       error_description?: string;
     };
-    if (!response.access_token || !response.refresh_token) {
+    if (!response.access_token || (refreshTokenRequired && !response.refresh_token)) {
       // A refusal is reported as `error` / `error_description` (RFC 6749 §5.2);
       // reporting only the absent fields discards the reason.
       const reason =
         response.error === undefined
-          ? 'Token response missing access_token or refresh_token.'
+          ? refreshTokenRequired
+            ? 'Token response missing access_token or refresh_token.'
+            : 'Token response missing access_token.'
           : `Token exchange failed: ${response.error}` +
             (response.error_description === undefined ? '' : ` (${response.error_description})`);
       throw new OAuthTokenExchangeError(reason);
     }
-    return response as OAuthTokenExchangeResponse;
+    return response;
   } catch (error: unknown) {
     if (error instanceof OAuthTokenExchangeError) {
       throw error;
