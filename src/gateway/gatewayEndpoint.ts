@@ -73,6 +73,30 @@ export const GATEWAY_INTERNAL_HEADERS: ReadonlySet<string> = new Set([
   PERMISSIONS_OVERRIDE_HEADER,
 ]);
 
+/**
+ * Request headers the gateway negotiates on its own behalf instead of
+ * forwarding. The gateway runs curl with `--compressed` and hands its clients
+ * the decoded body, so a client's `Accept-Encoding` has no bearing on the
+ * upstream request; forwarding it could make the upstream pick an encoding
+ * this gateway's curl cannot decode.
+ */
+export const GATEWAY_NEGOTIATED_REQUEST_HEADERS: ReadonlySet<string> = new Set(['accept-encoding']);
+
+/**
+ * Response headers that describe the body as it came off the wire. curl runs
+ * with `--compressed`, so the body it hands over is already decoded, and the
+ * gateway describes that body itself.
+ */
+const WIRE_BODY_RESPONSE_HEADERS: ReadonlySet<string> = new Set([
+  'content-encoding',
+  'content-length',
+]);
+
+/**
+ * Status codes whose response must not carry a `Content-Length`.
+ */
+const BODILESS_STATUS_CODES: ReadonlySet<number> = new Set([204, 304]);
+
 export const GATEWAY_PATH_PREFIX = '/gateway/';
 
 export class BodyTooLargeError extends Error {
@@ -157,7 +181,11 @@ export function buildCurlArguments(
 
   for (const [name, value] of headers) {
     const lowerName = name.toLowerCase();
-    if (HOP_BY_HOP_HEADERS.has(lowerName) || GATEWAY_INTERNAL_HEADERS.has(lowerName)) {
+    if (
+      HOP_BY_HOP_HEADERS.has(lowerName) ||
+      GATEWAY_INTERNAL_HEADERS.has(lowerName) ||
+      GATEWAY_NEGOTIATED_REQUEST_HEADERS.has(lowerName)
+    ) {
       continue;
     }
     args.push('-H', `${name}: ${value}`);
@@ -280,7 +308,7 @@ function forwardResponse(
   body: Buffer
 ): void {
   for (const [name, values] of parsed.headers) {
-    if (HOP_BY_HOP_HEADERS.has(name)) {
+    if (HOP_BY_HOP_HEADERS.has(name) || WIRE_BODY_RESPONSE_HEADERS.has(name)) {
       continue;
     }
     if (values.length === 1) {
@@ -288,6 +316,9 @@ function forwardResponse(
     } else {
       response.setHeader(name, [...values]);
     }
+  }
+  if (!BODILESS_STATUS_CODES.has(parsed.statusCode)) {
+    response.setHeader('content-length', String(body.length));
   }
   response.writeHead(parsed.statusCode);
   response.end(body);
@@ -452,12 +483,15 @@ export async function handleGatewayRequest(
   const headerFile = join(tempDir, 'headers');
 
   try {
-    // Add curl flags for capturing response metadata. `-sS` silences the
-    // progress meter (which would otherwise pollute the captured response
-    // body) while still letting error messages reach stderr, so
-    // `sendUpstreamCurlFailure` can surface the real failure reason to the
-    // client instead of the generic fallback.
-    const curlArgs = ['-sS', '-D', headerFile, ...allArguments];
+    // `-sS` silences the progress meter (which would otherwise pollute the
+    // captured response body) while still letting error messages reach
+    // stderr, so `sendUpstreamCurlFailure` can surface the real failure
+    // reason to the client instead of the generic fallback. `--compressed`
+    // makes curl decode whatever content encoding the upstream picks, so the
+    // body `forwardResponse` sends is always the decoded one; the curl behind
+    // `LATCHKEY_CURL` may add the flag itself (the impersonating router does),
+    // and this keeps the decoding independent of that.
+    const curlArgs = ['-sS', '--compressed', '-D', headerFile, ...allArguments];
 
     const result: AsyncCurlResult = await deps.runCurlAsync(curlArgs, {
       stdin: body ?? undefined,

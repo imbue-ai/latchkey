@@ -131,6 +131,16 @@ describe('buildCurlArguments', () => {
     expect(joined).not.toContain('jwt-payload');
   });
 
+  it('does not forward Accept-Encoding, which the gateway negotiates itself', () => {
+    const headers = new Map([
+      ['Accept-Encoding', 'zstd'],
+      ['Accept', 'application/json'],
+    ]);
+    const args = buildCurlArguments('GET', headers, 'https://api.example.com/test', false);
+    expect(args).toContain('Accept: application/json');
+    expect(args.join('\n').toLowerCase()).not.toContain('accept-encoding');
+  });
+
   it('should add --data-binary @- when body is present', () => {
     const args = buildCurlArguments(
       'POST',
@@ -495,6 +505,47 @@ describe('gateway server', () => {
 
       expect(response.status).toBe(404);
       expect(await response.text()).toBe('not found');
+    });
+
+    it('asks curl to decode the upstream body', async () => {
+      gateway = await createTestGateway();
+
+      await fetch('/gateway/https://slack.com/api/auth.test');
+
+      expect(capturedCurlArgs).toContain('--compressed');
+    });
+
+    it('describes the decoded body instead of forwarding the wire content-encoding and content-length', async () => {
+      // curl's header dump describes the compressed body as it came off the
+      // wire, while the body curl hands over is already decoded and longer.
+      const decodedBody =
+        '{"ok":true,"url":"https:\\/\\/example.slack.com\\/","team":"Example Team"}';
+      mockCurlHeaderDump =
+        'HTTP/2 200\r\ncontent-type: application/json\r\ncontent-encoding: br\r\ncontent-length: 40\r\n\r\n';
+      mockCurlResponse = {
+        returncode: 0,
+        stdout: Buffer.from(decodedBody),
+        stderr: '',
+      };
+      gateway = await createTestGateway();
+
+      const response = await fetch('/gateway/https://slack.com/api/auth.test');
+
+      expect(response.headers.get('content-encoding')).toBeNull();
+      expect(response.headers.get('content-length')).toBe(String(Buffer.byteLength(decodedBody)));
+      expect(await response.text()).toBe(decodedBody);
+    });
+
+    it('sends no content-length on a 204', async () => {
+      mockCurlHeaderDump = 'HTTP/1.1 204 No Content\r\nX-Custom-Header: custom-value\r\n\r\n';
+      mockCurlResponse = { returncode: 0, stdout: Buffer.alloc(0), stderr: '' };
+      gateway = await createTestGateway();
+
+      const response = await fetch('/gateway/https://slack.com/api/auth.test', { method: 'POST' });
+
+      expect(response.status).toBe(204);
+      expect(response.headers.get('content-length')).toBeNull();
+      expect(response.headers.get('x-custom-header')).toBe('custom-value');
     });
   });
 
