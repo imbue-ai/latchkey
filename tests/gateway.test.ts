@@ -499,12 +499,35 @@ describe('gateway server', () => {
     });
   });
 
-  describe('upstream bodies curl decoded', () => {
+  describe('response framing', () => {
     // What the impersonating curl router produces: curl's header dump still
     // describes the compressed body as it came off the wire, while the body
     // curl hands over is already decoded.
     const decodedBody =
       '{"ok":true,"url":"https:\\/\\/example.slack.com\\/","team":"Example Team","user":"datalib"}';
+
+    it('sets content-length from the body it sends', async () => {
+      mockCurlHeaderDump =
+        'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n';
+      gateway = await createTestGateway();
+
+      const response = await fetch('/gateway/https://slack.com/api/auth.test');
+
+      expect(response.headers.get('content-length')).toBe('11');
+      expect(await response.text()).toBe('{"ok":true}');
+    });
+
+    it('never labels a body with a coding the upstream did not declare', async () => {
+      const gzipFile = gzipSync(decodedBody);
+      mockCurlHeaderDump = `HTTP/1.1 200 OK\r\nContent-Type: application/gzip\r\nContent-Length: ${String(gzipFile.length)}\r\n\r\n`;
+      mockCurlResponse = { returncode: 0, stdout: gzipFile, stderr: '' };
+      gateway = await createTestGateway();
+
+      const response = await fetch('/gateway/https://slack.com/api/files.download');
+
+      expect(response.headers.get('content-encoding')).toBeNull();
+      expect(Buffer.from(await response.arrayBuffer()).equals(gzipFile)).toBe(true);
+    });
 
     it('describes the decoded body when the wire content-length no longer matches it', async () => {
       mockCurlHeaderDump =

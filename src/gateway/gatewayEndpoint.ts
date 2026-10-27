@@ -282,8 +282,8 @@ const GZIP_MAGIC = Buffer.from([0x1f, 0x8b]);
 const ZSTD_MAGIC = Buffer.from([0x28, 0xb5, 0x2f, 0xfd]);
 
 /**
- * Whether `body` is still in the content coding `encoding` names. A coding
- * curl does not know is taken as intact, since curl cannot have decoded it.
+ * Whether `body` is in the content coding `encoding` names. A coding curl does
+ * not know is taken as intact, since curl cannot have decoded it.
  */
 function isBodyEncodedAs(body: Buffer, encoding: string): boolean {
   switch (encoding) {
@@ -310,15 +310,11 @@ function isBodyEncodedAs(body: Buffer, encoding: string): boolean {
 }
 
 /**
- * Whether the upstream `Content-Encoding` and `Content-Length` still describe
- * `body`. curl's header dump describes the response as it came off the wire,
- * but the curl behind `LATCHKEY_CURL` may have decoded the body (the
- * impersonating router runs it with `--compressed`, because its Chrome profile
- * advertises brotli), and curl does not report whether it did. Forwarding the
- * wire headers with a decoded body makes the client stop reading at the
- * compressed length.
+ * Whether `body` is still in the content coding the upstream declared. Only a
+ * declared coding is ever confirmed, never guessed from the body: a gzip file
+ * served without a `Content-Encoding` stays a file.
  */
-function wireHeadersDescribeBody(
+function bodyCarriesDeclaredEncoding(
   headers: ReadonlyMap<string, readonly string[]>,
   body: Buffer
 ): boolean {
@@ -327,33 +323,36 @@ function wireHeadersDescribeBody(
     .map((token) => token.trim().toLowerCase())
     .filter((token) => token !== '' && token !== 'identity');
   const outermostEncoding = contentEncodings[contentEncodings.length - 1];
-  if (outermostEncoding === undefined) {
-    return true;
-  }
-  const contentLength = headers.get('content-length')?.[0];
-  if (contentLength !== undefined) {
-    return parseInt(contentLength, 10) === body.length;
-  }
-  return isBodyEncodedAs(body, outermostEncoding);
+  return outermostEncoding === undefined || isBodyEncodedAs(body, outermostEncoding);
 }
 
 /**
- * Forward parsed upstream response to the client. When curl decoded the body,
- * the gateway describes the body it sends instead of forwarding the wire
- * `Content-Encoding` and `Content-Length`.
+ * Forward parsed upstream response to the client.
+ *
+ * curl's header dump describes the response as it came off the wire, while
+ * the body is whatever the curl behind `LATCHKEY_CURL` handed over: the
+ * impersonating router runs curl with `--compressed` (its Chrome profile
+ * advertises brotli), so the body may already be decoded, and curl does not
+ * report whether it is. The gateway therefore describes the body it sends
+ * itself: `Content-Length` from the body, and `Content-Encoding` only while
+ * the body is still in the declared coding.
  */
 function forwardResponse(
   response: http.ServerResponse,
   parsed: { statusCode: number; headers: ReadonlyMap<string, readonly string[]> },
   body: Buffer
 ): void {
-  const wireHeadersApply =
-    BODILESS_STATUS_CODES.has(parsed.statusCode) || wireHeadersDescribeBody(parsed.headers, body);
+  const forwardWireFraming = BODILESS_STATUS_CODES.has(parsed.statusCode);
+  const forwardContentEncoding =
+    forwardWireFraming || bodyCarriesDeclaredEncoding(parsed.headers, body);
   for (const [name, values] of parsed.headers) {
     if (HOP_BY_HOP_HEADERS.has(name)) {
       continue;
     }
-    if (!wireHeadersApply && (name === 'content-encoding' || name === 'content-length')) {
+    if (name === 'content-length' && !forwardWireFraming) {
+      continue;
+    }
+    if (name === 'content-encoding' && !forwardContentEncoding) {
       continue;
     }
     if (values.length === 1) {
@@ -362,7 +361,7 @@ function forwardResponse(
       response.setHeader(name, [...values]);
     }
   }
-  if (!wireHeadersApply) {
+  if (!forwardWireFraming) {
     response.setHeader('content-length', String(body.length));
   }
   response.writeHead(parsed.statusCode);
