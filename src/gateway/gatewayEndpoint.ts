@@ -10,6 +10,7 @@ import * as http from 'node:http';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { brotliDecompressSync } from 'node:zlib';
 import { ApiCredentialsUsageError } from '../apiCredentials/base.js';
 import { AmbiguousAccountError, type ApiCredentialStore } from '../apiCredentials/store.js';
 import type { AsyncCurlResult } from '../curl.js';
@@ -72,30 +73,6 @@ export const GATEWAY_INTERNAL_HEADERS: ReadonlySet<string> = new Set([
   GATEWAY_PASSWORD_HEADER,
   PERMISSIONS_OVERRIDE_HEADER,
 ]);
-
-/**
- * Request headers the gateway negotiates on its own behalf instead of
- * forwarding. The gateway runs curl with `--compressed` and hands its clients
- * the decoded body, so a client's `Accept-Encoding` has no bearing on the
- * upstream request; forwarding it could make the upstream pick an encoding
- * this gateway's curl cannot decode.
- */
-export const GATEWAY_NEGOTIATED_REQUEST_HEADERS: ReadonlySet<string> = new Set(['accept-encoding']);
-
-/**
- * Response headers that describe the body as it came off the wire. curl runs
- * with `--compressed`, so the body it hands over is already decoded, and the
- * gateway describes that body itself.
- */
-const WIRE_BODY_RESPONSE_HEADERS: ReadonlySet<string> = new Set([
-  'content-encoding',
-  'content-length',
-]);
-
-/**
- * Status codes whose response must not carry a `Content-Length`.
- */
-const BODILESS_STATUS_CODES: ReadonlySet<number> = new Set([204, 304]);
 
 export const GATEWAY_PATH_PREFIX = '/gateway/';
 
@@ -181,11 +158,7 @@ export function buildCurlArguments(
 
   for (const [name, value] of headers) {
     const lowerName = name.toLowerCase();
-    if (
-      HOP_BY_HOP_HEADERS.has(lowerName) ||
-      GATEWAY_INTERNAL_HEADERS.has(lowerName) ||
-      GATEWAY_NEGOTIATED_REQUEST_HEADERS.has(lowerName)
-    ) {
+    if (HOP_BY_HOP_HEADERS.has(lowerName) || GATEWAY_INTERNAL_HEADERS.has(lowerName)) {
       continue;
     }
     args.push('-H', `${name}: ${value}`);
@@ -300,15 +273,87 @@ function readRequestBody(
 }
 
 /**
- * Forward parsed upstream response to the client.
+ * Status codes whose response has no body of its own, so the upstream framing
+ * headers are forwarded as they are.
+ */
+const BODILESS_STATUS_CODES: ReadonlySet<number> = new Set([204, 304]);
+
+const GZIP_MAGIC = Buffer.from([0x1f, 0x8b]);
+const ZSTD_MAGIC = Buffer.from([0x28, 0xb5, 0x2f, 0xfd]);
+
+/**
+ * Whether `body` is still in the content coding `encoding` names. A coding
+ * curl does not know is taken as intact, since curl cannot have decoded it.
+ */
+function isBodyEncodedAs(body: Buffer, encoding: string): boolean {
+  switch (encoding) {
+    case 'gzip':
+    case 'x-gzip':
+      return body.subarray(0, GZIP_MAGIC.length).equals(GZIP_MAGIC);
+    case 'zstd':
+      return body.subarray(0, ZSTD_MAGIC.length).equals(ZSTD_MAGIC);
+    case 'deflate':
+      // A zlib stream: compression method 8 in the low nibble of the first
+      // byte, and the two-byte header a multiple of 31.
+      return body.length >= 2 && (body[0]! & 0x0f) === 8 && ((body[0]! << 8) | body[1]!) % 31 === 0;
+    case 'br':
+      // Brotli streams have no magic number; only decoding tells.
+      try {
+        brotliDecompressSync(body);
+        return true;
+      } catch {
+        return false;
+      }
+    default:
+      return true;
+  }
+}
+
+/**
+ * Whether the upstream `Content-Encoding` and `Content-Length` still describe
+ * `body`. curl's header dump describes the response as it came off the wire,
+ * but the curl behind `LATCHKEY_CURL` may have decoded the body (the
+ * impersonating router runs it with `--compressed`, because its Chrome profile
+ * advertises brotli), and curl does not report whether it did. Forwarding the
+ * wire headers with a decoded body makes the client stop reading at the
+ * compressed length.
+ */
+function wireHeadersDescribeBody(
+  headers: ReadonlyMap<string, readonly string[]>,
+  body: Buffer
+): boolean {
+  const contentEncodings = (headers.get('content-encoding') ?? [])
+    .flatMap((value) => value.split(','))
+    .map((token) => token.trim().toLowerCase())
+    .filter((token) => token !== '' && token !== 'identity');
+  const outermostEncoding = contentEncodings[contentEncodings.length - 1];
+  if (outermostEncoding === undefined) {
+    return true;
+  }
+  const contentLength = headers.get('content-length')?.[0];
+  if (contentLength !== undefined) {
+    return parseInt(contentLength, 10) === body.length;
+  }
+  return isBodyEncodedAs(body, outermostEncoding);
+}
+
+/**
+ * Forward parsed upstream response to the client. When curl decoded the body,
+ * the gateway describes the body it sends instead of forwarding the wire
+ * `Content-Encoding` and `Content-Length`.
  */
 function forwardResponse(
   response: http.ServerResponse,
   parsed: { statusCode: number; headers: ReadonlyMap<string, readonly string[]> },
   body: Buffer
 ): void {
+  const wireHeadersApply =
+    BODILESS_STATUS_CODES.has(parsed.statusCode) || wireHeadersDescribeBody(parsed.headers, body);
   for (const [name, values] of parsed.headers) {
-    if (HOP_BY_HOP_HEADERS.has(name) || WIRE_BODY_RESPONSE_HEADERS.has(name)) {
+    if (HOP_BY_HOP_HEADERS.has(name)) {
+      continue;
+    }
+    if (!wireHeadersApply && (name === 'content-encoding' || name === 'content-length')) {
       continue;
     }
     if (values.length === 1) {
@@ -317,7 +362,7 @@ function forwardResponse(
       response.setHeader(name, [...values]);
     }
   }
-  if (!BODILESS_STATUS_CODES.has(parsed.statusCode)) {
+  if (!wireHeadersApply) {
     response.setHeader('content-length', String(body.length));
   }
   response.writeHead(parsed.statusCode);
@@ -483,15 +528,12 @@ export async function handleGatewayRequest(
   const headerFile = join(tempDir, 'headers');
 
   try {
-    // `-sS` silences the progress meter (which would otherwise pollute the
-    // captured response body) while still letting error messages reach
-    // stderr, so `sendUpstreamCurlFailure` can surface the real failure
-    // reason to the client instead of the generic fallback. `--compressed`
-    // makes curl decode whatever content encoding the upstream picks, so the
-    // body `forwardResponse` sends is always the decoded one; the curl behind
-    // `LATCHKEY_CURL` may add the flag itself (the impersonating router does),
-    // and this keeps the decoding independent of that.
-    const curlArgs = ['-sS', '--compressed', '-D', headerFile, ...allArguments];
+    // Add curl flags for capturing response metadata. `-sS` silences the
+    // progress meter (which would otherwise pollute the captured response
+    // body) while still letting error messages reach stderr, so
+    // `sendUpstreamCurlFailure` can surface the real failure reason to the
+    // client instead of the generic fallback.
+    const curlArgs = ['-sS', '-D', headerFile, ...allArguments];
 
     const result: AsyncCurlResult = await deps.runCurlAsync(curlArgs, {
       stdin: body ?? undefined,

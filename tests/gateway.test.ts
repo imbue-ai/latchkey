@@ -3,6 +3,7 @@ import { BUILTIN_API_CREDENTIALS_TYPES } from '../src/apiCredentials/serializati
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { brotliCompressSync, gzipSync } from 'node:zlib';
 import { Command } from 'commander';
 import { registerCommands, type CliDependencies } from '../src/cliCommands.js';
 import {
@@ -129,16 +130,6 @@ describe('buildCurlArguments', () => {
     expect(joined).not.toContain('x-latchkey-gateway-no-credentials');
     expect(joined).not.toContain('sekret');
     expect(joined).not.toContain('jwt-payload');
-  });
-
-  it('does not forward Accept-Encoding, which the gateway negotiates itself', () => {
-    const headers = new Map([
-      ['Accept-Encoding', 'zstd'],
-      ['Accept', 'application/json'],
-    ]);
-    const args = buildCurlArguments('GET', headers, 'https://api.example.com/test', false);
-    expect(args).toContain('Accept: application/json');
-    expect(args.join('\n').toLowerCase()).not.toContain('accept-encoding');
   });
 
   it('should add --data-binary @- when body is present', () => {
@@ -506,27 +497,19 @@ describe('gateway server', () => {
       expect(response.status).toBe(404);
       expect(await response.text()).toBe('not found');
     });
+  });
 
-    it('asks curl to decode the upstream body', async () => {
-      gateway = await createTestGateway();
+  describe('upstream bodies curl decoded', () => {
+    // What the impersonating curl router produces: curl's header dump still
+    // describes the compressed body as it came off the wire, while the body
+    // curl hands over is already decoded.
+    const decodedBody =
+      '{"ok":true,"url":"https:\\/\\/example.slack.com\\/","team":"Example Team","user":"datalib"}';
 
-      await fetch('/gateway/https://slack.com/api/auth.test');
-
-      expect(capturedCurlArgs).toContain('--compressed');
-    });
-
-    it('describes the decoded body instead of forwarding the wire content-encoding and content-length', async () => {
-      // curl's header dump describes the compressed body as it came off the
-      // wire, while the body curl hands over is already decoded and longer.
-      const decodedBody =
-        '{"ok":true,"url":"https:\\/\\/example.slack.com\\/","team":"Example Team"}';
+    it('describes the decoded body when the wire content-length no longer matches it', async () => {
       mockCurlHeaderDump =
         'HTTP/2 200\r\ncontent-type: application/json\r\ncontent-encoding: br\r\ncontent-length: 40\r\n\r\n';
-      mockCurlResponse = {
-        returncode: 0,
-        stdout: Buffer.from(decodedBody),
-        stderr: '',
-      };
+      mockCurlResponse = { returncode: 0, stdout: Buffer.from(decodedBody), stderr: '' };
       gateway = await createTestGateway();
 
       const response = await fetch('/gateway/https://slack.com/api/auth.test');
@@ -536,16 +519,58 @@ describe('gateway server', () => {
       expect(await response.text()).toBe(decodedBody);
     });
 
-    it('sends no content-length on a 204', async () => {
-      mockCurlHeaderDump = 'HTTP/1.1 204 No Content\r\nX-Custom-Header: custom-value\r\n\r\n';
+    it('describes the decoded body when the wire headers carried no content-length', async () => {
+      mockCurlHeaderDump =
+        'HTTP/2 200\r\ncontent-type: application/json\r\ncontent-encoding: br\r\n\r\n';
+      mockCurlResponse = { returncode: 0, stdout: Buffer.from(decodedBody), stderr: '' };
+      gateway = await createTestGateway();
+
+      const response = await fetch('/gateway/https://slack.com/api/auth.test');
+
+      expect(response.headers.get('content-encoding')).toBeNull();
+      expect(response.headers.get('content-length')).toBe(String(Buffer.byteLength(decodedBody)));
+      expect(await response.text()).toBe(decodedBody);
+    });
+
+    it('forwards a body curl left compressed with its wire headers', async () => {
+      const compressed = gzipSync(decodedBody);
+      mockCurlHeaderDump = `HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Encoding: gzip\r\nContent-Length: ${String(compressed.length)}\r\n\r\n`;
+      mockCurlResponse = { returncode: 0, stdout: compressed, stderr: '' };
+      gateway = await createTestGateway();
+
+      const response = await fetch('/gateway/https://slack.com/api/auth.test');
+
+      expect(response.headers.get('content-encoding')).toBe('gzip');
+      expect(response.headers.get('content-length')).toBe(String(compressed.length));
+      // fetch decodes the body itself, which proves the bytes were still gzip.
+      expect(await response.text()).toBe(decodedBody);
+    });
+
+    it('forwards a brotli body curl left compressed when the wire headers carried no content-length', async () => {
+      const compressed = brotliCompressSync(decodedBody);
+      mockCurlHeaderDump =
+        'HTTP/2 200\r\ncontent-type: application/json\r\ncontent-encoding: br\r\n\r\n';
+      mockCurlResponse = { returncode: 0, stdout: compressed, stderr: '' };
+      gateway = await createTestGateway();
+
+      const response = await fetch('/gateway/https://slack.com/api/auth.test');
+
+      expect(response.headers.get('content-encoding')).toBe('br');
+      expect(await response.text()).toBe(decodedBody);
+    });
+
+    it('forwards the framing headers of a 304 untouched', async () => {
+      mockCurlHeaderDump =
+        'HTTP/1.1 304 Not Modified\r\nETag: "abc"\r\nContent-Encoding: br\r\nContent-Length: 1200\r\n\r\n';
       mockCurlResponse = { returncode: 0, stdout: Buffer.alloc(0), stderr: '' };
       gateway = await createTestGateway();
 
-      const response = await fetch('/gateway/https://slack.com/api/auth.test', { method: 'POST' });
+      const response = await fetch('/gateway/https://slack.com/api/auth.test');
 
-      expect(response.status).toBe(204);
-      expect(response.headers.get('content-length')).toBeNull();
-      expect(response.headers.get('x-custom-header')).toBe('custom-value');
+      expect(response.status).toBe(304);
+      expect(response.headers.get('etag')).toBe('"abc"');
+      expect(response.headers.get('content-encoding')).toBe('br');
+      expect(response.headers.get('content-length')).toBe('1200');
     });
   });
 
