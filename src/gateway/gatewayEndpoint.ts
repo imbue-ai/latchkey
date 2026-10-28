@@ -272,15 +272,50 @@ function readRequestBody(
 }
 
 /**
- * Forward parsed upstream response to the client.
+ * Marks a request for Chrome TLS impersonation. The curl router behind
+ * `LATCHKEY_CURL` (imbue-ai/latchkey-curl-shims) hands such a request to
+ * curl-impersonate with `--compressed`, because the Chrome profile advertises
+ * brotli and the caller wants the decoded body. The gateway asks for the same
+ * decoding itself, so that on these requests it knows the body curl hands
+ * over is decoded whatever curl sits behind `LATCHKEY_CURL`. Lowercased to
+ * match how Node exposes header names.
+ */
+export const IMPERSONATE_MARKER_HEADER = 'x-imbue-impersonate';
+
+/**
+ * Response headers that describe the body as it came off the wire. curl's
+ * header dump records them as received even when `--compressed` made it
+ * decode the body, so on a decoded body they are stale: forwarding them makes
+ * the client stop reading at the encoded length.
+ */
+const WIRE_BODY_RESPONSE_HEADERS: ReadonlySet<string> = new Set([
+  'content-encoding',
+  'content-length',
+]);
+
+/**
+ * Status codes whose response has no body of its own, so the upstream framing
+ * headers are forwarded as they are.
+ */
+const BODILESS_STATUS_CODES: ReadonlySet<number> = new Set([204, 304]);
+
+/**
+ * Forward parsed upstream response to the client. When curl decoded the body
+ * (`bodyDecoded`), the gateway describes the body it sends instead of
+ * forwarding the wire `Content-Encoding` and `Content-Length`.
  */
 function forwardResponse(
   response: http.ServerResponse,
   parsed: { statusCode: number; headers: ReadonlyMap<string, readonly string[]> },
-  body: Buffer
+  body: Buffer,
+  bodyDecoded: boolean
 ): void {
+  const describeBody = bodyDecoded && !BODILESS_STATUS_CODES.has(parsed.statusCode);
   for (const [name, values] of parsed.headers) {
     if (HOP_BY_HOP_HEADERS.has(name)) {
+      continue;
+    }
+    if (describeBody && WIRE_BODY_RESPONSE_HEADERS.has(name)) {
       continue;
     }
     if (values.length === 1) {
@@ -288,6 +323,9 @@ function forwardResponse(
     } else {
       response.setHeader(name, [...values]);
     }
+  }
+  if (describeBody) {
+    response.setHeader('content-length', String(body.length));
   }
   response.writeHead(parsed.statusCode);
   response.end(body);
@@ -456,8 +494,16 @@ export async function handleGatewayRequest(
     // progress meter (which would otherwise pollute the captured response
     // body) while still letting error messages reach stderr, so
     // `sendUpstreamCurlFailure` can surface the real failure reason to the
-    // client instead of the generic fallback.
-    const curlArgs = ['-sS', '-D', headerFile, ...allArguments];
+    // client instead of the generic fallback. An impersonated request gets
+    // `--compressed`, see `IMPERSONATE_MARKER_HEADER`.
+    const isImpersonated = request.headers[IMPERSONATE_MARKER_HEADER] !== undefined;
+    const curlArgs = [
+      '-sS',
+      ...(isImpersonated ? ['--compressed'] : []),
+      '-D',
+      headerFile,
+      ...allArguments,
+    ];
 
     const result: AsyncCurlResult = await deps.runCurlAsync(curlArgs, {
       stdin: body ?? undefined,
@@ -482,7 +528,7 @@ export async function handleGatewayRequest(
 
       // We got headers — forward whatever we have
       const parsed = parseResponseHeaders(headerDump);
-      forwardResponse(response, parsed, result.stdout);
+      forwardResponse(response, parsed, result.stdout, isImpersonated);
       deps.log(`${method} ${targetUrl} -> ${String(parsed.statusCode)}`);
       return;
     }
@@ -500,7 +546,12 @@ export async function handleGatewayRequest(
     const parsed = parseResponseHeaders(headerDump);
     const statusCode = parsed.statusCode || 200;
 
-    forwardResponse(response, { statusCode, headers: parsed.headers }, result.stdout);
+    forwardResponse(
+      response,
+      { statusCode, headers: parsed.headers },
+      result.stdout,
+      isImpersonated
+    );
     deps.log(`${method} ${targetUrl} -> ${String(statusCode)}`);
   } finally {
     // Clean up temp files

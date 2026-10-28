@@ -3,6 +3,7 @@ import { BUILTIN_API_CREDENTIALS_TYPES } from '../src/apiCredentials/serializati
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { gzipSync } from 'node:zlib';
 import { Command } from 'commander';
 import { registerCommands, type CliDependencies } from '../src/cliCommands.js';
 import {
@@ -495,6 +496,73 @@ describe('gateway server', () => {
 
       expect(response.status).toBe(404);
       expect(await response.text()).toBe('not found');
+    });
+  });
+
+  describe('impersonated requests', () => {
+    const marker = { 'X-Imbue-Impersonate': '1' };
+    // curl's header dump describes the brotli body as it came off the wire,
+    // while the body curl hands over under --compressed is already decoded.
+    const decodedBody =
+      '{"ok":true,"url":"https:\\/\\/example.slack.com\\/","team":"Example Team","user":"datalib"}';
+    const wireHeaderDump =
+      'HTTP/2 200\r\ncontent-type: application/json\r\ncontent-encoding: br\r\ncontent-length: 40\r\n\r\n';
+
+    it('asks curl to decode the body of an impersonated request', async () => {
+      gateway = await createTestGateway();
+
+      await fetch('/gateway/https://slack.com/api/auth.test', { headers: marker });
+
+      expect(capturedCurlArgs).toContain('--compressed');
+      expect(capturedCurlArgs).toContain('X-Imbue-Impersonate: 1');
+    });
+
+    it('does not ask curl to decode the body of any other request', async () => {
+      gateway = await createTestGateway();
+
+      await fetch('/gateway/https://slack.com/api/auth.test');
+
+      expect(capturedCurlArgs).not.toContain('--compressed');
+    });
+
+    it('describes the decoded body instead of forwarding the wire framing headers', async () => {
+      mockCurlHeaderDump = wireHeaderDump;
+      mockCurlResponse = { returncode: 0, stdout: Buffer.from(decodedBody), stderr: '' };
+      gateway = await createTestGateway();
+
+      const response = await fetch('/gateway/https://slack.com/api/auth.test', { headers: marker });
+
+      expect(response.headers.get('content-encoding')).toBeNull();
+      expect(response.headers.get('content-length')).toBe(String(Buffer.byteLength(decodedBody)));
+      expect(await response.text()).toBe(decodedBody);
+    });
+
+    it('forwards the wire framing headers of a request that is not impersonated', async () => {
+      const compressed = gzipSync(decodedBody);
+      mockCurlHeaderDump = `HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Encoding: gzip\r\nContent-Length: ${String(compressed.length)}\r\n\r\n`;
+      mockCurlResponse = { returncode: 0, stdout: compressed, stderr: '' };
+      gateway = await createTestGateway();
+
+      const response = await fetch('/gateway/https://slack.com/api/auth.test');
+
+      expect(response.headers.get('content-encoding')).toBe('gzip');
+      expect(response.headers.get('content-length')).toBe(String(compressed.length));
+      // fetch decodes the body itself, which proves the bytes were still gzip.
+      expect(await response.text()).toBe(decodedBody);
+    });
+
+    it('forwards the framing headers of a 304 untouched', async () => {
+      mockCurlHeaderDump =
+        'HTTP/1.1 304 Not Modified\r\nETag: "abc"\r\nContent-Encoding: br\r\nContent-Length: 1200\r\n\r\n';
+      mockCurlResponse = { returncode: 0, stdout: Buffer.alloc(0), stderr: '' };
+      gateway = await createTestGateway();
+
+      const response = await fetch('/gateway/https://slack.com/api/auth.test', { headers: marker });
+
+      expect(response.status).toBe(304);
+      expect(response.headers.get('etag')).toBe('"abc"');
+      expect(response.headers.get('content-encoding')).toBe('br');
+      expect(response.headers.get('content-length')).toBe('1200');
     });
   });
 
