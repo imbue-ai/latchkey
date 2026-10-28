@@ -118,7 +118,7 @@ in the key means "unknown account".
 
 Latchkey currently offers varying levels of support for the following services:
 Airtable, Any.do, Atlassian, Attio, AWS, beehiiv, Buildkite, Cal.com, Calendly,
-Canva, ClickUp, Cloudflare, Coda, Coolify, Datadog, Discord, Dropbox, Evernote,
+Canva, ClickUp, Coda, Coolify, Datadog, Discord, Dropbox, Evernote,
 Fathom, Figma, Gamma, GitHub, GitLab, Gmail, Google Analytics, Google Calendar,
 Google Docs, Google Drive, Google Sheets, Granola, Hugging Face, Indeed, Intercom,
 invideo, Linear, Linktree, Mailchimp, Miro, Mixpanel, Neon, Netlify, ngrok, Notion,
