@@ -498,6 +498,42 @@ describe('gateway server', () => {
     });
   });
 
+  describe('response content-length', () => {
+    it('gives the client a content-length when the upstream sent none', async () => {
+      mockCurlHeaderDump =
+        'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n';
+      gateway = await createTestGateway();
+
+      const response = await fetch('/gateway/https://slack.com/api/auth.test');
+
+      expect(response.headers.get('content-length')).toBe('11');
+      expect(await response.text()).toBe('{"ok":true}');
+    });
+
+    it('keeps the content-length the upstream sent', async () => {
+      mockCurlHeaderDump =
+        'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 11\r\n\r\n';
+      gateway = await createTestGateway();
+
+      const response = await fetch('/gateway/https://slack.com/api/auth.test');
+
+      expect(response.headers.get('content-length')).toBe('11');
+      expect(await response.text()).toBe('{"ok":true}');
+    });
+
+    it('sends no content-length on a 204', async () => {
+      mockCurlHeaderDump = 'HTTP/1.1 204 No Content\r\nX-Custom-Header: custom-value\r\n\r\n';
+      mockCurlResponse = { returncode: 0, stdout: Buffer.alloc(0), stderr: '' };
+      gateway = await createTestGateway();
+
+      const response = await fetch('/gateway/https://slack.com/api/auth.test', { method: 'POST' });
+
+      expect(response.status).toBe(204);
+      expect(response.headers.get('content-length')).toBeNull();
+      expect(response.headers.get('x-custom-header')).toBe('custom-value');
+    });
+  });
+
   describe('error handling', () => {
     it('should return 400 for unknown service', async () => {
       gateway = await createTestGateway();

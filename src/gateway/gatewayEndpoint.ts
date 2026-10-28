@@ -272,6 +272,11 @@ function readRequestBody(
 }
 
 /**
+ * Status codes whose response has no body, so no `Content-Length` is owed.
+ */
+const BODILESS_STATUS_CODES: ReadonlySet<number> = new Set([204, 304]);
+
+/**
  * Forward parsed upstream response to the client.
  */
 function forwardResponse(
@@ -288,6 +293,12 @@ function forwardResponse(
     } else {
       response.setHeader(name, [...values]);
     }
+  }
+  // An upstream that streamed its reply (chunked, or HTTP/2 without a length)
+  // left no Content-Length in the dump. The gateway holds the whole body, so
+  // it can give the client one instead of leaving Node to chunk the reply.
+  if (!parsed.headers.has('content-length') && !BODILESS_STATUS_CODES.has(parsed.statusCode)) {
+    response.setHeader('content-length', String(body.length));
   }
   response.writeHead(parsed.statusCode);
   response.end(body);
