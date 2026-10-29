@@ -2,7 +2,7 @@
  * Slack service implementation.
  */
 
-import type { BrowserContext, Page, Response } from 'playwright';
+import type { BrowserContext, Page, Request, Response } from 'playwright';
 import { z } from 'zod';
 import type { ApiCredentials } from '../apiCredentials/base.js';
 import { LoginFailedError, Service, SimpleServiceSession } from './core/base.js';
@@ -67,8 +67,23 @@ const SLACK_URL_PATTERN = /^https:\/\/([a-z0-9-]+\.)*slack\.com\//;
 /** Where the browser ends up once Slack considers the user signed in. */
 const SLACK_CLIENT_URL_PATTERN = /^https:\/\/app\.slack\.com\/client(\/|$)/;
 
-/** The session token, as embedded in the client's HTML or in raw JSON. */
-const API_TOKEN_PATTERN = /"api_token":"(xoxc-[a-zA-Z0-9-]+)"/;
+/**
+ * The session token, as the Slack client sends it with every API call: as the
+ * `token` field of a multipart form, or of a URL-encoded body.
+ *
+ * The client sends whatever token it has stored, which may be one from a
+ * session that has since been revoked, so a token read from a request is only
+ * trusted once Slack has accepted it. Slack reports a rejected token as an
+ * HTTP 200 with `ok: false`, so the body is what decides, not the status.
+ */
+const REQUEST_TOKEN_PATTERN = /(?:name="token"\r?\n\r?\n|(?:^|&)token=)(xoxc-[a-zA-Z0-9-]+)/;
+
+/**
+ * The session token, as embedded in the HTML some sign-in flows serve before
+ * the client loads. Not every flow serves such a page (SAML SSO does not), so
+ * this only ever makes a login complete sooner.
+ */
+const RESPONSE_TOKEN_PATTERN = /"api_token":"(xoxc-[a-zA-Z0-9-]+)"/;
 
 const D_COOKIE_HEADER_PATTERN = /\bd=([^;]+)/;
 
@@ -96,14 +111,41 @@ export class SlackSessionCookieMissingError extends LoginFailedError {
 }
 
 /**
- * The Slack client loaded, so the user is signed in, but none of its responses
- * carried a session token.
+ * The Slack client loaded, so the user is signed in, but none of its requests
+ * or responses carried a session token.
  */
 export class SlackTokenMissingError extends LoginFailedError {
   constructor() {
     super('Login failed: No session token was found.');
     this.name = 'SlackTokenMissingError';
   }
+}
+
+async function readResponseBody(response: Response): Promise<string | null> {
+  try {
+    return await response.text();
+  } catch {
+    // The body is no longer retrievable (a redirect, or a page that has
+    // navigated on); other responses get their chance.
+    return null;
+  }
+}
+
+function isAcceptedApiResponse(responseBody: string): boolean {
+  const data = tryParseJson(responseBody) as { ok?: boolean } | null;
+  return data?.ok === true;
+}
+
+function readTokenFromRequest(request: Request, responseBody: string): string | null {
+  const token = REQUEST_TOKEN_PATTERN.exec(request.postData() ?? '')?.[1];
+  if (token === undefined || !isAcceptedApiResponse(responseBody)) {
+    return null;
+  }
+  return token;
+}
+
+function readTokenFromResponse(responseBody: string): string | null {
+  return RESPONSE_TOKEN_PATTERN.exec(responseBody)?.[1] ?? null;
 }
 
 async function readDCookieFromJar(page: Page): Promise<string | null> {
@@ -156,16 +198,13 @@ class SlackServiceSession extends SimpleServiceSession {
       return null;
     }
 
-    let responseBody: string;
-    try {
-      responseBody = await response.text();
-    } catch {
-      // The body is no longer retrievable (a redirect, or a page that has
-      // navigated on); other responses get their chance.
+    const responseBody = await readResponseBody(response);
+    if (responseBody === null) {
       return null;
     }
-    const token = API_TOKEN_PATTERN.exec(responseBody)?.[1];
-    if (token === undefined) {
+    const token =
+      readTokenFromRequest(request, responseBody) ?? readTokenFromResponse(responseBody);
+    if (token === null) {
       return null;
     }
 
