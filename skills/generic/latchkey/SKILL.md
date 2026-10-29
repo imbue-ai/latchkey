@@ -126,13 +126,12 @@ in the key means "unknown account".
 
 Latchkey currently offers varying levels of support for the following services:
 Airtable, Any.do, Atlassian, Attio, AWS, beehiiv, Buildkite, Cal.com, Calendly,
-Canva, ClickUp, Coda, Coolify, Datadog, Discord, Dropbox, Evernote,
-Fathom, Figma, Gamma, GitHub, GitLab, Gmail, Google Analytics, Google Calendar,
-Google Docs, Google Drive, Google Sheets, Granola, Hugging Face, Indeed, Intercom,
-invideo, Linear, Linktree, Mailchimp, Miro, Mixpanel, Neon, Netlify, ngrok, Notion,
-OpenRouter, Otter.ai, PayPal, Peloton, PostHog, Ramp, Readwise, Sentry, Slack,
-Strava, Stripe, Substack, Supabase, Tailscale, Telegram, TickTick, Todoist, Trello,
-Umami, Vercel, Webflow, Wix, WordPress.com, Yelp, Zoom, and more.
+Canva, Coolify, Discord, Dropbox, Fathom, Figma, Gamma, GitHub,
+GitLab, Gmail, Google Analytics, Google Calendar, Google Docs, Google Drive,
+Google Sheets, Granola, Hugging Face, invideo, Linear, Linktree, Mailchimp,
+Neon, Netlify, ngrok, Notion, OpenRouter, Otter.ai, PayPal, Peloton, PostHog,
+Ramp, Readwise, Sentry, Slack, Stripe, Supabase, Tailscale, Telegram, TickTick,
+Todoist, Trello, Umami, Vercel, Webflow, Wix, Yelp, Zoom, and more.
 
 ### User-registered services
 

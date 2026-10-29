@@ -22,5 +22,5 @@ export const FATHOM_MCP = new RemoteMcpService({
     'https://developers.fathom.ai/mcp-docs (client setup only; no page lists the tools). ' +
     'Discover tools with a `tools/list` JSON-RPC call to the MCP endpoint. ' +
     'Covers meetings, transcripts, summaries and action items. ' +
-    'On team plans an owner has to enable the connector first.',
+    'Available on all Fathom plans, including free.',
 });

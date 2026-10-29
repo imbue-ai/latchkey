@@ -519,10 +519,8 @@ latchkey --dry-run curl https://slack.com/api/auth.test
 
 Latchkey currently offers varying levels of support for the following services:
 Airtable, Any.do, Atlassian, Attio, AWS, beehiiv, Buildkite, Cal.com, Calendly,
-Canva, ClickUp, Coda, Datadog, Discord, Dropbox, Evernote, Fathom,
-Figma, Gamma, GitHub, GitLab, Gmail, Google Analytics, Google Calendar, Google Docs,
-Google Drive, Google Sheets, Granola, Indeed, Intercom, invideo, Linear, Linktree,
-Mailchimp, Miro, Mixpanel, Neon, Netlify, Notion, Otter.ai, PayPal, Peloton,
-PostHog, Ramp, Readwise, Sentry, Slack, Strava, Stripe, Substack, Supabase,
-Telegram, TickTick, Todoist, Trello, Vercel, Webflow, Wix, WordPress.com, Yelp,
-Zoom, and more.
+Canva, Discord, Dropbox, Fathom, Figma, Gamma, GitHub, GitLab, Gmail,
+Google Analytics, Google Calendar, Google Docs, Google Drive, Google Sheets,
+Granola, invideo, Linear, Linktree, Mailchimp, Neon, Netlify, Notion, Otter.ai,
+PayPal, Peloton, PostHog, Ramp, Readwise, Sentry, Slack, Stripe, Supabase,
+Telegram, TickTick, Todoist, Trello, Vercel, Webflow, Wix, Yelp, Zoom, and more.
