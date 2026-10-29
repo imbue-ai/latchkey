@@ -104,6 +104,20 @@ Above, when we say "API", we always mean a public API. Do
 not expose undocumented private APIs through Latchkey - agents
 should be able to determine usage by consulting the documentation.
 
+### Remote MCP servers
+
+Many services now run an official remote MCP server protected by OAuth 2.1
+with dynamic client registration. Such a server is, to Latchkey, just a
+JSON-RPC-over-HTTP API, and the whole login (client registration, PKCE,
+token exchange, refresh) is shared: define the service with a few URLs via
+`RemoteMcpService` from [`core/remoteMcp.ts`](../src/services/core/remoteMcp.ts).
+See [Readwise](../src/services/readwise-mcp.ts) for the plain case and
+[Notion](../src/services/notion-mcp.ts) for one that also resolves the
+account through an MCP tool. The endpoints come from the server's
+`/.well-known/oauth-protected-resource` and the authorization server's
+`/.well-known/oauth-authorization-server` metadata; verify them live before
+adding a service, and note any `scopes_supported`.
+
 ### Service info
 
 Every service must include an `info` property that provides developer notes. This information is accessible via `latchkey services info <service_name>` and helps agents and users understand service-specific details such as:
