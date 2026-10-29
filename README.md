@@ -241,6 +241,14 @@ a git repository; installation is a matter of running `git
 clone` in `~/.latchkey/plugins/`. For more details, see the
 [plugins docs](./docs/plugins.md).
 
+### MCP wrappers
+
+You might notice that in the list of built-in services
+(`latchkey services list`), many have the `-mcp` suffix. In
+those cases, we just treat the MCP servers as plain JSON-based
+HTTP APIs that happen to have good, standardized browser login
+flows.
+
 
 ### Indirect credentials
 
