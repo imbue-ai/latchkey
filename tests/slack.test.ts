@@ -21,17 +21,36 @@ const START_TIME = new Date('2026-01-01T00:00:00Z').getTime();
 // Comfortably past the settle period, whatever it is set to.
 const WELL_PAST_THE_SETTLE_PERIOD_MS = 60_000;
 
-function responseWith(params: { url?: string; body?: string; cookieHeader?: string }): Response {
+function responseWith(params: {
+  url?: string;
+  body?: string;
+  cookieHeader?: string;
+  postData?: string;
+}): Response {
   const headers: Record<string, string> =
     params.cookieHeader === undefined ? {} : { cookie: params.cookieHeader };
   return {
     request: () => ({
       url: () => params.url ?? CLIENT_URL,
       allHeaders: () => Promise.resolve(headers),
+      postData: () => params.postData ?? null,
     }),
     text: () => Promise.resolve(params.body ?? CLIENT_BODY_WITH_TOKEN),
   } as unknown as Response;
 }
+
+const API_URL = 'https://acme.slack.com/api/client.counts?_x_id=1';
+const BODY_WITHOUT_TOKEN = '<html>loading</html>';
+const ACCEPTED_API_BODY = '{"ok":true,"channels":[]}';
+const REJECTED_API_BODY = '{"ok":false,"error":"invalid_auth"}';
+const MULTIPART_POST_DATA_WITH_TOKEN =
+  '------WebKitFormBoundaryabc\r\n' +
+  'Content-Disposition: form-data; name="token"\r\n\r\n' +
+  'xoxc-456-def\r\n' +
+  '------WebKitFormBoundaryabc\r\n' +
+  'Content-Disposition: form-data; name="_x_reason"\r\n\r\n' +
+  'boot\r\n' +
+  '------WebKitFormBoundaryabc--\r\n';
 
 /**
  * A browser parked at `pageUrl` whose jar holds the given cookies, with the page
@@ -96,6 +115,77 @@ describe('slack login from responses', () => {
     expect(capturedOf(session)).toEqual({ token: 'xoxc-123-abc', dCookie: 'enterprise-cookie' });
   });
 
+  // A SAML SSO flow serves no page with the token in it; the client's own API
+  // calls carry it instead.
+  it('captures the token from a multipart API request', async () => {
+    const session = startLogin();
+    await session.onResponse(
+      responseWith({
+        url: API_URL,
+        body: ACCEPTED_API_BODY,
+        postData: MULTIPART_POST_DATA_WITH_TOKEN,
+        cookieHeader: 'd=from-api-call',
+      })
+    );
+    expect(capturedOf(session)).toEqual({ token: 'xoxc-456-def', dCookie: 'from-api-call' });
+  });
+
+  it('captures the token from a URL-encoded API request', async () => {
+    const session = startLogin();
+    await session.onResponse(
+      responseWith({
+        url: API_URL,
+        body: ACCEPTED_API_BODY,
+        postData: '_x_reason=boot&token=xoxc-789-ghi&_x_mode=online',
+        cookieHeader: 'd=from-api-call',
+      })
+    );
+    expect(capturedOf(session)).toEqual({ token: 'xoxc-789-ghi', dCookie: 'from-api-call' });
+  });
+
+  // The client sends whatever token it has stored; a stale one from a revoked
+  // session is rejected with an HTTP 200 and `ok: false`.
+  it('does not trust a token from a request Slack rejected', async () => {
+    const session = startLogin();
+    await session.onResponse(
+      responseWith({
+        url: API_URL,
+        body: REJECTED_API_BODY,
+        postData: MULTIPART_POST_DATA_WITH_TOKEN,
+        cookieHeader: 'd=stale',
+      })
+    );
+    expect(capturedOf(session)).toBeNull();
+  });
+
+  it('does not trust a token from a request whose response is not Slack API JSON', async () => {
+    const session = startLogin();
+    for (const body of [BODY_WITHOUT_TOKEN, '', '{"channels":[]}']) {
+      await session.onResponse(
+        responseWith({
+          url: API_URL,
+          body,
+          postData: MULTIPART_POST_DATA_WITH_TOKEN,
+          cookieHeader: 'd=c',
+        })
+      );
+    }
+    expect(capturedOf(session)).toBeNull();
+  });
+
+  it('does not mistake another form field for the token', async () => {
+    const session = startLogin();
+    await session.onResponse(
+      responseWith({
+        url: API_URL,
+        body: ACCEPTED_API_BODY,
+        postData: 'bot_token=xoxc-000-zzz&_x_mode=online',
+        cookieHeader: 'd=c',
+      })
+    );
+    expect(capturedOf(session)).toBeNull();
+  });
+
   it('ignores responses from outside slack.com', async () => {
     const session = startLogin();
     await session.onResponse(
@@ -103,6 +193,14 @@ describe('slack login from responses', () => {
     );
     await session.onResponse(
       responseWith({ url: 'https://notslack.com/client', cookieHeader: 'd=nope' })
+    );
+    await session.onResponse(
+      responseWith({
+        url: 'https://notslack.com/api/client.counts',
+        body: ACCEPTED_API_BODY,
+        postData: MULTIPART_POST_DATA_WITH_TOKEN,
+        cookieHeader: 'd=nope',
+      })
     );
     expect(capturedOf(session)).toBeNull();
   });

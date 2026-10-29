@@ -116,10 +116,14 @@ in the key means "unknown account".
 
 ## Currently supported services
 
-Latchkey currently offers varying levels of support for the
-following services: AWS, Calendly, Coolify, Discord, Dropbox, Figma, GitHub, GitLab,
-Gmail, Google Analytics, Google Calendar, Google Docs, Google Drive, Google Sheets, Hugging Face,
-Linear, Mailchimp, ngrok, Notion, OpenRouter, Ramp, Sentry, Slack, Stripe, Telegram, Tailscale, Todoist, Umami, Yelp, Zoom, and more.
+Latchkey currently offers varying levels of support for the following services:
+Airtable, Any.do, Atlassian, Attio, AWS, beehiiv, Buildkite, Cal.com, Calendly,
+Canva, Coolify, Discord, Dropbox, Fathom, Figma, Gamma, GitHub,
+GitLab, Gmail, Google Analytics, Google Calendar, Google Docs, Google Drive,
+Google Sheets, Granola, Hugging Face, invideo, Linear, Linktree, Mailchimp,
+Neon, Netlify, ngrok, Notion, OpenRouter, Otter.ai, PayPal, Peloton, PostHog,
+Ramp, Readwise, Sentry, Slack, Stripe, Supabase, Tailscale, Telegram, TickTick,
+Todoist, Trello, Umami, Vercel, Webflow, Wix, Yelp, Zoom, and more.
 
 ### User-registered services
 

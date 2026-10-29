@@ -241,6 +241,14 @@ a git repository; installation is a matter of running `git
 clone` in `~/.latchkey/plugins/`. For more details, see the
 [plugins docs](./docs/plugins.md).
 
+### MCP wrappers
+
+You might notice that in the list of built-in services
+(`latchkey services list`), many have the `-mcp` suffix. In
+those cases, we just treat the MCP servers as plain JSON-based
+HTTP APIs that happen to have good, standardized browser login
+flows.
+
 
 ### Indirect credentials
 
@@ -517,7 +525,10 @@ latchkey --dry-run curl https://slack.com/api/auth.test
 
 ## Currently supported services
 
-Latchkey currently offers varying levels of support for the
-following services: AWS, Calendly, Discord, Dropbox, Figma, GitHub, GitLab,
-Gmail, Google Analytics, Google Calendar, Google Docs, Google Drive, Google Sheets,
-Linear, Mailchimp, Notion, Ramp, Sentry, Slack, Stripe, Telegram, Todoist, Yelp, Zoom, and more.
+Latchkey currently offers varying levels of support for the following services:
+Airtable, Any.do, Atlassian, Attio, AWS, beehiiv, Buildkite, Cal.com, Calendly,
+Canva, Discord, Dropbox, Fathom, Figma, Gamma, GitHub, GitLab, Gmail,
+Google Analytics, Google Calendar, Google Docs, Google Drive, Google Sheets,
+Granola, invideo, Linear, Linktree, Mailchimp, Neon, Netlify, Notion, Otter.ai,
+PayPal, Peloton, PostHog, Ramp, Readwise, Sentry, Slack, Stripe, Supabase,
+Telegram, TickTick, Todoist, Trello, Vercel, Webflow, Wix, Yelp, Zoom, and more.
