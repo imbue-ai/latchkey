@@ -45,6 +45,7 @@ const DEFAULT_RECORDING_NAME = 'login_session.json';
 // NOTE: todoist is also a BrowserFollowupServiceSession and arguably belongs here
 // too; it predates this list and is left as-is to keep this change scoped.
 const BLACKLIST = new Set([
+  'asana',
   'dropbox',
   'github',
   'linear',
