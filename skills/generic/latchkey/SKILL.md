@@ -125,7 +125,7 @@ in the key means "unknown account".
 ## Currently supported services
 
 Latchkey currently offers varying levels of support for the following services:
-Airtable, Any.do, Atlassian, Attio, AWS, beehiiv, Buildkite, Cal.com, Calendly,
+Airtable, Any.do, Asana, Atlassian, Attio, AWS, beehiiv, Buildkite, Cal.com, Calendly,
 Canva, Coolify, Discord, Dropbox, Fathom, Figma, Gamma, GitHub,
 GitLab, Gmail, Google Analytics, Google Calendar, Google Docs, Google Drive,
 Google Sheets, Granola, Hugging Face, invideo, Linear, Linktree, Mailchimp,
