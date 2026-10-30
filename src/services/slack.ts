@@ -267,7 +267,7 @@ export class Slack extends Service {
   readonly credentialCheckCurlArguments = ['https://slack.com/api/auth.test'] as const;
 
   setCredentialsExample(serviceName: string): string {
-    return `latchkey auth set ${serviceName} -H "Authorization: Bearer xoxb-your-token"`;
+    return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
   }
 
   override getSession(appNamePrefix: string): SlackServiceSession {
