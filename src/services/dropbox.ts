@@ -261,9 +261,12 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
     await createButton.click();
 
     // The new console lands on /developers/console/apps/<app-id>/settings.
-    await page.waitForURL(/https:\/\/www\.dropbox\.com\/developers\/console\/apps\/[^/]+\/settings/, {
-      timeout: DEFAULT_TIMEOUT_MS,
-    });
+    await page.waitForURL(
+      /https:\/\/www\.dropbox\.com\/developers\/console\/apps\/[^/]+\/settings/,
+      {
+        timeout: DEFAULT_TIMEOUT_MS,
+      }
+    );
 
     const appIdMatch = /\/developers\/console\/apps\/([^/]+)\//.exec(page.url());
     if (!appIdMatch?.[1]) {
@@ -313,7 +316,7 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
    * because Dropbox requires it to match the authorization request exactly.
    *
    * A prepared redirect URI (set via `latchkey auth prepare dropbox
-   * '{"redirectUri":"https://imbue.github.io/…"}'` and stored on the
+   * '{"redirectUri":"https://imbue-ai.github.io/oauth-callback"}'`) and stored on the
    * credentials) wins over the per-run loopback URI. The page at that URI must
    * forward the authorization result to latchkey's loopback callback, whose
    * port it reads out of the `state` parameter (see `buildAuthorizationState`);
@@ -422,7 +425,7 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
    * `[role=dialog]` confirmation ("Add redirect URI?… Please don't add URIs
    * whose contents aren't under your control.") whose "Add redirect URI" button
    * must be clicked to actually save the URI. An https URI (such as a
-   * prepared `https://imbue.github.io/…` bounce page) does not raise that
+   * prepared `https://imbue-ai.github.io/oauth-callback` bounce page) does not raise that
    * warning, so the dialog is absent and the confirmation is skipped.
    */
   private async registerRedirectUri(page: Page, redirectUri: string): Promise<void> {
@@ -539,7 +542,7 @@ export class Dropbox extends Service {
   /**
    * Dropbox creates its OAuth app (and thus the client id) at login, so the
    * only thing that can be prepared in advance is the redirect URI — typically
-   * a fixed `https://imbue.github.io/…` bounce page that forwards the
+   * a fixed `https://imbue-ai.github.io/oauth-callback` bounce page that forwards the
    * authorization result to latchkey's loopback callback (whose port it reads
    * out of the `state` parameter). Using one avoids the per-run http loopback
    * URI and the "Add redirect URI?" confirmation dialog it triggers, so login

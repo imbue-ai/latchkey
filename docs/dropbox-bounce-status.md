@@ -1,8 +1,25 @@
-# Dropbox latchkey — imbue.github.io localhost OAuth bounce (session 650 cont.)
+# Dropbox latchkey — imbue-ai.github.io localhost OAuth bounce (session 650 cont.)
 
 Continued from `session-summary-instr.md`. Goal: make `latchkey auth browser
-dropbox` fully autonomous via the imbue.github.io localhost OAuth bounce trick
-(the same one notion-mcp / remote-MCP services already use).
+dropbox` fully autonomous via the localhost OAuth bounce trick notion-mcp /
+the remote-MCP services already use.
+
+## The bounce page already exists
+
+`https://imbue-ai.github.io/oauth-callback` is the production bounce page
+notion-mcp uses. It implements exactly the state→port contract:
+```js
+const port = (p.get("state") || "").split(".").pop();
+if (/^\d{4,5}$/.test(port)) {
+  location.replace(`http://localhost:${port}/oauth2callback?${p.toString()}`);
+}
+```
+Live-validated against a local callback via the CDP harness: navigating to
+`https://imbue-ai.github.io/oauth-callback?code=AC-REAL-PAGE-TEST&state=<uuid>.9996`
+forwarded to `http://localhost:9996/oauth2callback?code=…&state=…` and the
+callback received both unchanged. So **no new page needs deploying** — Dropbox
+just points at the existing one. (`docs/oauth-bounce.html` is kept only as a
+reference implementation of the same contract.)
 
 ## What I shipped (PR #194, new commit `0fd8f29` on `bowei/dropbox-new-dev-console`)
 
@@ -25,9 +42,11 @@ Wired the redirect-URI override / loopback bounce into Dropbox, mirroring
     doesn't time out.
   - Added `prepareFromJson` via `DynamicClientPrepareInputSchema` (Dropbox
     creates its client id at login, so only `redirectUri` is prepared).
-- **`docs/oauth-bounce.html`** — a ready-to-host bounce page implementing the
-  state→port contract. Host once at e.g. `https://imbue.github.io/oauth-bounce/`
-  and point every bounce-capable service at it.
+- **`docs/oauth-bounce.html`** — a reference implementation of the state→port
+  bounce contract. The canonical production page is
+  `https://imbue-ai.github.io/oauth-callback` (notion-mcp's), which Dropbox
+  uses unchanged; this file just documents the contract for contributors /
+  self-hosters.
 - **`docs/development.md`** — documented the bounce contract + how a service
   opts in.
 - **`tests/dropboxPrepare.test.ts`** — prepare + override-resolution tests.
@@ -42,22 +61,25 @@ and the callback server received both `code` and `state` unchanged.
 ## Operator usage
 
 ```bash
-# once: deploy docs/oauth-bounce.html to imbue.github.io (or reuse the
-# existing notion bounce page — same contract), then:
-latchkey auth prepare dropbox '{"redirectUri":"https://imbue.github.io/oauth-bounce/"}'
+latchkey auth prepare dropbox '{"redirectUri":"https://imbue-ai.github.io/oauth-callback"}'
 latchkey auth browser dropbox   # now runs with zero manual clicks post-login
 ```
 
+(GitHub Pages redirects `/oauth-callback` → `/oauth-callback/`; the
+`redirect_uri` sent in the authorize request and the token exchange must match
+each other, and latchkey uses the same `redirectUri` for both, so either form is
+fine as long as it's consistent. The page preserves the query string across
+that redirect.)
+
 ## What's left / next
 
-- **Deploy the bounce page** to imbue.github.io (currently `imbue.github.io`
-  404s). The `docs/oauth-bounce.html` file is ready to push; the existing
-  notion bounce page (if any) would also work unchanged. Operator action — I
-  can't push to imbue's GitHub Pages.
 - **End-to-end prod acceptance run** of `latchkey auth browser dropbox` on the
-  new account with the prepared bounce URI. Not run via the real prod binary
+  new account with `redirectUri` prepared to
+  `https://imbue-ai.github.io/oauth-callback`. Not run via the real prod binary
   yet (it uses a fresh temp profile → re-login). See the harness validation
-  below.
+  below, which proved the full sequence through real Dropbox with a localhost
+  bounce; the only remaining delta is the prod binary's https path (no
+  confirmation dialog) — same code branch.
 - **Dropbox app reuse**: today every login creates a *new* Dropbox app. The
   bounce doesn't change that, it just makes the redirect-URI step robust. If
   app churn becomes a problem, reuse a pre-created app + pre-registered bounce
@@ -71,10 +93,10 @@ latchkey auth browser dropbox   # now runs with zero manual clicks post-login
 Drove the full Dropbox sequence through real Dropbox via the CDP harness
 (port 9223, logged-in new test account), exercising latchkey's actual
 `startOAuthCallbackServer` / `buildAuthorizationState` /
-`exchangeCodeForTokens` and the real `docs/oauth-bounce.html`. Used a
-localhost-served bounce page as the prepared redirect URI (http → the
-confirmation dialog appeared and was clicked, best-effort; an https
-imbue.github.io bounce skips that dialog, same as prod).
+`exchangeCodeForTokens` and the bounce page. Used a localhost-served bounce
+page as the prepared redirect URI (http → the confirmation dialog appeared
+and was clicked, best-effort; the production `https://imbue-ai.github.io/oauth-callback`
+bounce skips that dialog — same code branch).
 
 Result, fully autonomous (zero manual clicks):
 ```
@@ -100,6 +122,6 @@ which is the same code branch already covered by the best-effort dialog click.
 ## Repo state
 
 - `/Users/bowei/code/latchkey`, branch `bowei/dropbox-new-dev-console`, pushed
-  to `origin`. PR: https://github.com/imbue-ai/latchkey/pull/194 (now 5 commits).
+  to `origin`. PR: https://github.com/imbue-ai/latchkey/pull/194.
 - CDP harness still up on port 9223 (`--user-data-dir ~/tmp/lk-debug-newaccount`,
   logged in as the new test account) — usable for the acceptance run.

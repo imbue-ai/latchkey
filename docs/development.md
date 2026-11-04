@@ -186,10 +186,11 @@ Latchkey's loopback callback server listens on a random port per login, so
 some OAuth providers — which only accept a pre-registered, exact-match
 redirect URI — cannot point straight at `http://localhost:<port>/…`. To keep
 login fully automated, a service can instead use a fixed https "bounce" page
-the operator hosts once (e.g. `https://imbue.github.io/oauth-bounce/`, see
-`docs/oauth-bounce.html`). The authorization server redirects there with
-`code` and `state`; the page reads the loopback port out of `state`'s last
-dot-separated segment and forwards the query string to
+the operator hosts once (e.g. `https://imbue-ai.github.io/oauth-callback`,
+the page notion-mcp already uses in production; `docs/oauth-bounce.html` is a
+reference implementation of the same contract). The authorization server
+redirects there with `code` and `state`; the page reads the loopback port out of
+`state`'s last dot-separated segment and forwards the query string to
 `http://localhost:<port>/oauth2callback`.
 
 A service opts in by:

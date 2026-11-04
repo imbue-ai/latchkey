@@ -14,7 +14,7 @@ import { buildLoopbackRedirectUri, readRedirectUriOverride } from '../src/oauthU
 
 describe('Dropbox.prepareFromJson', () => {
   it('stores a prepared redirect URI on token-less OAuth credentials', () => {
-    const bounce = 'https://imbue.github.io/oauth-bounce/';
+    const bounce = 'https://imbue-ai.github.io/oauth-callback';
     const credentials = DROPBOX.prepareFromJson({ redirectUri: bounce });
 
     expect(credentials).toBeInstanceOf(OAuthCredentials);
@@ -34,14 +34,14 @@ describe('Dropbox.prepareFromJson', () => {
 
   it('rejects unknown keys', () => {
     expect(() =>
-      DROPBOX.prepareFromJson({ redirectUri: 'https://imbue.github.io/bounce', oops: 1 })
+      DROPBOX.prepareFromJson({ redirectUri: 'https://imbue-ai.github.io/oauth-callback', oops: 1 })
     ).toThrow(/Invalid prepare input for 'dropbox'/);
   });
 });
 
 describe('Dropbox redirect-URI override resolution', () => {
   it('reads the prepared override off the credentials', () => {
-    const bounce = 'https://imbue.github.io/oauth-bounce/';
+    const bounce = 'https://imbue-ai.github.io/oauth-callback';
     const prepared = DROPBOX.prepareFromJson({ redirectUri: bounce });
 
     expect(readRedirectUriOverride(prepared)).toBe(bounce);

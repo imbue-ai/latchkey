@@ -5,17 +5,34 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Latchkey OAuth bounce</title>
     <style>
-      :root { color-scheme: light dark; }
+      :root {
+        color-scheme: light dark;
+      }
       body {
-        font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        font:
+          14px/1.5 system-ui,
+          -apple-system,
+          Segoe UI,
+          Roboto,
+          sans-serif;
         max-width: 38rem;
         margin: 3rem auto;
         padding: 0 1rem;
       }
-      h1 { font-size: 1.25rem; }
-      .ok { color: #1a7f37; }
-      .err { color: #cf222e; }
-      code { background: rgba(127,127,127,.18); padding: .1em .3em; border-radius: 4px; }
+      h1 {
+        font-size: 1.25rem;
+      }
+      .ok {
+        color: #1a7f37;
+      }
+      .err {
+        color: #cf222e;
+      }
+      code {
+        background: rgba(127, 127, 127, 0.18);
+        padding: 0.1em 0.3em;
+        border-radius: 4px;
+      }
     </style>
   </head>
   <body>
@@ -25,10 +42,12 @@
 
     <!--
       This is the latchkey OAuth "bounce" page. Host it at a stable https URL
-      (e.g. https://imbue.github.io/oauth-bounce/) and register it as the
-      redirect URI of an OAuth client, then tell latchkey to use it:
+      (e.g. https://imbue-ai.github.io/oauth-callback — the page notion-mcp
+      already uses in production; this file is a reference implementation of
+      the same contract) and register it as the redirect URI of an OAuth
+      client, then tell latchkey to use it:
 
-        latchkey auth prepare dropbox '{"redirectUri":"https://imbue.github.io/oauth-bounce/"}'
+        latchkey auth prepare dropbox '{"redirectUri":"https://imbue-ai.github.io/oauth-callback"}'
 
       Latchkey runs a loopback callback server on a random port per login. It
       cannot be known in advance, so latchkey puts the port in the OAuth `state`
@@ -61,14 +80,19 @@
           // RFC 6749 §4.1.2.1: a refused grant comes back with `error`.
           const error = params.get('error') || 'no_code';
           status.className = 'err';
-          status.textContent = 'Authorization failed: ' + error +
+          status.textContent =
+            'Authorization failed: ' +
+            error +
             (params.get('error_description') ? ' — ' + params.get('error_description') : '');
           // Still forward so latchkey's callback server sees the error and
           // reports it instead of timing out.
         }
 
         const target =
-          'http://localhost:' + port + '/oauth2callback?' + window.location.search.replace(/^\?/, '');
+          'http://localhost:' +
+          port +
+          '/oauth2callback?' +
+          window.location.search.replace(/^\?/, '');
 
         // `navigate` first so the user sees the tab flip to localhost; fall
         // back to `fetch` (no-cors is fine: the server only needs to receive
