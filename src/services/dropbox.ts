@@ -23,13 +23,21 @@ import {
 } from './core/base.js';
 import { fetchAccountFromEndpoint, tryParseJson } from '../apiCredentials/account.js';
 
-const DEFAULT_TIMEOUT_MS = 8000;
+const DEFAULT_TIMEOUT_MS = 20000;
 
 // Dropbox deprecated non-expiring tokens, so we run the authorization-code flow
 // with PKCE and `token_access_type=offline` to obtain a refresh token instead
 // of relying on the app console's short-lived "Generate token" button.
 const AUTHORIZE_ENDPOINT = 'https://www.dropbox.com/oauth2/authorize';
 const TOKEN_ENDPOINT = 'https://api.dropboxapi.com/oauth2/token';
+
+// Dropbox retired the legacy App Console (/developers/apps/...) in favour of the
+// new Developer Console (/developers/console/apps/...). The create-app page is a
+// progressive single-page form, and the per-app settings live at separate routes
+// (/settings, /permissions) instead of tab anchors. These are the current URLs.
+const CREATE_APP_URL = 'https://www.dropbox.com/developers/console/apps/create';
+const appConsoleUrl = (appId: string, section: 'settings' | 'permissions') =>
+  `https://www.dropbox.com/developers/console/apps/${appId}/${section}`;
 
 // Scopes enabled on the created app. The same list is requested during
 // authorization so the resulting token carries exactly these permissions.
@@ -46,7 +54,10 @@ const DROPBOX_SCOPES = [
   'contacts.read',
   'contacts.write',
 ] as const;
-const IMPLICITLY_GRANTED_SCOPES = ['account_info.read', 'files.metadata.read'] as const;
+// The legacy App Console left a handful of scopes (account_info.read,
+// files.metadata.read) implicitly granted with no checkbox to tick. The new
+// Developer Console exposes every scope as an explicit checkbox, so we simply
+// check all of DROPBOX_SCOPES instead of maintaining an implicit-grant list.
 
 // Time allowed for the user to approve the authorization request in the browser.
 const AUTHORIZATION_TIMEOUT_MS = 120000;
@@ -59,10 +70,11 @@ const TERMS_OF_SERVICE_USER_INTERACTION_TIMEOUT_MS = 10 * 60 * 1000;
 // creation fields above it stay out of sight.
 const TERMS_OF_SERVICE_VIEWPORT_TOP_MARGIN_PX = 132;
 
-// Dropbox keeps the "Create app" button disabled until the form is complete,
-// including acceptance of the terms.
+// Dropbox keeps the "Create app" button disabled until the form is complete.
+// The new Developer Console gives the button no stable id, so it is selected by
+// its visible text and enabled state.
 const ENABLED_CREATE_APP_BUTTON_SELECTOR =
-  '//button[@id="create-button" and @type="submit" and not(@disabled)]';
+  'button[type=submit]:has-text("Create app"):not([disabled])';
 
 // The DOM library is not enabled for this project, so browser-side callbacks
 // describe the few DOM members they actually use.
@@ -201,18 +213,21 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
       throw new LoginFailedError('No page available in browser context.');
     }
 
-    await page.goto('https://www.dropbox.com/developers/apps/create', {
+    await page.goto(CREATE_APP_URL, {
       waitUntil: 'domcontentloaded',
     });
 
-    const scopedInput = page.locator('input#scoped');
+    // Step 1 of the create-app form: "Choose an API" -> Scoped access.
+    const scopedInput = page.locator('input#api-scoped');
     await scopedInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await scopedInput.click();
 
-    const fullPermissionsInput = page.locator('input#full_permissions');
+    // Step 2: "Choose the type of access you need" -> Full Dropbox.
+    const fullPermissionsInput = page.locator('input#access-full_permissions');
     await fullPermissionsInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await fullPermissionsInput.click();
 
+    // Step 3: "Name your app".
     const appName = this.generateAppName();
     const appNameInput = page.locator('input#app-name');
     await appNameInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
@@ -225,46 +240,46 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
     await createButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await createButton.click();
 
-    await page.waitForURL(/https:\/\/www\.dropbox\.com\/developers\/apps\/info\b/, {
+    // The new console lands on /developers/console/apps/<app-id>/settings.
+    await page.waitForURL(/https:\/\/www\.dropbox\.com\/developers\/console\/apps\/[^/]+\/settings/, {
       timeout: DEFAULT_TIMEOUT_MS,
     });
 
-    // Configure permissions before authorizing
-    const permissionsTab = page.locator('a.c-tabs__label[data-hash="permissions"]');
-    await permissionsTab.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-    await permissionsTab.click();
+    const appIdMatch = /\/developers\/console\/apps\/([^/]+)\//.exec(page.url());
+    if (!appIdMatch?.[1]) {
+      throw new LoginFailedError('Failed to read the Dropbox app id from the console URL.');
+    }
+    const appId = appIdMatch[1];
 
-    // Enable all necessary permissions
+    // Configure permissions before authorizing. The new console moved scopes to
+    // a dedicated /permissions route with one checkbox per scope (id
+    // `permission-<scope>`), saved with a "Save changes" button.
+    await page.goto(appConsoleUrl(appId, 'permissions'), {
+      waitUntil: 'domcontentloaded',
+    });
+
+    // Enable all necessary permissions.
     for (const permissionId of DROPBOX_SCOPES) {
-      if (
-        IMPLICITLY_GRANTED_SCOPES.includes(
-          permissionId as (typeof IMPLICITLY_GRANTED_SCOPES)[number]
-        )
-      ) {
-        continue;
-      }
       const escapedPermissionId = permissionId.replace(/\./g, '\\.');
-      const checkbox = page.locator(`input#${escapedPermissionId}`);
+      const checkbox = page.locator(`input#permission-${escapedPermissionId}`);
       await checkbox.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-      await checkbox.click();
+      await checkbox.check();
     }
 
-    // Submit permissions
-    const submitButton = page.locator('button.permissions-submit-button');
+    // Submit permissions.
+    const submitButton = page.locator('button:has-text("Save changes"):not([disabled])');
     await submitButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await submitButton.click();
 
-    // Wait for permissions to be saved
+    // Wait for permissions to be saved before navigating away.
     await page.waitForTimeout(512);
 
-    // Return to Settings tab to read the app key and register the redirect URI
-    const settingsTab = page.locator('a.c-tabs__label[data-hash="settings"]');
-    await settingsTab.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-    await settingsTab.click();
+    // Return to Settings to read the app key and register the redirect URI.
+    await page.goto(appConsoleUrl(appId, 'settings'), {
+      waitUntil: 'domcontentloaded',
+    });
 
-    const appKeyLocator = page.locator('.app-key');
-    await appKeyLocator.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
-    const appKey = (await appKeyLocator.textContent())?.trim();
+    const appKey = await this.readAppKey(page);
     if (!appKey) {
       throw new LoginFailedError('Failed to read Dropbox app key.');
     }
@@ -348,18 +363,41 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
   /**
    * Register the localhost redirect URI on the app's OAuth 2 settings so the
    * subsequent authorization request is accepted.
+   *
+   * The new Developer Console renders the redirect-URI field with an
+   * `aria-label` rather than a stable id/name, inside a form whose only submit
+   * button is labelled "Add" (disabled until a URI is typed).
    */
   private async registerRedirectUri(page: Page, redirectUri: string): Promise<void> {
-    const redirectUriInput = page.locator('#oauth-add-uri-form input[name="oauth_uri"]');
+    const redirectUriInput = page.locator('input[aria-label="OAuth redirect URI"]');
     await redirectUriInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await typeLikeHuman(page, redirectUriInput, redirectUri);
 
-    const addButton = page.locator('#oauth-add-uri-form input[type="submit"]:not([disabled])');
+    const redirectForm = page
+      .locator('form')
+      .filter({ has: page.locator('input[aria-label="OAuth redirect URI"]') });
+    const addButton = redirectForm.locator('button[type=submit]:not([disabled])');
     await addButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await addButton.click();
 
     // Wait for the redirect URI to be saved before navigating away.
     await page.waitForTimeout(512);
+  }
+
+  /**
+   * Read the app key from the Settings page.
+   *
+   * The new console wraps the value in a `<code>` element inside the settings
+   * row that also holds the "App key" label. Class names are CSS-modules-hashed
+   * (so unstable across builds), so we locate the label by its visible text and
+   * then walk up to the nearest ancestor that exposes the `<code>` value — all
+   * via locators, since the project does not link the DOM lib for in-page
+   * callbacks.
+   */
+  private async readAppKey(page: Page): Promise<string | null> {
+    const label = page.getByText('App key', { exact: true }).first();
+    const code = label.locator('xpath=ancestor::*[.//code][1]').locator('code').first();
+    return (await code.textContent())?.trim() ?? null;
   }
 }
 
