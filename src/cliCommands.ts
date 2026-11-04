@@ -278,20 +278,18 @@ async function defaultConfirm(message: string): Promise<boolean> {
  */
 const REGISTRATION_MODES_HELP = [
   'Browser login:',
-  '  You can always use `latchkey auth set` to supply credentials for a',
-  '  registered service. But optionally, you can use one of two methods to',
-  '  configure a browser login flow. Both require --login-url to specify the',
-  '  URL the browser opens to log the user in.',
+  '  `latchkey auth set` always works for a registered service. To also give it',
+  '  `latchkey auth browser`, use one of:',
   '',
-  '  1. --service-family lets the service use the same login flow as a builtin',
-  '     service, for example:',
+  '  1. --service-family: the login of a built-in service, for a self-hosted',
+  '     instance of it. --login-url is the page the browser opens.',
   '',
   '       $ latchkey services register my-github --service-family=github \\',
   '           --base-api-url="https://github.example.com/api/v3/" \\',
   '           --login-url="https://github.example.com/login"',
   '',
-  '  2. --login-flow lets the service use one of the generic login flows. See',
-  '     the next section for supported login flows.',
+  '  2. --login-flow: one of the generic login flows below, configured by the',
+  '     JSON object in --login-flow-params.',
 ].join('\n');
 
 /** The login flow chosen at registration time, with the JSON it was configured from. */
@@ -583,30 +581,28 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
 
   servicesCommand
     .command('register')
-    .description('Register a self-hosted service instance.')
+    .description('Register a service that is not built in, such as a self-hosted instance.')
     .argument('<service_name>', 'Name for the new service')
-    .requiredOption('--base-api-url <url>', 'Base API URL for the self-hosted instance')
+    .option(
+      '--base-api-url <url>',
+      'Base API URL of the service. Required unless the login flow determines it.'
+    )
     .option(
       '--service-family <name>',
-      'Name of the built-in service to use as a template, if any (e.g. gitlab)'
+      'Built-in service to use as a template, if any (e.g. gitlab)'
     )
-    .option('--login-url <url>', 'Login URL for browser-based authentication, if applicable')
+    .option('--login-url <url>', 'Page the browser opens for `latchkey auth browser`, if any')
     .option(
       '--login-flow <name>',
-      'Generic browser login to give this service, instead of a service family. ' +
-        `Available flows: ${LOGIN_FLOWS.map((flow) => flow.flowName).join(', ')}. Requires --login-url.`
+      `Generic browser login, instead of a service family: ${LOGIN_FLOWS.map((flow) => flow.flowName).join(', ')}`
     )
-    .option(
-      '--login-flow-params <json>',
-      'JSON object with the parameters of --login-flow, ' +
-        'e.g. \'{"cookieKeys": ["sessionid", "csrftoken"]}\' for cookie-capture'
-    )
+    .option('--login-flow-params <json>', 'JSON object with the parameters of --login-flow')
     .addHelpText('after', `\n${REGISTRATION_MODES_HELP}\n\n${formatLoginFlowsHelp()}`)
     .action(
       (
         rawServiceName: string,
         options: {
-          baseApiUrl: string;
+          baseApiUrl?: string;
           serviceFamily?: string;
           loginUrl?: string;
           loginFlow?: string;
@@ -676,9 +672,17 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           deps.exit(1);
         }
 
+        // A flow that determines the base API URL from its parameters fills it
+        // in when the flag was left out; the flag still wins when given.
+        const baseApiUrl = options.baseApiUrl ?? chosenLoginFlow?.flow.baseApiUrl;
+        if (baseApiUrl === undefined) {
+          deps.errorLog('Error: --base-api-url is required.');
+          deps.exit(1);
+        }
+
         const registeredService = new RegisteredService(
           serviceName,
-          options.baseApiUrl,
+          baseApiUrl,
           buildRegisteredServiceOptions(familyService, options.loginUrl, chosenLoginFlow?.flow)
         );
 
@@ -693,7 +697,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         }
 
         saveRegisteredService(deps.config.configPath, serviceName, {
-          baseApiUrl: options.baseApiUrl,
+          baseApiUrl,
           serviceFamily: options.serviceFamily,
           loginUrl: options.loginUrl,
           loginFlow:

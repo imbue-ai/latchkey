@@ -24,6 +24,7 @@
  */
 
 import type { ZodType } from 'zod';
+import type { ApiCredentials } from '../../../apiCredentials/base.js';
 import { describeSchemaIssues, Service, type ServiceSession } from '../base.js';
 
 /**
@@ -48,6 +49,22 @@ export interface LoginFlow {
   /** Sentence describing this configuration, for `services info`. */
   describe(loginUrl: string): string;
   createSession(service: Service, appNamePrefix: string): ServiceSession;
+
+  /**
+   * The base API URL, when the parameters already determine it (an MCP
+   * server's endpoint implies it). Registration then does not require
+   * `--base-api-url`, though the flag still wins when given.
+   */
+  readonly baseApiUrl?: string;
+
+  /**
+   * What a flow that knows the API it logs into can add to the service: the
+   * credential check (see `Service.credentialCheckCurlArguments`) and the
+   * refresh (see `Service.refreshCredentials`). A flow that merely captures
+   * whatever the web app hands out knows neither, and leaves them out.
+   */
+  readonly credentialCheckCurlArguments?: readonly string[];
+  refreshCredentials?(apiCredentials: ApiCredentials): Promise<ApiCredentials | null>;
 }
 
 /**

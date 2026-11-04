@@ -3012,6 +3012,99 @@ describe('CLI commands with dependency injection', () => {
       expect(info.authOptions).toEqual(['browser', 'set']);
     });
 
+    const REMOTE_MCP_PARAMS = {
+      mcpEndpoint: 'https://mcp.example.com/mcp',
+      tokenEndpoint: 'https://auth.example.com/token',
+      registrationEndpoint: 'https://auth.example.com/register',
+    };
+
+    it('should register an mcp service with the base API URL the flow determines', async () => {
+      const deps = createMockDependencies({
+        registry: new ServiceRegistry([]),
+      });
+
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-mcp',
+          '--login-url',
+          'https://auth.example.com/authorize',
+          '--login-flow',
+          'mcp',
+          '--login-flow-params',
+          JSON.stringify(REMOTE_MCP_PARAMS),
+        ],
+        deps
+      );
+
+      expect(exitCode).toBeNull();
+      expect(logs).toContain("Service 'my-mcp' registered.");
+      expect(loadRegisteredServices(deps.config.configPath).get('my-mcp')).toEqual({
+        baseApiUrl: 'https://mcp.example.com/',
+        loginUrl: 'https://auth.example.com/authorize',
+        loginFlow: { name: 'mcp', params: REMOTE_MCP_PARAMS },
+      });
+
+      logs = [];
+      await runCommand(['services', 'info', 'my-mcp'], deps);
+      const info = JSON.parse(logs[0] ?? '') as Record<string, unknown>;
+      expect(info.baseApiUrls).toEqual(['https://mcp.example.com/']);
+      expect(info.authOptions).toEqual(['browser', 'set']);
+    });
+
+    it('should let an explicit --base-api-url win over the one the login flow determines', async () => {
+      const deps = createMockDependencies({
+        registry: new ServiceRegistry([]),
+      });
+
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-mcp',
+          '--base-api-url',
+          'https://api.example.com/',
+          '--login-url',
+          'https://auth.example.com/authorize',
+          '--login-flow',
+          'mcp',
+          '--login-flow-params',
+          JSON.stringify(REMOTE_MCP_PARAMS),
+        ],
+        deps
+      );
+
+      expect(exitCode).toBeNull();
+      expect(loadRegisteredServices(deps.config.configPath).get('my-mcp')).toMatchObject({
+        baseApiUrl: 'https://api.example.com/',
+      });
+    });
+
+    it('should require --base-api-url when the login flow does not determine it', async () => {
+      const deps = createMockDependencies({
+        registry: new ServiceRegistry([]),
+      });
+
+      await runCommand(
+        [
+          'services',
+          'register',
+          'my-service',
+          '--login-url',
+          'https://example.com/login',
+          '--login-flow',
+          'cookie-capture',
+          '--login-flow-params',
+          '{"cookieKeys": ["sessionid"]}',
+        ],
+        deps
+      );
+
+      expect(exitCode).toBe(1);
+      expect(errorLogs[0]).toContain('--base-api-url is required');
+    });
+
     it('should reject an unknown login flow and list the available ones', async () => {
       const deps = createMockDependencies({
         registry: new ServiceRegistry([]),
