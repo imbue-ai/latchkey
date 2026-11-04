@@ -342,6 +342,12 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
       await page.bringToFront();
       await page.goto(authorizeUrl.toString(), { waitUntil: 'domcontentloaded' });
 
+      // The app was just created by the operator on their own account, so
+      // granting is the intended action; auto-click through the two consent
+      // screens ("Before you connect this app..." -> Continue, then
+      // "[app] would like to: ..." -> Allow) that gate the authorization code.
+      await this.authorizeConsent(page);
+
       const code = await codePromise;
 
       const tokens = await exchangeCodeForTokens(
@@ -408,6 +414,31 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
 
     // Wait for the redirect URI to be saved before navigating away.
     await page.waitForTimeout(512);
+  }
+
+  /**
+   * Click through the Dropbox OAuth consent screens on the operator's behalf.
+   *
+   * The app was just created by the operator on their own account, so granting
+   * is the intended action. The new console presents two gated screens before
+   * issuing the authorization code: a "Before you connect this app..." warning
+   * with a Continue button, and a "[app] would like to: ..." permission grant
+   * with an Allow button. Each is clicked best-effort: if a screen is skipped
+   * (e.g. the app was already authorized for this account, so Dropbox
+   * redirects straight to the callback), the missing button just times out and
+   * the code arrives regardless.
+   */
+  private async authorizeConsent(page: Page): Promise<void> {
+    for (const label of ['Continue', 'Allow']) {
+      const button = page.getByRole('button', { name: label });
+      try {
+        await button.waitFor({ state: 'visible', timeout: DEFAULT_TIMEOUT_MS });
+        await button.click();
+      } catch {
+        // Screen skipped or already dismissed; the code redirect handles the rest.
+        return;
+      }
+    }
   }
 
   /**
