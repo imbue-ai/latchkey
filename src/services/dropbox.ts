@@ -381,7 +381,11 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
    *
    * The new Developer Console renders the redirect-URI field with an
    * `aria-label` rather than a stable id/name, inside a form whose only submit
-   * button is labelled "Add" (disabled until a URI is typed).
+   * button is labelled "Add" (disabled until a URI is typed). Because the
+   * loopback URI is http (not https), clicking "Add" does not persist it
+   * directly: it opens a `[role=dialog]` confirmation ("Add redirect URI?…
+   * Please don't add URIs whose contents aren't under your control.") whose
+   * "Add redirect URI" button must be clicked to actually save the URI.
    */
   private async registerRedirectUri(page: Page, redirectUri: string): Promise<void> {
     const redirectUriInput = page.locator('input[aria-label="OAuth redirect URI"]');
@@ -394,6 +398,13 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
     const addButton = redirectForm.locator('button[type=submit]:not([disabled])');
     await addButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await addButton.click();
+
+    // Confirm the non-https redirect URI in the dialog that "Add" opens.
+    const confirmButton = page
+      .getByRole('dialog')
+      .getByRole('button', { name: 'Add redirect URI' });
+    await confirmButton.waitFor({ state: 'visible', timeout: DEFAULT_TIMEOUT_MS });
+    await confirmButton.click();
 
     // Wait for the redirect URI to be saved before navigating away.
     await page.waitForTimeout(512);
