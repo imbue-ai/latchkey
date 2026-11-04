@@ -180,7 +180,32 @@ npx tsx scripts/cryptFile.ts decrypt ~/.latchkey/credentials.json.enc
 
 
 
+## OAuth redirect-URI bounce (prepared redirect URI)
+
+Latchkey's loopback callback server listens on a random port per login, so
+some OAuth providers — which only accept a pre-registered, exact-match
+redirect URI — cannot point straight at `http://localhost:<port>/…`. To keep
+login fully automated, a service can instead use a fixed https "bounce" page
+the operator hosts once (e.g. `https://imbue.github.io/oauth-bounce/`, see
+`docs/oauth-bounce.html`). The authorization server redirects there with
+`code` and `state`; the page reads the loopback port out of `state`'s last
+dot-separated segment and forwards the query string to
+`http://localhost:<port>/oauth2callback`.
+
+A service opts in by:
+
+- implementing `prepareFromJson` so `latchkey auth prepare <svc>
+  '{"redirectUri":"https://…"}'` stores the URI on token-less credentials;
+- using `readRedirectUriOverride(oldCredentials) ?? buildLoopbackRedirectUri(port)`
+  as the `redirect_uri` for both the authorize request and the token exchange;
+- sending `state = buildAuthorizationState(port)` in the authorize request.
+
+This is shared by the remote-MCP services (`src/services/core/remoteMcp.ts`)
+and Dropbox (`src/services/dropbox.ts`). The same `docs/oauth-bounce.html`
+page serves all of them — host it once and point every service at it.
+
 ## Environment variables
+
 
 The following environment variables can be set for development and debugging:
 

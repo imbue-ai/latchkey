@@ -6,10 +6,12 @@ import type { Response, BrowserContext, Page } from 'playwright';
 import { ApiCredentials, OAuthCredentials } from '../apiCredentials/base.js';
 import { typeLikeHuman } from '../playwrightUtils.js';
 import {
+  buildAuthorizationState,
   buildLoopbackRedirectUri,
   exchangeCodeForTokens,
   generateCodeChallenge,
   generateCodeVerifier,
+  readRedirectUriOverride,
   refreshAccessToken,
   startOAuthCallbackServer,
 } from '../oauthUtils.js';
@@ -20,6 +22,9 @@ import {
   LoginFailedError,
   isBrowserClosedError,
   LoginCancelledError,
+  DynamicClientPrepareInputSchema,
+  buildDynamicClientPreparation,
+  buildPreparedCredentials,
 } from './core/base.js';
 import { fetchAccountFromEndpoint, tryParseJson } from '../apiCredentials/account.js';
 
@@ -221,7 +226,7 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
 
   protected async performBrowserFollowup(
     context: BrowserContext,
-    _oldCredentials?: ApiCredentials
+    oldCredentials?: ApiCredentials
   ): Promise<ApiCredentials | null> {
     const page = context.pages()[0];
     if (!page) {
@@ -299,15 +304,29 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
       throw new LoginFailedError('Failed to read Dropbox app key.');
     }
 
-    return await this.authorizeApp(page, appKey);
+    return await this.authorizeApp(page, appKey, oldCredentials);
   }
 
   /**
    * Run the authorization-code + PKCE flow against the freshly created app to
    * obtain a refresh token. The redirect URI is registered on the app first
    * because Dropbox requires it to match the authorization request exactly.
+   *
+   * A prepared redirect URI (set via `latchkey auth prepare dropbox
+   * '{"redirectUri":"https://imbue.github.io/…"}'` and stored on the
+   * credentials) wins over the per-run loopback URI. The page at that URI must
+   * forward the authorization result to latchkey's loopback callback, whose
+   * port it reads out of the `state` parameter (see `buildAuthorizationState`);
+   * this is the same bounce contract the remote-MCP services use. Using a
+   * fixed https URI there avoids the http-only "Add redirect URI?" confirmation
+   * dialog Dropbox otherwise raises for a loopback URI, which makes the flow
+   * run with zero manual clicks once the operator is logged in.
    */
-  private async authorizeApp(page: Page, appKey: string): Promise<ApiCredentials> {
+  private async authorizeApp(
+    page: Page,
+    appKey: string,
+    oldCredentials?: ApiCredentials
+  ): Promise<ApiCredentials> {
     const abortController = new AbortController();
     const closeHandler = () => {
       abortController.abort();
@@ -320,7 +339,11 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
         AUTHORIZATION_TIMEOUT_MS,
         abortController.signal
       );
-      const redirectUri = buildLoopbackRedirectUri(port);
+      // A prepared redirect URI wins over the loopback one; the page it serves
+      // forwards the authorization result to the loopback callback, whose
+      // port it reads out of the `state` parameter below.
+      const redirectUriOverride = readRedirectUriOverride(oldCredentials);
+      const redirectUri = redirectUriOverride ?? buildLoopbackRedirectUri(port);
 
       await this.registerRedirectUri(page, redirectUri);
 
@@ -335,6 +358,10 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
       authorizeUrl.searchParams.set('code_challenge', codeChallenge);
       authorizeUrl.searchParams.set('code_challenge_method', 'S256');
       authorizeUrl.searchParams.set('scope', DROPBOX_SCOPES.join(' '));
+      // Carry the loopback port in `state` so a prepared redirect-URI page can
+      // forward the result to the callback it could not have known in advance.
+      // Sent for loopback logins too, so both paths look alike.
+      authorizeUrl.searchParams.set('state', buildAuthorizationState(port));
 
       // The finalize spinner runs in a separate tab that is kept in the
       // foreground. Bring the working page forward so the user can actually see
@@ -368,7 +395,10 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
         '', // public client, no secret stored
         tokens.access_token,
         tokens.refresh_token,
-        accessTokenExpiresAt
+        accessTokenExpiresAt,
+        undefined,
+        // Carried over so a re-login reuses the prepared redirect URI.
+        redirectUriOverride
       );
     } catch (error: unknown) {
       if (error instanceof Error && isBrowserClosedError(error)) {
@@ -382,16 +412,18 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
   }
 
   /**
-   * Register the localhost redirect URI on the app's OAuth 2 settings so the
-   * subsequent authorization request is accepted.
+   * Register the redirect URI on the app's OAuth 2 settings so the subsequent
+   * authorization request is accepted.
    *
    * The new Developer Console renders the redirect-URI field with an
    * `aria-label` rather than a stable id/name, inside a form whose only submit
-   * button is labelled "Add" (disabled until a URI is typed). Because the
-   * loopback URI is http (not https), clicking "Add" does not persist it
-   * directly: it opens a `[role=dialog]` confirmation ("Add redirect URI?…
-   * Please don't add URIs whose contents aren't under your control.") whose
-   * "Add redirect URI" button must be clicked to actually save the URI.
+   * button is labelled "Add" (disabled until a URI is typed). For a http
+   * (loopback) URI, clicking "Add" does not persist it directly: it opens a
+   * `[role=dialog]` confirmation ("Add redirect URI?… Please don't add URIs
+   * whose contents aren't under your control.") whose "Add redirect URI" button
+   * must be clicked to actually save the URI. An https URI (such as a
+   * prepared `https://imbue.github.io/…` bounce page) does not raise that
+   * warning, so the dialog is absent and the confirmation is skipped.
    */
   private async registerRedirectUri(page: Page, redirectUri: string): Promise<void> {
     const redirectUriInput = page.locator('input[aria-label="OAuth redirect URI"]');
@@ -405,12 +437,18 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
     await addButton.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await addButton.click();
 
-    // Confirm the non-https redirect URI in the dialog that "Add" opens.
+    // Confirm the non-https redirect URI in the dialog that "Add" opens, if it
+    // opens. An https URI is saved directly with no confirmation dialog, so a
+    // timeout here is expected for the prepared-redirect-URI (bounce) path.
     const confirmButton = page
       .getByRole('dialog')
       .getByRole('button', { name: 'Add redirect URI' });
-    await confirmButton.waitFor({ state: 'visible', timeout: DEFAULT_TIMEOUT_MS });
-    await confirmButton.click();
+    try {
+      await confirmButton.waitFor({ state: 'visible', timeout: DEFAULT_TIMEOUT_MS });
+      await confirmButton.click();
+    } catch {
+      // No confirmation dialog (https URI saved directly, or already present).
+    }
 
     // Wait for the redirect URI to be saved before navigating away.
     await page.waitForTimeout(512);
@@ -498,6 +536,25 @@ export class Dropbox extends Service {
     return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
   }
 
+  /**
+   * Dropbox creates its OAuth app (and thus the client id) at login, so the
+   * only thing that can be prepared in advance is the redirect URI — typically
+   * a fixed `https://imbue.github.io/…` bounce page that forwards the
+   * authorization result to latchkey's loopback callback (whose port it reads
+   * out of the `state` parameter). Using one avoids the per-run http loopback
+   * URI and the "Add redirect URI?" confirmation dialog it triggers, so login
+   * runs end-to-end with no manual clicks once the operator is logged in. See
+   * {@link DynamicClientPrepareInputSchema}.
+   */
+  override prepareFromJson(parsedJson: unknown): ApiCredentials {
+    return buildPreparedCredentials(
+      this.name,
+      DynamicClientPrepareInputSchema,
+      parsedJson,
+      buildDynamicClientPreparation
+    );
+  }
+
   override getSession(appNamePrefix: string): DropboxServiceSession {
     return new DropboxServiceSession(this, appNamePrefix);
   }
@@ -528,7 +585,10 @@ export class Dropbox extends Service {
       tokens.access_token,
       tokens.refresh_token ?? apiCredentials.refreshToken,
       accessTokenExpiresAt,
-      apiCredentials.refreshTokenExpiresAt
+      apiCredentials.refreshTokenExpiresAt,
+      // Preserve a prepared redirect URI across refresh so the next login can
+      // reuse the bounce page.
+      apiCredentials.redirectUri
     );
   }
 }
