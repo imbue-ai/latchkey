@@ -8,14 +8,14 @@
  */
 
 import { CookieCaptureLoginFlow } from './cookieCapture.js';
-import { RemoteMcpLoginFlow } from './remoteMcp.js';
+import { McpLoginFlow } from './mcp.js';
 import { TokenCaptureLoginFlow } from './tokenCapture.js';
 import type { LoginFlow, LoginFlowClass } from './base.js';
 
 export const LOGIN_FLOWS: readonly LoginFlowClass[] = [
   CookieCaptureLoginFlow,
   TokenCaptureLoginFlow,
-  RemoteMcpLoginFlow,
+  McpLoginFlow,
 ];
 
 export class UnknownLoginFlowError extends Error {

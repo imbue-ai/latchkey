@@ -3018,7 +3018,7 @@ describe('CLI commands with dependency injection', () => {
       registrationEndpoint: 'https://auth.example.com/register',
     };
 
-    it('should register a remote-mcp service with the base API URL the flow determines', async () => {
+    it('should register an mcp service with the base API URL the flow determines', async () => {
       const deps = createMockDependencies({
         registry: new ServiceRegistry([]),
       });
@@ -3031,7 +3031,7 @@ describe('CLI commands with dependency injection', () => {
           '--login-url',
           'https://auth.example.com/authorize',
           '--login-flow',
-          'remote-mcp',
+          'mcp',
           '--login-flow-params',
           JSON.stringify(REMOTE_MCP_PARAMS),
         ],
@@ -3043,7 +3043,7 @@ describe('CLI commands with dependency injection', () => {
       expect(loadRegisteredServices(deps.config.configPath).get('my-mcp')).toEqual({
         baseApiUrl: 'https://mcp.example.com/',
         loginUrl: 'https://auth.example.com/authorize',
-        loginFlow: { name: 'remote-mcp', params: REMOTE_MCP_PARAMS },
+        loginFlow: { name: 'mcp', params: REMOTE_MCP_PARAMS },
       });
 
       logs = [];
@@ -3068,7 +3068,7 @@ describe('CLI commands with dependency injection', () => {
           '--login-url',
           'https://auth.example.com/authorize',
           '--login-flow',
-          'remote-mcp',
+          'mcp',
           '--login-flow-params',
           JSON.stringify(REMOTE_MCP_PARAMS),
         ],

@@ -61,7 +61,7 @@ export interface RemoteMcpOAuthEndpoints {
 /**
  * A remote MCP server and how to obtain a token for it: everything the login
  * and the refresh need, and nothing that only a service has (a name, notes).
- * Shared by the built-in services and the `remote-mcp` login flow of
+ * Shared by the built-in services and the `mcp` login flow of
  * user-registered ones.
  */
 export interface RemoteMcpConnection {
@@ -344,7 +344,7 @@ async function registerClient(
  *
  * The session is told where to connect rather than asking its service, so that
  * a user-registered service (which knows nothing about MCP itself) can run one
- * through the `remote-mcp` login flow.
+ * through the `mcp` login flow.
  */
 export class RemoteMcpSession extends ServiceSession {
   private readonly connection: RemoteMcpConnection;
@@ -495,7 +495,7 @@ function accessTokenExpiresAtFrom(tokens: OAuthTokenResponse): string | undefine
  * Refresh the access token at the connection's token endpoint. Null when the
  * credentials carry no refresh token, or when the server refuses the refresh.
  *
- * Takes only the part of a connection a refresh needs: the `remote-mcp` login
+ * Takes only the part of a connection a refresh needs: the `mcp` login
  * flow learns the authorization endpoint from its service at login time, and
  * refreshes without it.
  */

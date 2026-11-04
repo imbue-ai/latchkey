@@ -120,7 +120,7 @@ export class RegisteredService extends Service {
 
   /**
    * Unknown, as the API behind a registered service is usually not one we
-   * know how to probe. A login flow that does know (remote MCP) supplies the
+   * know how to probe. A login flow that does know (MCP) supplies the
    * probe, and then the usual check runs.
    */
   override checkApiCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentialStatus> {

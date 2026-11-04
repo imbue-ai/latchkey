@@ -117,7 +117,7 @@ account through an MCP tool. The endpoints come from the server's
 `/.well-known/oauth-protected-resource` and the authorization server's
 `/.well-known/oauth-authorization-server` metadata; verify them live before
 adding a service, and note any `scopes_supported`. The same implementation
-backs the `remote-mcp` login flow of `latchkey services register`, which is
+backs the `mcp` login flow of `latchkey services register`, which is
 a quick way to try a server out before (or instead of) adding it here.
 
 ### Service info

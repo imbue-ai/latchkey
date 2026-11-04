@@ -1,5 +1,5 @@
 /**
- * A generic login for a remote MCP server: the OAuth 2.1 authorization code
+ * A generic login for an MCP server: the OAuth 2.1 authorization code
  * flow with PKCE and dynamic client registration that every such server
  * speaks, configured with the server's endpoints instead of being compiled in
  * as a built-in `-mcp` service.
@@ -27,7 +27,7 @@ import {
 } from '../remoteMcp.js';
 import { parseLoginFlowParams, type LoginFlow, type LoginFlowClass } from './base.js';
 
-const RemoteMcpParamsSchema = z
+const McpParamsSchema = z
   .object({
     mcpEndpoint: z.url(),
     tokenEndpoint: z.url(),
@@ -37,12 +37,9 @@ const RemoteMcpParamsSchema = z
   })
   .strict();
 
-type RemoteMcpParams = z.infer<typeof RemoteMcpParamsSchema>;
+type McpParams = z.infer<typeof McpParamsSchema>;
 
-function buildConnection(
-  params: RemoteMcpParams,
-  authorizationEndpoint: string
-): RemoteMcpConnection {
+function buildConnection(params: McpParams, authorizationEndpoint: string): RemoteMcpConnection {
   return {
     mcpEndpoint: params.mcpEndpoint,
     oauth: {
@@ -55,12 +52,11 @@ function buildConnection(
   };
 }
 
-export class RemoteMcpLoginFlow implements LoginFlow {
+export class McpLoginFlow implements LoginFlow {
   /** Value of `--login-flow`. Not `name`, which every class already has. */
-  static readonly flowName = 'remote-mcp';
+  static readonly flowName = 'mcp';
 
-  static readonly summary =
-    'Log in to a remote MCP server (OAuth with dynamic client registration).';
+  static readonly summary = 'Log in to an MCP server (OAuth with dynamic client registration).';
 
   static readonly details = [
     'Parameters:',
@@ -78,22 +74,22 @@ export class RemoteMcpLoginFlow implements LoginFlow {
     'Example:',
     '  $ latchkey services register my-mcp \\',
     '      --login-url="https://mcp.example.com/authorize" \\',
-    "      --login-flow=remote-mcp --login-flow-params='{",
+    "      --login-flow=mcp --login-flow-params='{",
     '      "mcpEndpoint": "https://mcp.example.com/mcp",',
     '      "tokenEndpoint": "https://mcp.example.com/token",',
     '      "registrationEndpoint": "https://mcp.example.com/register",',
     '      "scopes": ["read", "write"]}\'',
   ].join('\n');
 
-  static readonly paramsSchema = RemoteMcpParamsSchema;
+  static readonly paramsSchema = McpParamsSchema;
 
-  private readonly params: RemoteMcpParams;
+  private readonly params: McpParams;
 
   readonly baseApiUrl: string;
   readonly credentialCheckCurlArguments: readonly string[];
 
   constructor(rawParams: unknown) {
-    this.params = parseLoginFlowParams(RemoteMcpLoginFlow, rawParams);
+    this.params = parseLoginFlowParams(McpLoginFlow, rawParams);
     this.baseApiUrl = baseApiUrlOfMcpEndpoint(this.params.mcpEndpoint);
     this.credentialCheckCurlArguments = buildMcpInitializeCurlArguments(this.params.mcpEndpoint);
   }
@@ -127,4 +123,4 @@ export class RemoteMcpLoginFlow implements LoginFlow {
 
 // TypeScript has no `static implements`, so this is where the class side of the
 // flow is checked. The registry checks it again, but the error lands here.
-RemoteMcpLoginFlow satisfies LoginFlowClass;
+McpLoginFlow satisfies LoginFlowClass;

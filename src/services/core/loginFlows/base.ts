@@ -51,7 +51,7 @@ export interface LoginFlow {
   createSession(service: Service, appNamePrefix: string): ServiceSession;
 
   /**
-   * The base API URL, when the parameters already determine it (a remote MCP
+   * The base API URL, when the parameters already determine it (an MCP
    * server's endpoint implies it). Registration then does not require
    * `--base-api-url`, though the flag still wins when given.
    */
