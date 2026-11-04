@@ -58,14 +58,16 @@ export interface RemoteMcpOAuthEndpoints {
   readonly registrationEndpoint: string;
 }
 
-export interface RemoteMcpServiceDefinition {
-  readonly name: string;
-  readonly displayName: string;
+/**
+ * A remote MCP server and how to obtain a token for it: everything the login
+ * and the refresh need, and nothing that only a service has (a name, notes).
+ * Shared by the built-in services and the `remote-mcp` login flow of
+ * user-registered ones.
+ */
+export interface RemoteMcpConnection {
   /** The Streamable HTTP endpoint JSON-RPC messages are POSTed to. */
   readonly mcpEndpoint: string;
   readonly oauth: RemoteMcpOAuthEndpoints;
-  /** Developer notes, see {@link Service.info}. */
-  readonly info: string;
   /**
    * The scopes to ask for. Left empty for the many servers that have none and
    * grant whatever the user consents to; set for those whose metadata lists
@@ -73,19 +75,31 @@ export interface RemoteMcpServiceDefinition {
    */
   readonly scopes?: readonly string[];
   /**
-   * URL prefixes (or patterns) of the API besides the MCP endpoint's own
-   * origin, e.g. the regional hosts of a server that is deployed per region.
-   * Login always goes through `mcpEndpoint`; a token obtained elsewhere (or
-   * stored by hand) is injected into calls to any of these.
-   */
-  readonly additionalBaseApiUrls?: readonly (string | RegExp)[];
-  /**
    * Whether the token endpoint hands out a refresh token alongside the access
    * token. Left at the default for the usual case; false for a server that is
    * known to issue access tokens only, whose login would otherwise be
    * refused for want of a refresh token.
    */
   readonly issuesRefreshTokens?: boolean;
+}
+
+export interface RemoteMcpServiceDefinition extends RemoteMcpConnection {
+  readonly name: string;
+  readonly displayName: string;
+  /** Developer notes, see {@link Service.info}. */
+  readonly info: string;
+  /**
+   * URL prefixes (or patterns) of the API besides the MCP endpoint's own
+   * origin, e.g. the regional hosts of a server that is deployed per region.
+   * Login always goes through `mcpEndpoint`; a token obtained elsewhere (or
+   * stored by hand) is injected into calls to any of these.
+   */
+  readonly additionalBaseApiUrls?: readonly (string | RegExp)[];
+}
+
+/** The base API URL an MCP endpoint implies: its origin, as a prefix. */
+export function baseApiUrlOfMcpEndpoint(mcpEndpoint: string): string {
+  return `${new URL(mcpEndpoint).origin}/`;
 }
 
 /**
@@ -327,13 +341,24 @@ async function registerClient(
  * `login()` is overridden wholesale, as the base template's static loginUrl +
  * response-watching model does not fit a per-session authorize URL with a
  * loopback callback.
+ *
+ * The session is told where to connect rather than asking its service, so that
+ * a user-registered service (which knows nothing about MCP itself) can run one
+ * through the `remote-mcp` login flow.
  */
 export class RemoteMcpSession extends ServiceSession {
-  override readonly service: RemoteMcpService;
+  private readonly connection: RemoteMcpConnection;
+  private readonly accountFromTokenResponse: (tokens: OAuthTokenResponse) => string;
 
-  constructor(service: RemoteMcpService, appNamePrefix: string) {
+  constructor(
+    service: Service,
+    appNamePrefix: string,
+    connection: RemoteMcpConnection,
+    accountFromTokenResponse: (tokens: OAuthTokenResponse) => string
+  ) {
     super(service, appNamePrefix);
-    this.service = service;
+    this.connection = connection;
+    this.accountFromTokenResponse = accountFromTokenResponse;
   }
 
   onResponse(_response: Response): void {
@@ -360,7 +385,7 @@ export class RemoteMcpSession extends ServiceSession {
     oldCredentials?: ApiCredentials
   ): Promise<LoginResult> {
     const { withTempBrowserContext } = await import('../../playwrightUtils.js');
-    const { mcpEndpoint, oauth, scopes, issuesRefreshTokens } = this.service.definition;
+    const { mcpEndpoint, oauth, scopes, issuesRefreshTokens } = this.connection;
 
     return withTempBrowserContext(encryptedStorage, launchOptions, async ({ context }) => {
       const page = await context.newPage();
@@ -437,8 +462,7 @@ export class RemoteMcpSession extends ServiceSession {
         return {
           credentials,
           account:
-            (await this.service.getAccount?.(credentials)) ??
-            this.service.accountFromTokenResponse(tokens),
+            (await this.service.getAccount?.(credentials)) ?? this.accountFromTokenResponse(tokens),
         };
       } catch (error: unknown) {
         if (error instanceof Error && isBrowserClosedError(error)) {
@@ -468,6 +492,47 @@ function accessTokenExpiresAtFrom(tokens: OAuthTokenResponse): string | undefine
 }
 
 /**
+ * Refresh the access token at the connection's token endpoint. Null when the
+ * credentials carry no refresh token, or when the server refuses the refresh.
+ *
+ * Takes only the part of a connection a refresh needs: the `remote-mcp` login
+ * flow learns the authorization endpoint from its service at login time, and
+ * refreshes without it.
+ */
+export async function refreshRemoteMcpCredentials(
+  connection: {
+    readonly mcpEndpoint: string;
+    readonly oauth: Pick<RemoteMcpOAuthEndpoints, 'tokenEndpoint'>;
+  },
+  apiCredentials: ApiCredentials
+): Promise<ApiCredentials | null> {
+  if (!(apiCredentials instanceof OAuthCredentials) || !apiCredentials.refreshToken) {
+    return null;
+  }
+
+  const tokens = await refreshAccessToken(
+    connection.oauth.tokenEndpoint,
+    apiCredentials.refreshToken,
+    apiCredentials.clientId,
+    apiCredentials.clientSecret,
+    { resource: connection.mcpEndpoint }
+  );
+  if (tokens === null) {
+    return null;
+  }
+
+  return new OAuthCredentials(
+    apiCredentials.clientId,
+    apiCredentials.clientSecret,
+    tokens.access_token,
+    tokens.refresh_token ?? apiCredentials.refreshToken,
+    accessTokenExpiresAtFrom(tokens),
+    apiCredentials.refreshTokenExpiresAt,
+    apiCredentials.redirectUri
+  );
+}
+
+/**
  * A service that is a remote MCP server behind OAuth 2.1 with dynamic client
  * registration. Instantiated directly from a definition for the common case;
  * subclassed by servers that can tell which account a token belongs to.
@@ -487,7 +552,7 @@ export class RemoteMcpService extends Service {
     this.name = definition.name;
     this.displayName = definition.displayName;
     this.baseApiUrls = [
-      `${new URL(definition.mcpEndpoint).origin}/`,
+      baseApiUrlOfMcpEndpoint(definition.mcpEndpoint),
       ...(definition.additionalBaseApiUrls ?? []),
     ];
     this.loginUrl = definition.oauth.authorizationEndpoint;
@@ -524,35 +589,12 @@ export class RemoteMcpService extends Service {
   }
 
   override getSession(appNamePrefix: string): RemoteMcpSession {
-    return new RemoteMcpSession(this, appNamePrefix);
+    return new RemoteMcpSession(this, appNamePrefix, this.definition, (tokens) =>
+      this.accountFromTokenResponse(tokens)
+    );
   }
 
-  override async refreshCredentials(
-    apiCredentials: ApiCredentials
-  ): Promise<ApiCredentials | null> {
-    if (!(apiCredentials instanceof OAuthCredentials) || !apiCredentials.refreshToken) {
-      return null;
-    }
-
-    const tokens = await refreshAccessToken(
-      this.definition.oauth.tokenEndpoint,
-      apiCredentials.refreshToken,
-      apiCredentials.clientId,
-      apiCredentials.clientSecret,
-      { resource: this.definition.mcpEndpoint }
-    );
-    if (tokens === null) {
-      return null;
-    }
-
-    return new OAuthCredentials(
-      apiCredentials.clientId,
-      apiCredentials.clientSecret,
-      tokens.access_token,
-      tokens.refresh_token ?? apiCredentials.refreshToken,
-      accessTokenExpiresAtFrom(tokens),
-      apiCredentials.refreshTokenExpiresAt,
-      apiCredentials.redirectUri
-    );
+  override refreshCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentials | null> {
+    return refreshRemoteMcpCredentials(this.definition, apiCredentials);
   }
 }

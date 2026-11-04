@@ -265,39 +265,29 @@ export class TokenCaptureLoginFlow implements LoginFlow {
   /** Value of `--login-flow`. Not `name`, which every class already has. */
   static readonly flowName = 'token-capture';
 
-  static readonly summary =
-    'Open the login URL and capture a token the web app mints for itself, from the JSON ' +
-    'body of a named endpoint.';
+  static readonly summary = 'Capture a token the web app mints for itself from a JSON endpoint.';
 
   static readonly details = [
     'Parameters:',
-    '  tokenUrl    Full URL, including the scheme, of the endpoint whose response',
-    '              carries the token. Required. Matched on origin and path, so a',
-    '              query string the app appends does not have to be predicted.',
-    '  tokenField  Where the token sits in the JSON body. Required. Dotted for a',
-    '              nested field, as in "data.accessToken".',
-    '  header      Header to store the token as. Optional; defaults to',
-    `              "${DEFAULT_HEADER_TEMPLATE}". Must contain ${TOKEN_PLACEHOLDER}.`,
+    '  tokenUrl    Endpoint whose JSON response carries the token. Required.',
+    '              Matched on origin and path; the query string is ignored.',
+    '  tokenField  Field holding the token. Required. Dotted when nested, as in',
+    '              "data.accessToken".',
+    `  header      Header to store the token as. Must contain ${TOKEN_PLACEHOLDER}. Defaults`,
+    `              to "${DEFAULT_HEADER_TEMPLATE}".`,
     '',
-    'For services where the cookie authenticates the page rather than the API,',
-    'and the page calls an endpoint of its own to mint a short-lived token. Use',
-    'cookie-capture instead when the cookie is itself the API credential.',
-    '',
-    'The endpoint is both watched and asked: once the browser reaches its',
-    'origin, it is requested from inside the page every couple of seconds, so a',
-    'web app that never calls it unprompted still works. Either way the login',
-    'finishes when it answers with a non-empty token, not when it is merely',
-    'requested: a signed-out visitor commonly gets the same endpoint answering',
-    '`{}`. A token minted this way expires and cannot be refreshed — the refresh',
-    'material stays in the browser — so expect to sign in again periodically.',
+    'For apps where a cookie authenticates the page and the page mints a',
+    "short-lived API token (e.g. NextAuth's /api/auth/session). The endpoint is",
+    'watched, and also requested every few seconds once the browser is on its',
+    'origin. Such a token expires and cannot be refreshed; sign in again then.',
     '',
     'Example:',
     '  $ latchkey services register my-app \\',
     '      --base-api-url="https://app.example.com/backend-api/" \\',
     '      --login-url="https://app.example.com/auth/login" \\',
-    '      --login-flow=token-capture \\',
-    '      --login-flow-params=\'{"tokenUrl": "https://app.example.com/api/auth/session",',
-    '                            "tokenField": "accessToken"}\'',
+    "      --login-flow=token-capture --login-flow-params='{",
+    '      "tokenUrl": "https://app.example.com/api/auth/session",',
+    '      "tokenField": "accessToken"}\'',
   ].join('\n');
 
   static readonly paramsSchema = TokenCaptureParamsSchema;

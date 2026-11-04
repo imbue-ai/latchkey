@@ -81,6 +81,7 @@ import {
   isTimeoutError,
 } from './services/core/base.js';
 import { CookieCaptureLoginFlow } from './services/core/loginFlows/cookieCapture.js';
+import { RemoteMcpLoginFlow } from './services/core/loginFlows/remoteMcp.js';
 import { TokenCaptureLoginFlow } from './services/core/loginFlows/tokenCapture.js';
 import { RegisteredService } from './services/core/registered.js';
 import { GoogleService } from './services/google/base.js';
@@ -100,6 +101,7 @@ export function createLatchkeySdk(latchkeyVersion: string) {
     RegisteredService,
     GoogleService,
     CookieCaptureLoginFlow,
+    RemoteMcpLoginFlow,
     TokenCaptureLoginFlow,
     buildDynamicClientPreparation,
     buildFollowupSpinnerDetails,

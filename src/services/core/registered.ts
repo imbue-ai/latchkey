@@ -87,7 +87,7 @@ export class RegisteredService extends Service {
     this.displayName = name;
     this.baseApiUrls = [baseApiUrl];
     this.loginUrl = loginUrl ?? '';
-    this.credentialCheckCurlArguments = [];
+    this.credentialCheckCurlArguments = usableLoginFlow?.flow.credentialCheckCurlArguments ?? [];
     this.familyService = familyService;
 
     if (familyService !== undefined) {
@@ -107,12 +107,27 @@ export class RegisteredService extends Service {
       this.getSession = (appNamePrefix: string) =>
         usableLoginFlow.flow.createSession(this, appNamePrefix);
     }
+
+    if (usableLoginFlow?.flow.refreshCredentials !== undefined) {
+      this.refreshCredentials = (apiCredentials: ApiCredentials) =>
+        usableLoginFlow.flow.refreshCredentials!(apiCredentials);
+    }
   }
 
   override getSession?(appNamePrefix: string): ServiceSession;
 
-  override checkApiCredentials(): Promise<ApiCredentialStatus> {
-    return Promise.resolve(ApiCredentialStatus.Unknown);
+  override refreshCredentials?(apiCredentials: ApiCredentials): Promise<ApiCredentials | null>;
+
+  /**
+   * Unknown, as the API behind a registered service is usually not one we
+   * know how to probe. A login flow that does know (remote MCP) supplies the
+   * probe, and then the usual check runs.
+   */
+  override checkApiCredentials(apiCredentials: ApiCredentials): Promise<ApiCredentialStatus> {
+    if (this.credentialCheckCurlArguments.length === 0) {
+      return Promise.resolve(ApiCredentialStatus.Unknown);
+    }
+    return super.checkApiCredentials(apiCredentials);
   }
 
   // No getAccount: a registered service points at an instance whose API shape

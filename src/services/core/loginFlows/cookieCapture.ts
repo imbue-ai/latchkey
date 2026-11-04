@@ -355,24 +355,19 @@ export class CookieCaptureLoginFlow implements LoginFlow {
   /** Value of `--login-flow`. Not `name`, which every class already has. */
   static readonly flowName = 'cookie-capture';
 
-  static readonly summary = 'Open the login URL and capture named session cookies as they are set.';
+  static readonly summary =
+    'Open the login URL and capture named session cookies once they are set.';
 
   static readonly details = [
     'Parameters:',
-    '  cookieKeys  Names of the cookies to capture. Required, at least one. The',
-    '              login finishes once every one of them has been set, and they',
-    '              are stored together as a single "Cookie: a=1; b=2" header.',
-    '  cookieUrl   Full URL, including the scheme, that the cookies must apply',
-    '              to. Defaults to the login URL. Set it when signing in happens',
-    '              on a different host than the API.',
+    '  cookieKeys  Names of the cookies to capture. Required. Stored together as',
+    '              one "Cookie: a=1; b=2" header once all of them are set.',
+    '  cookieUrl   URL the cookies must apply to. Defaults to the login URL.',
     '',
-    'The cookies are read from the Set-Cookie headers of the responses that',
-    'arrive while the user signs in. A browser that opens already signed in',
-    '(from saved browser state, or after `latchkey auth import-chrome`) is never',
-    'sent them again, so they are also taken from the browser itself once the',
-    'page has moved on from the login URL to the service. A service whose login',
-    'URL is also where a signed-in user stays should register a login URL that',
-    'redirects a signed-in user elsewhere.',
+    'The cookies are read from responses during sign-in, and from the browser',
+    'once it has left the login URL (a browser that opens already signed in is',
+    'never sent them again). The login URL should therefore redirect a signed-in',
+    'user elsewhere.',
     '',
     'Example:',
     '  $ latchkey services register my-intranet \\',

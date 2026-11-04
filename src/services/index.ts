@@ -33,6 +33,7 @@ export {
   type LoginFlowClass,
 } from './core/loginFlows/base.js';
 export { CookieCaptureLoginFlow } from './core/loginFlows/cookieCapture.js';
+export { RemoteMcpLoginFlow } from './core/loginFlows/remoteMcp.js';
 export { TokenCaptureLoginFlow } from './core/loginFlows/tokenCapture.js';
 
 export { Slack, SLACK } from './slack.js';

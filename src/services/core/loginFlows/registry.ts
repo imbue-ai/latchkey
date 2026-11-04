@@ -8,12 +8,14 @@
  */
 
 import { CookieCaptureLoginFlow } from './cookieCapture.js';
+import { RemoteMcpLoginFlow } from './remoteMcp.js';
 import { TokenCaptureLoginFlow } from './tokenCapture.js';
 import type { LoginFlow, LoginFlowClass } from './base.js';
 
 export const LOGIN_FLOWS: readonly LoginFlowClass[] = [
   CookieCaptureLoginFlow,
   TokenCaptureLoginFlow,
+  RemoteMcpLoginFlow,
 ];
 
 export class UnknownLoginFlowError extends Error {
@@ -61,12 +63,5 @@ export function formatLoginFlowsHelp(): string {
       `  ${flowClass.flowName}\n${indent(flowClass.summary, '    ')}\n\n` +
       indent(flowClass.details, '    ')
   );
-  return [
-    [
-      'Login flows:',
-      '  Each login flow is configured by a JSON object supplied by',
-      '  --login-flow-params.',
-    ].join('\n'),
-    ...sections,
-  ].join('\n\n');
+  return ['Login flows:', ...sections].join('\n\n');
 }
