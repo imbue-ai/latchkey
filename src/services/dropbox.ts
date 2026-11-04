@@ -156,26 +156,41 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
 
   /**
    * Accounts that have not accepted the Dropbox API Terms and Conditions yet
-   * see a checkbox that keeps the "Create app" button disabled. Accepting the
-   * terms is the user's decision, so surface the page with the checkbox parked
-   * just below the top bar and wait until the user ticks it.
+   * see a checkbox that keeps the "Create app" button disabled.
    *
-   * The checkbox is always present in the DOM; Dropbox hides its wrapper for
-   * accounts that already accepted the terms, so visibility of the wrapper —
-   * not presence of the input — decides whether the user has to act.
+   * The new Developer Console renders this as a single
+   * `input#create-app-terms` checkbox inside the create-app form (present only
+   * for accounts that still need to accept). Accepting the API Terms is an
+   * inherent requirement of the app creation the operator just initiated, so we
+   * tick it on their behalf rather than blocking on a manual step.
    *
-   * Waiting for the "Create app" button to become enabled rather than for the
-   * checkbox state keeps the flow going even if Dropbox concludes the terms are
-   * not needed after all and hides the wrapper again.
+   * The legacy App Console instead wrapped the checkbox in an
+   * `#accept-tos-wrapper` that it hid for accounts that had already accepted;
+   * there, accepting the terms is the user's decision, so we surface the page
+   * with the checkbox parked just below the top bar and wait (up to the long
+   * ToS timeout) for the user to tick it. Kept for completeness even though the
+   * legacy console has been retired.
+   *
+   * Waiting for the "Create app" button to become enabled (in the legacy path)
+   * rather than for the checkbox state keeps the flow going even if Dropbox
+   * concludes the terms are not needed after all and hides the wrapper again.
    */
   private async waitForTermsOfServiceAcceptance(page: Page): Promise<void> {
+    // New Developer Console.
+    const newTermsCheckbox = page.locator('input#create-app-terms[type="checkbox"]');
+    if ((await newTermsCheckbox.count()) > 0 && !(await newTermsCheckbox.isChecked())) {
+      await page.bringToFront();
+      await newTermsCheckbox.check();
+    }
+
+    // Legacy App Console (retired, kept for completeness).
     const termsWrapper = page.locator('#accept-tos-wrapper');
     if (!(await termsWrapper.isVisible())) {
       return;
     }
 
-    const termsCheckbox = page.locator('input#accept-tos[type="checkbox"]');
-    if (await termsCheckbox.isChecked()) {
+    const legacyTermsCheckbox = page.locator('input#accept-tos[type="checkbox"]');
+    if (await legacyTermsCheckbox.isChecked()) {
       return;
     }
 
