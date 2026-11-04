@@ -4,6 +4,7 @@
  * Command-line interface entry point for latchkey.
  */
 
+import './disableInspector.js';
 import { existsSync } from 'node:fs';
 import { program } from 'commander';
 import {
