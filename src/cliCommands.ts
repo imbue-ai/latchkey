@@ -1452,7 +1452,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         }
 
         const sourceStorage = new EncryptedStorage(sourceKey);
-        const sourceStore = new ApiCredentialStore(deps.config.credentialStorePath, sourceStorage);
+        const sourceStore = createApiCredentialStore(deps, sourceStorage);
 
         let allCredentials: ReadonlyMap<string, ReadonlyMap<string, ApiCredentials>>;
         let preparedServiceNames: readonly string[];
@@ -1515,7 +1515,11 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         }
 
         const destinationStorage = new EncryptedStorage(destinationKey);
-        const destinationStore = new ApiCredentialStore(destination, destinationStorage);
+        const destinationStore = new ApiCredentialStore(
+          destination,
+          destinationStorage,
+          deps.apiCredentialsTypes
+        );
         // Reading the destination store validates that it can be decrypted with
         // the destination key before anything is written into it.
         if (existsSync(destination)) {
