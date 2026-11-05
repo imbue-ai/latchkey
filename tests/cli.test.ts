@@ -19,7 +19,7 @@ import { hasGraphicalEnvironment } from '../src/playwrightUtils.js';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { Config } from '../src/config.js';
 import { ServiceRegistry } from '../src/serviceRegistry.js';
-import { ApiCredentialStatus } from '../src/apiCredentials/base.js';
+import { type ApiCredentials, ApiCredentialStatus } from '../src/apiCredentials/base.js';
 import { LATEST_VERSION } from '../src/migrations.js';
 import { Service } from '../src/services/core/base.js';
 import { createMockService, MockService } from './mockService.js';
@@ -1923,6 +1923,80 @@ describe('CLI commands with dependency injection', () => {
 
       expect(exitCode).toBe(1);
       expect(existsSync(join(destinationDirectory, STORE_FILENAME))).toBe(false);
+    });
+
+    describe('with credentials of a type defined by a plugin', () => {
+      class PluginCredentials implements ApiCredentials {
+        static readonly objectType = 'pluginCredentials' as const;
+        readonly objectType = PluginCredentials.objectType;
+
+        constructor(readonly secret: string) {}
+
+        static fromJSON(data: unknown): PluginCredentials {
+          return new PluginCredentials((data as { readonly secret: string }).secret);
+        }
+
+        injectIntoCurlCall(curlArguments: readonly string[]): Promise<readonly string[]> {
+          return Promise.resolve(['-H', `X-Secret: ${this.secret}`, ...curlArguments]);
+        }
+
+        isExpired(): undefined {
+          return undefined;
+        }
+
+        toJSON(): { objectType: string; secret: string } {
+          return { objectType: this.objectType, secret: this.secret };
+        }
+      }
+
+      const PLUGIN_CREDENTIALS = { objectType: 'pluginCredentials', secret: 's3cret' };
+      const PLUGIN_PREPARATION = { objectType: 'pluginCredentials', secret: 'prepared' };
+
+      function withPluginCredentialsType(key: string): CliDependencies {
+        return withStdinKey(key, {
+          apiCredentialsTypes: [...BUILTIN_API_CREDENTIALS_TYPES, PluginCredentials],
+        });
+      }
+
+      it('re-encrypts the credentials and the preparation', async () => {
+        writeStore({ foo: PLUGIN_CREDENTIALS }, { foo: PLUGIN_PREPARATION });
+        const destinationDirectory = join(tempDir, 'export');
+
+        await runCommand(
+          ['auth', 're-encrypt', destinationDirectory],
+          withPluginCredentialsType(NEW_ENCRYPTION_KEY)
+        );
+
+        expect(errorLogs).toEqual([]);
+        expect(exitCode).toBeNull();
+        const destination = join(destinationDirectory, STORE_FILENAME);
+        expect(readWithKey(destination, NEW_ENCRYPTION_KEY)).toEqual({ foo: PLUGIN_CREDENTIALS });
+        expect(readPreparationsWithKey(destination, NEW_ENCRYPTION_KEY)).toEqual({
+          foo: PLUGIN_PREPARATION,
+        });
+      });
+
+      it('adds into a destination store that already holds such credentials', async () => {
+        writeStore({ slack: { objectType: 'slack', token: 'tok', dCookie: 'cookie' } });
+        const destinationDirectory = join(tempDir, 'export');
+        stampDataFormatVersion(destinationDirectory);
+        const destination = join(destinationDirectory, STORE_FILENAME);
+        new EncryptedStorage(NEW_ENCRYPTION_KEY).writeFile(
+          destination,
+          JSON.stringify({ ...nestAccounts({ foo: PLUGIN_CREDENTIALS }), preparations: {} })
+        );
+
+        await runCommand(
+          ['auth', 're-encrypt', destinationDirectory],
+          withPluginCredentialsType(NEW_ENCRYPTION_KEY)
+        );
+
+        expect(errorLogs).toEqual([]);
+        expect(exitCode).toBeNull();
+        const reEncrypted = readWithKey(destination, NEW_ENCRYPTION_KEY);
+        expect(Object.keys(reEncrypted).sort()).toEqual(['foo', 'slack']);
+        expect(reEncrypted.foo).toEqual(PLUGIN_CREDENTIALS);
+      });
     });
   });
 
