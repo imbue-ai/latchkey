@@ -66,6 +66,7 @@ const DROPBOX_SCOPES = [
 
 // Time allowed for the user to approve the authorization request in the browser.
 const AUTHORIZATION_TIMEOUT_MS = 120000;
+const CODE_ARRIVED = Symbol('codeArrived');
 
 // Time allowed for the user to accept the Dropbox API Terms and Conditions.
 const TERMS_OF_SERVICE_USER_INTERACTION_TIMEOUT_MS = 10 * 60 * 1000;
@@ -376,7 +377,7 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
       // granting is the intended action; auto-click through the two consent
       // screens ("Before you connect this app..." -> Continue, then
       // "[app] would like to: ..." -> Allow) that gate the authorization code.
-      await this.authorizeConsent(page);
+      await this.authorizeConsent(page, codePromise);
 
       const code = await codePromise;
 
@@ -464,19 +465,28 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
    * is the intended action. The new console presents two gated screens before
    * issuing the authorization code: a "Before you connect this app..." warning
    * with a Continue button, and a "[app] would like to: ..." permission grant
-   * with an Allow button. Each is clicked best-effort: if a screen is skipped
+   * with an Allow button. Each is clicked best-effort: a screen may be skipped
    * (e.g. the app was already authorized for this account, so Dropbox
-   * redirects straight to the callback), the missing button just times out and
-   * the code arrives regardless.
+   * redirects straight to the callback), so every wait is raced against the
+   * authorization code arriving at the loopback server. Without the race, the
+   * wait for a button that will never appear on the callback's bare "OK" page
+   * would stall the login for the full button timeout.
    */
-  private async authorizeConsent(page: Page): Promise<void> {
+  private async authorizeConsent(page: Page, codePromise: Promise<string>): Promise<void> {
+    const codeArrived = codePromise.then(() => CODE_ARRIVED);
     for (const label of ['Continue', 'Allow']) {
       const button = page.getByRole('button', { name: label });
       try {
-        await button.waitFor({ state: 'visible', timeout: DEFAULT_TIMEOUT_MS });
+        const outcome = await Promise.race([
+          button.waitFor({ state: 'visible', timeout: DEFAULT_TIMEOUT_MS }),
+          codeArrived,
+        ]);
+        if (outcome === CODE_ARRIVED) {
+          return;
+        }
         await button.click();
       } catch {
-        // Screen skipped or already dismissed; the code redirect handles the rest.
+        // Screen missing or the code promise settled; the caller awaits it.
         return;
       }
     }
