@@ -3,6 +3,7 @@
  */
 
 import * as crypto from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import * as http from 'node:http';
 import { type ApiCredentials, OAuthCredentials } from './apiCredentials/base.js';
 import { runCapturedAsync } from './curl.js';
@@ -79,6 +80,23 @@ export function buildLoopbackRedirectUri(
  */
 export function readRedirectUriOverride(credentials?: ApiCredentials): string | undefined {
   return credentials instanceof OAuthCredentials ? credentials.redirectUri : undefined;
+}
+
+/**
+ * The `state` for an authorization request, carrying the loopback port login
+ * is waiting on in its last dot-separated segment.
+ *
+ * A prepared redirect URI (see `OAuthCredentials.redirectUri`) points the
+ * authorization server at a page latchkey does not control, and that page has
+ * to forward the result to a loopback port it cannot know in advance —
+ * `startOAuthCallbackServer` picks a free one per login. The server echoes
+ * `state` back unchanged, so it is the one channel available for telling the
+ * page where to forward to. The random prefix keeps the value unguessable,
+ * which is what `state` is for (RFC 6749 §10.12); it is sent for loopback
+ * logins too, so that both paths look alike.
+ */
+export function buildAuthorizationState(loopbackPort: number): string {
+  return `${randomUUID()}.${loopbackPort.toString()}`;
 }
 
 export interface OAuthCallbackServer {

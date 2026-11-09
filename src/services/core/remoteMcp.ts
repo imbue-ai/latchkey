@@ -10,7 +10,6 @@
  * connector this generalizes.
  */
 
-import { randomUUID } from 'node:crypto';
 import type { Browser, BrowserContext, Response } from 'playwright';
 import { type ApiCredentials, OAuthCredentials } from '../../apiCredentials/base.js';
 import {
@@ -21,6 +20,7 @@ import {
 import { runCapturedAsync } from '../../curl.js';
 import type { EncryptedStorage } from '../../encryptedStorage.js';
 import {
+  buildAuthorizationState,
   buildLoopbackRedirectUri,
   exchangeCodeForTokens,
   generateCodeChallenge,
@@ -100,22 +100,10 @@ export function baseApiUrlOfMcpEndpoint(mcpEndpoint: string): string {
   return `${new URL(mcpEndpoint).origin}/`;
 }
 
-/**
- * The `state` for an authorization request, carrying the loopback port login
- * is waiting on in its last dot-separated segment.
- *
- * A prepared redirect URI (see `OAuthCredentials.redirectUri`) points the
- * authorization server at a page latchkey does not control, and that page has
- * to forward the result to a loopback port it cannot know in advance —
- * `startOAuthCallbackServer` picks a free one per login. The server echoes
- * `state` back unchanged, so it is the one channel available for telling the
- * page where to forward to. The random prefix keeps the value unguessable,
- * which is what `state` is for (RFC 6749 §10.12); it is sent for loopback
- * logins too, so that both paths look alike.
- */
-export function buildAuthorizationState(loopbackPort: number): string {
-  return `${randomUUID()}.${loopbackPort.toString()}`;
-}
+// `buildAuthorizationState` lives in `oauthUtils.ts` so non-MCP OAuth services
+// (e.g. Dropbox) can share the same loopback-port-in-state bounce contract.
+// Re-exported here for existing callers; imported above for internal use.
+export { buildAuthorizationState } from '../../oauthUtils.js';
 
 /**
  * The RFC 7591 registration request for a public client (no secret, PKCE
