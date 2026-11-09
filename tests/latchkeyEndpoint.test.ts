@@ -96,6 +96,22 @@ describe('LatchkeyRequestSchema', () => {
     expect(result.success).toBe(false);
   });
 
+  it('should validate auth browser with systemBrowser', () => {
+    const result = LatchkeyRequestSchema.safeParse({
+      command: 'auth browser',
+      params: { serviceName: 'notion-mcp', systemBrowser: true },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('should reject auth browser with a non-boolean systemBrowser', () => {
+    const result = LatchkeyRequestSchema.safeParse({
+      command: 'auth browser',
+      params: { serviceName: 'notion-mcp', systemBrowser: 'yes' },
+    });
+    expect(result.success).toBe(false);
+  });
+
   it('should validate auth browser-prepare', () => {
     const result = LatchkeyRequestSchema.safeParse({
       command: 'auth browser-prepare',

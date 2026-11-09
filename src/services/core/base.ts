@@ -227,6 +227,13 @@ export interface LoginOptions {
    * granted scopes) honour it; the rest log in as usual.
    */
   readonly strict?: boolean;
+  /**
+   * Open the login in the system browser (whatever the OS opens URLs with)
+   * instead of the browser Latchkey drives through Playwright. Only sessions
+   * that declare `supportsSystemBrowser` can honour it; callers check that
+   * first rather than letting a session silently fall back.
+   */
+  readonly systemBrowser?: boolean;
 }
 
 export interface LoginResult {
@@ -442,6 +449,18 @@ export abstract class ServiceSession {
     this.service = service;
     this.appNamePrefix = appNamePrefix;
   }
+
+  /**
+   * Whether {@link login} can run in the system browser (`LoginOptions.systemBrowser`).
+   *
+   * True for a login that needs nothing of the browser but to show the user
+   * an authorization URL: the OAuth code comes back to a loopback server
+   * Latchkey runs itself and the tokens are fetched with curl, so any browser
+   * will do. False here and by default, since the base login watches the
+   * page's responses and a session may read cookies or drive pages, none of
+   * which is possible in a browser Latchkey does not control.
+   */
+  readonly supportsSystemBrowser: boolean = false;
 
   /**
    * Generate a random, unique app name using the session's configured prefix.

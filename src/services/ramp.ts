@@ -28,13 +28,10 @@ import {
   refreshAccessToken,
   startOAuthCallbackServer,
 } from '../oauthUtils.js';
-import {
-  isBrowserClosedError,
-  type LoginResult,
-  LoginCancelledError,
-  Service,
-  ServiceSession,
-} from './core/base.js';
+import type { EncryptedStorage } from '../encryptedStorage.js';
+import type { BrowserLaunchOptions } from '../playwrightUtils.js';
+import { type LoginOptions, type LoginResult, Service, ServiceSession } from './core/base.js';
+import { withOAuthLoginBrowser } from './core/oauthLoginBrowser.js';
 
 /** Ramp's public OAuth client (PKCE, no secret), from ramp-cli. */
 const RAMP_OAUTH_CLIENT_ID = 'ramp_id_6pKvd0IR3d8Kuzp82SV6YgpVCZOlz68Px6s3wVsr';
@@ -47,9 +44,6 @@ const RAMP_PKCE_TOKEN_ENDPOINT = 'https://api.ramp.com/developer/v1/token/pkce';
 
 /** Loopback callback path; matches ramp-cli's `/callback`. */
 const RAMP_OAUTH_CALLBACK_PATH = '/callback';
-
-/** Time to wait for the user to finish the hosted login + agent-key approval. */
-const RAMP_LOGIN_TIMEOUT_MS = 300_000;
 
 /**
  * Scopes requested on the authorize URL: exactly the scopes Ramp's agent-tools
@@ -88,10 +82,11 @@ const RAMP_OAUTH_SCOPES = [
 ].join(' ');
 
 /**
- * Browser login session: runs the OAuth authorization-code + PKCE flow in a
- * Playwright browser and returns OAuthCredentials. login() is overridden wholesale
- * (the base template's static loginUrl + response-watching model doesn't fit a
- * per-session authorize URL with a localhost callback), mirroring NotionMcpSession.
+ * Browser login session: runs the OAuth authorization-code + PKCE flow in the
+ * browser `withOAuthLoginBrowser` provides and returns OAuthCredentials. login()
+ * is overridden wholesale (the base template's static loginUrl +
+ * response-watching model doesn't fit a per-session authorize URL with a
+ * localhost callback), mirroring RemoteMcpSession.
  */
 class RampOAuthServiceSession extends ServiceSession {
   onResponse(_response: Response): void {
@@ -113,87 +108,67 @@ class RampOAuthServiceSession extends ServiceSession {
     return Promise.resolve(null);
   }
 
+  override readonly supportsSystemBrowser = true;
+
   override async login(
-    encryptedStorage: import('../encryptedStorage.js').EncryptedStorage,
-    launchOptions: import('../playwrightUtils.js').BrowserLaunchOptions = {},
-    _oldCredentials?: ApiCredentials
+    encryptedStorage: EncryptedStorage,
+    launchOptions: BrowserLaunchOptions = {},
+    _oldCredentials?: ApiCredentials,
+    loginOptions: LoginOptions = {}
   ): Promise<LoginResult> {
-    const { withTempBrowserContext } = await import('../playwrightUtils.js');
     const clientId = RAMP_OAUTH_CLIENT_ID;
 
-    return withTempBrowserContext(encryptedStorage, launchOptions, async ({ context }) => {
-      const page = await context.newPage();
+    return withOAuthLoginBrowser(encryptedStorage, launchOptions, loginOptions, async (browser) => {
+      // 1. Stand up the localhost callback server (random port; Ramp's public
+      //    client allows arbitrary loopback ports per RFC 8252).
+      const { port, codePromise } = await startOAuthCallbackServer(
+        browser.closeSignal,
+        RAMP_OAUTH_CALLBACK_PATH
+      );
+      const redirectUri = buildLoopbackRedirectUri(port, RAMP_OAUTH_CALLBACK_PATH);
 
-      const abortController = new AbortController();
-      const closeHandler = () => {
-        abortController.abort();
-      };
-      page.on('close', closeHandler);
-      context.on('close', closeHandler);
+      // 2. PKCE verifier/challenge.
+      const codeVerifier = generateCodeVerifier();
+      const codeChallenge = generateCodeChallenge(codeVerifier);
 
-      try {
-        // 1. Stand up the localhost callback server (random port; Ramp's public
-        //    client allows arbitrary loopback ports per RFC 8252).
-        const { port, codePromise } = await startOAuthCallbackServer(
-          RAMP_LOGIN_TIMEOUT_MS,
-          abortController.signal,
-          RAMP_OAUTH_CALLBACK_PATH
-        );
-        const redirectUri = buildLoopbackRedirectUri(port, RAMP_OAUTH_CALLBACK_PATH);
+      // 3. Open Ramp's hosted authorize screen. auth_level=auto triggers the
+      //    "create/approve an AI agent key" prompt.
+      const authUrl = new URL(RAMP_AUTHORIZE_URL);
+      authUrl.searchParams.set('response_type', 'code');
+      authUrl.searchParams.set('client_id', clientId);
+      authUrl.searchParams.set('redirect_uri', redirectUri);
+      authUrl.searchParams.set('scope', RAMP_OAUTH_SCOPES);
+      authUrl.searchParams.set('state', randomUUID());
+      authUrl.searchParams.set('code_challenge', codeChallenge);
+      authUrl.searchParams.set('code_challenge_method', 'S256');
+      authUrl.searchParams.set('auth_level', 'auto');
 
-        // 2. PKCE verifier/challenge.
-        const codeVerifier = generateCodeVerifier();
-        const codeChallenge = generateCodeChallenge(codeVerifier);
+      await browser.open(authUrl.toString());
 
-        // 3. Open Ramp's hosted authorize screen. auth_level=auto triggers the
-        //    "create/approve an AI agent key" prompt.
-        const authUrl = new URL(RAMP_AUTHORIZE_URL);
-        authUrl.searchParams.set('response_type', 'code');
-        authUrl.searchParams.set('client_id', clientId);
-        authUrl.searchParams.set('redirect_uri', redirectUri);
-        authUrl.searchParams.set('scope', RAMP_OAUTH_SCOPES);
-        authUrl.searchParams.set('state', randomUUID());
-        authUrl.searchParams.set('code_challenge', codeChallenge);
-        authUrl.searchParams.set('code_challenge_method', 'S256');
-        authUrl.searchParams.set('auth_level', 'auto');
+      // 4. Wait for the user to finish and the callback to deliver the code.
+      const code = await codePromise;
 
-        await page.goto(authUrl.toString(), { waitUntil: 'domcontentloaded' });
+      // 5. Exchange the code for tokens (public client: no secret).
+      const tokens = await exchangeCodeForTokens(
+        RAMP_PKCE_TOKEN_ENDPOINT,
+        code,
+        clientId,
+        '',
+        redirectUri,
+        codeVerifier
+      );
+      const accessTokenExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
-        // 4. Wait for the user to finish and the callback to deliver the code.
-        const code = await codePromise;
-
-        // 5. Exchange the code for tokens (public client: no secret).
-        const tokens = await exchangeCodeForTokens(
-          RAMP_PKCE_TOKEN_ENDPOINT,
-          code,
-          clientId,
-          '',
-          redirectUri,
-          codeVerifier
-        );
-        const accessTokenExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
-
-        await page.close();
-
-        // Public client: clientSecret is stored as '' so refresh sends client_id only.
-        const credentials = new OAuthCredentials(
-          clientId,
-          '',
-          tokens.access_token,
-          tokens.refresh_token,
-          accessTokenExpiresAt
-        );
-        const account = (await this.service.getAccount?.(credentials)) ?? DEFAULT_ACCOUNT;
-        return { credentials, account };
-      } catch (error: unknown) {
-        if (error instanceof Error && isBrowserClosedError(error)) {
-          throw new LoginCancelledError();
-        }
-        throw error;
-      } finally {
-        page.off('close', closeHandler);
-        context.off('close', closeHandler);
-      }
+      // Public client: clientSecret is stored as '' so refresh sends client_id only.
+      const credentials = new OAuthCredentials(
+        clientId,
+        '',
+        tokens.access_token,
+        tokens.refresh_token,
+        accessTokenExpiresAt
+      );
+      const account = (await this.service.getAccount?.(credentials)) ?? DEFAULT_ACCOUNT;
+      return { credentials, account };
     });
   }
 }

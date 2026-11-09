@@ -13,9 +13,11 @@ import { getCredentialStatus } from './apiCredentials/utils.js';
 import type { Config } from './config.js';
 import { loadBrowserConfig } from './configDataStore.js';
 import type { EncryptedStorage } from './encryptedStorage.js';
+import { CodedError, ErrorCodes } from './errorMessages.js';
 import {
   BrowserDisabledError,
   BrowserFlowsNotSupportedError,
+  type BrowserLaunchOptions,
   GraphicalEnvironmentNotFoundError,
   hasGraphicalEnvironment,
 } from './playwrightUtils.js';
@@ -45,6 +47,42 @@ export class BrowserNotConfiguredError extends Error {
   constructor() {
     super("No browser configured. Run 'latchkey ensure-browser' first.");
     this.name = 'BrowserNotConfiguredError';
+  }
+}
+
+/**
+ * Thrown when `auth browser --system` names a service whose login cannot run
+ * in the system browser. Deliberately not a fallback to Latchkey's own
+ * browser: a user passing `--system` may well have no other browser set up,
+ * and an application wrapping Latchkey needs to be told rather than guess.
+ */
+export class SystemBrowserLoginNotSupportedError extends CodedError {
+  constructor(serviceName: string) {
+    super(
+      ErrorCodes.systemBrowserLoginNotSupported,
+      `Service '${serviceName}' does not support logging in with the system browser: ` +
+        "its login needs the browser Latchkey controls (see 'latchkey ensure-browser'). " +
+        `Run 'latchkey auth browser ${serviceName}' without --system instead.`
+    );
+    this.name = 'SystemBrowserLoginNotSupportedError';
+  }
+}
+
+/**
+ * Thrown when `auth browser --system` runs with the ephemeral browser setting
+ * on. Ephemeral means "start from a clean browser state", which Latchkey can
+ * only arrange in the browser it controls; silently logging in with whatever
+ * state the system browser holds would be the opposite of what was asked.
+ */
+export class SystemBrowserCannotBeEphemeralError extends CodedError {
+  constructor() {
+    super(
+      ErrorCodes.systemBrowserCannotBeEphemeral,
+      'The system browser cannot be ephemeral: LATCHKEY_EPHEMERAL_BROWSER (or browserEphemeral ' +
+        'in the settings) is set, but --system logs in through your own browser, whose state ' +
+        'Latchkey does not control. Unset it, or log in without --system.'
+    );
+    this.name = 'SystemBrowserCannotBeEphemeralError';
   }
 }
 
@@ -115,15 +153,24 @@ function lookupService(registry: ServiceRegistry, serviceName: string): Service 
   return service;
 }
 
-function getBrowserLaunchOptions(config: Config): {
-  browserStatePath?: string;
-  executablePath: string;
-} {
+function getBrowserLaunchOptions(
+  config: Config,
+  loginOptions: LoginOptions = {}
+): BrowserLaunchOptions {
   if (config.browserDisabled) {
     throw new BrowserDisabledError();
   }
   if (!hasGraphicalEnvironment()) {
     throw new GraphicalEnvironmentNotFoundError();
+  }
+  // The system browser is whatever the OS opens URLs with: nothing to
+  // configure, and no browser state of Latchkey's to load or persist — which
+  // also means it cannot be made ephemeral.
+  if (loginOptions.systemBrowser === true) {
+    if (config.browserEphemeral) {
+      throw new SystemBrowserCannotBeEphemeralError();
+    }
+    return {};
   }
   const browserConfig = loadBrowserConfig(config.configPath);
   if (!browserConfig) {
@@ -242,6 +289,12 @@ export interface ServiceCapabilities {
    * belong to. When false, the user names the account with `--account`.
    */
   readonly detectsLoginAccount: boolean;
+  /**
+   * Whether `auth browser --system` works for this service: its browser login
+   * is a plain OAuth redirect that can run in the system browser instead of
+   * the browser Latchkey controls. False when there is no browser login at all.
+   */
+  readonly systemBrowserLogin: boolean;
 }
 
 export interface ServicesInfoResult {
@@ -260,6 +313,21 @@ export interface ServicesInfoResult {
 // what lets such a service hold more than one set of credentials.
 function detectsLoginAccount(service: Service): boolean {
   return service.getAccount !== undefined;
+}
+
+// The session, not the service, knows how its login drives the browser: a
+// registered service's session comes from whichever login flow it was
+// registered with. Creating one is cheap, so the capability is read off a
+// fresh session.
+function supportsSystemBrowserLogin(service: Service, appNamePrefix: string): boolean {
+  return service.getSession?.(appNamePrefix).supportsSystemBrowser === true;
+}
+
+function buildCapabilities(service: Service, config: Config): ServiceCapabilities {
+  return {
+    detectsLoginAccount: detectsLoginAccount(service),
+    systemBrowserLogin: supportsSystemBrowserLogin(service, config.appNamePrefix),
+  };
 }
 
 export async function servicesInfo(
@@ -290,7 +358,7 @@ export async function servicesInfo(
     type: serviceType,
     baseApiUrls: service.baseApiUrls.map(formatBaseApiUrl),
     authOptions,
-    capabilities: { detectsLoginAccount: detectsLoginAccount(service) },
+    capabilities: buildCapabilities(service, config),
     credentials,
     setCredentialsExample: service.setCredentialsExample(serviceName),
     developerNotes: service.info,
@@ -343,6 +411,9 @@ export async function authBrowser(
   if (!session) {
     throw new BrowserFlowsNotSupportedError(serviceName);
   }
+  if (loginOptions.systemBrowser === true && !session.supportsSystemBrowser) {
+    throw new SystemBrowserLoginNotSupportedError(serviceName);
+  }
 
   const serviceDetectsLoginAccount = detectsLoginAccount(service);
 
@@ -370,7 +441,7 @@ export async function authBrowser(
     throw new PreparationRequiredError(serviceName);
   }
 
-  const launchOptions = getBrowserLaunchOptions(config);
+  const launchOptions = getBrowserLaunchOptions(config, loginOptions);
 
   const { credentials, account: loggedInAccount } = await session.login(
     encryptedStorage,

@@ -29,8 +29,15 @@ import {
   UnknownServiceError,
   AccountNotFoundError,
   PreparationRequiredError,
+  SystemBrowserLoginNotSupportedError,
+  SystemBrowserCannotBeEphemeralError,
 } from '../src/sharedOperations.js';
-import { BrowserFlowsNotSupportedError } from '../src/playwrightUtils.js';
+import {
+  BrowserFlowsNotSupportedError,
+  GraphicalEnvironmentNotFoundError,
+} from '../src/playwrightUtils.js';
+import { CodedError, ErrorCodes } from '../src/errorMessages.js';
+import { McpLoginFlow } from '../src/services/core/loginFlows/mcp.js';
 
 const TEST_ENCRYPTION_KEY = 'dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q=';
 
@@ -143,7 +150,7 @@ describe('operations', () => {
       expect(info.baseApiUrls).toEqual(['https://slack.com/api/']);
       expect(info.authOptions).toContain('browser');
       expect(info.authOptions).toContain('set');
-      expect(info.capabilities).toEqual({ detectsLoginAccount: true });
+      expect(info.capabilities).toEqual({ detectsLoginAccount: true, systemBrowserLogin: false });
       expect(info.credentials).toEqual({});
       expect(info.developerNotes).toBe('Test info for Slack service.');
     });
@@ -156,7 +163,41 @@ describe('operations', () => {
 
       const info = await servicesInfo(registry, store, config, 'slack');
 
-      expect(info.capabilities).toEqual({ detectsLoginAccount: false });
+      expect(info.capabilities).toEqual({ detectsLoginAccount: false, systemBrowserLogin: false });
+    });
+
+    it.each([
+      ['a Google service', GOOGLE_GMAIL],
+      ['a remote MCP service', NOTION_MCP],
+      ['Fastmail', FASTMAIL],
+    ])('reports that %s supports the system browser login', async (_name, service) => {
+      const registry = new ServiceRegistry([service]);
+      const store = createApiCredentialStore();
+      const config = createMockConfig();
+
+      const info = await servicesInfo(registry, store, config, service.name);
+
+      expect(info.capabilities.systemBrowserLogin).toBe(true);
+    });
+
+    it('reports the system browser login for a service registered with the mcp login flow', async () => {
+      const flow = new McpLoginFlow({
+        mcpEndpoint: 'https://mcp.example.com/mcp',
+        tokenEndpoint: 'https://auth.example.com/token',
+        registrationEndpoint: 'https://auth.example.com/register',
+      });
+      const registeredService = new RegisteredService('my-mcp', flow.baseApiUrl, {
+        loginFlow: flow,
+        loginUrl: 'https://auth.example.com/authorize',
+      });
+      const registry = new ServiceRegistry([]);
+      registry.addService(registeredService);
+      const store = createApiCredentialStore();
+      const config = createMockConfig();
+
+      const info = await servicesInfo(registry, store, config, 'my-mcp');
+
+      expect(info.capabilities).toEqual({ detectsLoginAccount: false, systemBrowserLogin: true });
     });
 
     it('should throw UnknownServiceError for unknown service', async () => {
@@ -190,7 +231,7 @@ describe('operations', () => {
       const info = await servicesInfo(registry, store, config, 'my-gitlab');
 
       expect(info.type).toBe('user-registered');
-      expect(info.capabilities).toEqual({ detectsLoginAccount: false });
+      expect(info.capabilities).toEqual({ detectsLoginAccount: false, systemBrowserLogin: false });
     });
 
     it('should return stored credentials keyed by account', async () => {
@@ -332,6 +373,139 @@ describe('operations', () => {
       await expect(authBrowser(registry, store, encryptedStorage, config, 'slack')).rejects.toThrow(
         BrowserFlowsNotSupportedError
       );
+    });
+
+    describe('with the system browser', () => {
+      const originalPlatform = process.platform;
+
+      beforeEach(() => {
+        // Pretend we are on macOS so the graphical-environment check passes
+        // without relying on DISPLAY being set.
+        Object.defineProperty(process, 'platform', { value: 'darwin' });
+      });
+
+      afterEach(() => {
+        Object.defineProperty(process, 'platform', { value: originalPlatform });
+      });
+
+      it('refuses a service whose login needs the browser Latchkey controls, with an error code', async () => {
+        const login = vi.fn();
+        const service = createMockService({
+          getSession: vi.fn().mockReturnValue({ login, supportsSystemBrowser: false }),
+        });
+        const registry = new ServiceRegistry([service]);
+        const store = createApiCredentialStore();
+        const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
+        const config = createMockConfig();
+
+        const loginAttempt = authBrowser(
+          registry,
+          store,
+          encryptedStorage,
+          config,
+          'slack',
+          undefined,
+          {
+            systemBrowser: true,
+          }
+        );
+
+        await expect(loginAttempt).rejects.toThrow(SystemBrowserLoginNotSupportedError);
+        await expect(loginAttempt).rejects.toMatchObject({
+          errorCode: ErrorCodes.systemBrowserLoginNotSupported,
+        });
+        await expect(loginAttempt).rejects.toBeInstanceOf(CodedError);
+        expect(login).not.toHaveBeenCalled();
+      });
+
+      it('logs in without a browser configured by ensure-browser', async () => {
+        const login = vi.fn().mockResolvedValue({
+          credentials: new SlackApiCredentials('xoxc-token', 'cookie'),
+          account: 'user@example.com',
+        });
+        const service = createMockService({
+          getSession: vi.fn().mockReturnValue({ login, supportsSystemBrowser: true }),
+        });
+        const registry = new ServiceRegistry([service]);
+        const store = createApiCredentialStore();
+        const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
+        // No saveBrowserConfig: the system browser needs none.
+        const config = createMockConfig({ directory: tempDir });
+
+        const result = await authBrowser(
+          registry,
+          store,
+          encryptedStorage,
+          config,
+          'slack',
+          undefined,
+          {
+            systemBrowser: true,
+          }
+        );
+
+        expect(result).toEqual({ account: 'user@example.com' });
+        expect(login).toHaveBeenCalledWith(encryptedStorage, {}, undefined, {
+          systemBrowser: true,
+        });
+      });
+
+      it('refuses to run with the ephemeral browser setting, with an error code', async () => {
+        const login = vi.fn();
+        const service = createMockService({
+          getSession: vi.fn().mockReturnValue({ login, supportsSystemBrowser: true }),
+        });
+        const registry = new ServiceRegistry([service]);
+        const store = createApiCredentialStore();
+        const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
+        const config = createMockConfig({ directory: tempDir, browserEphemeral: true });
+
+        const loginAttempt = authBrowser(
+          registry,
+          store,
+          encryptedStorage,
+          config,
+          'slack',
+          undefined,
+          { systemBrowser: true }
+        );
+
+        await expect(loginAttempt).rejects.toThrow(SystemBrowserCannotBeEphemeralError);
+        await expect(loginAttempt).rejects.toMatchObject({
+          errorCode: ErrorCodes.systemBrowserCannotBeEphemeral,
+        });
+        expect(login).not.toHaveBeenCalled();
+      });
+
+      it('still requires a graphical environment', async () => {
+        Object.defineProperty(process, 'platform', { value: 'linux' });
+        const originalDisplay = process.env.DISPLAY;
+        const originalWayland = process.env.WAYLAND_DISPLAY;
+        delete process.env.DISPLAY;
+        delete process.env.WAYLAND_DISPLAY;
+        try {
+          const service = createMockService({
+            getSession: vi.fn().mockReturnValue({ login: vi.fn(), supportsSystemBrowser: true }),
+          });
+          const registry = new ServiceRegistry([service]);
+          const store = createApiCredentialStore();
+          const encryptedStorage = new EncryptedStorage(TEST_ENCRYPTION_KEY);
+          const config = createMockConfig({ directory: tempDir });
+
+          await expect(
+            authBrowser(registry, store, encryptedStorage, config, 'slack', undefined, {
+              systemBrowser: true,
+            })
+          ).rejects.toThrow(GraphicalEnvironmentNotFoundError);
+        } finally {
+          if (originalDisplay !== undefined) {
+            process.env.DISPLAY = originalDisplay;
+          }
+          if (originalWayland !== undefined) {
+            process.env.WAYLAND_DISPLAY = originalWayland;
+          }
+        }
+      });
     });
 
     it('should throw PreparationRequiredError when prepare is required but not done', async () => {

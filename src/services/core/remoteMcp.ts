@@ -10,7 +10,6 @@
  * connector this generalizes.
  */
 
-import { randomUUID } from 'node:crypto';
 import type { Browser, BrowserContext, Response } from 'playwright';
 import { type ApiCredentials, OAuthCredentials } from '../../apiCredentials/base.js';
 import {
@@ -21,6 +20,7 @@ import {
 import { runCapturedAsync } from '../../curl.js';
 import type { EncryptedStorage } from '../../encryptedStorage.js';
 import {
+  buildAuthorizationState,
   buildLoopbackRedirectUri,
   exchangeCodeForTokens,
   generateCodeChallenge,
@@ -34,16 +34,14 @@ import type { BrowserLaunchOptions } from '../../playwrightUtils.js';
 import {
   Service,
   ServiceSession,
+  type LoginOptions,
   type LoginResult,
   LoginFailedError,
-  LoginCancelledError,
   DynamicClientPrepareInputSchema,
   buildDynamicClientPreparation,
   buildPreparedCredentials,
-  isBrowserClosedError,
 } from './base.js';
-
-const LOGIN_TIMEOUT_MS = 120000;
+import { withOAuthLoginBrowser } from './oauthLoginBrowser.js';
 
 /**
  * The OAuth 2.1 authorization server in front of an MCP server, as published
@@ -102,22 +100,10 @@ export function baseApiUrlOfMcpEndpoint(mcpEndpoint: string): string {
   return `${new URL(mcpEndpoint).origin}/`;
 }
 
-/**
- * The `state` for an authorization request, carrying the loopback port login
- * is waiting on in its last dot-separated segment.
- *
- * A prepared redirect URI (see `OAuthCredentials.redirectUri`) points the
- * authorization server at a page latchkey does not control, and that page has
- * to forward the result to a loopback port it cannot know in advance —
- * `startOAuthCallbackServer` picks a free one per login. The server echoes
- * `state` back unchanged, so it is the one channel available for telling the
- * page where to forward to. The random prefix keeps the value unguessable,
- * which is what `state` is for (RFC 6749 §10.12); it is sent for loopback
- * logins too, so that both paths look alike.
- */
-export function buildAuthorizationState(loopbackPort: number): string {
-  return `${randomUUID()}.${loopbackPort.toString()}`;
-}
+// `buildAuthorizationState` lives in `oauthUtils.ts` so non-MCP OAuth services
+// (e.g. Dropbox) can share the same loopback-port-in-state bounce contract.
+// Re-exported here for existing callers; imported above for internal use.
+export { buildAuthorizationState } from '../../oauthUtils.js';
 
 /**
  * The RFC 7591 registration request for a public client (no secret, PKCE
@@ -337,10 +323,10 @@ async function registerClient(
 
 /**
  * Browser login session for a remote MCP server: dynamic client registration,
- * then the OAuth authorization code flow with PKCE in a Playwright browser.
- * `login()` is overridden wholesale, as the base template's static loginUrl +
- * response-watching model does not fit a per-session authorize URL with a
- * loopback callback.
+ * then the OAuth authorization code flow with PKCE, in whichever browser
+ * `withOAuthLoginBrowser` provides. `login()` is overridden wholesale, as the
+ * base template's static loginUrl + response-watching model does not fit a
+ * per-session authorize URL with a loopback callback.
  *
  * The session is told where to connect rather than asking its service, so that
  * a user-registered service (which knows nothing about MCP itself) can run one
@@ -379,100 +365,78 @@ export class RemoteMcpSession extends ServiceSession {
     return Promise.resolve(null);
   }
 
+  override readonly supportsSystemBrowser = true;
+
   override async login(
     encryptedStorage: EncryptedStorage,
     launchOptions: BrowserLaunchOptions = {},
-    oldCredentials?: ApiCredentials
+    oldCredentials?: ApiCredentials,
+    loginOptions: LoginOptions = {}
   ): Promise<LoginResult> {
-    const { withTempBrowserContext } = await import('../../playwrightUtils.js');
     const { mcpEndpoint, oauth, scopes, issuesRefreshTokens } = this.connection;
 
-    return withTempBrowserContext(encryptedStorage, launchOptions, async ({ context }) => {
-      const page = await context.newPage();
+    return withOAuthLoginBrowser(encryptedStorage, launchOptions, loginOptions, async (browser) => {
+      const { port, codePromise } = await startOAuthCallbackServer(browser.closeSignal);
+      // A prepared redirect URI wins over the loopback one; the page it
+      // serves forwards the authorization result to the loopback callback,
+      // whose port it reads out of the state below.
+      const redirectUriOverride = readRedirectUriOverride(oldCredentials);
+      const redirectUri = redirectUriOverride ?? buildLoopbackRedirectUri(port);
+      const state = buildAuthorizationState(port);
 
-      const abortController = new AbortController();
-      const closeHandler = () => {
-        abortController.abort();
+      // Reuse a prepared or previously registered client; register otherwise.
+      const client =
+        oldCredentials instanceof OAuthCredentials && oldCredentials.clientId
+          ? { client_id: oldCredentials.clientId, client_secret: oldCredentials.clientSecret }
+          : await registerClient(
+              oauth.registrationEndpoint,
+              redirectUri,
+              this.generateAppName('-mcp'),
+              scopes ?? []
+            );
+      const clientId = client.client_id;
+
+      const codeVerifier = generateCodeVerifier();
+      const authorizationUrl = buildAuthorizationUrl(oauth.authorizationEndpoint, {
+        clientId,
+        redirectUri,
+        codeChallenge: generateCodeChallenge(codeVerifier),
+        state,
+        scopes: scopes ?? [],
+        resource: mcpEndpoint,
+      });
+      await browser.open(authorizationUrl);
+
+      const code = await codePromise;
+
+      const tokens = await exchangeCodeForTokens(
+        oauth.tokenEndpoint,
+        code,
+        clientId,
+        client.client_secret,
+        redirectUri,
+        codeVerifier,
+        { resource: mcpEndpoint },
+        { refreshTokenRequired: issuesRefreshTokens ?? true }
+      );
+
+      const credentials = new OAuthCredentials(
+        clientId,
+        client.client_secret,
+        tokens.access_token,
+        tokens.refresh_token,
+        accessTokenExpiresAtFrom(tokens),
+        undefined,
+        // Carried over so that a re-login reuses the prepared redirect URI
+        // alongside the prepared client id.
+        redirectUriOverride
+      );
+
+      return {
+        credentials,
+        account:
+          (await this.service.getAccount?.(credentials)) ?? this.accountFromTokenResponse(tokens),
       };
-      page.on('close', closeHandler);
-      context.on('close', closeHandler);
-
-      try {
-        const { port, codePromise } = await startOAuthCallbackServer(
-          LOGIN_TIMEOUT_MS,
-          abortController.signal
-        );
-        // A prepared redirect URI wins over the loopback one; the page it
-        // serves forwards the authorization result to the loopback callback,
-        // whose port it reads out of the state below.
-        const redirectUriOverride = readRedirectUriOverride(oldCredentials);
-        const redirectUri = redirectUriOverride ?? buildLoopbackRedirectUri(port);
-        const state = buildAuthorizationState(port);
-
-        // Reuse a prepared or previously registered client; register otherwise.
-        const client =
-          oldCredentials instanceof OAuthCredentials && oldCredentials.clientId
-            ? { client_id: oldCredentials.clientId, client_secret: oldCredentials.clientSecret }
-            : await registerClient(
-                oauth.registrationEndpoint,
-                redirectUri,
-                this.generateAppName('-mcp'),
-                scopes ?? []
-              );
-        const clientId = client.client_id;
-
-        const codeVerifier = generateCodeVerifier();
-        const authorizationUrl = buildAuthorizationUrl(oauth.authorizationEndpoint, {
-          clientId,
-          redirectUri,
-          codeChallenge: generateCodeChallenge(codeVerifier),
-          state,
-          scopes: scopes ?? [],
-          resource: mcpEndpoint,
-        });
-        await page.goto(authorizationUrl, { waitUntil: 'domcontentloaded' });
-
-        const code = await codePromise;
-
-        const tokens = await exchangeCodeForTokens(
-          oauth.tokenEndpoint,
-          code,
-          clientId,
-          client.client_secret,
-          redirectUri,
-          codeVerifier,
-          { resource: mcpEndpoint },
-          { refreshTokenRequired: issuesRefreshTokens ?? true }
-        );
-
-        await page.close();
-
-        const credentials = new OAuthCredentials(
-          clientId,
-          client.client_secret,
-          tokens.access_token,
-          tokens.refresh_token,
-          accessTokenExpiresAtFrom(tokens),
-          undefined,
-          // Carried over so that a re-login reuses the prepared redirect URI
-          // alongside the prepared client id.
-          redirectUriOverride
-        );
-
-        return {
-          credentials,
-          account:
-            (await this.service.getAccount?.(credentials)) ?? this.accountFromTokenResponse(tokens),
-        };
-      } catch (error: unknown) {
-        if (error instanceof Error && isBrowserClosedError(error)) {
-          throw new LoginCancelledError();
-        }
-        throw error;
-      } finally {
-        page.off('close', closeHandler);
-        context.off('close', closeHandler);
-      }
     });
   }
 }
