@@ -919,12 +919,11 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     )
     .option(
       '--system',
-      'Log in with the system browser (the one your OS opens links with) instead of the ' +
-        "browser set up by 'latchkey ensure-browser'. Only works for services whose " +
-        "'systemBrowserLogin' capability is true in 'latchkey services info': those whose " +
-        'login is a plain OAuth redirect. Latchkey cannot tell when the system browser is ' +
+      'Log in with the system browser. Only works for services whose ' +
+        "'systemBrowserLogin' capability is true in 'latchkey services info'. " +
+        'Latchkey cannot tell when the system browser is ' +
         'closed, so an abandoned login ends only when it times out. Cannot be combined with ' +
-        'LATCHKEY_EPHEMERAL_BROWSER, since Latchkey does not control the state of the system browser.'
+        'LATCHKEY_EPHEMERAL_BROWSER.'
     )
     .action(async (serviceName: string, options: { strict?: boolean; system?: boolean }) => {
       const strict = options.strict === true;
