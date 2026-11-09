@@ -917,12 +917,27 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         'Only services that can tell what was granted enforce this. From the built-in services, ' +
         'only Google supports this option.'
     )
-    .action(async (serviceName: string, options: { strict?: boolean }) => {
+    .option(
+      '--system',
+      'Log in with the system browser (the one your OS opens links with) instead of the ' +
+        "browser set up by 'latchkey ensure-browser'. Only works for services whose " +
+        "'systemBrowserLogin' capability is true in 'latchkey services info': those whose " +
+        'login is a plain OAuth redirect. Latchkey cannot tell when the system browser is ' +
+        'closed, so an abandoned login ends only when it times out. Cannot be combined with ' +
+        'LATCHKEY_EPHEMERAL_BROWSER, since Latchkey does not control the state of the system browser.'
+    )
+    .action(async (serviceName: string, options: { strict?: boolean; system?: boolean }) => {
       const strict = options.strict === true;
+      const systemBrowser = options.system === true;
       if (deps.config.gatewayUrl !== null) {
         const result = (await forwardToGateway(deps, {
           command: 'auth browser',
-          params: { serviceName, account: getAccount(), strict: strict ? true : undefined },
+          params: {
+            serviceName,
+            account: getAccount(),
+            strict: strict ? true : undefined,
+            systemBrowser: systemBrowser ? true : undefined,
+          },
         })) as { account?: string } | null;
         deps.log(loginDoneMessage(result?.account));
         return;
@@ -937,10 +952,14 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
           deps.config,
           serviceName,
           getAccount(),
-          { strict }
+          { strict, systemBrowser }
         );
         deps.log(loginDoneMessage(account));
       } catch (error) {
+        if (error instanceof CodedError) {
+          deps.errorLog(formatCodedErrorAsJson(error));
+          deps.exit(1);
+        }
         if (error instanceof UnknownServiceError || error instanceof AccountNotFoundError) {
           deps.errorLog(`Error: ${error.message}`);
           deps.exit(1);

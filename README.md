@@ -233,6 +233,15 @@ You can also configure browser login flows for registered services. For details,
 see `latchkey services register --help`.
 
 
+### Capability flags
+
+Among other things, `latchkey services info <service_name>` shows a list of capabilities:
+
+- `detectsLoginAccount`: Whether `latchkey auth browser` automatically resolves the account upon success.
+- `systemBrowserLogin`: When true, `latchkey auth browser` accepts the `--system`
+  flag to open the user's system browser instead of the browser Latchkey controls.
+
+
 ### Plugins
 
 It is also possible to add support for a new service by

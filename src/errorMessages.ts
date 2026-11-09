@@ -106,6 +106,17 @@ export const ErrorCodes = {
    * this means the application running Latchkey lacks Full Disk Access.
    */
   chromeProfileNotReadable: 'CHROME_PROFILE_NOT_READABLE',
+  /**
+   * `auth browser --system` was asked of a service whose login needs
+   * Latchkey's own browser (it reads cookies or drives pages), so it cannot
+   * run in the system browser. See `ServiceSession.supportsSystemBrowser`.
+   */
+  systemBrowserLoginNotSupported: 'SYSTEM_BROWSER_LOGIN_NOT_SUPPORTED',
+  /**
+   * `auth browser --system` was combined with the ephemeral browser setting,
+   * which only the browser Latchkey controls can honour.
+   */
+  systemBrowserCannotBeEphemeral: 'SYSTEM_BROWSER_CANNOT_BE_EPHEMERAL',
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];

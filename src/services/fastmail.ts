@@ -18,6 +18,8 @@ import {
   tryParseJson,
 } from '../apiCredentials/account.js';
 import { runCapturedAsync } from '../curl.js';
+import type { EncryptedStorage } from '../encryptedStorage.js';
+import type { BrowserLaunchOptions } from '../playwrightUtils.js';
 import {
   buildLoopbackRedirectUri,
   exchangeCodeForTokens,
@@ -30,14 +32,14 @@ import {
 import {
   Service,
   ServiceSession,
+  type LoginOptions,
   type LoginResult,
   LoginFailedError,
-  LoginCancelledError,
   DynamicClientPrepareInputSchema,
   buildDynamicClientPreparation,
   buildPreparedCredentials,
-  isBrowserClosedError,
 } from './core/base.js';
+import { withOAuthLoginBrowser } from './core/oauthLoginBrowser.js';
 
 // The session document, requested directly. Not `/.well-known/jmap`: that
 // 302s to this URL on a *different* host, and curl drops the Authorization
@@ -198,113 +200,93 @@ class FastmailSession extends ServiceSession {
     return Promise.resolve(null);
   }
 
+  override readonly supportsSystemBrowser = true;
+
   override async login(
-    encryptedStorage: import('../encryptedStorage.js').EncryptedStorage,
-    launchOptions: import('../playwrightUtils.js').BrowserLaunchOptions = {},
-    oldCredentials?: ApiCredentials
+    encryptedStorage: EncryptedStorage,
+    launchOptions: BrowserLaunchOptions = {},
+    oldCredentials?: ApiCredentials,
+    loginOptions: LoginOptions = {}
   ): Promise<LoginResult> {
-    const { withTempBrowserContext } = await import('../playwrightUtils.js');
+    return withOAuthLoginBrowser(encryptedStorage, launchOptions, loginOptions, async (browser) => {
+      // 1. Start OAuth callback server
+      const { port, codePromise } = await startOAuthCallbackServer(
+        LOGIN_TIMEOUT_MS,
+        browser.closeSignal
+      );
+      // A prepared redirect URI wins over the loopback one; the page it
+      // serves has to forward the authorization result to the loopback
+      // callback.
+      const redirectUriOverride = readRedirectUriOverride(oldCredentials);
+      const redirectUri = redirectUriOverride ?? buildLoopbackRedirectUri(port);
 
-    return withTempBrowserContext(encryptedStorage, launchOptions, async ({ context }) => {
-      const page = await context.newPage();
-
-      const abortController = new AbortController();
-      const closeHandler = () => {
-        abortController.abort();
-      };
-      page.on('close', closeHandler);
-      context.on('close', closeHandler);
-
-      try {
-        // 1. Start OAuth callback server
-        const { port, codePromise } = await startOAuthCallbackServer(
-          LOGIN_TIMEOUT_MS,
-          abortController.signal
-        );
-        // A prepared redirect URI wins over the loopback one; the page it
-        // serves has to forward the authorization result to the loopback
-        // callback.
-        const redirectUriOverride = readRedirectUriOverride(oldCredentials);
-        const redirectUri = redirectUriOverride ?? buildLoopbackRedirectUri(port);
-
-        // 2. Register client or reuse existing client_id.
-        //
-        // Fastmail fixes a client's scopes at registration, so reusing a stored
-        // client id pins the scopes granted the first time. If OAUTH_SCOPES ever
-        // widens, an existing user's next login is refused for asking outside
-        // the old client's scopes, and `latchkey auth clear fastmail --all`
-        // (which drops the stored client id) is the way out.
-        let clientId: string;
-        if (oldCredentials instanceof OAuthCredentials && oldCredentials.clientId) {
-          clientId = oldCredentials.clientId;
-        } else {
-          const registration = await registerClient(redirectUri, this.generateAppName());
-          clientId = registration.client_id;
-        }
-
-        // 3. Generate PKCE verifier/challenge
-        const codeVerifier = generateCodeVerifier();
-        const codeChallenge = generateCodeChallenge(codeVerifier);
-
-        // 4. Open browser to authorization URL
-        const authUrl = new URL(AUTHORIZATION_ENDPOINT);
-        authUrl.searchParams.set('client_id', clientId);
-        authUrl.searchParams.set('redirect_uri', redirectUri);
-        authUrl.searchParams.set('response_type', 'code');
-        authUrl.searchParams.set('scope', OAUTH_SCOPES);
-        authUrl.searchParams.set('resource', JMAP_RESOURCE);
-        authUrl.searchParams.set('code_challenge', codeChallenge);
-        authUrl.searchParams.set('code_challenge_method', 'S256');
-
-        await page.goto(authUrl.toString(), { waitUntil: 'domcontentloaded' });
-
-        // 5. Wait for user to authorize and callback to receive code
-        const code = await codePromise;
-
-        // 6. Exchange code for tokens
-        const tokens = await exchangeCodeForTokens(
-          TOKEN_ENDPOINT,
-          code,
-          clientId,
-          '', // public client, no secret
-          redirectUri,
-          codeVerifier,
-          { resource: JMAP_RESOURCE }
-        );
-
-        const accessTokenExpiresAt = expiryFromExpiresIn(tokens.expires_in);
-
-        await page.close();
-
-        const credentials = new OAuthCredentials(
-          clientId,
-          '', // public client
-          tokens.access_token,
-          tokens.refresh_token,
-          accessTokenExpiresAt,
-          undefined,
-          // Carried over so that a re-login reuses the prepared redirect URI
-          // alongside the prepared client id.
-          redirectUriOverride
-        );
-
-        return {
-          credentials,
-          // The JMAP session document is the only thing that names the
-          // account; Fastmail's token response carries no identity. A session
-          // fetch that fails still leaves usable credentials, so fall back to
-          // the placeholder rather than failing the whole login.
-          account: (await this.service.getAccount?.(credentials)) ?? DEFAULT_ACCOUNT,
-        };
-      } catch (error: unknown) {
-        if (error instanceof Error && isBrowserClosedError(error)) {
-          throw new LoginCancelledError();
-        }
-        throw error;
-      } finally {
-        page.off('close', closeHandler);
-        context.off('close', closeHandler);
+      // 2. Register client or reuse existing client_id.
+      //
+      // Fastmail fixes a client's scopes at registration, so reusing a stored
+      // client id pins the scopes granted the first time. If OAUTH_SCOPES ever
+      // widens, an existing user's next login is refused for asking outside
+      // the old client's scopes, and `latchkey auth clear fastmail --all`
+      // (which drops the stored client id) is the way out.
+      let clientId: string;
+      if (oldCredentials instanceof OAuthCredentials && oldCredentials.clientId) {
+        clientId = oldCredentials.clientId;
+      } else {
+        const registration = await registerClient(redirectUri, this.generateAppName());
+        clientId = registration.client_id;
       }
+
+      // 3. Generate PKCE verifier/challenge
+      const codeVerifier = generateCodeVerifier();
+      const codeChallenge = generateCodeChallenge(codeVerifier);
+
+      // 4. Open browser to authorization URL
+      const authUrl = new URL(AUTHORIZATION_ENDPOINT);
+      authUrl.searchParams.set('client_id', clientId);
+      authUrl.searchParams.set('redirect_uri', redirectUri);
+      authUrl.searchParams.set('response_type', 'code');
+      authUrl.searchParams.set('scope', OAUTH_SCOPES);
+      authUrl.searchParams.set('resource', JMAP_RESOURCE);
+      authUrl.searchParams.set('code_challenge', codeChallenge);
+      authUrl.searchParams.set('code_challenge_method', 'S256');
+
+      await browser.open(authUrl.toString());
+
+      // 5. Wait for user to authorize and callback to receive code
+      const code = await codePromise;
+
+      // 6. Exchange code for tokens
+      const tokens = await exchangeCodeForTokens(
+        TOKEN_ENDPOINT,
+        code,
+        clientId,
+        '', // public client, no secret
+        redirectUri,
+        codeVerifier,
+        { resource: JMAP_RESOURCE }
+      );
+
+      const accessTokenExpiresAt = expiryFromExpiresIn(tokens.expires_in);
+
+      const credentials = new OAuthCredentials(
+        clientId,
+        '', // public client
+        tokens.access_token,
+        tokens.refresh_token,
+        accessTokenExpiresAt,
+        undefined,
+        // Carried over so that a re-login reuses the prepared redirect URI
+        // alongside the prepared client id.
+        redirectUriOverride
+      );
+
+      return {
+        credentials,
+        // The JMAP session document is the only thing that names the
+        // account; Fastmail's token response carries no identity. A session
+        // fetch that fails still leaves usable credentials, so fall back to
+        // the placeholder rather than failing the whole login.
+        account: (await this.service.getAccount?.(credentials)) ?? DEFAULT_ACCOUNT,
+      };
     });
   }
 }

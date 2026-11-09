@@ -39,6 +39,8 @@ import {
   AccountNotFoundError,
   BrowserNotConfiguredError,
   PreparationRequiredError,
+  SystemBrowserLoginNotSupportedError,
+  SystemBrowserCannotBeEphemeralError,
 } from '../sharedOperations.js';
 import {
   BrowserDisabledError,
@@ -93,6 +95,7 @@ const AuthBrowserRequestSchema = z.object({
   params: serviceNameParams.extend({
     account: z.string().optional(),
     strict: z.boolean().optional(),
+    systemBrowser: z.boolean().optional(),
   }),
 });
 
@@ -145,6 +148,8 @@ const KNOWN_ERROR_CLASSES: readonly (abstract new (...args: never[]) => Error)[]
   BrowserNotConfiguredError,
   BrowserFlowsNotSupportedError,
   PreparationRequiredError,
+  SystemBrowserLoginNotSupportedError,
+  SystemBrowserCannotBeEphemeralError,
   LoginCancelledError,
   LoginFailedError,
   PrepareNotSupportedError,
@@ -278,7 +283,10 @@ async function dispatch(
         deps.config,
         parsed.params.serviceName,
         parsed.params.account,
-        { strict: parsed.params.strict ?? false }
+        {
+          strict: parsed.params.strict ?? false,
+          systemBrowser: parsed.params.systemBrowser ?? false,
+        }
       );
 
     case 'auth browser-prepare':
