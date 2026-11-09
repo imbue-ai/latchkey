@@ -98,12 +98,6 @@ export class GoogleApiKeyCredentials implements ApiCredentials {
 }
 
 const DEFAULT_TIMEOUT_MS = 12000;
-/**
- * How long the user has to get through the authorization URL. That covers
- * signing in to Google (password, second factor) as well as the consent
- * screen, hence the generous limit.
- */
-const LOGIN_TIMEOUT_MS = 300_000;
 const GOOGLE_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 
 /**
@@ -961,10 +955,7 @@ class GoogleServiceSession extends ServiceSession {
   }> {
     const allScopes = [...COMMON_SCOPES, ...this.config.scopes];
 
-    const { port, codePromise } = await startOAuthCallbackServer(
-      LOGIN_TIMEOUT_MS,
-      browser.closeSignal
-    );
+    const { port, codePromise } = await startOAuthCallbackServer(browser.closeSignal);
     // A prepared redirect URI wins over the loopback one; the page it serves
     // has to forward the authorization result to the loopback callback.
     const redirectUri = redirectUriOverride ?? buildLoopbackRedirectUri(port);

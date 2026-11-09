@@ -45,9 +45,6 @@ const RAMP_PKCE_TOKEN_ENDPOINT = 'https://api.ramp.com/developer/v1/token/pkce';
 /** Loopback callback path; matches ramp-cli's `/callback`. */
 const RAMP_OAUTH_CALLBACK_PATH = '/callback';
 
-/** Time to wait for the user to finish the hosted login + agent-key approval. */
-const RAMP_LOGIN_TIMEOUT_MS = 300_000;
-
 /**
  * Scopes requested on the authorize URL: exactly the scopes Ramp's agent-tools
  * OpenAPI declares (no regular-REST-only scopes -- agent keys can't use the standard
@@ -125,7 +122,6 @@ class RampOAuthServiceSession extends ServiceSession {
       // 1. Stand up the localhost callback server (random port; Ramp's public
       //    client allows arbitrary loopback ports per RFC 8252).
       const { port, codePromise } = await startOAuthCallbackServer(
-        RAMP_LOGIN_TIMEOUT_MS,
         browser.closeSignal,
         RAMP_OAUTH_CALLBACK_PATH
       );

@@ -146,15 +146,29 @@ export function buildOAuthCallbackPageHtml(outcome: OAuthCallbackOutcome): strin
 }
 
 /**
+ * How long the user has to get through the authorization page before the
+ * callback server gives up: signing in (password manager, second factor),
+ * then the consent screen, and the odd detour such as an account chooser.
+ *
+ * The same for every login on purpose. The timeout is there to stop an
+ * abandoned login from holding a port forever, not to hurry anyone, so it is
+ * generous; and nothing distinguishes one service's users from another's in
+ * how long that takes. A login in the browser Latchkey controls ends as soon
+ * as the browser is closed regardless; for the system browser this is the only
+ * way an abandoned login ends.
+ */
+export const OAUTH_CALLBACK_TIMEOUT_MS = 15 * 60 * 1000;
+
+/**
  * Start a temporary HTTP server to receive OAuth callback.
  * Returns the assigned port and a promise that resolves with the authorization code.
  * The server uses port 0 to get an auto-assigned available port.
- * @param timeoutMs - Timeout in milliseconds
+ * The code promise rejects with {@link OAuthCallbackServerTimeoutError} after
+ * {@link OAUTH_CALLBACK_TIMEOUT_MS}.
  * @param signal - Optional AbortSignal to cancel the server early
  * @param callbackPath - Path to listen for OAuth callback (default: '/oauth2callback')
  */
 export function startOAuthCallbackServer(
-  timeoutMs: number,
   signal?: AbortSignal,
   callbackPath: string = DEFAULT_OAUTH_CALLBACK_PATH
 ): Promise<OAuthCallbackServer> {
@@ -239,7 +253,7 @@ export function startOAuthCallbackServer(
           signal?.removeEventListener('abort', abortHandler);
           cleanup();
           reject(new OAuthCallbackServerTimeoutError());
-        }, timeoutMs);
+        }, OAUTH_CALLBACK_TIMEOUT_MS);
 
         server.on('error', (error) => {
           signal?.removeEventListener('abort', abortHandler);

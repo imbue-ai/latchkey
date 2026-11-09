@@ -98,8 +98,6 @@ const OAUTH_SCOPES =
   'urn:ietf:params:oauth:scope:calendars ' +
   'offline_access';
 
-const LOGIN_TIMEOUT_MS = 120000;
-
 interface RegistrationResponse {
   client_id: string;
   client_name?: string;
@@ -210,10 +208,7 @@ class FastmailSession extends ServiceSession {
   ): Promise<LoginResult> {
     return withOAuthLoginBrowser(encryptedStorage, launchOptions, loginOptions, async (browser) => {
       // 1. Start OAuth callback server
-      const { port, codePromise } = await startOAuthCallbackServer(
-        LOGIN_TIMEOUT_MS,
-        browser.closeSignal
-      );
+      const { port, codePromise } = await startOAuthCallbackServer(browser.closeSignal);
       // A prepared redirect URI wins over the loopback one; the page it
       // serves has to forward the authorization result to the loopback
       // callback.

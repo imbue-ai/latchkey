@@ -43,8 +43,6 @@ import {
 } from './base.js';
 import { withOAuthLoginBrowser } from './oauthLoginBrowser.js';
 
-const LOGIN_TIMEOUT_MS = 120000;
-
 /**
  * The OAuth 2.1 authorization server in front of an MCP server, as published
  * in its `/.well-known/oauth-authorization-server` metadata (RFC 8414). The
@@ -390,10 +388,7 @@ export class RemoteMcpSession extends ServiceSession {
     const { mcpEndpoint, oauth, scopes, issuesRefreshTokens } = this.connection;
 
     return withOAuthLoginBrowser(encryptedStorage, launchOptions, loginOptions, async (browser) => {
-      const { port, codePromise } = await startOAuthCallbackServer(
-        LOGIN_TIMEOUT_MS,
-        browser.closeSignal
-      );
+      const { port, codePromise } = await startOAuthCallbackServer(browser.closeSignal);
       // A prepared redirect URI wins over the loopback one; the page it
       // serves forwards the authorization result to the loopback callback,
       // whose port it reads out of the state below.

@@ -64,7 +64,7 @@ async function requestCallback(port: number, pathWithQuery: string): Promise<Cal
 
 describe('startOAuthCallbackServer', () => {
   it('resolves the code and answers the browser with a page that says the login is complete', async () => {
-    const { port, codePromise } = await startOAuthCallbackServer(5000);
+    const { port, codePromise } = await startOAuthCallbackServer();
 
     const response = await requestCallback(port, '/oauth2callback?code=abc123');
 
@@ -77,7 +77,7 @@ describe('startOAuthCallbackServer', () => {
   });
 
   it('rejects with the reason the authorization server gave and shows it on the page', async () => {
-    const { port, codePromise } = await startOAuthCallbackServer(5000);
+    const { port, codePromise } = await startOAuthCallbackServer();
     const codeRejection = expect(codePromise).rejects.toThrow(
       'Authorization failed: access_denied (user <said> no)'
     );

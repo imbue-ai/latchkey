@@ -48,9 +48,6 @@ const DROPBOX_SCOPES = [
 ] as const;
 const IMPLICITLY_GRANTED_SCOPES = ['account_info.read', 'files.metadata.read'] as const;
 
-// Time allowed for the user to approve the authorization request in the browser.
-const AUTHORIZATION_TIMEOUT_MS = 120000;
-
 // Time allowed for the user to accept the Dropbox API Terms and Conditions.
 const TERMS_OF_SERVICE_USER_INTERACTION_TIMEOUT_MS = 10 * 60 * 1000;
 
@@ -286,10 +283,7 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
     page.context().on('close', closeHandler);
 
     try {
-      const { port, codePromise } = await startOAuthCallbackServer(
-        AUTHORIZATION_TIMEOUT_MS,
-        abortController.signal
-      );
+      const { port, codePromise } = await startOAuthCallbackServer(abortController.signal);
       const redirectUri = buildLoopbackRedirectUri(port);
 
       await this.registerRedirectUri(page, redirectUri);

@@ -921,8 +921,8 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
       '--system',
       'Log in with the system browser. Only works for services whose ' +
         "'systemBrowserLogin' capability is true in 'latchkey services info'. " +
-        'Latchkey cannot tell when the system browser is ' +
-        'closed, so an abandoned login ends only when it times out. Cannot be combined with ' +
+        'Latchkey cannot tell when the system browser is closed, so an abandoned login ends ' +
+        'only when it times out, after 15 minutes. Cannot be combined with ' +
         'LATCHKEY_EPHEMERAL_BROWSER.'
     )
     .action(async (serviceName: string, options: { strict?: boolean; system?: boolean }) => {
