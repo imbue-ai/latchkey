@@ -19,7 +19,7 @@ Usage:
 3. **Check for `latchkey services list`** to get a list of supported services. Use `--viable` to only show the currently configured ones.
 4. **Use `latchkey services info <service_name>`** to get information about a specific service (auth options, credentials status, API docs links, special requirements, etc.).
 5. **If necessary, ask the user to configure credentials first.** Tell the user to run `latchkey auth set` on the machine where latchkey is installed (using the setCredentialsExample from the `services info` command).
-6. **Alternatively, let the user log in with the browser.** If supported for the given service, run `latchkey auth browser <service_name>` to open a browser login pop-up window.
+6. **Alternatively, let the user log in with the browser.** If supported for the given service, run `latchkey auth browser <service_name>` to open a browser login pop-up window. If the `systemBrowserLogin` capability from `services info` is true, `latchkey auth browser --system <service_name>` logs in through the user's own default browser instead.
 7. **Look for the newest documentation of the desired public API online.** If using the `browser` auth command, avoid bot-only endpoints.
 8. **Do not initiate a new login if the credentials status is `valid` or `unknown`** - the user might just not have the necessary permissions for the action you're trying to do.
 

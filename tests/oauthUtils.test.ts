@@ -1,6 +1,10 @@
+import dns from 'node:dns/promises';
+import http from 'node:http';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   buildLoopbackRedirectUri,
+  buildOAuthCallbackPageHtml,
+  startOAuthCallbackServer,
   generateCodeVerifier,
   generateCodeChallenge,
   exchangeCodeForTokens,
@@ -15,8 +19,94 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+interface CallbackResponse {
+  readonly status: number | undefined;
+  readonly contentType: string | undefined;
+  readonly body: string;
+}
+
+function requestFrom(host: string, port: number, pathWithQuery: string): Promise<CallbackResponse> {
+  return new Promise((resolve, reject) => {
+    http
+      .get({ host, port, path: pathWithQuery }, (response) => {
+        let body = '';
+        response.setEncoding('utf-8');
+        response.on('data', (chunk: string) => {
+          body += chunk;
+        });
+        response.on('end', () => {
+          resolve({
+            status: response.statusCode,
+            contentType: response.headers['content-type'],
+            body,
+          });
+        });
+      })
+      .on('error', reject);
+  });
+}
+
+// The server listens on `localhost`, which binds whichever loopback address
+// the name resolves to first, while a client may well pick the other family.
+// A browser tries both; this does the same.
+async function requestCallback(port: number, pathWithQuery: string): Promise<CallbackResponse> {
+  const addresses = await dns.lookup('localhost', { all: true });
+  let lastError: unknown = new Error('localhost resolved to no address');
+  for (const { address } of addresses) {
+    try {
+      return await requestFrom(address, port, pathWithQuery);
+    } catch (error: unknown) {
+      lastError = error;
+    }
+  }
+  throw lastError;
+}
+
 describe('startOAuthCallbackServer', () => {
-  it.todo('add tests');
+  it('resolves the code and answers the browser with a page that says the login is complete', async () => {
+    const { port, codePromise } = await startOAuthCallbackServer();
+
+    const response = await requestCallback(port, '/oauth2callback?code=abc123');
+
+    expect(response.status).toBe(200);
+    expect(response.contentType).toContain('text/html');
+    const body = response.body;
+    expect(body).toContain('Login complete');
+    expect(body).toContain('close this tab');
+    await expect(codePromise).resolves.toBe('abc123');
+  });
+
+  it('rejects with the reason the authorization server gave and shows it on the page', async () => {
+    const { port, codePromise } = await startOAuthCallbackServer();
+    const codeRejection = expect(codePromise).rejects.toThrow(
+      'Authorization failed: access_denied (user <said> no)'
+    );
+
+    const response = await requestCallback(
+      port,
+      `/oauth2callback?error=access_denied&error_description=${encodeURIComponent('user <said> no')}`
+    );
+
+    expect(response.status).toBe(400);
+    const body = response.body;
+    expect(body).toContain('Login failed');
+    expect(body).toContain('user &lt;said&gt; no');
+    expect(body).not.toContain('<said>');
+    await codeRejection;
+  });
+});
+
+describe('buildOAuthCallbackPageHtml', () => {
+  it('escapes the failure reason', () => {
+    const html = buildOAuthCallbackPageHtml({
+      succeeded: false,
+      reason: `<script>alert("x")</script> & 'more'`,
+    });
+    expect(html).not.toContain('<script>');
+    expect(html).toContain(
+      '&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; &#39;more&#39;'
+    );
+  });
 });
 
 describe('buildLoopbackRedirectUri', () => {

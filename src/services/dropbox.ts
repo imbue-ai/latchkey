@@ -64,8 +64,6 @@ const DROPBOX_SCOPES = [
 // Developer Console exposes every scope as an explicit checkbox, so we simply
 // check all of DROPBOX_SCOPES instead of maintaining an implicit-grant list.
 
-// Time allowed for the user to approve the authorization request in the browser.
-const AUTHORIZATION_TIMEOUT_MS = 120000;
 const CODE_ARRIVED = Symbol('codeArrived');
 
 // Time allowed for the user to accept the Dropbox API Terms and Conditions.
@@ -339,10 +337,7 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
     page.context().on('close', closeHandler);
 
     try {
-      const { port, codePromise } = await startOAuthCallbackServer(
-        AUTHORIZATION_TIMEOUT_MS,
-        abortController.signal
-      );
+      const { port, codePromise } = await startOAuthCallbackServer(abortController.signal);
       // A prepared redirect URI wins over the loopback one; the page it serves
       // forwards the authorization result to the loopback callback, whose
       // port it reads out of the `state` parameter below.

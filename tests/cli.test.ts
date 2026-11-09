@@ -810,7 +810,7 @@ describe('CLI commands with dependency injection', () => {
       expect(info.type).toBe('built-in');
       expect(info.baseApiUrls).toEqual(['https://slack.com/api/']);
       expect(info.authOptions).toEqual(['browser', 'set']);
-      expect(info.capabilities).toEqual({ detectsLoginAccount: true });
+      expect(info.capabilities).toEqual({ detectsLoginAccount: true, systemBrowserLogin: false });
       expect(info.credentials).toEqual({});
       expect(info.setCredentialsExample).toBe(
         'latchkey auth set slack -H "Authorization: Bearer xoxb-your-token"'
@@ -2760,8 +2760,12 @@ describe('CLI commands with dependency injection', () => {
     });
 
     it.each([
-      ['--strict asks the session for a strict login', ['--strict'], { strict: true }],
-      ['logs in leniently without --strict', [], { strict: false }],
+      [
+        '--strict asks the session for a strict login',
+        ['--strict'],
+        { strict: true, systemBrowser: false },
+      ],
+      ['logs in leniently without --strict', [], { strict: false, systemBrowser: false }],
     ])('%s', async (_name, extraArguments, expectedLoginOptions) => {
       const originalPlatform = process.platform;
       Object.defineProperty(process, 'platform', { value: 'darwin' });
@@ -2783,6 +2787,78 @@ describe('CLI commands with dependency injection', () => {
         expect(exitCode).toBeNull();
         expect(login.mock.calls[0]?.[3]).toEqual(expectedLoginOptions);
         expect(logs).toContain("Done. Stored credentials for account 'user@example.com'.");
+      } finally {
+        Object.defineProperty(process, 'platform', { value: originalPlatform });
+      }
+    });
+
+    it('--system logs in with the system browser and needs no configured browser', async () => {
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+      try {
+        const login = vi.fn().mockResolvedValue({
+          credentials: new SlackApiCredentials('xoxc-token', 'cookie'),
+          account: 'user@example.com',
+        });
+        const service = createMockService({
+          getSession: vi.fn().mockReturnValue({ login, supportsSystemBrowser: true }),
+        });
+        const deps = createMockDependencies({ registry: new ServiceRegistry([service]) });
+
+        await runCommand(['auth', 'browser', 'slack', '--system'], deps);
+
+        expect(exitCode).toBeNull();
+        expect(login.mock.calls[0]?.[1]).toEqual({});
+        expect(login.mock.calls[0]?.[3]).toEqual({ strict: false, systemBrowser: true });
+        expect(logs).toContain("Done. Stored credentials for account 'user@example.com'.");
+      } finally {
+        Object.defineProperty(process, 'platform', { value: originalPlatform });
+      }
+    });
+
+    it('reports --system under LATCHKEY_EPHEMERAL_BROWSER as JSON on stderr', async () => {
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+      try {
+        const login = vi.fn();
+        const service = createMockService({
+          getSession: vi.fn().mockReturnValue({ login, supportsSystemBrowser: true }),
+        });
+        const deps = createMockDependencies({
+          registry: new ServiceRegistry([service]),
+          config: createMockConfig({ browserEphemeral: true }),
+        });
+
+        await runCommand(['auth', 'browser', 'slack', '--system'], deps);
+
+        expect(exitCode).toBe(1);
+        expect(login).not.toHaveBeenCalled();
+        expect(errorLogs).toHaveLength(1);
+        const reported = JSON.parse(errorLogs[0]!) as { errorCode: string; errorMessage: string };
+        expect(reported.errorCode).toBe(ErrorCodes.systemBrowserCannotBeEphemeral);
+        expect(reported.errorMessage).toContain('LATCHKEY_EPHEMERAL_BROWSER');
+      } finally {
+        Object.defineProperty(process, 'platform', { value: originalPlatform });
+      }
+    });
+
+    it('reports --system for an unsupported service as JSON on stderr', async () => {
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+      try {
+        const login = vi.fn();
+        const service = createMockService({ getSession: vi.fn().mockReturnValue({ login }) });
+        const deps = createMockDependencies({ registry: new ServiceRegistry([service]) });
+
+        await runCommand(['auth', 'browser', 'slack', '--system'], deps);
+
+        expect(exitCode).toBe(1);
+        expect(login).not.toHaveBeenCalled();
+        expect(errorLogs).toHaveLength(1);
+        const reported = JSON.parse(errorLogs[0]!) as { errorCode: string; errorMessage: string };
+        expect(reported.errorCode).toBe(ErrorCodes.systemBrowserLoginNotSupported);
+        expect(reported.errorMessage).toContain("'slack'");
+        expect(reported.errorMessage).toContain('without --system');
       } finally {
         Object.defineProperty(process, 'platform', { value: originalPlatform });
       }
@@ -4127,6 +4203,23 @@ describe('CLI commands with dependency injection', () => {
       expect(JSON.parse(init.body as string) as unknown).toEqual({
         command: 'auth browser',
         params: { serviceName: 'slack', strict: true },
+      });
+    });
+
+    it('forwards `auth browser --system` to the gateway as a system browser login', async () => {
+      const fetchMock = makeFetchMock(
+        new Response(JSON.stringify({ result: null }), { status: 200 })
+      );
+      const deps = createMockDependencies({
+        config: createMockConfig({ gatewayUrl: GATEWAY_URL }),
+      });
+
+      await runCommand(['auth', 'browser', 'slack', '--system'], deps);
+
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(JSON.parse(init.body as string) as unknown).toEqual({
+        command: 'auth browser',
+        params: { serviceName: 'slack', systemBrowser: true },
       });
     });
 

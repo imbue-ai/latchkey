@@ -48,6 +48,7 @@ import {
   isResponseBodyUnavailableError,
   isTimeoutError,
 } from '../core/base.js';
+import { withOAuthLoginBrowser, type OAuthLoginBrowser } from '../core/oauthLoginBrowser.js';
 import type { EncryptedStorage } from '../../encryptedStorage.js';
 import { DEFAULT_APP_NAME_PREFIX } from '../../config.js';
 
@@ -97,12 +98,6 @@ export class GoogleApiKeyCredentials implements ApiCredentials {
 }
 
 const DEFAULT_TIMEOUT_MS = 12000;
-/**
- * How long the user has to get through the authorization URL. That covers
- * signing in to Google (password, second factor) as well as the consent
- * screen, hence the generous limit.
- */
-const LOGIN_TIMEOUT_MS = 300_000;
 const GOOGLE_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 
 /**
@@ -791,6 +786,13 @@ class GoogleServiceSession extends ServiceSession {
   }
 
   /**
+   * Login needs nothing of the browser but to show the authorization URL, so
+   * it can run in the system browser. `prepare` cannot: it drives the Cloud
+   * Console.
+   */
+  override readonly supportsSystemBrowser = true;
+
+  /**
    * The OAuth client is created during `prepare` (see below), not during login:
    * login only runs the OAuth flow against the already prepared client. So it
    * opens the authorization URL straight away — which has Google ask the user
@@ -816,20 +818,15 @@ class GoogleServiceSession extends ServiceSession {
     // loopback redirect URIs anyway.
     const redirectUriOverride = oldCredentials.redirectUri;
 
-    return withTempBrowserContext(encryptedStorage, launchOptions, async ({ context }) => {
-      const page = await context.newPage();
-
+    return withOAuthLoginBrowser(encryptedStorage, launchOptions, loginOptions, async (browser) => {
       const { accessToken, refreshToken, accessTokenExpiresAt, refreshTokenExpiresAt } =
         await this.performOAuthFlow(
-          context,
-          page,
+          browser,
           clientId,
           clientSecret,
           redirectUriOverride,
           loginOptions.strict ?? false
         );
-
-      await page.close();
 
       const credentials = new OAuthCredentials(
         clientId,
@@ -945,8 +942,7 @@ class GoogleServiceSession extends ServiceSession {
   }
 
   private async performOAuthFlow(
-    context: BrowserContext,
-    page: Page,
+    browser: OAuthLoginBrowser,
     clientId: string,
     clientSecret: string,
     redirectUriOverride: string | undefined,
@@ -957,79 +953,59 @@ class GoogleServiceSession extends ServiceSession {
     accessTokenExpiresAt?: string;
     refreshTokenExpiresAt?: string;
   }> {
-    const abortController = new AbortController();
-    const closeHandler = () => {
-      abortController.abort();
-    };
-    page.on('close', closeHandler);
-    context.on('close', closeHandler);
-
     const allScopes = [...COMMON_SCOPES, ...this.config.scopes];
 
-    try {
-      const { port, codePromise } = await startOAuthCallbackServer(
-        LOGIN_TIMEOUT_MS,
-        abortController.signal
-      );
-      // A prepared redirect URI wins over the loopback one; the page it serves
-      // has to forward the authorization result to the loopback callback.
-      const redirectUri = redirectUriOverride ?? buildLoopbackRedirectUri(port);
+    const { port, codePromise } = await startOAuthCallbackServer(browser.closeSignal);
+    // A prepared redirect URI wins over the loopback one; the page it serves
+    // has to forward the authorization result to the loopback callback.
+    const redirectUri = redirectUriOverride ?? buildLoopbackRedirectUri(port);
 
-      // PKCE (RFC 7636): bind the authorization code to a one-time verifier so a
-      // stolen code cannot be redeemed without it. We keep sending the client
-      // secret too so this is confidential-client + PKCE, defense-in-depth.
-      const codeVerifier = generateCodeVerifier();
-      const codeChallenge = generateCodeChallenge(codeVerifier);
+    // PKCE (RFC 7636): bind the authorization code to a one-time verifier so a
+    // stolen code cannot be redeemed without it. We keep sending the client
+    // secret too so this is confidential-client + PKCE, defense-in-depth.
+    const codeVerifier = generateCodeVerifier();
+    const codeChallenge = generateCodeChallenge(codeVerifier);
 
-      const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-      authUrl.searchParams.set('client_id', clientId);
-      authUrl.searchParams.set('redirect_uri', redirectUri);
-      authUrl.searchParams.set('response_type', 'code');
-      authUrl.searchParams.set('scope', allScopes.join(' '));
-      authUrl.searchParams.set('access_type', 'offline');
-      authUrl.searchParams.set('prompt', 'consent');
-      authUrl.searchParams.set('code_challenge', codeChallenge);
-      authUrl.searchParams.set('code_challenge_method', 'S256');
+    const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+    authUrl.searchParams.set('client_id', clientId);
+    authUrl.searchParams.set('redirect_uri', redirectUri);
+    authUrl.searchParams.set('response_type', 'code');
+    authUrl.searchParams.set('scope', allScopes.join(' '));
+    authUrl.searchParams.set('access_type', 'offline');
+    authUrl.searchParams.set('prompt', 'consent');
+    authUrl.searchParams.set('code_challenge', codeChallenge);
+    authUrl.searchParams.set('code_challenge_method', 'S256');
 
-      await page.goto(authUrl.toString(), { waitUntil: 'domcontentloaded' });
+    await browser.open(authUrl.toString());
 
-      const code = await codePromise;
-      const tokens = await exchangeCodeForTokens(
-        GOOGLE_TOKEN_ENDPOINT,
-        code,
-        clientId,
-        clientSecret,
-        redirectUri,
-        codeVerifier
-      );
+    const code = await codePromise;
+    const tokens = await exchangeCodeForTokens(
+      GOOGLE_TOKEN_ENDPOINT,
+      code,
+      clientId,
+      clientSecret,
+      redirectUri,
+      codeVerifier
+    );
 
-      // Google's consent screen lets the user tick only some of the requested
-      // scopes; the token then silently covers just those. The token response
-      // reports what was granted, so a strict login can refuse the partial
-      // grant here rather than store credentials that fail later on the API.
-      if (strict) {
-        const scopesNotGranted = findScopesNotGranted(allScopes, tokens.scope);
-        if (scopesNotGranted.length > 0) {
-          throw new ScopesNotGrantedError(this.service.displayName, scopesNotGranted);
-        }
+    // Google's consent screen lets the user tick only some of the requested
+    // scopes; the token then silently covers just those. The token response
+    // reports what was granted, so a strict login can refuse the partial
+    // grant here rather than store credentials that fail later on the API.
+    if (strict) {
+      const scopesNotGranted = findScopesNotGranted(allScopes, tokens.scope);
+      if (scopesNotGranted.length > 0) {
+        throw new ScopesNotGrantedError(this.service.displayName, scopesNotGranted);
       }
-
-      const accessTokenExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
-
-      return {
-        accessToken: tokens.access_token,
-        refreshToken: tokens.refresh_token,
-        accessTokenExpiresAt,
-      };
-    } catch (error: unknown) {
-      if (error instanceof Error && isBrowserClosedError(error)) {
-        throw new LoginCancelledError();
-      }
-      throw error;
-    } finally {
-      page.off('close', closeHandler);
-      context.off('close', closeHandler);
     }
+
+    const accessTokenExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
+
+    return {
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      accessTokenExpiresAt,
+    };
   }
 }
 

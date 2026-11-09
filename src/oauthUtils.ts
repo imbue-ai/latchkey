@@ -106,16 +106,87 @@ export interface OAuthCallbackServer {
   codePromise: Promise<string>;
 }
 
+export type OAuthCallbackOutcome =
+  | { readonly succeeded: true }
+  | { readonly succeeded: false; readonly reason: string };
+
+function escapeHtml(text: string): string {
+  return text
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+/**
+ * The page the browser lands on after the authorization server redirects it
+ * to the loopback callback. It matters for the system browser, where it stays
+ * open: Latchkey cannot close a tab it did not open, and browsers refuse to
+ * let a page close itself unless a script opened it. So the page says what
+ * happened and that the tab can go. It does not name Latchkey: when Latchkey
+ * is embedded in an application, the user may never have heard of it.
+ */
+export function buildOAuthCallbackPageHtml(outcome: OAuthCallbackOutcome): string {
+  const heading = outcome.succeeded ? 'Login complete' : 'Login failed';
+  const detail = outcome.succeeded
+    ? 'You can close this tab.'
+    : `${escapeHtml(outcome.reason)} You can close this tab and try again.`;
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>${heading}</title>
+  <style>
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #f5f5f5;
+      color: #333;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    main { max-width: 32em; padding: 2em; text-align: center; }
+    h1 { font-size: 1.5em; margin: 0 0 0.5em; }
+    p { color: #555; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>${heading}</h1>
+    <p>${detail}</p>
+  </main>
+</body>
+</html>
+`;
+}
+
+/**
+ * How long the user has to get through the authorization page before the
+ * callback server gives up: signing in (password manager, second factor),
+ * then the consent screen, and the odd detour such as an account chooser.
+ *
+ * The same for every login on purpose. The timeout is there to stop an
+ * abandoned login from holding a port forever, not to hurry anyone, so it is
+ * generous; and nothing distinguishes one service's users from another's in
+ * how long that takes. A login in the browser Latchkey controls ends as soon
+ * as the browser is closed regardless; for the system browser this is the only
+ * way an abandoned login ends.
+ */
+export const OAUTH_CALLBACK_TIMEOUT_MS = 15 * 60 * 1000;
+
 /**
  * Start a temporary HTTP server to receive OAuth callback.
  * Returns the assigned port and a promise that resolves with the authorization code.
  * The server uses port 0 to get an auto-assigned available port.
- * @param timeoutMs - Timeout in milliseconds
+ * The code promise rejects with {@link OAuthCallbackServerTimeoutError} after
+ * {@link OAUTH_CALLBACK_TIMEOUT_MS}.
  * @param signal - Optional AbortSignal to cancel the server early
  * @param callbackPath - Path to listen for OAuth callback (default: '/oauth2callback')
  */
 export function startOAuthCallbackServer(
-  timeoutMs: number,
   signal?: AbortSignal,
   callbackPath: string = DEFAULT_OAUTH_CALLBACK_PATH
 ): Promise<OAuthCallbackServer> {
@@ -167,8 +238,8 @@ export function startOAuthCallbackServer(
             const code = parsedUrl.searchParams.get('code') ?? undefined;
 
             if (code) {
-              res.writeHead(200, { 'Content-Type': 'text/plain' });
-              res.end('OK');
+              res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+              res.end(buildOAuthCallbackPageHtml({ succeeded: true }));
               signal?.removeEventListener('abort', abortHandler);
               cleanup();
               resolve(code);
@@ -184,8 +255,8 @@ export function startOAuthCallbackServer(
                   ? 'No authorization code received from OAuth callback.'
                   : `Authorization failed: ${error}` +
                     (errorDescription === null ? '' : ` (${errorDescription})`);
-              res.writeHead(400, { 'Content-Type': 'text/plain' });
-              res.end('ERROR');
+              res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+              res.end(buildOAuthCallbackPageHtml({ succeeded: false, reason }));
               signal?.removeEventListener('abort', abortHandler);
               cleanup();
               reject(new LoginFailedError(reason));
@@ -200,7 +271,7 @@ export function startOAuthCallbackServer(
           signal?.removeEventListener('abort', abortHandler);
           cleanup();
           reject(new OAuthCallbackServerTimeoutError());
-        }, timeoutMs);
+        }, OAUTH_CALLBACK_TIMEOUT_MS);
 
         server.on('error', (error) => {
           signal?.removeEventListener('abort', abortHandler);
