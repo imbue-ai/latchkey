@@ -324,7 +324,7 @@ export class AwsCredentials implements ApiCredentials {
 export class Aws extends Service {
   readonly name = 'aws';
   readonly displayName = 'AWS';
-  readonly baseApiUrls = [/^https:\/\/[^/]*\.amazonaws\.com\//] as const;
+  readonly baseApiUrls = [/^https:\/\/[A-Za-z0-9._-]+\.amazonaws\.com\//] as const;
   readonly loginUrl = 'https://console.aws.amazon.com/';
   readonly info = 'https://docs.aws.amazon.com/.';
 

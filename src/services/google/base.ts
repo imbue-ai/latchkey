@@ -63,6 +63,8 @@ export const GoogleApiKeyCredentialsSchema = z.object({
 
 export type GoogleApiKeyCredentialsData = z.infer<typeof GoogleApiKeyCredentialsSchema>;
 
+const GOOGLE_APIS_URL_PATTERN = /^https:\/\/[a-z0-9.-]+\.googleapis\.com\//;
+
 export class GoogleApiKeyCredentials implements ApiCredentials {
   static readonly objectType = 'googleApiKey' as const;
   readonly objectType = GoogleApiKeyCredentials.objectType;
@@ -74,7 +76,7 @@ export class GoogleApiKeyCredentials implements ApiCredentials {
 
   injectIntoCurlCall(curlArguments: readonly string[]): Promise<readonly string[]> {
     const url = extractUrlFromCurlArguments(curlArguments);
-    if (!url?.startsWith('https://') || !url.includes('.googleapis.com')) {
+    if (url === null || !GOOGLE_APIS_URL_PATTERN.test(url)) {
       return Promise.resolve(curlArguments);
     }
     return Promise.resolve(['-H', `X-Goog-Api-Key: ${this.apiKey}`, ...curlArguments]);

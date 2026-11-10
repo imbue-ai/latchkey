@@ -100,6 +100,23 @@ export function canonicalizeServiceName(name: string): string {
   return canonicalized;
 }
 
+const URL_PREFIX_WITHOUT_PATH_PATTERN = /^[a-z][a-z0-9+.-]*:\/\/[^/]*$/i;
+
+/**
+ * Prefix-match a URL against a base API URL without letting the match end in
+ * the middle of a host: `https://example.com` must not match
+ * `https://example.com.evil.example/` or `https://example.com@evil.example/`.
+ */
+function matchesUrlPrefix(url: string, baseApiUrl: string): boolean {
+  if (!url.startsWith(baseApiUrl)) {
+    return false;
+  }
+  if (!URL_PREFIX_WITHOUT_PATH_PATTERN.test(baseApiUrl)) {
+    return true;
+  }
+  return url.length === baseApiUrl.length || url[baseApiUrl.length] === '/';
+}
+
 export class ServiceRegistry {
   private readonly _services: Service[];
 
@@ -137,7 +154,7 @@ export class ServiceRegistry {
   private matchesUrl(service: Service, url: string): boolean {
     for (const baseApiUrl of service.baseApiUrls) {
       if (typeof baseApiUrl === 'string') {
-        if (url.startsWith(baseApiUrl)) {
+        if (matchesUrlPrefix(url, baseApiUrl)) {
           return true;
         }
       } else {

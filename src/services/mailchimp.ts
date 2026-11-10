@@ -7,7 +7,7 @@ export class Mailchimp extends Service {
   readonly displayName = 'Mailchimp';
   readonly baseApiUrls = [
     'https://api.mailchimp.com/',
-    /^https:\/\/[^/]+\.api\.mailchimp\.com\//,
+    /^https:\/\/[a-z0-9-]+\.api\.mailchimp\.com\//,
   ] as const;
   readonly loginUrl = 'https://login.mailchimp.com/';
   readonly info = 'https://mailchimp.com/developer/marketing/api/.';

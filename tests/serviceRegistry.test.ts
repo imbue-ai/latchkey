@@ -182,6 +182,50 @@ describe('ServiceRegistry', () => {
     });
   });
 
+  describe('hostile URLs', () => {
+    const trustedHostSuffixes = [
+      'x.api.mailchimp.com/',
+      's3.amazonaws.com/',
+      'api.stripe.com/',
+      'phl.api.fastmail.com/',
+      'phl-www.fastmailusercontent.com/',
+      'caldav.fastmail.com/',
+      'sheets.googleapis.com/',
+      'github.com/owner/repository/info/refs',
+    ] as const;
+    const hostileUrlBuilders = [
+      (suffix: string) => `https://evil.example?${suffix}`,
+      (suffix: string) => `https://evil.example#${suffix}`,
+      (suffix: string) => `https://evil.example\\${suffix}`,
+      (suffix: string) => `https://evil.example\\.${suffix}`,
+      (suffix: string) => `https://evil.example/${suffix}`,
+      (suffix: string) => `https://evil.example:443?.${suffix}`,
+      (suffix: string) => `https://user@evil.example?.${suffix}`,
+      (suffix: string) => `https://evil.example?@${suffix}`,
+      (suffix: string) => `https://evil.example/.${suffix}`,
+    ] as const;
+
+    for (const suffix of trustedHostSuffixes) {
+      for (const buildHostileUrl of hostileUrlBuilders) {
+        const url = buildHostileUrl(suffix);
+        it(`should not match ${url}`, () => {
+          expect(BUILTIN_SERVICE_REGISTRY.getCandidatesByUrl(url)).toEqual([]);
+        });
+      }
+    }
+
+    it('should not let a base API URL without a path match a longer host', () => {
+      const registry = new ServiceRegistry([
+        new RegisteredService('pathless', 'https://api.example.com'),
+      ]);
+      expect(registry.getByUrl('https://api.example.com')?.name).toBe('pathless');
+      expect(registry.getByUrl('https://api.example.com/things')?.name).toBe('pathless');
+      expect(registry.getByUrl('https://api.example.com.evil.example/things')).toBeNull();
+      expect(registry.getByUrl('https://api.example.com@evil.example/things')).toBeNull();
+      expect(registry.getByUrl('https://api.example.com:8443/things')).toBeNull();
+    });
+  });
+
   describe('getCandidatesByUrl', () => {
     it('should return every service matching a shared Drive files URL', () => {
       const candidates = BUILTIN_SERVICE_REGISTRY.getCandidatesByUrl(
