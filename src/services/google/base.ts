@@ -955,9 +955,17 @@ class GoogleServiceSession extends ServiceSession {
   }> {
     const allScopes = [...COMMON_SCOPES, ...this.config.scopes];
 
-    const { port, codePromise } = await startOAuthCallbackServer(browser.closeSignal);
+    // The callback server only accepts the redirect that echoes its `state`,
+    // so a request forged by something else on this machine can neither pass
+    // off a code of its own nor abort the login.
+    const { port, codePromise, state } = await startOAuthCallbackServer(
+      browser.closeSignal,
+      undefined,
+      { validateState: true }
+    );
     // A prepared redirect URI wins over the loopback one; the page it serves
-    // has to forward the authorization result to the loopback callback.
+    // has to forward the authorization result to the loopback callback, whose
+    // port it reads out of `state`.
     const redirectUri = redirectUriOverride ?? buildLoopbackRedirectUri(port);
 
     // PKCE (RFC 7636): bind the authorization code to a one-time verifier so a
@@ -975,6 +983,7 @@ class GoogleServiceSession extends ServiceSession {
     authUrl.searchParams.set('prompt', 'consent');
     authUrl.searchParams.set('code_challenge', codeChallenge);
     authUrl.searchParams.set('code_challenge_method', 'S256');
+    authUrl.searchParams.set('state', state);
 
     await browser.open(authUrl.toString());
 

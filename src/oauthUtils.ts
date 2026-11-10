@@ -6,6 +6,7 @@ import * as crypto from 'node:crypto';
 import { randomUUID } from 'node:crypto';
 import * as http from 'node:http';
 import { type ApiCredentials, OAuthCredentials } from './apiCredentials/base.js';
+import { equalsInConstantTime } from './constantTimeEquals.js';
 import { runCapturedAsync } from './curl.js';
 import { LoginCancelledError, LoginFailedError } from './services/core/base.js';
 
@@ -104,6 +105,24 @@ export interface OAuthCallbackServer {
   port: number;
   /** Promise that resolves with the authorization code when received */
   codePromise: Promise<string>;
+  /**
+   * The `state` to send on the authorization request (see
+   * {@link buildAuthorizationState}). The server insists on the callback
+   * echoing it only when started with `validateState`.
+   */
+  state: string;
+}
+
+export interface OAuthCallbackServerOptions {
+  /**
+   * Refuse callbacks that do not carry {@link OAuthCallbackServer.state}
+   * (RFC 6749 §10.12). Anything running on the machine can request the
+   * loopback callback; only the authorization server's redirect knows the
+   * state, so a request without it is answered with 400 and otherwise
+   * ignored: it neither completes nor aborts the login. Opt-in because
+   * plugins built on earlier versions send no state at all.
+   */
+  readonly validateState?: boolean;
 }
 
 export type OAuthCallbackOutcome =
@@ -188,7 +207,8 @@ export const OAUTH_CALLBACK_TIMEOUT_MS = 15 * 60 * 1000;
  */
 export function startOAuthCallbackServer(
   signal?: AbortSignal,
-  callbackPath: string = DEFAULT_OAUTH_CALLBACK_PATH
+  callbackPath: string = DEFAULT_OAUTH_CALLBACK_PATH,
+  options: OAuthCallbackServerOptions = {}
 ): Promise<OAuthCallbackServer> {
   const server = http.createServer();
 
@@ -206,6 +226,7 @@ export function startOAuthCallbackServer(
       }
 
       const port = address.port;
+      const state = buildAuthorizationState(port);
       let timeout: NodeJS.Timeout | undefined;
 
       const codePromise = new Promise<string>((resolve, reject) => {
@@ -235,6 +256,20 @@ export function startOAuthCallbackServer(
           const parsedUrl = new URL(req.url ?? '', `http://localhost:${port.toString()}`);
 
           if (parsedUrl.pathname === callbackPath) {
+            if (options.validateState === true) {
+              const receivedState = parsedUrl.searchParams.get('state');
+              if (receivedState === null || !equalsInConstantTime(state, receivedState)) {
+                res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+                res.end(
+                  buildOAuthCallbackPageHtml({
+                    succeeded: false,
+                    reason: 'The callback did not carry the expected state.',
+                  })
+                );
+                return;
+              }
+            }
+
             const code = parsedUrl.searchParams.get('code') ?? undefined;
 
             if (code) {
@@ -280,7 +315,7 @@ export function startOAuthCallbackServer(
         });
       });
 
-      resolveServer({ port, codePromise });
+      resolveServer({ port, codePromise, state });
     });
   });
 }
