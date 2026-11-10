@@ -204,6 +204,7 @@ export type {
 } from './playwrightUtils.js';
 export type {
   OAuthCallbackServer,
+  OAuthCallbackServerOptions,
   OAuthTokenExchangeResponse,
   OAuthTokenResponse,
 } from './oauthUtils.js';

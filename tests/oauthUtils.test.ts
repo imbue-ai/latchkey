@@ -94,6 +94,71 @@ describe('startOAuthCallbackServer', () => {
     expect(body).not.toContain('<said>');
     await codeRejection;
   });
+
+  it('hands out a state carrying its port, for the authorization request', async () => {
+    const { port, state } = await startOAuthCallbackServer();
+
+    expect(state.endsWith(`.${port.toString()}`)).toBe(true);
+    expect(state.length).toBeGreaterThan(port.toString().length + 20);
+  });
+
+  it('without validateState: accepts a callback that carries no state', async () => {
+    const { port, codePromise } = await startOAuthCallbackServer();
+
+    const response = await requestCallback(port, '/oauth2callback?code=abc123');
+
+    expect(response.status).toBe(200);
+    await expect(codePromise).resolves.toBe('abc123');
+  });
+
+  it('with validateState: resolves the code once the callback echoes the state', async () => {
+    const { port, codePromise, state } = await startOAuthCallbackServer(undefined, undefined, {
+      validateState: true,
+    });
+
+    const response = await requestCallback(
+      port,
+      `/oauth2callback?code=abc123&state=${encodeURIComponent(state)}`
+    );
+
+    expect(response.status).toBe(200);
+    await expect(codePromise).resolves.toBe('abc123');
+  });
+
+  it('with validateState: refuses a callback with a wrong or missing state and keeps waiting', async () => {
+    const { port, codePromise, state } = await startOAuthCallbackServer(undefined, undefined, {
+      validateState: true,
+    });
+    let settled = false;
+    void codePromise.then(
+      () => (settled = true),
+      () => (settled = true)
+    );
+
+    const forgedCode = await requestCallback(port, '/oauth2callback?code=forged&state=wrong');
+    expect(forgedCode.status).toBe(400);
+    expect(forgedCode.body).toContain('Login failed');
+    expect(forgedCode.body).toContain('expected state');
+
+    const forgedError = await requestCallback(port, '/oauth2callback?error=access_denied');
+    expect(forgedError.status).toBe(400);
+
+    const prefixOnly = await requestCallback(
+      port,
+      `/oauth2callback?code=forged&state=${encodeURIComponent(state.slice(0, -1))}`
+    );
+    expect(prefixOnly.status).toBe(400);
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(settled).toBe(false);
+
+    const genuine = await requestCallback(
+      port,
+      `/oauth2callback?code=abc123&state=${encodeURIComponent(state)}`
+    );
+    expect(genuine.status).toBe(200);
+    await expect(codePromise).resolves.toBe('abc123');
+  });
 });
 
 describe('buildOAuthCallbackPageHtml', () => {

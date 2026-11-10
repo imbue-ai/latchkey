@@ -77,12 +77,12 @@ describe('extractTargetUrl', () => {
 describe('buildCurlArguments', () => {
   it('should build GET request with URL only', () => {
     const args = buildCurlArguments('GET', new Map(), 'https://api.example.com/test', false);
-    expect(args).toEqual(['https://api.example.com/test']);
+    expect(args).toEqual(['--globoff', 'https://api.example.com/test']);
   });
 
   it('should add -X for non-GET methods', () => {
     const args = buildCurlArguments('POST', new Map(), 'https://api.example.com/test', false);
-    expect(args).toEqual(['-X', 'POST', 'https://api.example.com/test']);
+    expect(args).toEqual(['--globoff', '-X', 'POST', 'https://api.example.com/test']);
   });
 
   it('should forward headers', () => {

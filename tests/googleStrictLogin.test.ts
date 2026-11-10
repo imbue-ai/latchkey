@@ -19,7 +19,10 @@ const GMAIL_SCOPES = (GOOGLE_GMAIL as unknown as { config: GoogleServiceConfig }
  * loopback callback server are stubbed out, and curl answers the token exchange
  * (and the credential check that follows it) with the given token response.
  */
-function stubGoogleLogin(tokenResponse: Record<string, unknown>): void {
+function stubGoogleLogin(tokenResponse: Record<string, unknown>): {
+  fakePage: { goto: ReturnType<typeof vi.fn> };
+  startOAuthCallbackServer: ReturnType<typeof vi.fn>;
+} {
   const fakePage = {
     goto: vi.fn().mockResolvedValue(undefined),
     close: vi.fn().mockResolvedValue(undefined),
@@ -38,16 +41,22 @@ function stubGoogleLogin(tokenResponse: Record<string, unknown>): void {
         context: fakeContext,
       } as unknown as playwrightUtils.BrowserWithContext)
   );
-  vi.spyOn(oauthUtils, 'startOAuthCallbackServer').mockResolvedValue({
-    port: 12345,
-    codePromise: Promise.resolve('auth-code'),
-  });
+  const startOAuthCallbackServer = vi
+    .spyOn(oauthUtils, 'startOAuthCallbackServer')
+    .mockResolvedValue({
+      port: 12345,
+      codePromise: Promise.resolve('auth-code'),
+      state: EXPECTED_STATE,
+    });
   vi.spyOn(curl, 'runCapturedAsync').mockResolvedValue({
     returncode: 0,
     stdout: JSON.stringify(tokenResponse),
     stderr: '',
   });
+  return { fakePage, startOAuthCallbackServer };
 }
+
+const EXPECTED_STATE = 'random-prefix.12345';
 
 const FULL_GRANT = {
   access_token: 'access',
@@ -68,17 +77,33 @@ const PARTIAL_GRANT = {
 };
 
 function login(tokenResponse: Record<string, unknown>, strict: boolean) {
-  stubGoogleLogin(tokenResponse);
-  return GOOGLE_GMAIL.getSession('Latchkey-').login(
+  const stubs = stubGoogleLogin(tokenResponse);
+  const result = GOOGLE_GMAIL.getSession('Latchkey-').login(
     new EncryptedStorage(TEST_ENCRYPTION_KEY),
     {},
     OAuthCredentials.prepared('client-id', 'client-secret'),
     { strict }
   );
+  return Object.assign(result, stubs);
 }
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+describe('Google login state', () => {
+  it('sends the callback server state on the authorization request and has the server validate it', async () => {
+    const pendingLogin = login(FULL_GRANT, false);
+    await pendingLogin;
+
+    expect(pendingLogin.startOAuthCallbackServer).toHaveBeenCalledWith(
+      expect.anything(),
+      undefined,
+      { validateState: true }
+    );
+    const authorizationUrl = new URL(pendingLogin.fakePage.goto.mock.calls[0]?.[0] as string);
+    expect(authorizationUrl.searchParams.get('state')).toBe(EXPECTED_STATE);
+  });
 });
 
 describe('Google strict login', () => {

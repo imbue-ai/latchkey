@@ -149,7 +149,9 @@ export function buildCurlArguments(
   targetUrl: string,
   hasBody: boolean
 ): readonly string[] {
-  const args: string[] = [];
+  // One incoming request must become exactly one upstream request, to the URL
+  // the permission check saw, so curl must not expand `{}` / `[]` in it.
+  const args: string[] = ['--globoff'];
 
   if (method !== 'GET') {
     args.push('-X', method);
