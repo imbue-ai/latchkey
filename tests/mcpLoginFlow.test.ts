@@ -11,6 +11,7 @@ import {
   OAuthCredentials,
 } from '../src/apiCredentials/base.js';
 import { resetAsyncSubprocessRunner, setAsyncSubprocessRunner } from '../src/curl.js';
+import { PrepareInputInvalidError } from '../src/services/core/base.js';
 import { LoginFlowParamsInvalidError } from '../src/services/core/loginFlows/base.js';
 import { LOGIN_FLOWS, resolveLoginFlow } from '../src/services/core/loginFlows/registry.js';
 import { McpLoginFlow } from '../src/services/core/loginFlows/mcp.js';
@@ -134,13 +135,36 @@ describe('McpLoginFlow', () => {
     expect(await service.refreshCredentials!(new AuthorizationBearer('t'))).toBeNull();
   });
 
-  it('leaves the capturing flows without a check or a refresh', () => {
+  it('accepts a prepared redirect URI and client id via auth prepare', () => {
+    const service = registerService(new McpLoginFlow(PARAMS));
+
+    const prepared = service.prepareFromJson!({
+      clientId: 'client-1',
+      redirectUri: 'https://example.com/oauth-callback',
+    });
+
+    expect(prepared).toBeInstanceOf(OAuthCredentials);
+    expect((prepared as OAuthCredentials).clientId).toBe('client-1');
+    expect((prepared as OAuthCredentials).redirectUri).toBe('https://example.com/oauth-callback');
+  });
+
+  it('rejects invalid prepare input, naming the registered service', () => {
+    const service = registerService(new McpLoginFlow(PARAMS));
+
+    expect(() => service.prepareFromJson!({ redirectUri: 'not a url' })).toThrow(
+      PrepareInputInvalidError
+    );
+    expect(() => service.prepareFromJson!({ redirectUri: 'not a url' })).toThrow(/my-mcp/);
+  });
+
+  it('leaves the capturing flows without a check, a refresh, or a preparation', () => {
     const service = new RegisteredService('my-service', 'https://app.example.com/api/', {
       loginUrl: 'https://app.example.com/login',
       loginFlow: resolveLoginFlow('cookie-capture', { cookieKeys: ['sessionid'] }),
     });
 
     expect('refreshCredentials' in service).toBe(false);
+    expect('prepareFromJson' in service).toBe(false);
     expect(service.credentialCheckCurlArguments).toEqual([]);
   });
 });

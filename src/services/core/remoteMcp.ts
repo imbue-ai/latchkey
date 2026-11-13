@@ -500,6 +500,21 @@ export async function refreshRemoteMcpCredentials(
 }
 
 /**
+ * Accepts an OAuth client id to reuse instead of registering a new client,
+ * and/or the redirect URI to use — prepared in advance via `latchkey auth
+ * prepare` and stored as token-less OAuth credentials until login (see
+ * `DynamicClientPrepareInputSchema`).
+ */
+export function prepareRemoteMcpClient(serviceName: string, parsedJson: unknown): ApiCredentials {
+  return buildPreparedCredentials(
+    serviceName,
+    DynamicClientPrepareInputSchema,
+    parsedJson,
+    buildDynamicClientPreparation
+  );
+}
+
+/**
  * A service that is a remote MCP server behind OAuth 2.1 with dynamic client
  * registration. Instantiated directly from a definition for the common case;
  * subclassed by servers that can tell which account a token belongs to.
@@ -531,19 +546,8 @@ export class RemoteMcpService extends Service {
     return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
   }
 
-  /**
-   * Accepts an OAuth client id to reuse instead of registering a new client,
-   * and/or the redirect URI to use — prepared in advance via `latchkey auth
-   * prepare` and stored as token-less OAuth credentials until login (see
-   * `DynamicClientPrepareInputSchema`).
-   */
   override prepareFromJson(parsedJson: unknown): ApiCredentials {
-    return buildPreparedCredentials(
-      this.name,
-      DynamicClientPrepareInputSchema,
-      parsedJson,
-      buildDynamicClientPreparation
-    );
+    return prepareRemoteMcpClient(this.name, parsedJson);
   }
 
   /**

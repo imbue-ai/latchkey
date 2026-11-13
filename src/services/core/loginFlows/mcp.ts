@@ -21,6 +21,7 @@ import type { Service, ServiceSession } from '../base.js';
 import {
   baseApiUrlOfMcpEndpoint,
   buildMcpInitializeCurlArguments,
+  prepareRemoteMcpClient,
   refreshRemoteMcpCredentials,
   RemoteMcpSession,
   type RemoteMcpConnection,
@@ -71,6 +72,11 @@ export class McpLoginFlow implements LoginFlow {
     '--login-url is the OAuth authorization endpoint. --base-api-url defaults',
     "to the MCP endpoint's origin. Tokens are refreshed automatically.",
     '',
+    'To reuse an existing OAuth client and/or use a redirect URI other than the',
+    'loopback one, run `latchkey auth prepare` before logging in:',
+    '  $ latchkey auth prepare my-mcp \\',
+    '      \'{"redirectUri": "https://example.com/oauth-callback"}\'',
+    '',
     'Example:',
     '  $ latchkey services register my-mcp \\',
     '      --login-url="https://mcp.example.com/authorize" \\',
@@ -118,6 +124,10 @@ export class McpLoginFlow implements LoginFlow {
       { mcpEndpoint: this.params.mcpEndpoint, oauth: { tokenEndpoint: this.params.tokenEndpoint } },
       apiCredentials
     );
+  }
+
+  prepareFromJson(serviceName: string, parsedJson: unknown): ApiCredentials {
+    return prepareRemoteMcpClient(serviceName, parsedJson);
   }
 }
 

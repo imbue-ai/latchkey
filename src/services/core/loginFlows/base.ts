@@ -65,6 +65,13 @@ export interface LoginFlow {
    */
   readonly credentialCheckCurlArguments?: readonly string[];
   refreshCredentials?(apiCredentials: ApiCredentials): Promise<ApiCredentials | null>;
+
+  /**
+   * Build the credentials `latchkey auth prepare` stores ahead of a login (see
+   * `Service.prepareFromJson`), for a flow whose login can make use of them.
+   * The service name is only for error messages.
+   */
+  prepareFromJson?(serviceName: string, parsedJson: unknown): ApiCredentials;
 }
 
 /**
