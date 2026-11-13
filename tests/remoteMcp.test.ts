@@ -224,7 +224,9 @@ describe('built-in remote MCP services', () => {
         definition.mcpEndpoint,
         definition.oauth.authorizationEndpoint,
         definition.oauth.tokenEndpoint,
-        definition.oauth.registrationEndpoint,
+        // Optional in the type for the `mcp` login flow's sake; every
+        // built-in service registers its client dynamically.
+        definition.oauth.registrationEndpoint!,
       ]) {
         expect(new URL(url).protocol).toBe('https:');
       }

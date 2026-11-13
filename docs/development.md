@@ -120,6 +120,12 @@ adding a service, and note any `scopes_supported`. The same implementation
 backs the `mcp` login flow of `latchkey services register`, which is
 a quick way to try a server out before (or instead of) adding it here.
 
+A server that supports Client ID Metadata Documents can be logged into
+without registering a client: `latchkey auth prepare` takes the document's
+URL as the `clientId` (alongside the `redirectUri` the document lists), and
+the `mcp` login flow's `registrationEndpoint` may be left out for a server
+that has no dynamic registration at all.
+
 ### Service info
 
 Every service must include an `info` property that provides developer notes. This information is accessible via `latchkey services info <service_name>` and helps agents and users understand service-specific details such as:
