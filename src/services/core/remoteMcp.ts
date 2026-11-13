@@ -391,7 +391,10 @@ export class RemoteMcpSession extends ServiceSession {
           : await registerClient(
               oauth.registrationEndpoint,
               redirectUri,
-              this.generateAppName('-mcp'),
+              // Just the app name: `client_name` is a display label (RFC 7591
+              // §2) that the consent screen shows to the user, and uniqueness
+              // is the job of the `client_id` the server hands back.
+              this.appNamePrefix,
               scopes ?? []
             );
       const clientId = client.client_id;
