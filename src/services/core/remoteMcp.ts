@@ -52,8 +52,12 @@ import { withOAuthLoginBrowser } from './oauthLoginBrowser.js';
 export interface RemoteMcpOAuthEndpoints {
   readonly authorizationEndpoint: string;
   readonly tokenEndpoint: string;
-  /** Dynamic client registration (RFC 7591). */
-  readonly registrationEndpoint: string;
+  /**
+   * Dynamic client registration (RFC 7591). Absent for a server that has
+   * none, whose login then needs a client id prepared in advance: a Client ID
+   * Metadata Document URL, or the id of a client registered by hand.
+   */
+  readonly registrationEndpoint?: string;
 }
 
 /**
@@ -367,6 +371,33 @@ export class RemoteMcpSession extends ServiceSession {
 
   override readonly supportsSystemBrowser = true;
 
+  /** Reuse a prepared or previously registered client; register otherwise. */
+  private async resolveClient(
+    oldCredentials: ApiCredentials | undefined,
+    redirectUri: string
+  ): Promise<RegistrationResponse> {
+    if (oldCredentials instanceof OAuthCredentials && oldCredentials.clientId) {
+      return { client_id: oldCredentials.clientId, client_secret: oldCredentials.clientSecret };
+    }
+    const { registrationEndpoint } = this.connection.oauth;
+    if (registrationEndpoint === undefined) {
+      throw new LoginFailedError(
+        `Service '${this.service.name}' has no client registration endpoint, so it needs ` +
+          `an OAuth client id prepared before logging in: latchkey auth prepare ` +
+          `${this.service.name} '{"clientId": "<client id or metadata document URL>"}'`
+      );
+    }
+    return registerClient(
+      registrationEndpoint,
+      redirectUri,
+      // Just the app name: `client_name` is a display label (RFC 7591
+      // §2) that the consent screen shows to the user, and uniqueness
+      // is the job of the `client_id` the server hands back.
+      this.appNamePrefix,
+      this.connection.scopes ?? []
+    );
+  }
+
   override async login(
     encryptedStorage: EncryptedStorage,
     launchOptions: BrowserLaunchOptions = {},
@@ -384,16 +415,7 @@ export class RemoteMcpSession extends ServiceSession {
       const redirectUri = redirectUriOverride ?? buildLoopbackRedirectUri(port);
       const state = buildAuthorizationState(port);
 
-      // Reuse a prepared or previously registered client; register otherwise.
-      const client =
-        oldCredentials instanceof OAuthCredentials && oldCredentials.clientId
-          ? { client_id: oldCredentials.clientId, client_secret: oldCredentials.clientSecret }
-          : await registerClient(
-              oauth.registrationEndpoint,
-              redirectUri,
-              this.generateAppName('-mcp'),
-              scopes ?? []
-            );
+      const client = await this.resolveClient(oldCredentials, redirectUri);
       const clientId = client.client_id;
 
       const codeVerifier = generateCodeVerifier();
@@ -440,6 +462,39 @@ export class RemoteMcpSession extends ServiceSession {
     });
   }
 }
+
+/**
+ * Whether a client id is acceptable to prepare. One that is an http(s) URL is
+ * a Client ID Metadata Document URL, which the authorization server fetches
+ * and so has to be https, with a path, and without a fragment or credentials.
+ * Anything else is the opaque id of a client registered by hand.
+ */
+export function isAcceptableClientId(clientId: string): boolean {
+  if (!/^https?:\/\//i.test(clientId)) {
+    return true;
+  }
+  if (!URL.canParse(clientId)) {
+    return false;
+  }
+  const url = new URL(clientId);
+  return (
+    url.protocol === 'https:' &&
+    url.pathname !== '/' &&
+    url.hash === '' &&
+    url.username === '' &&
+    url.password === ''
+  );
+}
+
+const RemoteMcpClientPrepareInputSchema = DynamicClientPrepareInputSchema.refine(
+  (input) => input.clientId === undefined || isAcceptableClientId(input.clientId),
+  {
+    path: ['clientId'],
+    message:
+      'a client id that is a URL must be a Client ID Metadata Document URL: ' +
+      'https://, with a path, and without a fragment or credentials',
+  }
+);
 
 /**
  * When the access token expires, as an ISO timestamp; unknown when the server
@@ -497,6 +552,22 @@ export async function refreshRemoteMcpCredentials(
 }
 
 /**
+ * Accepts an OAuth client id to reuse instead of registering a new client,
+ * and/or the redirect URI to use — prepared in advance via `latchkey auth
+ * prepare` and stored as token-less OAuth credentials until login (see
+ * `DynamicClientPrepareInputSchema`). The client id may be a Client ID
+ * Metadata Document URL.
+ */
+export function prepareRemoteMcpClient(serviceName: string, parsedJson: unknown): ApiCredentials {
+  return buildPreparedCredentials(
+    serviceName,
+    RemoteMcpClientPrepareInputSchema,
+    parsedJson,
+    buildDynamicClientPreparation
+  );
+}
+
+/**
  * A service that is a remote MCP server behind OAuth 2.1 with dynamic client
  * registration. Instantiated directly from a definition for the common case;
  * subclassed by servers that can tell which account a token belongs to.
@@ -528,19 +599,8 @@ export class RemoteMcpService extends Service {
     return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
   }
 
-  /**
-   * Accepts an OAuth client id to reuse instead of registering a new client,
-   * and/or the redirect URI to use — prepared in advance via `latchkey auth
-   * prepare` and stored as token-less OAuth credentials until login (see
-   * `DynamicClientPrepareInputSchema`).
-   */
   override prepareFromJson(parsedJson: unknown): ApiCredentials {
-    return buildPreparedCredentials(
-      this.name,
-      DynamicClientPrepareInputSchema,
-      parsedJson,
-      buildDynamicClientPreparation
-    );
+    return prepareRemoteMcpClient(this.name, parsedJson);
   }
 
   /**

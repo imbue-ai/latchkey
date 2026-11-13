@@ -34,9 +34,9 @@ describe('buildAuthorizationState', () => {
 describe('buildClientRegistrationBody', () => {
   it('registers a public client for the authorization code flow with refresh', () => {
     expect(
-      buildClientRegistrationBody('http://localhost:1234/oauth2callback', 'latchkey-01-01-ab', [])
+      buildClientRegistrationBody('http://localhost:1234/oauth2callback', 'Latchkey', [])
     ).toEqual({
-      client_name: 'latchkey-01-01-ab',
+      client_name: 'Latchkey',
       redirect_uris: ['http://localhost:1234/oauth2callback'],
       grant_types: ['authorization_code', 'refresh_token'],
       response_types: ['code'],
@@ -224,7 +224,9 @@ describe('built-in remote MCP services', () => {
         definition.mcpEndpoint,
         definition.oauth.authorizationEndpoint,
         definition.oauth.tokenEndpoint,
-        definition.oauth.registrationEndpoint,
+        // Optional in the type for the `mcp` login flow's sake; every
+        // built-in service registers its client dynamically.
+        definition.oauth.registrationEndpoint!,
       ]) {
         expect(new URL(url).protocol).toBe('https:');
       }

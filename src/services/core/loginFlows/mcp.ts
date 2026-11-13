@@ -21,6 +21,7 @@ import type { Service, ServiceSession } from '../base.js';
 import {
   baseApiUrlOfMcpEndpoint,
   buildMcpInitializeCurlArguments,
+  prepareRemoteMcpClient,
   refreshRemoteMcpCredentials,
   RemoteMcpSession,
   type RemoteMcpConnection,
@@ -31,7 +32,7 @@ const McpParamsSchema = z
   .object({
     mcpEndpoint: z.url(),
     tokenEndpoint: z.url(),
-    registrationEndpoint: z.url(),
+    registrationEndpoint: z.url().optional(),
     scopes: z.array(z.string().min(1)).optional(),
     issuesRefreshTokens: z.boolean().optional(),
   })
@@ -61,15 +62,29 @@ export class McpLoginFlow implements LoginFlow {
   static readonly details = [
     'Parameters:',
     '  mcpEndpoint           URL that JSON-RPC messages are POSTed to. Required.',
-    '  tokenEndpoint         The OAuth token and client registration endpoints,',
-    "  registrationEndpoint  as published in the authorization server's",
+    '  tokenEndpoint         The OAuth token endpoint, as published in the',
+    "                        authorization server's",
     '                        /.well-known/oauth-authorization-server. Required.',
+    '  registrationEndpoint  The dynamic client registration endpoint from the',
+    '                        same metadata. Leave out for a server without one,',
+    '                        and prepare a client id instead (see below).',
     '  scopes                Scopes to request. Defaults to none.',
     '  issuesRefreshTokens   false for a server that issues access tokens only.',
     '                        Defaults to true.',
     '',
     '--login-url is the OAuth authorization endpoint. --base-api-url defaults',
     "to the MCP endpoint's origin. Tokens are refreshed automatically.",
+    '',
+    'To reuse an existing OAuth client and/or use a redirect URI other than the',
+    'loopback one, run `latchkey auth prepare` before logging in:',
+    '  $ latchkey auth prepare my-mcp \\',
+    '      \'{"redirectUri": "https://example.com/oauth-callback"}\'',
+    '',
+    'The client id can be a Client ID Metadata Document URL, for a server that',
+    'supports those. The document has to list the redirect URI, so prepare both:',
+    '  $ latchkey auth prepare my-mcp \\',
+    '      \'{"clientId": "https://example.com/oauth-client.json",',
+    '      "redirectUri": "https://example.com/oauth-callback"}\'',
     '',
     'Example:',
     '  $ latchkey services register my-mcp \\',
@@ -95,10 +110,14 @@ export class McpLoginFlow implements LoginFlow {
   }
 
   describe(loginUrl: string): string {
+    const { registrationEndpoint, mcpEndpoint } = this.params;
+    const clientSource =
+      registrationEndpoint === undefined
+        ? 'takes the OAuth client prepared with `latchkey auth prepare`'
+        : `registers an OAuth client at ${registrationEndpoint}`;
     return (
-      '`latchkey auth browser` registers an OAuth client at ' +
-      `${this.params.registrationEndpoint}, authorizes it at ${loginUrl} and stores ` +
-      `the resulting tokens for ${this.params.mcpEndpoint}.`
+      `\`latchkey auth browser\` ${clientSource}, authorizes it at ${loginUrl} and ` +
+      `stores the resulting tokens for ${mcpEndpoint}.`
     );
   }
 
@@ -118,6 +137,10 @@ export class McpLoginFlow implements LoginFlow {
       { mcpEndpoint: this.params.mcpEndpoint, oauth: { tokenEndpoint: this.params.tokenEndpoint } },
       apiCredentials
     );
+  }
+
+  prepareFromJson(serviceName: string, parsedJson: unknown): ApiCredentials {
+    return prepareRemoteMcpClient(serviceName, parsedJson);
   }
 }
 

@@ -112,11 +112,18 @@ export class RegisteredService extends Service {
       this.refreshCredentials = (apiCredentials: ApiCredentials) =>
         usableLoginFlow.flow.refreshCredentials!(apiCredentials);
     }
+
+    if (usableLoginFlow?.flow.prepareFromJson !== undefined) {
+      this.prepareFromJson = (parsedJson: unknown) =>
+        usableLoginFlow.flow.prepareFromJson!(this.name, parsedJson);
+    }
   }
 
   override getSession?(appNamePrefix: string): ServiceSession;
 
   override refreshCredentials?(apiCredentials: ApiCredentials): Promise<ApiCredentials | null>;
+
+  override prepareFromJson?(parsedJson: unknown): ApiCredentials;
 
   /**
    * Unknown, as the API behind a registered service is usually not one we
