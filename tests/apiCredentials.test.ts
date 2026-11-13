@@ -140,6 +140,17 @@ describe('GoogleApiKeyCredentials', () => {
     ]);
   });
 
+  it('should not inject into URLs that merely mention googleapis.com', async () => {
+    const credentials = new GoogleApiKeyCredentials('AIzaSyTestKey123');
+    for (const url of [
+      'https://evil.example/.googleapis.com/',
+      'https://evil.example?x.googleapis.com/',
+      'https://routes.googleapis.com.evil.example/',
+    ]) {
+      expect(await credentials.injectIntoCurlCall([url])).toEqual([url]);
+    }
+  });
+
   it('should not modify non-googleapis.com URLs', async () => {
     const credentials = new GoogleApiKeyCredentials('AIzaSyTestKey123');
     await expect(

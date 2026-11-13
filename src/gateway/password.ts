@@ -4,7 +4,7 @@
  * gateway` server.
  */
 
-import { timingSafeEqual } from 'node:crypto';
+import { equalsInConstantTime } from '../constantTimeEquals.js';
 
 /**
  * HTTP header used to carry the shared secret. Lowercased to match how
@@ -17,10 +17,5 @@ export const GATEWAY_PASSWORD_HEADER = 'x-latchkey-gateway-password';
  * Returns false when the values differ in length or contents.
  */
 export function passwordsMatch(expected: string, provided: string): boolean {
-  const expectedBytes = Buffer.from(expected, 'utf-8');
-  const providedBytes = Buffer.from(provided, 'utf-8');
-  if (expectedBytes.length !== providedBytes.length) {
-    return false;
-  }
-  return timingSafeEqual(expectedBytes, providedBytes);
+  return equalsInConstantTime(expected, provided);
 }
