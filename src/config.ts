@@ -6,6 +6,30 @@ import { accessSync, constants, existsSync, statSync } from 'node:fs';
 import { homedir, platform } from 'node:os';
 import { delimiter, extname, isAbsolute, join, resolve } from 'node:path';
 import { loadSettings, type Settings } from './configDataStore.js';
+import {
+  getEnvironmentVariable,
+  LATCHKEY_DIRECTORY_ENV_VAR,
+  LATCHKEY_CURL_ENV_VAR,
+  LATCHKEY_ENCRYPTION_KEY_ENV_VAR,
+  LATCHKEY_KEYRING_SERVICE_NAME_ENV_VAR,
+  LATCHKEY_KEYRING_ACCOUNT_NAME_ENV_VAR,
+  LATCHKEY_DISABLE_BROWSER_ENV_VAR,
+  LATCHKEY_EPHEMERAL_BROWSER_ENV_VAR,
+  LATCHKEY_DISABLE_COUNTING_ENV_VAR,
+  LATCHKEY_DISABLE_CREDENTIALS_REFRESH_ENV_VAR,
+  LATCHKEY_PERMISSIONS_CONFIG_ENV_VAR,
+  LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS_ENV_VAR,
+  LATCHKEY_PASSTHROUGH_UNKNOWN_ENV_VAR,
+  LATCHKEY_HIDE_BUILTIN_SERVICES_ENV_VAR,
+  LATCHKEY_DIAGNOSTIC_HEADERS_ENV_VAR,
+  LATCHKEY_GATEWAY_ENV_VAR,
+  LATCHKEY_GATEWAY_LISTEN_HOST_ENV_VAR,
+  LATCHKEY_GATEWAY_LISTEN_PORT_ENV_VAR,
+  LATCHKEY_GATEWAY_PASSWORD_ENV_VAR,
+  LATCHKEY_GATEWAY_LISTEN_PASSWORD_ENV_VAR,
+  LATCHKEY_GATEWAY_PERMISSIONS_OVERRIDE_ENV_VAR,
+  LATCHKEY_APP_NAME_PREFIX_ENV_VAR,
+} from './environment.js';
 
 export class InsecureFilePermissionsError extends Error {
   constructor(filePath: string, permissions: number) {
@@ -32,29 +56,6 @@ export class InvalidGatewayListenPortError extends Error {
     this.name = 'InvalidGatewayListenPortError';
   }
 }
-
-const LATCHKEY_DIRECTORY_ENV_VAR = 'LATCHKEY_DIRECTORY';
-const LATCHKEY_CURL_ENV_VAR = 'LATCHKEY_CURL';
-const LATCHKEY_ENCRYPTION_KEY_ENV_VAR = 'LATCHKEY_ENCRYPTION_KEY';
-const LATCHKEY_KEYRING_SERVICE_NAME_ENV_VAR = 'LATCHKEY_KEYRING_SERVICE_NAME';
-const LATCHKEY_KEYRING_ACCOUNT_NAME_ENV_VAR = 'LATCHKEY_KEYRING_ACCOUNT_NAME';
-const LATCHKEY_DISABLE_BROWSER_ENV_VAR = 'LATCHKEY_DISABLE_BROWSER';
-const LATCHKEY_EPHEMERAL_BROWSER_ENV_VAR = 'LATCHKEY_EPHEMERAL_BROWSER';
-const LATCHKEY_DISABLE_COUNTING_ENV_VAR = 'LATCHKEY_DISABLE_COUNTING';
-const LATCHKEY_DISABLE_CREDENTIALS_REFRESH_ENV_VAR = 'LATCHKEY_DISABLE_CREDENTIALS_REFRESH';
-const LATCHKEY_PERMISSIONS_CONFIG_ENV_VAR = 'LATCHKEY_PERMISSIONS_CONFIG';
-const LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS_ENV_VAR =
-  'LATCHKEY_PERMISSIONS_DO_NOT_USE_BUILTIN_SCHEMAS';
-const LATCHKEY_PASSTHROUGH_UNKNOWN_ENV_VAR = 'LATCHKEY_PASSTHROUGH_UNKNOWN';
-const LATCHKEY_HIDE_BUILTIN_SERVICES_ENV_VAR = 'LATCHKEY_HIDE_BUILTIN_SERVICES';
-const LATCHKEY_DIAGNOSTIC_HEADERS_ENV_VAR = 'LATCHKEY_DIAGNOSTIC_HEADERS';
-const LATCHKEY_GATEWAY_ENV_VAR = 'LATCHKEY_GATEWAY';
-const LATCHKEY_GATEWAY_LISTEN_HOST_ENV_VAR = 'LATCHKEY_GATEWAY_LISTEN_HOST';
-const LATCHKEY_GATEWAY_LISTEN_PORT_ENV_VAR = 'LATCHKEY_GATEWAY_LISTEN_PORT';
-const LATCHKEY_GATEWAY_PASSWORD_ENV_VAR = 'LATCHKEY_GATEWAY_PASSWORD';
-const LATCHKEY_GATEWAY_LISTEN_PASSWORD_ENV_VAR = 'LATCHKEY_GATEWAY_LISTEN_PASSWORD';
-const LATCHKEY_GATEWAY_PERMISSIONS_OVERRIDE_ENV_VAR = 'LATCHKEY_GATEWAY_PERMISSIONS_OVERRIDE';
-const LATCHKEY_APP_NAME_PREFIX_ENV_VAR = 'LATCHKEY_APP_NAME_PREFIX';
 
 export const DEFAULT_KEYRING_SERVICE_NAME = 'latchkey';
 export const DEFAULT_KEYRING_ACCOUNT_NAME = 'encryption-key';
@@ -196,7 +197,7 @@ function resolveBoolean(envValue: string | undefined, fileValue: boolean | undef
 
 /**
  * Configuration for Latchkey, sourced from environment variables and config.json with sensible defaults.
- * Precedence for each setting: environment variable > config.json > default.
+ * Precedence for each setting: LATCHKEY_ENV_OVERRIDES_FD > environment variable > config.json > default.
  * LATCHKEY_DIRECTORY and LATCHKEY_ENCRYPTION_KEY are env-only.
  */
 export class Config {
@@ -310,7 +311,7 @@ export class Config {
   readonly appNamePrefix: string;
 
   constructor(
-    getEnv: (name: string) => string | undefined = (name) => process.env[name],
+    getEnv: (name: string) => string | undefined = getEnvironmentVariable,
     loadSettingsFromFile: (configPath: string) => Settings = loadSettings
   ) {
     // The directory and encryption key are configured exclusively via environment variables;
@@ -484,6 +485,6 @@ export class Config {
 }
 
 /**
- * Global configuration singleton, initialized from process.env at import time.
+ * Global configuration singleton, initialized from the environment at import time.
  */
 export const CONFIG = new Config();

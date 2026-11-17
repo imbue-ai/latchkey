@@ -471,7 +471,7 @@ defaults:
 - `LATCHKEY_GATEWAY_LISTEN_PASSWORD`: optional shared secret used by the server side. When set, `latchkey gateway` rejects (with `401`) any request that does not present the same value in the `X-Latchkey-Gateway-Password` header. The header is stripped before requests are forwarded upstream.
 - `LATCHKEY_GATEWAY_PERMISSIONS_OVERRIDE`: optional permissions-override JWT (see `latchkey gateway create-jwt`) used by the client side. When set together with `LATCHKEY_GATEWAY`, the CLI sends the value in the `X-Latchkey-Gateway-Permissions-Override` header on every outgoing gateway request, causing the remote gateway to enforce the permissions.json file referenced by the JWT instead of its default one.
 - `LATCHKEY_APP_NAME_PREFIX`: prefix used for the app, project, and OAuth client names that Latchkey creates on your behalf inside third-party consoles (defaults to `Latchkey`).
-- `LATCHKEY_LATCKEY_DIAGNOSTIC_HEADERS`: if set, Latchkey adds special headers with diagnostic information to the outgoing requests. This currently includes `X-Latchkey-Matched-Service`, indicating the service that Latchkey matched the request to and injected credentials for.
+- `LATCHKEY_DIAGNOSTIC_HEADERS`: if set, Latchkey adds special headers with diagnostic information to the outgoing requests. This currently includes `X-Latchkey-Matched-Service`, indicating the service that Latchkey matched the request to and injected credentials for.
 
 All of the above settings, except for `LATCHKEY_DIRECTORY`,
 `LATCHKEY_ENCRYPTION_KEY`, `LATCHKEY_GATEWAY_PASSWORD`,
@@ -501,6 +501,25 @@ override `config.json` values.
   }
 }
 ```
+
+#### Passing settings through a file descriptor
+
+Environment variables can be read by other processes running as
+the same user and are inherited by child processes. To avoid
+exposing secrets such as `LATCHKEY_ENCRYPTION_KEY`, you can set
+`LATCHKEY_ENV_OVERRIDES_FD` to the number of an inherited file
+descriptor. Latchkey reads a JSON object from it at startup
+and then closes it. The object maps the names of any of the
+environment variables above to their (string) values:
+
+```
+latchkey curl https://api.github.com/user 3< <(printf '{"LATCHKEY_ENCRYPTION_KEY": "%s"}' "$KEY")
+```
+
+(with `LATCHKEY_ENV_OVERRIDES_FD=3` set in the environment).
+The values follow the same rules as the corresponding
+environment variables and take precedence over both the actual
+environment and `config.json`.
 
 ### Troubleshooting
 
