@@ -51,6 +51,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Browser, BrowserContext, Page, Locator, LaunchOptions } from 'playwright';
 import { EncryptedStorage } from './encryptedStorage.js';
+import {
+  getEnvironmentVariable,
+  LATCHKEY_DEBUG_ENV_VAR,
+  LATCHKEY_DISABLE_SPINNER_ENV_VAR,
+} from './environment.js';
 import { loadPlaywright } from './playwrightLoader.js';
 
 export interface BrowserWithContext {
@@ -167,7 +172,7 @@ export async function withTempBrowserContext<T>(
 
     return result;
   } catch (error) {
-    if (process.env.LATCHKEY_DEBUG === '1') {
+    if (getEnvironmentVariable(LATCHKEY_DEBUG_ENV_VAR) === '1') {
       if (context) {
         const artifactsDir = await captureFailureArtifacts(context);
         if (artifactsDir) {
@@ -445,7 +450,7 @@ export async function showSpinnerPage(
   message: string,
   details = ''
 ): Promise<Page | null> {
-  if (process.env.LATCHKEY_DISABLE_SPINNER === '1') {
+  if (getEnvironmentVariable(LATCHKEY_DISABLE_SPINNER_ENV_VAR) === '1') {
     return null;
   }
   const spinnerPage = await context.newPage();
