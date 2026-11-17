@@ -46,16 +46,18 @@ export class BrowserFlowsNotSupportedError extends Error {
 }
 
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Browser, BrowserContext, Page, Locator, LaunchOptions } from 'playwright';
+import { parseBrowserStorageState, type BrowserStorageState } from './browserStateImport.js';
 import { EncryptedStorage } from './encryptedStorage.js';
 import {
   getEnvironmentVariable,
   LATCHKEY_DEBUG_ENV_VAR,
   LATCHKEY_DISABLE_SPINNER_ENV_VAR,
 } from './environment.js';
+import { mergeLazilyRestoredStorageState, seedLocalStorageLazily } from './lazyLocalStorage.js';
 import { loadPlaywright } from './playwrightLoader.js';
 
 export interface BrowserWithContext {
@@ -130,17 +132,12 @@ export async function withTempBrowserContext<T>(
   options: BrowserLaunchOptions,
   callback: (state: BrowserWithContext) => Promise<T>
 ): Promise<T> {
-  const tempDir = mkdtempSync(join(tmpdir(), 'latchkey-browser-state-'));
-  const tempFilePath = join(tempDir, 'browser_state.json');
-
-  let initialStorageState: string | undefined;
-  if (options.browserStatePath && existsSync(options.browserStatePath)) {
-    const content = encryptedStorage.readFile(options.browserStatePath);
-    if (content !== null) {
-      writeFileSync(tempFilePath, content, { encoding: 'utf-8', mode: 0o600 });
-      initialStorageState = tempFilePath;
-    }
-  }
+  const savedContent =
+    options.browserStatePath && existsSync(options.browserStatePath)
+      ? encryptedStorage.readFile(options.browserStatePath)
+      : null;
+  const savedState: BrowserStorageState =
+    savedContent === null ? { cookies: [], origins: [] } : parseBrowserStorageState(savedContent);
 
   const { chromium } = await loadPlaywright();
   // Strip the most obvious automation tells so services like Google's sign-in let us through.
@@ -156,18 +153,25 @@ export async function withTempBrowserContext<T>(
 
   let context: BrowserContext | undefined;
   try {
-    const contextOptions: { storageState?: string } = {
-      storageState: initialStorageState,
-    };
-    context = await browser.newContext(contextOptions);
+    // Cookies are restored right away. localStorage is restored lazily, as
+    // restoring it here would visibly navigate through every saved origin.
+    context = await browser.newContext({ storageState: { ...savedState, origins: [] } });
+    const lazyLocalStorage = seedLocalStorageLazily(context, savedState.origins, (origin) => {
+      if (getEnvironmentVariable(LATCHKEY_DEBUG_ENV_VAR) === '1') {
+        console.error(`[latchkey] Saved localStorage of ${origin} was not restored in time.`);
+      }
+    });
 
     const result = await callback({ browser, context });
 
     // Persist browser state back to encrypted storage
     if (options.browserStatePath) {
-      await context.storageState({ path: tempFilePath });
-      const content = readFileSync(tempFilePath, 'utf-8');
-      encryptedStorage.writeFile(options.browserStatePath, content);
+      const mergedState = mergeLazilyRestoredStorageState(
+        savedState,
+        await context.storageState(),
+        lazyLocalStorage.seededOrigins()
+      );
+      encryptedStorage.writeFile(options.browserStatePath, JSON.stringify(mergedState, null, 2));
     }
 
     return result;
@@ -191,11 +195,6 @@ export async function withTempBrowserContext<T>(
     throw error;
   } finally {
     await browser.close();
-    try {
-      rmSync(tempDir, { recursive: true, force: true });
-    } catch {
-      // Ignore cleanup errors
-    }
   }
 }
 
