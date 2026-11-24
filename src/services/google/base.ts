@@ -982,7 +982,10 @@ class GoogleServiceSession extends ServiceSession {
     authUrl.searchParams.set('response_type', 'code');
     authUrl.searchParams.set('scope', allScopes.join(' '));
     authUrl.searchParams.set('access_type', 'offline');
-    authUrl.searchParams.set('prompt', 'consent');
+    // `consent` makes Google return a refresh token on every login, not just
+    // the first one; `select_account` always offers the account chooser, even
+    // when the browser has a single signed-in Google session.
+    authUrl.searchParams.set('prompt', 'select_account consent');
     authUrl.searchParams.set('code_challenge', codeChallenge);
     authUrl.searchParams.set('code_challenge_method', 'S256');
     authUrl.searchParams.set('state', state);
