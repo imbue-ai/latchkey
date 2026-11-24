@@ -25,6 +25,7 @@ import {
   GOOGLE_SHEETS,
   GOOGLE_DOCS,
   GOOGLE_SLIDES,
+  GOOGLE_DRIVE_READONLY,
   GOOGLE_PEOPLE,
   MAILCHIMP,
   FASTMAIL,
@@ -61,6 +62,7 @@ describe('ServiceRegistry', () => {
       ['google-sheets', GOOGLE_SHEETS],
       ['google-docs', GOOGLE_DOCS],
       ['google-slides', GOOGLE_SLIDES],
+      ['google-drive-readonly', GOOGLE_DRIVE_READONLY],
       ['google-people', GOOGLE_PEOPLE],
       ['mailchimp', MAILCHIMP],
       ['fastmail', FASTMAIL],
@@ -239,11 +241,11 @@ describe('ServiceRegistry', () => {
       expect(candidates[0]).toBe(GOOGLE_DRIVE);
     });
 
-    it('should only match Drive itself for non-files Drive URLs', () => {
+    it('should only match the Drive services for non-files Drive URLs', () => {
       const candidates = BUILTIN_SERVICE_REGISTRY.getCandidatesByUrl(
         'https://www.googleapis.com/drive/v3/about?fields=user'
       );
-      expect(candidates).toEqual([GOOGLE_DRIVE]);
+      expect(candidates).toEqual([GOOGLE_DRIVE, GOOGLE_DRIVE_READONLY]);
     });
 
     // The shapes Drive v3 returns as a file's and a revision's `exportLinks`;
@@ -263,10 +265,11 @@ describe('ServiceRegistry', () => {
       ],
     ] as const;
     for (const [url, kindService] of exportLinks) {
-      it(`should match Drive and ${kindService.name} for the export link ${url}`, () => {
+      it(`should match the Drive services and ${kindService.name} for the export link ${url}`, () => {
         expect(BUILTIN_SERVICE_REGISTRY.getCandidatesByUrl(url)).toEqual([
           GOOGLE_DRIVE,
           kindService,
+          GOOGLE_DRIVE_READONLY,
         ]);
       });
     }

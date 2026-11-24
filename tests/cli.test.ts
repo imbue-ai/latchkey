@@ -35,6 +35,7 @@ import { TELEGRAM } from '../src/services/telegram.js';
 import { GOOGLE_GMAIL } from '../src/services/google/gmail.js';
 import { GOOGLE_DRIVE } from '../src/services/google/drive.js';
 import { GOOGLE_DOCS } from '../src/services/google/docs.js';
+import { GOOGLE_DRIVE_READONLY } from '../src/services/google/drive-readonly.js';
 import {
   deleteRegisteredService,
   loadRegisteredServices,
@@ -2349,6 +2350,62 @@ describe('CLI commands with dependency injection', () => {
       });
 
       await runCommand(['curl', 'https://www.googleapis.com/drive/v3/files?pageSize=1'], deps);
+
+      expect(exitCode).toBe(0);
+      expect(capturedArgs).toContain('Authorization: Bearer docs-token');
+    });
+
+    it('should route a Docs API call to the read-only Drive service when only it is authed', async () => {
+      writeSecureFile(
+        join(tempDir, 'credentials.json'),
+        JSON.stringify(
+          nestAccounts({
+            'google-drive-readonly': {
+              objectType: 'oauth',
+              clientId: 'cid',
+              clientSecret: 'csecret',
+              accessToken: 'readonly-token',
+            },
+          })
+        )
+      );
+
+      const deps = createMockDependencies({
+        registry: new ServiceRegistry([GOOGLE_DRIVE, GOOGLE_DOCS, GOOGLE_DRIVE_READONLY]),
+      });
+
+      await runCommand(['curl', 'https://docs.googleapis.com/v1/documents/abc'], deps);
+
+      expect(exitCode).toBe(0);
+      expect(capturedArgs).toContain('Authorization: Bearer readonly-token');
+    });
+
+    it('should prefer a read-write Google service over the read-only one when both are authed', async () => {
+      writeSecureFile(
+        join(tempDir, 'credentials.json'),
+        JSON.stringify(
+          nestAccounts({
+            'google-docs': {
+              objectType: 'oauth',
+              clientId: 'cid',
+              clientSecret: 'csecret',
+              accessToken: 'docs-token',
+            },
+            'google-drive-readonly': {
+              objectType: 'oauth',
+              clientId: 'cid',
+              clientSecret: 'csecret',
+              accessToken: 'readonly-token',
+            },
+          })
+        )
+      );
+
+      const deps = createMockDependencies({
+        registry: new ServiceRegistry([GOOGLE_DRIVE, GOOGLE_DOCS, GOOGLE_DRIVE_READONLY]),
+      });
+
+      await runCommand(['curl', 'https://docs.googleapis.com/v1/documents/abc'], deps);
 
       expect(exitCode).toBe(0);
       expect(capturedArgs).toContain('Authorization: Bearer docs-token');

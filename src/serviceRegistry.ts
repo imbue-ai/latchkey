@@ -21,6 +21,7 @@ import {
   GOOGLE_SHEETS,
   GOOGLE_DOCS,
   GOOGLE_SLIDES,
+  GOOGLE_DRIVE_READONLY,
   GOOGLE_PEOPLE,
   MAILCHIMP,
   FASTMAIL,
@@ -296,6 +297,9 @@ export const BUILTIN_SERVICES: readonly Service[] = [
   GOOGLE_SHEETS,
   GOOGLE_DOCS,
   GOOGLE_SLIDES,
+  // After the read-write Drive services, so that it never takes a request away
+  // from one of them that holds an unexpired token.
+  GOOGLE_DRIVE_READONLY,
   GOOGLE_PEOPLE,
   MAILCHIMP,
   FASTMAIL,
