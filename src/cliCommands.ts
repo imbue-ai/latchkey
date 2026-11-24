@@ -449,6 +449,15 @@ async function clearService(
  * Build the "Done" message for a completed browser flow, naming the account the
  * credentials were stored under when it is not the default (unnamed) account.
  */
+/** Split a comma-separated `--scopes` value, tolerating spaces and repeats. */
+function parseScopeList(value: string): readonly string[] {
+  const scopes = value
+    .split(',')
+    .map((scope) => scope.trim())
+    .filter((scope) => scope !== '');
+  return [...new Set(scopes)];
+}
+
 function loginDoneMessage(account: string | undefined): string {
   return account !== undefined && account !== ''
     ? `Done. Stored credentials for account '${account}'.`
@@ -925,79 +934,92 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         'only when it times out, after 15 minutes. Cannot be combined with ' +
         'LATCHKEY_EPHEMERAL_BROWSER.'
     )
-    .action(async (serviceName: string, options: { strict?: boolean; system?: boolean }) => {
-      const strict = options.strict === true;
-      const systemBrowser = options.system === true;
-      if (deps.config.gatewayUrl !== null) {
-        const result = (await forwardToGateway(deps, {
-          command: 'auth browser',
-          params: {
+    .option(
+      '--scopes <scopes>',
+      'Comma-separated list of scopes to request, instead of the generous default set. ' +
+        "Only works for services that list 'loginScopes' in the capabilities shown by " +
+        "'latchkey services info', and only accepts scopes from that list."
+    )
+    .action(
+      async (
+        serviceName: string,
+        options: { strict?: boolean; system?: boolean; scopes?: string }
+      ) => {
+        const strict = options.strict === true;
+        const systemBrowser = options.system === true;
+        const scopes = options.scopes === undefined ? undefined : parseScopeList(options.scopes);
+        if (deps.config.gatewayUrl !== null) {
+          const result = (await forwardToGateway(deps, {
+            command: 'auth browser',
+            params: {
+              serviceName,
+              account: getAccount(),
+              strict: strict ? true : undefined,
+              systemBrowser: systemBrowser ? true : undefined,
+              scopes,
+            },
+          })) as { account?: string } | null;
+          deps.log(loginDoneMessage(result?.account));
+          return;
+        }
+        try {
+          const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
+          const apiCredentialStore = createApiCredentialStore(deps, encryptedStorage);
+          const { account } = await authBrowser(
+            deps.registry,
+            apiCredentialStore,
+            encryptedStorage,
+            deps.config,
             serviceName,
-            account: getAccount(),
-            strict: strict ? true : undefined,
-            systemBrowser: systemBrowser ? true : undefined,
-          },
-        })) as { account?: string } | null;
-        deps.log(loginDoneMessage(result?.account));
-        return;
+            getAccount(),
+            { strict, systemBrowser, scopes }
+          );
+          deps.log(loginDoneMessage(account));
+        } catch (error) {
+          if (error instanceof CodedError) {
+            deps.errorLog(formatCodedErrorAsJson(error));
+            deps.exit(1);
+          }
+          if (error instanceof UnknownServiceError || error instanceof AccountNotFoundError) {
+            deps.errorLog(`Error: ${error.message}`);
+            deps.exit(1);
+          }
+          if (error instanceof BrowserFlowsNotSupportedError) {
+            deps.errorLog(error.message);
+            deps.exit(1);
+          }
+          if (error instanceof PreparationRequiredError) {
+            deps.errorLog(`Error: ${error.message}`);
+            deps.exit(1);
+          }
+          if (error instanceof BrowserDisabledError) {
+            deps.errorLog(error.message);
+            deps.exit(1);
+          }
+          if (error instanceof GraphicalEnvironmentNotFoundError) {
+            deps.errorLog(error.message);
+            deps.exit(1);
+          }
+          if (error instanceof BrowserNotConfiguredError) {
+            deps.errorLog(`Error: ${error.message}`);
+            deps.exit(1);
+          }
+          if (error instanceof LoginCancelledError) {
+            deps.errorLog('Login cancelled.');
+            deps.exit(1);
+          }
+          if (error instanceof LoginFailedError) {
+            deps.errorLog(error.message);
+            deps.exit(1);
+          }
+          if (error instanceof BrowserFeaturesUnavailableError) {
+            deps.errorLog(error.message);
+            deps.exit(1);
+          }
+          throw error;
+        }
       }
-      try {
-        const encryptedStorage = await createEncryptedStorageFromConfig(deps.config);
-        const apiCredentialStore = createApiCredentialStore(deps, encryptedStorage);
-        const { account } = await authBrowser(
-          deps.registry,
-          apiCredentialStore,
-          encryptedStorage,
-          deps.config,
-          serviceName,
-          getAccount(),
-          { strict, systemBrowser }
-        );
-        deps.log(loginDoneMessage(account));
-      } catch (error) {
-        if (error instanceof CodedError) {
-          deps.errorLog(formatCodedErrorAsJson(error));
-          deps.exit(1);
-        }
-        if (error instanceof UnknownServiceError || error instanceof AccountNotFoundError) {
-          deps.errorLog(`Error: ${error.message}`);
-          deps.exit(1);
-        }
-        if (error instanceof BrowserFlowsNotSupportedError) {
-          deps.errorLog(error.message);
-          deps.exit(1);
-        }
-        if (error instanceof PreparationRequiredError) {
-          deps.errorLog(`Error: ${error.message}`);
-          deps.exit(1);
-        }
-        if (error instanceof BrowserDisabledError) {
-          deps.errorLog(error.message);
-          deps.exit(1);
-        }
-        if (error instanceof GraphicalEnvironmentNotFoundError) {
-          deps.errorLog(error.message);
-          deps.exit(1);
-        }
-        if (error instanceof BrowserNotConfiguredError) {
-          deps.errorLog(`Error: ${error.message}`);
-          deps.exit(1);
-        }
-        if (error instanceof LoginCancelledError) {
-          deps.errorLog('Login cancelled.');
-          deps.exit(1);
-        }
-        if (error instanceof LoginFailedError) {
-          deps.errorLog(error.message);
-          deps.exit(1);
-        }
-        if (error instanceof BrowserFeaturesUnavailableError) {
-          deps.errorLog(error.message);
-          deps.exit(1);
-        }
-        throw error;
-      }
-    });
+    );
 
   authCommand
     .command('browser-prepare')

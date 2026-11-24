@@ -762,10 +762,12 @@ export interface GoogleServiceConfig {
 
 class GoogleServiceSession extends ServiceSession {
   private readonly config: GoogleServiceConfig;
+  override readonly loginScopes: readonly string[];
 
   constructor(service: GoogleService, config: GoogleServiceConfig, appNamePrefix: string) {
     super(service, appNamePrefix);
     this.config = config;
+    this.loginScopes = config.scopes;
   }
 
   onResponse(_response: Response): void {
@@ -827,6 +829,7 @@ class GoogleServiceSession extends ServiceSession {
           clientId,
           clientSecret,
           redirectUriOverride,
+          loginOptions.scopes ?? this.loginScopes,
           loginOptions.strict ?? false
         );
 
@@ -948,6 +951,7 @@ class GoogleServiceSession extends ServiceSession {
     clientId: string,
     clientSecret: string,
     redirectUriOverride: string | undefined,
+    serviceScopes: readonly string[],
     strict: boolean
   ): Promise<{
     accessToken: string;
@@ -955,7 +959,7 @@ class GoogleServiceSession extends ServiceSession {
     accessTokenExpiresAt?: string;
     refreshTokenExpiresAt?: string;
   }> {
-    const allScopes = [...COMMON_SCOPES, ...this.config.scopes];
+    const allScopes = [...COMMON_SCOPES, ...serviceScopes];
 
     // The callback server only accepts the redirect that echoes its `state`,
     // so a request forged by something else on this machine can neither pass

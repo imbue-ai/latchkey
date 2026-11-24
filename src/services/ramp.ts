@@ -46,6 +46,12 @@ const RAMP_PKCE_TOKEN_ENDPOINT = 'https://api.ramp.com/developer/v1/token/pkce';
 const RAMP_OAUTH_CALLBACK_PATH = '/callback';
 
 /**
+ * Always requested: the account lookup relies on it (see `getAccount`), and
+ * without it a login could not tell which account it belongs to.
+ */
+const RAMP_ACCOUNT_SCOPE = 'users:read';
+
+/**
  * Scopes requested on the authorize URL: exactly the scopes Ramp's agent-tools
  * OpenAPI declares (no regular-REST-only scopes -- agent keys can't use the standard
  * REST API anyway). Ramp grants only the subset the signed-in user is entitled to
@@ -75,11 +81,10 @@ const RAMP_OAUTH_SCOPES = [
   'trips:read',
   'trips:write',
   'unified_requests:read',
-  'users:read',
   'vendors:read',
   'vendors:write',
   'x402:write',
-].join(' ');
+] as const;
 
 /**
  * Browser login session: runs the OAuth authorization-code + PKCE flow in the
@@ -109,6 +114,7 @@ class RampOAuthServiceSession extends ServiceSession {
   }
 
   override readonly supportsSystemBrowser = true;
+  override readonly loginScopes = RAMP_OAUTH_SCOPES;
 
   override async login(
     encryptedStorage: EncryptedStorage,
@@ -137,7 +143,10 @@ class RampOAuthServiceSession extends ServiceSession {
       authUrl.searchParams.set('response_type', 'code');
       authUrl.searchParams.set('client_id', clientId);
       authUrl.searchParams.set('redirect_uri', redirectUri);
-      authUrl.searchParams.set('scope', RAMP_OAUTH_SCOPES);
+      authUrl.searchParams.set(
+        'scope',
+        [RAMP_ACCOUNT_SCOPE, ...(loginOptions.scopes ?? this.loginScopes)].join(' ')
+      );
       authUrl.searchParams.set('state', randomUUID());
       authUrl.searchParams.set('code_challenge', codeChallenge);
       authUrl.searchParams.set('code_challenge_method', 'S256');

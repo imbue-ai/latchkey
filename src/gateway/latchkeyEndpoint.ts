@@ -41,6 +41,8 @@ import {
   PreparationRequiredError,
   SystemBrowserLoginNotSupportedError,
   SystemBrowserCannotBeEphemeralError,
+  LoginScopesNotSupportedError,
+  InvalidLoginScopesError,
 } from '../sharedOperations.js';
 import {
   BrowserDisabledError,
@@ -96,6 +98,7 @@ const AuthBrowserRequestSchema = z.object({
     account: z.string().optional(),
     strict: z.boolean().optional(),
     systemBrowser: z.boolean().optional(),
+    scopes: z.array(z.string()).readonly().optional(),
   }),
 });
 
@@ -150,6 +153,8 @@ const KNOWN_ERROR_CLASSES: readonly (abstract new (...args: never[]) => Error)[]
   PreparationRequiredError,
   SystemBrowserLoginNotSupportedError,
   SystemBrowserCannotBeEphemeralError,
+  LoginScopesNotSupportedError,
+  InvalidLoginScopesError,
   LoginCancelledError,
   LoginFailedError,
   PrepareNotSupportedError,
@@ -286,6 +291,7 @@ async function dispatch(
         {
           strict: parsed.params.strict ?? false,
           systemBrowser: parsed.params.systemBrowser ?? false,
+          scopes: parsed.params.scopes,
         }
       );
 

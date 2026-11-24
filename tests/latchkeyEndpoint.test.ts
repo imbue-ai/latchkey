@@ -96,6 +96,22 @@ describe('LatchkeyRequestSchema', () => {
     expect(result.success).toBe(false);
   });
 
+  it('should validate auth browser with scopes', () => {
+    const result = LatchkeyRequestSchema.safeParse({
+      command: 'auth browser',
+      params: { serviceName: 'github', scopes: ['repo', 'gist'] },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('should reject auth browser with scopes that are not a list', () => {
+    const result = LatchkeyRequestSchema.safeParse({
+      command: 'auth browser',
+      params: { serviceName: 'github', scopes: 'repo,gist' },
+    });
+    expect(result.success).toBe(false);
+  });
+
   it('should validate auth browser with systemBrowser', () => {
     const result = LatchkeyRequestSchema.safeParse({
       command: 'auth browser',

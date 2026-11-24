@@ -234,6 +234,12 @@ export interface LoginOptions {
    * first rather than letting a session silently fall back.
    */
   readonly systemBrowser?: boolean;
+  /**
+   * Ask for these permission scopes only, instead of the generous set the
+   * session asks for by default. Callers validate them against the session's
+   * `loginScopes` first, so a session can take them as given.
+   */
+  readonly scopes?: readonly string[];
 }
 
 export interface LoginResult {
@@ -463,6 +469,16 @@ export abstract class ServiceSession {
   readonly supportsSystemBrowser: boolean = false;
 
   /**
+   * The permission scopes {@link login} asks for by default, for sessions that
+   * can be told to ask for fewer (`LoginOptions.scopes`). Undefined for the
+   * sessions that cannot, which is the default.
+   *
+   * Scopes a session cannot work without (e.g. the one its credential check
+   * relies on) are requested regardless and do not belong here.
+   */
+  readonly loginScopes?: readonly string[];
+
+  /**
    * Generate a random, unique app name using the session's configured prefix.
    */
   protected generateAppName(suffix?: string): string {
@@ -490,11 +506,13 @@ export abstract class ServiceSession {
    * @param browser - Browser instance
    * @param context - Browser context
    * @param oldCredentials - Optional existing credentials to reuse
+   * @param loginOptions - How the login behaves, see {@link LoginOptions}
    */
   protected abstract finalizeCredentials(
     browser: Browser,
     context: BrowserContext,
-    oldCredentials?: ApiCredentials
+    oldCredentials?: ApiCredentials,
+    loginOptions?: LoginOptions
   ): Promise<ApiCredentials | null>;
 
   /**
@@ -564,9 +582,10 @@ export abstract class ServiceSession {
     encryptedStorage: EncryptedStorage,
     launchOptions: BrowserLaunchOptions = {},
     oldCredentials?: ApiCredentials,
-    // Unused here: the base login captures whatever the browser session
-    // yields and has no way to tell whether that is less than it asked for.
-    _loginOptions?: LoginOptions
+    // Only handed on to finalizeCredentials: the base login captures whatever
+    // the browser session yields and has no way to tell whether that is less
+    // than it asked for.
+    loginOptions?: LoginOptions
   ): Promise<LoginResult> {
     return withTempBrowserContext(encryptedStorage, launchOptions, async ({ browser, context }) => {
       const page = await context.newPage();
@@ -587,7 +606,12 @@ export abstract class ServiceSession {
 
       let apiCredentials: ApiCredentials | null;
       try {
-        apiCredentials = await this.finalizeCredentials(browser, context, oldCredentials);
+        apiCredentials = await this.finalizeCredentials(
+          browser,
+          context,
+          oldCredentials,
+          loginOptions
+        );
       } catch (error: unknown) {
         if (error instanceof Error && isBrowserClosedError(error)) {
           throw new LoginCancelledError();
@@ -746,16 +770,19 @@ export abstract class BrowserFollowupServiceSession extends ServiceSession {
    * This runs in the same browser session used for login.
    * @param context - Browser context
    * @param oldCredentials - Optional existing credentials to reuse
+   * @param loginOptions - How the login behaves, see {@link LoginOptions}
    */
   protected abstract performBrowserFollowup(
     context: BrowserContext,
-    oldCredentials?: ApiCredentials
+    oldCredentials?: ApiCredentials,
+    loginOptions?: LoginOptions
   ): Promise<ApiCredentials | null>;
 
   protected override async finalizeCredentials(
     _browser: Browser,
     context: BrowserContext,
-    oldCredentials?: ApiCredentials
+    oldCredentials?: ApiCredentials,
+    loginOptions?: LoginOptions
   ): Promise<ApiCredentials | null> {
     this.spinnerPage = await showSpinnerPage(
       context,
@@ -763,7 +790,7 @@ export abstract class BrowserFollowupServiceSession extends ServiceSession {
       buildFollowupSpinnerDetails(this.service.displayName, this.followupWork)
     );
     try {
-      return await this.performBrowserFollowup(context, oldCredentials);
+      return await this.performBrowserFollowup(context, oldCredentials, loginOptions);
     } catch (error: unknown) {
       // A browser the user closed is a cancellation, which login() reports;
       // everything else is the automation breaking, which the user may still be

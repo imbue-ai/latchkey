@@ -20,6 +20,7 @@ import {
   BrowserFollowupServiceSession,
   FollowupWork,
   LoginFailedError,
+  type LoginOptions,
   isBrowserClosedError,
   LoginCancelledError,
   DynamicClientPrepareInputSchema,
@@ -44,10 +45,13 @@ const CREATE_APP_URL = 'https://www.dropbox.com/developers/console/apps/create';
 const appConsoleUrl = (appId: string, section: 'settings' | 'permissions') =>
   `https://www.dropbox.com/developers/console/apps/${appId}/${section}`;
 
-// Scopes enabled on the created app. The same list is requested during
-// authorization so the resulting token carries exactly these permissions.
+// Always enabled: the credential check and the account lookup rely on it.
+const ACCOUNT_INFO_SCOPE = 'account_info.read';
+
+// Scopes enabled on the created app, unless the login asks for fewer
+// (`LoginOptions.scopes`). The same list is requested during authorization so
+// the resulting token carries exactly these permissions.
 const DROPBOX_SCOPES = [
-  'account_info.read',
   'files.metadata.write',
   'files.metadata.read',
   'files.content.write',
@@ -62,7 +66,7 @@ const DROPBOX_SCOPES = [
 // The legacy App Console left a handful of scopes (account_info.read,
 // files.metadata.read) implicitly granted with no checkbox to tick. The new
 // Developer Console exposes every scope as an explicit checkbox, so we simply
-// check all of DROPBOX_SCOPES instead of maintaining an implicit-grant list.
+// check all the scopes we want instead of maintaining an implicit-grant list.
 
 const CODE_ARRIVED = Symbol('codeArrived');
 
@@ -91,6 +95,7 @@ interface ScrollableElement {
 
 class DropboxServiceSession extends BrowserFollowupServiceSession {
   protected readonly followupWork = FollowupWork.CreateApp;
+  override readonly loginScopes = DROPBOX_SCOPES;
   private isLoggedIn = false;
   private currentAccountUid?: string;
 
@@ -239,8 +244,11 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
 
   protected async performBrowserFollowup(
     context: BrowserContext,
-    oldCredentials?: ApiCredentials
+    oldCredentials?: ApiCredentials,
+    loginOptions: LoginOptions = {}
   ): Promise<ApiCredentials | null> {
+    const scopes = [ACCOUNT_INFO_SCOPE, ...(loginOptions.scopes ?? this.loginScopes)];
+
     const page = context.pages()[0];
     if (!page) {
       throw new LoginFailedError('No page available in browser context.');
@@ -294,8 +302,8 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
       waitUntil: 'domcontentloaded',
     });
 
-    // Enable all necessary permissions.
-    for (const permissionId of DROPBOX_SCOPES) {
+    // Enable the requested permissions (all of them by default).
+    for (const permissionId of scopes) {
       const escapedPermissionId = permissionId.replace(/\./g, '\\.');
       const checkbox = page.locator(`input#permission-${escapedPermissionId}`);
       await checkbox.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
@@ -320,7 +328,7 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
       throw new LoginFailedError('Failed to read Dropbox app key.');
     }
 
-    return await this.authorizeApp(page, appKey, oldCredentials);
+    return await this.authorizeApp(page, appKey, scopes, oldCredentials);
   }
 
   /**
@@ -341,6 +349,7 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
   private async authorizeApp(
     page: Page,
     appKey: string,
+    scopes: readonly string[],
     oldCredentials?: ApiCredentials
   ): Promise<ApiCredentials> {
     const abortController = new AbortController();
@@ -370,7 +379,7 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
       authorizeUrl.searchParams.set('token_access_type', 'offline');
       authorizeUrl.searchParams.set('code_challenge', codeChallenge);
       authorizeUrl.searchParams.set('code_challenge_method', 'S256');
-      authorizeUrl.searchParams.set('scope', DROPBOX_SCOPES.join(' '));
+      authorizeUrl.searchParams.set('scope', scopes.join(' '));
       // Carry the loopback port in `state` so a prepared redirect-URI page can
       // forward the result to the callback it could not have known in advance.
       // Sent for loopback logins too, so both paths look alike.
@@ -531,7 +540,7 @@ export class Dropbox extends Service {
 
   // get_current_account both validates the token and identifies the account.
   // The account_info.read scope it needs is always granted (it is mandatory in
-  // the Dropbox App Console and included in DROPBOX_SCOPES for browser login).
+  // the Dropbox App Console and always requested by the browser login).
   readonly credentialCheckCurlArguments = [
     '-X',
     'POST',

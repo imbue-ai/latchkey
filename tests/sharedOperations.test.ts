@@ -15,6 +15,8 @@ import { MockService } from './mockService.js';
 import { GOOGLE_GMAIL } from '../src/services/google/gmail.js';
 import { NOTION_MCP } from '../src/services/notion-mcp.js';
 import { FASTMAIL } from '../src/services/fastmail.js';
+import { GITHUB } from '../src/services/github.js';
+import { DROPBOX } from '../src/services/dropbox.js';
 import { RegisteredService } from '../src/services/core/registered.js';
 import { ServiceRegistry } from '../src/serviceRegistry.js';
 import { saveBrowserConfig } from '../src/configDataStore.js';
@@ -30,6 +32,8 @@ import {
   AccountNotFoundError,
   PreparationRequiredError,
   SystemBrowserLoginNotSupportedError,
+  LoginScopesNotSupportedError,
+  InvalidLoginScopesError,
   SystemBrowserCannotBeEphemeralError,
 } from '../src/sharedOperations.js';
 import {
@@ -150,7 +154,11 @@ describe('operations', () => {
       expect(info.baseApiUrls).toEqual(['https://slack.com/api/']);
       expect(info.authOptions).toContain('browser');
       expect(info.authOptions).toContain('set');
-      expect(info.capabilities).toEqual({ detectsLoginAccount: true, systemBrowserLogin: false });
+      expect(info.capabilities).toEqual({
+        detectsLoginAccount: true,
+        systemBrowserLogin: false,
+        loginScopes: [],
+      });
       expect(info.credentials).toEqual({});
       expect(info.developerNotes).toBe('Test info for Slack service.');
     });
@@ -163,7 +171,11 @@ describe('operations', () => {
 
       const info = await servicesInfo(registry, store, config, 'slack');
 
-      expect(info.capabilities).toEqual({ detectsLoginAccount: false, systemBrowserLogin: false });
+      expect(info.capabilities).toEqual({
+        detectsLoginAccount: false,
+        systemBrowserLogin: false,
+        loginScopes: [],
+      });
     });
 
     it.each([
@@ -178,6 +190,21 @@ describe('operations', () => {
       const info = await servicesInfo(registry, store, config, service.name);
 
       expect(info.capabilities.systemBrowserLogin).toBe(true);
+    });
+
+    it.each([
+      ['a Google service', GOOGLE_GMAIL, 'https://www.googleapis.com/auth/gmail.modify'],
+      ['Fastmail', FASTMAIL, 'urn:ietf:params:oauth:scope:mail'],
+      ['GitHub', GITHUB, 'repo'],
+      ['Dropbox', DROPBOX, 'files.content.read'],
+    ])('lists the login scopes %s lets the user choose from', async (_name, service, scope) => {
+      const registry = new ServiceRegistry([service]);
+      const store = createApiCredentialStore();
+      const config = createMockConfig();
+
+      const info = await servicesInfo(registry, store, config, service.name);
+
+      expect(info.capabilities.loginScopes).toContain(scope);
     });
 
     it('reports the system browser login for a service registered with the mcp login flow', async () => {
@@ -197,7 +224,11 @@ describe('operations', () => {
 
       const info = await servicesInfo(registry, store, config, 'my-mcp');
 
-      expect(info.capabilities).toEqual({ detectsLoginAccount: false, systemBrowserLogin: true });
+      expect(info.capabilities).toEqual({
+        detectsLoginAccount: false,
+        systemBrowserLogin: true,
+        loginScopes: [],
+      });
     });
 
     it('should throw UnknownServiceError for unknown service', async () => {
@@ -231,7 +262,11 @@ describe('operations', () => {
       const info = await servicesInfo(registry, store, config, 'my-gitlab');
 
       expect(info.type).toBe('user-registered');
-      expect(info.capabilities).toEqual({ detectsLoginAccount: false, systemBrowserLogin: false });
+      expect(info.capabilities).toEqual({
+        detectsLoginAccount: false,
+        systemBrowserLogin: false,
+        loginScopes: [],
+      });
     });
 
     it('should return stored credentials keyed by account', async () => {
@@ -587,6 +622,49 @@ describe('operations', () => {
       } finally {
         Object.defineProperty(process, 'platform', { value: originalPlatform });
       }
+    });
+
+    describe('with chosen scopes', () => {
+      function attemptLogin(session: object, scopes: readonly string[]) {
+        const service = createMockService({ getSession: vi.fn().mockReturnValue(session) });
+        return authBrowser(
+          new ServiceRegistry([service]),
+          createApiCredentialStore(),
+          new EncryptedStorage(TEST_ENCRYPTION_KEY),
+          createMockConfig(),
+          'slack',
+          undefined,
+          { scopes }
+        );
+      }
+
+      it('refuses a service whose login offers no choice of scopes', async () => {
+        const login = vi.fn();
+
+        const loginAttempt = attemptLogin({ login }, ['read']);
+
+        await expect(loginAttempt).rejects.toThrow(LoginScopesNotSupportedError);
+        await expect(loginAttempt).rejects.toMatchObject({
+          errorCode: ErrorCodes.loginScopesNotSupported,
+        });
+        expect(login).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['a scope the service does not offer', ['read', 'admin']],
+        ['no scopes at all', []],
+      ])('refuses %s', async (_name, scopes) => {
+        const login = vi.fn();
+
+        const loginAttempt = attemptLogin({ login, loginScopes: ['read', 'write'] }, scopes);
+
+        await expect(loginAttempt).rejects.toThrow(InvalidLoginScopesError);
+        await expect(loginAttempt).rejects.toMatchObject({
+          errorCode: ErrorCodes.invalidLoginScopes,
+        });
+        await expect(loginAttempt).rejects.toThrow('Available scopes: read, write.');
+        expect(login).not.toHaveBeenCalled();
+      });
     });
 
     it.each([

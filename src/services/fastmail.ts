@@ -92,11 +92,18 @@ const JMAP_RESOURCE = 'https://api.fastmail.com/jmap/session';
  * token screen) supplied with `latchkey auth set`, which this service also
  * accepts.
  */
-const OAUTH_SCOPES =
-  'urn:ietf:params:oauth:scope:mail ' +
-  'urn:ietf:params:oauth:scope:contacts ' +
-  'urn:ietf:params:oauth:scope:calendars ' +
-  'offline_access';
+const SELECTABLE_OAUTH_SCOPES = [
+  'urn:ietf:params:oauth:scope:mail',
+  'urn:ietf:params:oauth:scope:contacts',
+  'urn:ietf:params:oauth:scope:calendars',
+] as const;
+
+/** Always requested: without it Fastmail issues no refresh token. */
+const REFRESH_TOKEN_SCOPE = 'offline_access';
+
+function buildScopeParameter(selectedScopes: readonly string[]): string {
+  return [...selectedScopes, REFRESH_TOKEN_SCOPE].join(' ');
+}
 
 interface RegistrationResponse {
   client_id: string;
@@ -124,8 +131,9 @@ async function registerClient(
     // authorization request asking for anything outside them ("This MUST be a
     // subset of the scopes registered for the client"). Omitting this registers
     // the client with an empty scope, and every later authorize call comes back
-    // to the callback with an error and no code.
-    scope: OAUTH_SCOPES,
+    // to the callback with an error and no code. A login may then ask for
+    // fewer (`LoginOptions.scopes`), so the client is registered with all.
+    scope: buildScopeParameter(SELECTABLE_OAUTH_SCOPES),
   });
 
   const result = await runCapturedAsync(
@@ -199,6 +207,7 @@ class FastmailSession extends ServiceSession {
   }
 
   override readonly supportsSystemBrowser = true;
+  override readonly loginScopes = SELECTABLE_OAUTH_SCOPES;
 
   override async login(
     encryptedStorage: EncryptedStorage,
@@ -218,7 +227,7 @@ class FastmailSession extends ServiceSession {
       // 2. Register client or reuse existing client_id.
       //
       // Fastmail fixes a client's scopes at registration, so reusing a stored
-      // client id pins the scopes granted the first time. If OAUTH_SCOPES ever
+      // client id pins the scopes granted the first time. If the scope list ever
       // widens, an existing user's next login is refused for asking outside
       // the old client's scopes, and `latchkey auth clear fastmail --all`
       // (which drops the stored client id) is the way out.
@@ -239,7 +248,10 @@ class FastmailSession extends ServiceSession {
       authUrl.searchParams.set('client_id', clientId);
       authUrl.searchParams.set('redirect_uri', redirectUri);
       authUrl.searchParams.set('response_type', 'code');
-      authUrl.searchParams.set('scope', OAUTH_SCOPES);
+      authUrl.searchParams.set(
+        'scope',
+        buildScopeParameter(loginOptions.scopes ?? this.loginScopes)
+      );
       authUrl.searchParams.set('resource', JMAP_RESOURCE);
       authUrl.searchParams.set('code_challenge', codeChallenge);
       authUrl.searchParams.set('code_challenge_method', 'S256');

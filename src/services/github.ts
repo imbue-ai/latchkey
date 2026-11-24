@@ -10,6 +10,7 @@ import {
   BrowserFollowupServiceSession,
   FollowupWork,
   LoginFailedError,
+  type LoginOptions,
   type ManualCredentialForm,
 } from './core/base.js';
 import { fetchAccountFromEndpoint, tryParseJson } from '../apiCredentials/account.js';
@@ -101,6 +102,7 @@ class GithubServiceSession extends BrowserFollowupServiceSession {
     ],
     buildCredentials: (values) => new AuthorizationBearer(values.get('token')),
   };
+  override readonly loginScopes = GITHUB_TOKEN_SCOPES;
   private isLoggedIn = false;
 
   onResponse(response: Response): void {
@@ -130,7 +132,8 @@ class GithubServiceSession extends BrowserFollowupServiceSession {
 
   protected async performBrowserFollowup(
     context: BrowserContext,
-    _oldCredentials?: ApiCredentials
+    _oldCredentials?: ApiCredentials,
+    loginOptions: LoginOptions = {}
   ): Promise<ApiCredentials | null> {
     const page = context.pages()[0];
     if (!page) {
@@ -144,8 +147,8 @@ class GithubServiceSession extends BrowserFollowupServiceSession {
     await noteInput.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
     await typeLikeHuman(page, noteInput, this.generateAppName());
 
-    // Enable all necessary scopes
-    for (const scope of GITHUB_TOKEN_SCOPES) {
+    // Enable the requested scopes (all of them by default)
+    for (const scope of loginOptions.scopes ?? this.loginScopes) {
       const checkbox = page.locator(`input[name="oauth_access[scopes][]"][value="${scope}"]`);
       if (await checkbox.isVisible()) {
         await checkbox.check();

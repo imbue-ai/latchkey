@@ -28,6 +28,7 @@ import {
   type LoginOptions,
   PrepareInputInvalidError,
   PrepareNotSupportedError,
+  type ServiceSession,
 } from './services/core/base.js';
 import { RegisteredService } from './services/core/registered.js';
 import type { Service } from './services/index.js';
@@ -83,6 +84,40 @@ export class SystemBrowserCannotBeEphemeralError extends CodedError {
         'Latchkey does not control. Unset it, or log in without --system.'
     );
     this.name = 'SystemBrowserCannotBeEphemeralError';
+  }
+}
+
+/**
+ * Thrown when `auth browser --scopes` names a service whose login has no fixed
+ * list of scopes to choose from. Not a fallback to the usual login: the user
+ * asked for limited permissions and would get whatever the service hands out.
+ */
+export class LoginScopesNotSupportedError extends CodedError {
+  constructor(serviceName: string) {
+    super(
+      ErrorCodes.loginScopesNotSupported,
+      `Service '${serviceName}' does not support choosing the scopes of its browser login. ` +
+        `Run 'latchkey auth browser ${serviceName}' without --scopes instead.`
+    );
+    this.name = 'LoginScopesNotSupportedError';
+  }
+}
+
+export class InvalidLoginScopesError extends CodedError {
+  constructor(
+    serviceName: string,
+    unknownScopes: readonly string[],
+    availableScopes: readonly string[]
+  ) {
+    const problem =
+      unknownScopes.length === 0
+        ? 'No scopes were given.'
+        : `Unknown scopes for service '${serviceName}': ${unknownScopes.join(', ')}.`;
+    super(
+      ErrorCodes.invalidLoginScopes,
+      `${problem} Available scopes: ${availableScopes.join(', ')}.`
+    );
+    this.name = 'InvalidLoginScopesError';
   }
 }
 
@@ -295,6 +330,12 @@ export interface ServiceCapabilities {
    * the browser Latchkey controls. False when there is no browser login at all.
    */
   readonly systemBrowserLogin: boolean;
+  /**
+   * The scopes `auth browser` asks for by default, any subset of which can be
+   * chosen with `--scopes`. Empty when the service's browser login has no
+   * choice of scopes to offer, or when there is no browser login at all.
+   */
+  readonly loginScopes: readonly string[];
 }
 
 export interface ServicesInfoResult {
@@ -327,7 +368,23 @@ function buildCapabilities(service: Service, config: Config): ServiceCapabilitie
   return {
     detectsLoginAccount: detectsLoginAccount(service),
     systemBrowserLogin: supportsSystemBrowserLogin(service, config.appNamePrefix),
+    loginScopes: service.getSession?.(config.appNamePrefix).loginScopes ?? [],
   };
+}
+
+function validateLoginScopes(
+  serviceName: string,
+  session: ServiceSession,
+  requestedScopes: readonly string[]
+): void {
+  const availableScopes = session.loginScopes;
+  if (availableScopes === undefined) {
+    throw new LoginScopesNotSupportedError(serviceName);
+  }
+  const unknownScopes = requestedScopes.filter((scope) => !availableScopes.includes(scope));
+  if (requestedScopes.length === 0 || unknownScopes.length > 0) {
+    throw new InvalidLoginScopesError(serviceName, unknownScopes, availableScopes);
+  }
 }
 
 export async function servicesInfo(
@@ -413,6 +470,9 @@ export async function authBrowser(
   }
   if (loginOptions.systemBrowser === true && !session.supportsSystemBrowser) {
     throw new SystemBrowserLoginNotSupportedError(serviceName);
+  }
+  if (loginOptions.scopes !== undefined) {
+    validateLoginScopes(serviceName, session, loginOptions.scopes);
   }
 
   const serviceDetectsLoginAccount = detectsLoginAccount(service);

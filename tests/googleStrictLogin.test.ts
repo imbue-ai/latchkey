@@ -76,13 +76,17 @@ const PARTIAL_GRANT = {
     'https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email',
 };
 
-function login(tokenResponse: Record<string, unknown>, strict: boolean) {
+function login(
+  tokenResponse: Record<string, unknown>,
+  strict: boolean,
+  scopes?: readonly string[]
+) {
   const stubs = stubGoogleLogin(tokenResponse);
   const result = GOOGLE_GMAIL.getSession('Latchkey-').login(
     new EncryptedStorage(TEST_ENCRYPTION_KEY),
     {},
     OAuthCredentials.prepared('client-id', 'client-secret'),
-    { strict }
+    { strict, scopes }
   );
   return Object.assign(result, stubs);
 }
@@ -103,6 +107,29 @@ describe('Google login state', () => {
     );
     const authorizationUrl = new URL(pendingLogin.fakePage.goto.mock.calls[0]?.[0] as string);
     expect(authorizationUrl.searchParams.get('state')).toBe(EXPECTED_STATE);
+  });
+});
+
+describe('Google login with chosen scopes', () => {
+  const CHOSEN_SCOPE = 'https://www.googleapis.com/auth/gmail.modify';
+  const EXPECTED_SCOPES = [
+    'https://www.googleapis.com/auth/userinfo.profile',
+    'https://www.googleapis.com/auth/userinfo.email',
+    CHOSEN_SCOPE,
+  ].join(' ');
+
+  it('requests only the chosen scopes, next to the ones the credential check needs', async () => {
+    const pendingLogin = login(FULL_GRANT, false, [CHOSEN_SCOPE]);
+    await pendingLogin;
+
+    const authorizationUrl = new URL(pendingLogin.fakePage.goto.mock.calls[0]?.[0] as string);
+    expect(authorizationUrl.searchParams.get('scope')).toBe(EXPECTED_SCOPES);
+  });
+
+  it('is strict about the chosen scopes only', async () => {
+    await expect(
+      login({ ...FULL_GRANT, scope: EXPECTED_SCOPES }, true, [CHOSEN_SCOPE])
+    ).resolves.toBeDefined();
   });
 });
 
