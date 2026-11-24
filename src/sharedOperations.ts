@@ -261,6 +261,11 @@ export interface CredentialStatusEntry {
    * one, since they are renewed before their expiry matters.
    */
   readonly validUntil?: string;
+  /**
+   * The permission scopes the credentials carry, when known: browser logins
+   * that ask for scopes record them, credentials set by hand have none.
+   */
+  readonly scopes?: readonly string[];
 }
 
 /**
@@ -292,12 +297,14 @@ async function computeAccountStatuses(
             )
           : ApiCredentialStatus.Valid;
       const validUntil = credentials.validUntil;
+      const scopes = credentials.scopes;
       return [
         account,
         {
           credentialType: credentials.objectType,
           credentialStatus,
           ...(validUntil === undefined ? {} : { validUntil }),
+          ...(scopes === undefined ? {} : { scopes }),
         },
       ] as const;
     })

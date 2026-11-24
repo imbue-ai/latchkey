@@ -14,6 +14,7 @@ import {
   readRedirectUriOverride,
   refreshAccessToken,
   startOAuthCallbackServer,
+  resolveGrantedScopes,
 } from '../oauthUtils.js';
 import {
   Service,
@@ -418,7 +419,8 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
         accessTokenExpiresAt,
         undefined,
         // Carried over so a re-login reuses the prepared redirect URI.
-        redirectUriOverride
+        redirectUriOverride,
+        resolveGrantedScopes(scopes, tokens.scope)
       );
     } catch (error: unknown) {
       if (error instanceof Error && isBrowserClosedError(error)) {
@@ -617,7 +619,8 @@ export class Dropbox extends Service {
       apiCredentials.refreshTokenExpiresAt,
       // Preserve a prepared redirect URI across refresh so the next login can
       // reuse the bounce page.
-      apiCredentials.redirectUri
+      apiCredentials.redirectUri,
+      apiCredentials.scopes
     );
   }
 }

@@ -39,8 +39,26 @@ export function findScopesNotGranted(
   if (grantedScopeField === undefined) {
     return [];
   }
-  const grantedScopes = new Set(grantedScopeField.split(/\s+/).filter((scope) => scope !== ''));
+  const grantedScopes = new Set(parseScopeField(grantedScopeField));
   return requestedScopes.filter((scope) => !grantedScopes.has(scope));
+}
+
+function parseScopeField(scopeField: string): readonly string[] {
+  return scopeField.split(/\s+/).filter((scope) => scope !== '');
+}
+
+/**
+ * The scopes a login ended up with, for recording on the credentials: what the
+ * token response's `scope` field lists, or what was requested when the field
+ * is absent (RFC 6749 §5.1). Undefined when that leaves no scopes at all.
+ */
+export function resolveGrantedScopes(
+  requestedScopes: readonly string[],
+  grantedScopeField: string | undefined
+): readonly string[] | undefined {
+  const scopes =
+    grantedScopeField === undefined ? requestedScopes : parseScopeField(grantedScopeField);
+  return scopes.length > 0 ? scopes : undefined;
 }
 
 export class OAuthTokenExchangeError extends Error {

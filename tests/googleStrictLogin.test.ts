@@ -126,6 +126,14 @@ describe('Google login with chosen scopes', () => {
     expect(authorizationUrl.searchParams.get('scope')).toBe(EXPECTED_SCOPES);
   });
 
+  it('records the granted scopes on the credentials', async () => {
+    const { credentials } = await login({ ...FULL_GRANT, scope: EXPECTED_SCOPES }, false, [
+      CHOSEN_SCOPE,
+    ]);
+
+    expect(credentials.scopes).toEqual(EXPECTED_SCOPES.split(' '));
+  });
+
   it('is strict about the chosen scopes only', async () => {
     await expect(
       login({ ...FULL_GRANT, scope: EXPECTED_SCOPES }, true, [CHOSEN_SCOPE])

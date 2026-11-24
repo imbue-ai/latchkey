@@ -27,6 +27,7 @@ import {
   generateCodeVerifier,
   refreshAccessToken,
   startOAuthCallbackServer,
+  resolveGrantedScopes,
 } from '../oauthUtils.js';
 import type { EncryptedStorage } from '../encryptedStorage.js';
 import type { BrowserLaunchOptions } from '../playwrightUtils.js';
@@ -143,10 +144,8 @@ class RampOAuthServiceSession extends ServiceSession {
       authUrl.searchParams.set('response_type', 'code');
       authUrl.searchParams.set('client_id', clientId);
       authUrl.searchParams.set('redirect_uri', redirectUri);
-      authUrl.searchParams.set(
-        'scope',
-        [RAMP_ACCOUNT_SCOPE, ...(loginOptions.scopes ?? this.loginScopes)].join(' ')
-      );
+      const requestedScopes = [RAMP_ACCOUNT_SCOPE, ...(loginOptions.scopes ?? this.loginScopes)];
+      authUrl.searchParams.set('scope', requestedScopes.join(' '));
       authUrl.searchParams.set('state', randomUUID());
       authUrl.searchParams.set('code_challenge', codeChallenge);
       authUrl.searchParams.set('code_challenge_method', 'S256');
@@ -174,7 +173,10 @@ class RampOAuthServiceSession extends ServiceSession {
         '',
         tokens.access_token,
         tokens.refresh_token,
-        accessTokenExpiresAt
+        accessTokenExpiresAt,
+        undefined,
+        undefined,
+        resolveGrantedScopes(requestedScopes, tokens.scope)
       );
       const account = (await this.service.getAccount?.(credentials)) ?? DEFAULT_ACCOUNT;
       return { credentials, account };
@@ -276,7 +278,9 @@ export class Ramp extends Service {
       tokens.access_token,
       tokens.refresh_token ?? apiCredentials.refreshToken,
       accessTokenExpiresAt,
-      apiCredentials.refreshTokenExpiresAt
+      apiCredentials.refreshTokenExpiresAt,
+      undefined,
+      apiCredentials.scopes
     );
   }
 }

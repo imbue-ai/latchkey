@@ -27,6 +27,7 @@ import {
   buildLoopbackRedirectUri,
   exchangeCodeForTokens,
   findScopesNotGranted,
+  resolveGrantedScopes,
   generateCodeChallenge,
   generateCodeVerifier,
   refreshAccessToken,
@@ -823,7 +824,7 @@ class GoogleServiceSession extends ServiceSession {
     const redirectUriOverride = oldCredentials.redirectUri;
 
     return withOAuthLoginBrowser(encryptedStorage, launchOptions, loginOptions, async (browser) => {
-      const { accessToken, refreshToken, accessTokenExpiresAt, refreshTokenExpiresAt } =
+      const { accessToken, refreshToken, accessTokenExpiresAt, refreshTokenExpiresAt, scopes } =
         await this.performOAuthFlow(
           browser,
           clientId,
@@ -840,7 +841,8 @@ class GoogleServiceSession extends ServiceSession {
         refreshToken,
         accessTokenExpiresAt,
         refreshTokenExpiresAt,
-        redirectUriOverride
+        redirectUriOverride,
+        scopes
       );
       const account = (await this.service.getAccount?.(credentials)) ?? DEFAULT_ACCOUNT;
       return { credentials, account };
@@ -958,6 +960,7 @@ class GoogleServiceSession extends ServiceSession {
     refreshToken: string;
     accessTokenExpiresAt?: string;
     refreshTokenExpiresAt?: string;
+    scopes?: readonly string[];
   }> {
     const allScopes = [...COMMON_SCOPES, ...serviceScopes];
 
@@ -1023,6 +1026,7 @@ class GoogleServiceSession extends ServiceSession {
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token,
       accessTokenExpiresAt,
+      scopes: resolveGrantedScopes(allScopes, tokens.scope),
     };
   }
 }
@@ -1133,7 +1137,8 @@ export abstract class GoogleService extends Service {
       tokens.refresh_token ?? apiCredentials.refreshToken,
       accessTokenExpiresAt,
       apiCredentials.refreshTokenExpiresAt,
-      apiCredentials.redirectUri
+      apiCredentials.redirectUri,
+      apiCredentials.scopes
     );
   }
 }

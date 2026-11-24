@@ -29,6 +29,7 @@ import {
   refreshAccessToken,
   startOAuthCallbackServer,
   type OAuthTokenResponse,
+  resolveGrantedScopes,
 } from '../../oauthUtils.js';
 import type { BrowserLaunchOptions } from '../../playwrightUtils.js';
 import {
@@ -451,7 +452,8 @@ export class RemoteMcpSession extends ServiceSession {
         undefined,
         // Carried over so that a re-login reuses the prepared redirect URI
         // alongside the prepared client id.
-        redirectUriOverride
+        redirectUriOverride,
+        resolveGrantedScopes(scopes ?? [], tokens.scope)
       );
 
       return {
@@ -547,7 +549,8 @@ export async function refreshRemoteMcpCredentials(
     tokens.refresh_token ?? apiCredentials.refreshToken,
     accessTokenExpiresAtFrom(tokens),
     apiCredentials.refreshTokenExpiresAt,
-    apiCredentials.redirectUri
+    apiCredentials.redirectUri,
+    apiCredentials.scopes
   );
 }
 

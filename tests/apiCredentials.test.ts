@@ -49,6 +49,30 @@ describe('AuthorizationBearer', () => {
     expect(new AuthorizationBearer('t', past).isExpired()).toBe(true);
   });
 
+  it('should round-trip scopes through JSON', () => {
+    const bearer = AuthorizationBearer.fromJSON(
+      JSON.parse(JSON.stringify(new AuthorizationBearer('t', undefined, ['repo', 'gist'])))
+    );
+    const oauth = OAuthCredentials.fromJSON(
+      JSON.parse(
+        JSON.stringify(
+          new OAuthCredentials(
+            'id',
+            'secret',
+            'access',
+            'refresh',
+            undefined,
+            undefined,
+            undefined,
+            ['read']
+          )
+        )
+      )
+    );
+    expect(bearer.scopes).toEqual(['repo', 'gist']);
+    expect(oauth.scopes).toEqual(['read']);
+  });
+
   it('should round-trip validUntil through JSON', () => {
     const validUntil = '2030-01-02T03:04:05.000Z';
     const restored = AuthorizationBearer.fromJSON(

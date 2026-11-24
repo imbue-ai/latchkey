@@ -303,7 +303,9 @@ Each entry reports a credentials status of:
 - `unknown` (for user-registered services)
 
 When it is known that the credentials stop working after some
-date the entry also carries a `validUntil` timestamp.
+date the entry also carries a `validUntil` timestamp. Similarly,
+credentials obtained by a browser login that asks for permission
+scopes carry a `scopes` list with the scopes they were granted.
 
 A service with no stored credentials shows an empty `credentials`
 object.

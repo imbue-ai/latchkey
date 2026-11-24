@@ -300,6 +300,18 @@ describe('operations', () => {
       });
     });
 
+    it('should report the scopes the credentials carry, and leave them out when unknown', async () => {
+      const registry = new ServiceRegistry([createMockService({ name: 'github' })]);
+      const store = createApiCredentialStore();
+      store.save('github', new AuthorizationBearer('ghp_a', undefined, ['repo', 'gist']), 'scoped');
+      store.save('github', new AuthorizationBearer('ghp_b'), 'by-hand');
+
+      const info = await servicesInfo(registry, store, createMockConfig(), 'github');
+
+      expect(info.credentials.scoped?.scopes).toEqual(['repo', 'gist']);
+      expect(info.credentials['by-hand']).not.toHaveProperty('scopes');
+    });
+
     it('should leave out validUntil when the lifetime is unknown', async () => {
       const service = createMockService({ name: 'github' });
       const registry = new ServiceRegistry([service]);

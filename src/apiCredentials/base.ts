@@ -56,6 +56,12 @@ export interface ApiCredentials {
    * Refreshable credentials leave it out.
    */
   readonly validUntil?: string;
+  /**
+   * The permission scopes the credentials carry, when known: logins that ask
+   * for scopes record what they were granted. Credentials supplied by hand, or
+   * for services without scopes, leave it out.
+   */
+  readonly scopes?: readonly string[];
 }
 
 /**
@@ -77,6 +83,7 @@ export const AuthorizationBearerSchema = z.object({
   objectType: z.literal('authorizationBearer'),
   token: z.string(),
   validUntil: z.string().optional(),
+  scopes: z.array(z.string()).readonly().optional(),
 });
 
 export type AuthorizationBearerData = z.infer<typeof AuthorizationBearerSchema>;
@@ -90,10 +97,12 @@ export class AuthorizationBearer implements ApiCredentials {
    * supplied by hand has no known lifetime.
    */
   readonly validUntil?: string;
+  readonly scopes?: readonly string[];
 
-  constructor(token: string, validUntil?: string) {
+  constructor(token: string, validUntil?: string, scopes?: readonly string[]) {
     this.token = token;
     this.validUntil = validUntil;
+    this.scopes = scopes;
   }
 
   injectIntoCurlCall(curlArguments: readonly string[]): Promise<readonly string[]> {
@@ -112,12 +121,13 @@ export class AuthorizationBearer implements ApiCredentials {
       objectType: this.objectType,
       token: this.token,
       validUntil: this.validUntil,
+      scopes: this.scopes,
     };
   }
 
   static fromJSON(data: unknown): AuthorizationBearer {
     const parsed = AuthorizationBearerSchema.parse(data);
-    return new AuthorizationBearer(parsed.token, parsed.validUntil);
+    return new AuthorizationBearer(parsed.token, parsed.validUntil, parsed.scopes);
   }
 }
 
@@ -217,6 +227,7 @@ export const OAuthCredentialsSchema = z.object({
   accessTokenExpiresAt: z.string().optional(),
   refreshTokenExpiresAt: z.string().optional(),
   redirectUri: z.string().optional(),
+  scopes: z.array(z.string()).readonly().optional(),
 });
 
 export type OAuthCredentialsData = z.infer<typeof OAuthCredentialsSchema>;
@@ -243,10 +254,16 @@ export class OAuthCredentials implements ApiCredentials {
    * override pass it in the `state` parameter for the page to read back.
    */
   readonly redirectUri?: string;
+  /**
+   * The scopes the tokens were granted, when the login knows them. A refresh
+   * does not change them, so refreshed credentials carry them over.
+   */
+  readonly scopes?: readonly string[];
 
   // `redirectUri` trails the token fields, out of its natural place next to
   // the client id and secret, so that existing positional callers — including
-  // plugins built against an earlier version — keep working.
+  // plugins built against an earlier version — keep working. `scopes` comes
+  // last for the same reason.
   constructor(
     clientId: string,
     clientSecret: string,
@@ -254,7 +271,8 @@ export class OAuthCredentials implements ApiCredentials {
     refreshToken?: string,
     accessTokenExpiresAt?: string,
     refreshTokenExpiresAt?: string,
-    redirectUri?: string
+    redirectUri?: string,
+    scopes?: readonly string[]
   ) {
     this.clientId = clientId;
     this.clientSecret = clientSecret;
@@ -263,6 +281,7 @@ export class OAuthCredentials implements ApiCredentials {
     this.accessTokenExpiresAt = accessTokenExpiresAt;
     this.refreshTokenExpiresAt = refreshTokenExpiresAt;
     this.redirectUri = redirectUri;
+    this.scopes = scopes;
   }
 
   /**
@@ -308,6 +327,7 @@ export class OAuthCredentials implements ApiCredentials {
       accessTokenExpiresAt: this.accessTokenExpiresAt,
       refreshTokenExpiresAt: this.refreshTokenExpiresAt,
       redirectUri: this.redirectUri,
+      scopes: this.scopes,
     };
     return result;
   }
@@ -321,7 +341,8 @@ export class OAuthCredentials implements ApiCredentials {
       parsed.refreshToken,
       parsed.accessTokenExpiresAt,
       parsed.refreshTokenExpiresAt,
-      parsed.redirectUri
+      parsed.redirectUri,
+      parsed.scopes
     );
   }
 }

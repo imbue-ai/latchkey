@@ -28,6 +28,7 @@ import {
   readRedirectUriOverride,
   refreshAccessToken,
   startOAuthCallbackServer,
+  resolveGrantedScopes,
 } from '../oauthUtils.js';
 import {
   Service,
@@ -101,8 +102,8 @@ const SELECTABLE_OAUTH_SCOPES = [
 /** Always requested: without it Fastmail issues no refresh token. */
 const REFRESH_TOKEN_SCOPE = 'offline_access';
 
-function buildScopeParameter(selectedScopes: readonly string[]): string {
-  return [...selectedScopes, REFRESH_TOKEN_SCOPE].join(' ');
+function withRefreshTokenScope(selectedScopes: readonly string[]): readonly string[] {
+  return [...selectedScopes, REFRESH_TOKEN_SCOPE];
 }
 
 interface RegistrationResponse {
@@ -133,7 +134,7 @@ async function registerClient(
     // the client with an empty scope, and every later authorize call comes back
     // to the callback with an error and no code. A login may then ask for
     // fewer (`LoginOptions.scopes`), so the client is registered with all.
-    scope: buildScopeParameter(SELECTABLE_OAUTH_SCOPES),
+    scope: withRefreshTokenScope(SELECTABLE_OAUTH_SCOPES).join(' '),
   });
 
   const result = await runCapturedAsync(
@@ -248,10 +249,8 @@ class FastmailSession extends ServiceSession {
       authUrl.searchParams.set('client_id', clientId);
       authUrl.searchParams.set('redirect_uri', redirectUri);
       authUrl.searchParams.set('response_type', 'code');
-      authUrl.searchParams.set(
-        'scope',
-        buildScopeParameter(loginOptions.scopes ?? this.loginScopes)
-      );
+      const requestedScopes = withRefreshTokenScope(loginOptions.scopes ?? this.loginScopes);
+      authUrl.searchParams.set('scope', requestedScopes.join(' '));
       authUrl.searchParams.set('resource', JMAP_RESOURCE);
       authUrl.searchParams.set('code_challenge', codeChallenge);
       authUrl.searchParams.set('code_challenge_method', 'S256');
@@ -283,7 +282,8 @@ class FastmailSession extends ServiceSession {
         undefined,
         // Carried over so that a re-login reuses the prepared redirect URI
         // alongside the prepared client id.
-        redirectUriOverride
+        redirectUriOverride,
+        resolveGrantedScopes(requestedScopes, tokens.scope)
       );
 
       return {
@@ -402,7 +402,8 @@ export class Fastmail extends Service {
       tokens.refresh_token ?? apiCredentials.refreshToken,
       accessTokenExpiresAt,
       apiCredentials.refreshTokenExpiresAt,
-      apiCredentials.redirectUri
+      apiCredentials.redirectUri,
+      apiCredentials.scopes
     );
   }
 }
