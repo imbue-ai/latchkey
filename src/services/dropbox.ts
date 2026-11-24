@@ -160,31 +160,32 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
 
   /**
    * Accounts that have not accepted the Dropbox API Terms and Conditions yet
-   * see a checkbox that keeps the "Create app" button disabled.
+   * see a checkbox that keeps the "Create app" button disabled. Accepting the
+   * terms is the user's decision, so the page is surfaced for them to tick the
+   * checkbox, and the spinner is restored afterwards.
    *
    * The new Developer Console renders this as a single
    * `input#create-app-terms` checkbox inside the create-app form (present only
-   * for accounts that still need to accept). Accepting the API Terms is an
-   * inherent requirement of the app creation the operator just initiated, so we
-   * tick it on their behalf rather than blocking on a manual step.
+   * for accounts that still need to accept).
    *
    * The legacy App Console instead wrapped the checkbox in an
-   * `#accept-tos-wrapper` that it hid for accounts that had already accepted;
-   * there, accepting the terms is the user's decision, so we surface the page
-   * with the checkbox parked just below the top bar and wait (up to the long
-   * ToS timeout) for the user to tick it. Kept for completeness even though the
-   * legacy console has been retired.
-   *
-   * Waiting for the "Create app" button to become enabled (in the legacy path)
-   * rather than for the checkbox state keeps the flow going even if Dropbox
-   * concludes the terms are not needed after all and hides the wrapper again.
+   * `#accept-tos-wrapper` that it hid for accounts that had already accepted.
+   * Kept for completeness even though the legacy console has been retired.
+   * Waiting for the "Create app" button to become enabled there rather than for
+   * the checkbox state keeps the flow going even if Dropbox concludes the terms
+   * are not needed after all and hides the wrapper again.
    */
   private async waitForTermsOfServiceAcceptance(page: Page): Promise<void> {
     // New Developer Console.
     const newTermsCheckbox = page.locator('input#create-app-terms[type="checkbox"]');
     if ((await newTermsCheckbox.count()) > 0 && !(await newTermsCheckbox.isChecked())) {
-      await page.bringToFront();
-      await newTermsCheckbox.check();
+      await this.letUserAcceptTerms(page, async () => {
+        await newTermsCheckbox.scrollIntoViewIfNeeded();
+        await page.locator('input#create-app-terms[type="checkbox"]:checked').waitFor({
+          timeout: TERMS_OF_SERVICE_USER_INTERACTION_TIMEOUT_MS,
+        });
+      });
+      return;
     }
 
     // Legacy App Console (retired, kept for completeness).
@@ -198,8 +199,7 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
       return;
     }
 
-    try {
-      await page.bringToFront();
+    await this.letUserAcceptTerms(page, async () => {
       // Scrolling by the element's own offset (instead of scrollIntoView)
       // keeps the requested top margin: the browser clamps at the end of the
       // document, which would otherwise hide the checkbox behind the top bar.
@@ -213,6 +213,20 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
       await page.locator(ENABLED_CREATE_APP_BUTTON_SELECTOR).waitFor({
         timeout: TERMS_OF_SERVICE_USER_INTERACTION_TIMEOUT_MS,
       });
+    });
+  }
+
+  /**
+   * Surface the working page while the user accepts the terms, then hide the
+   * automation behind the spinner again.
+   */
+  private async letUserAcceptTerms(
+    page: Page,
+    waitForAcceptance: () => Promise<void>
+  ): Promise<void> {
+    try {
+      await page.bringToFront();
+      await waitForAcceptance();
     } catch (error: unknown) {
       if (error instanceof Error && isBrowserClosedError(error)) {
         throw new LoginCancelledError();
@@ -362,10 +376,8 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
       // Sent for loopback logins too, so both paths look alike.
       authorizeUrl.searchParams.set('state', buildAuthorizationState(port));
 
-      // The finalize spinner runs in a separate tab that is kept in the
-      // foreground. Bring the working page forward so the user can actually see
-      // and confirm the authorization dialog.
-      await page.bringToFront();
+      // The page stays hidden behind the spinner tab: the consent screens are
+      // clicked through on the user's behalf below.
       await page.goto(authorizeUrl.toString(), { waitUntil: 'domcontentloaded' });
 
       // The app was just created by the operator on their own account, so
