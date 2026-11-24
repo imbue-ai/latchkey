@@ -4,59 +4,13 @@ import { OAuthCredentials } from '../src/apiCredentials/base.js';
 import { GOOGLE_GMAIL } from '../src/services/google/gmail.js';
 import type { GoogleServiceConfig } from '../src/services/google/base.js';
 import { ScopesNotGrantedError } from '../src/services/core/base.js';
-import * as playwrightUtils from '../src/playwrightUtils.js';
-import * as oauthUtils from '../src/oauthUtils.js';
-import * as curl from '../src/curl.js';
+import { EXPECTED_STATE, stubGoogleLogin } from './googleLoginStub.js';
 
 const TEST_ENCRYPTION_KEY = 'dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q=';
 
 // The service's own scopes are a protected implementation detail; the test
 // reaches in so it need not duplicate the list.
 const GMAIL_SCOPES = (GOOGLE_GMAIL as unknown as { config: GoogleServiceConfig }).config.scopes;
-
-/**
- * Drives a Google login without a browser: the temp browser context and the
- * loopback callback server are stubbed out, and curl answers the token exchange
- * (and the credential check that follows it) with the given token response.
- */
-function stubGoogleLogin(tokenResponse: Record<string, unknown>): {
-  fakePage: { goto: ReturnType<typeof vi.fn> };
-  startOAuthCallbackServer: ReturnType<typeof vi.fn>;
-} {
-  const fakePage = {
-    goto: vi.fn().mockResolvedValue(undefined),
-    close: vi.fn().mockResolvedValue(undefined),
-    on: vi.fn(),
-    off: vi.fn(),
-  };
-  const fakeContext = {
-    newPage: vi.fn().mockResolvedValue(fakePage),
-    on: vi.fn(),
-    off: vi.fn(),
-  };
-  vi.spyOn(playwrightUtils, 'withTempBrowserContext').mockImplementation(
-    (_storage, _options, callback) =>
-      callback({
-        browser: {},
-        context: fakeContext,
-      } as unknown as playwrightUtils.BrowserWithContext)
-  );
-  const startOAuthCallbackServer = vi
-    .spyOn(oauthUtils, 'startOAuthCallbackServer')
-    .mockResolvedValue({
-      port: 12345,
-      codePromise: Promise.resolve('auth-code'),
-      state: EXPECTED_STATE,
-    });
-  vi.spyOn(curl, 'runCapturedAsync').mockResolvedValue({
-    returncode: 0,
-    stdout: JSON.stringify(tokenResponse),
-    stderr: '',
-  });
-  return { fakePage, startOAuthCallbackServer };
-}
-
-const EXPECTED_STATE = 'random-prefix.12345';
 
 const FULL_GRANT = {
   access_token: 'access',
