@@ -6,6 +6,7 @@ const CONFIG: GoogleServiceConfig = {
     'https://www.googleapis.com/auth/presentations',
     'https://www.googleapis.com/auth/drive.readonly',
   ],
+  additionalScopes: ['https://www.googleapis.com/auth/presentations.readonly'],
 };
 
 export class GoogleSlides extends GoogleService {

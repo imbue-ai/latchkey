@@ -86,6 +86,26 @@ const GITHUB_TOKEN_SCOPES = [
   'project',
 ] as const;
 
+// Narrower scopes the token page also offers, each a part of one of the scopes
+// above. Not enabled by default, where the broader scope already covers them.
+const GITHUB_ADDITIONAL_TOKEN_SCOPES = [
+  'repo:status',
+  'repo_deployment',
+  'public_repo',
+  'repo:invite',
+  'security_events',
+  'read:packages',
+  'write:org',
+  'read:org',
+  'read:repo_hook',
+  'write:repo_hook',
+  'read:user',
+  'user:email',
+  'user:follow',
+  'read:discussion',
+  'read:project',
+] as const;
+
 class GithubServiceSession extends BrowserFollowupServiceSession {
   protected readonly followupWork = FollowupWork.CreateApiToken;
   override readonly manualCredentialForm: ManualCredentialForm = {
@@ -102,7 +122,8 @@ class GithubServiceSession extends BrowserFollowupServiceSession {
     ],
     buildCredentials: (values) => new AuthorizationBearer(values.get('token')),
   };
-  override readonly loginScopes = GITHUB_TOKEN_SCOPES;
+  override readonly defaultLoginScopes = GITHUB_TOKEN_SCOPES;
+  override readonly additionalLoginScopes = GITHUB_ADDITIONAL_TOKEN_SCOPES;
   private isLoggedIn = false;
 
   onResponse(response: Response): void {
@@ -150,7 +171,7 @@ class GithubServiceSession extends BrowserFollowupServiceSession {
     // Enable the requested scopes (all of them by default). Not every account
     // is offered every scope, so the ones actually enabled are kept track of.
     const enabledScopes: string[] = [];
-    for (const scope of loginOptions.scopes ?? this.loginScopes) {
+    for (const scope of loginOptions.scopes ?? this.defaultLoginScopes) {
       const checkbox = page.locator(`input[name="oauth_access[scopes][]"][value="${scope}"]`);
       if (await checkbox.isVisible()) {
         await checkbox.check();

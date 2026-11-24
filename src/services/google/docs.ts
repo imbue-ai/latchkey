@@ -6,6 +6,7 @@ const CONFIG: GoogleServiceConfig = {
     'https://www.googleapis.com/auth/documents',
     'https://www.googleapis.com/auth/drive.readonly',
   ],
+  additionalScopes: ['https://www.googleapis.com/auth/documents.readonly'],
 };
 
 export class GoogleDocs extends GoogleService {

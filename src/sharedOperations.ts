@@ -338,11 +338,16 @@ export interface ServiceCapabilities {
    */
   readonly systemBrowserLogin: boolean;
   /**
-   * The scopes `auth browser` asks for by default, any subset of which can be
-   * chosen with `--scopes`. Empty when the service's browser login has no
-   * choice of scopes to offer, or when there is no browser login at all.
+   * The scopes `auth browser` asks for when run without `--scopes`. Empty when
+   * the service's browser login has no choice of scopes to offer, or when
+   * there is no browser login at all.
    */
-  readonly loginScopes: readonly string[];
+  readonly defaultLoginScopes: readonly string[];
+  /**
+   * The scopes `auth browser --scopes` accepts: the default ones, plus any the
+   * service offers but does not ask for by default (e.g. read-only variants).
+   */
+  readonly availableLoginScopes: readonly string[];
 }
 
 export interface ServicesInfoResult {
@@ -372,11 +377,21 @@ function supportsSystemBrowserLogin(service: Service, appNamePrefix: string): bo
 }
 
 function buildCapabilities(service: Service, config: Config): ServiceCapabilities {
+  const session = service.getSession?.(config.appNamePrefix);
   return {
     detectsLoginAccount: detectsLoginAccount(service),
     systemBrowserLogin: supportsSystemBrowserLogin(service, config.appNamePrefix),
-    loginScopes: service.getSession?.(config.appNamePrefix).loginScopes ?? [],
+    defaultLoginScopes: session?.defaultLoginScopes ?? [],
+    availableLoginScopes: session === undefined ? [] : (availableLoginScopes(session) ?? []),
   };
+}
+
+/** Everything `--scopes` may name, or undefined when the login offers no choice. */
+function availableLoginScopes(session: ServiceSession): readonly string[] | undefined {
+  if (session.defaultLoginScopes === undefined) {
+    return undefined;
+  }
+  return [...session.defaultLoginScopes, ...(session.additionalLoginScopes ?? [])];
 }
 
 function validateLoginScopes(
@@ -384,7 +399,7 @@ function validateLoginScopes(
   session: ServiceSession,
   requestedScopes: readonly string[]
 ): void {
-  const availableScopes = session.loginScopes;
+  const availableScopes = availableLoginScopes(session);
   if (availableScopes === undefined) {
     throw new LoginScopesNotSupportedError(serviceName);
   }

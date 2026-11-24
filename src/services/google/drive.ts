@@ -3,6 +3,10 @@ import { GoogleService, type GoogleServiceConfig } from './base.js';
 const CONFIG: GoogleServiceConfig = {
   apis: ['drive.googleapis.com'],
   scopes: ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/drive.file'],
+  additionalScopes: [
+    'https://www.googleapis.com/auth/drive.readonly',
+    'https://www.googleapis.com/auth/drive.metadata.readonly',
+  ],
 };
 
 export class GoogleDrive extends GoogleService {

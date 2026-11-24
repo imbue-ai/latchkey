@@ -3,6 +3,7 @@ import { GoogleService, type GoogleServiceConfig } from './base.js';
 const CONFIG: GoogleServiceConfig = {
   apis: ['people.googleapis.com'],
   scopes: ['https://www.googleapis.com/auth/contacts'],
+  additionalScopes: ['https://www.googleapis.com/auth/contacts.readonly'],
 };
 
 export class GooglePeople extends GoogleService {

@@ -96,7 +96,7 @@ interface ScrollableElement {
 
 class DropboxServiceSession extends BrowserFollowupServiceSession {
   protected readonly followupWork = FollowupWork.CreateApp;
-  override readonly loginScopes = DROPBOX_SCOPES;
+  override readonly defaultLoginScopes = DROPBOX_SCOPES;
   private isLoggedIn = false;
   private currentAccountUid?: string;
 
@@ -248,7 +248,7 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
     oldCredentials?: ApiCredentials,
     loginOptions: LoginOptions = {}
   ): Promise<ApiCredentials | null> {
-    const scopes = [ACCOUNT_INFO_SCOPE, ...(loginOptions.scopes ?? this.loginScopes)];
+    const scopes = [ACCOUNT_INFO_SCOPE, ...(loginOptions.scopes ?? this.defaultLoginScopes)];
 
     const page = context.pages()[0];
     if (!page) {

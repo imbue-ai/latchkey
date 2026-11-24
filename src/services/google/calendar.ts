@@ -6,6 +6,10 @@ const CONFIG: GoogleServiceConfig = {
     'https://www.googleapis.com/auth/calendar',
     'https://www.googleapis.com/auth/calendar.events',
   ],
+  additionalScopes: [
+    'https://www.googleapis.com/auth/calendar.readonly',
+    'https://www.googleapis.com/auth/calendar.events.readonly',
+  ],
 };
 
 export class GoogleCalendar extends GoogleService {

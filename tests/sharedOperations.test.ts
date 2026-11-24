@@ -13,6 +13,7 @@ import {
 } from '../src/services/core/base.js';
 import { MockService } from './mockService.js';
 import { GOOGLE_GMAIL } from '../src/services/google/gmail.js';
+import { GOOGLE_DOCS } from '../src/services/google/docs.js';
 import { NOTION_MCP } from '../src/services/notion-mcp.js';
 import { FASTMAIL } from '../src/services/fastmail.js';
 import { GITHUB } from '../src/services/github.js';
@@ -157,7 +158,8 @@ describe('operations', () => {
       expect(info.capabilities).toEqual({
         detectsLoginAccount: true,
         systemBrowserLogin: false,
-        loginScopes: [],
+        defaultLoginScopes: [],
+        availableLoginScopes: [],
       });
       expect(info.credentials).toEqual({});
       expect(info.developerNotes).toBe('Test info for Slack service.');
@@ -174,7 +176,8 @@ describe('operations', () => {
       expect(info.capabilities).toEqual({
         detectsLoginAccount: false,
         systemBrowserLogin: false,
-        loginScopes: [],
+        defaultLoginScopes: [],
+        availableLoginScopes: [],
       });
     });
 
@@ -204,7 +207,23 @@ describe('operations', () => {
 
       const info = await servicesInfo(registry, store, config, service.name);
 
-      expect(info.capabilities.loginScopes).toContain(scope);
+      expect(info.capabilities.defaultLoginScopes).toContain(scope);
+      expect(info.capabilities.availableLoginScopes).toContain(scope);
+    });
+
+    it('lists scopes that are available without being asked for by default', async () => {
+      const readOnlyScope = 'https://www.googleapis.com/auth/documents.readonly';
+      const registry = new ServiceRegistry([GOOGLE_DOCS]);
+
+      const info = await servicesInfo(
+        registry,
+        createApiCredentialStore(),
+        createMockConfig(),
+        GOOGLE_DOCS.name
+      );
+
+      expect(info.capabilities.availableLoginScopes).toContain(readOnlyScope);
+      expect(info.capabilities.defaultLoginScopes).not.toContain(readOnlyScope);
     });
 
     it('reports the system browser login for a service registered with the mcp login flow', async () => {
@@ -227,7 +246,8 @@ describe('operations', () => {
       expect(info.capabilities).toEqual({
         detectsLoginAccount: false,
         systemBrowserLogin: true,
-        loginScopes: [],
+        defaultLoginScopes: [],
+        availableLoginScopes: [],
       });
     });
 
@@ -265,7 +285,8 @@ describe('operations', () => {
       expect(info.capabilities).toEqual({
         detectsLoginAccount: false,
         systemBrowserLogin: false,
-        loginScopes: [],
+        defaultLoginScopes: [],
+        availableLoginScopes: [],
       });
     });
 
@@ -668,7 +689,10 @@ describe('operations', () => {
       ])('refuses %s', async (_name, scopes) => {
         const login = vi.fn();
 
-        const loginAttempt = attemptLogin({ login, loginScopes: ['read', 'write'] }, scopes);
+        const loginAttempt = attemptLogin(
+          { login, defaultLoginScopes: ['read'], additionalLoginScopes: ['write'] },
+          scopes
+        );
 
         await expect(loginAttempt).rejects.toThrow(InvalidLoginScopesError);
         await expect(loginAttempt).rejects.toMatchObject({

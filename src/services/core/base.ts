@@ -237,7 +237,8 @@ export interface LoginOptions {
   /**
    * Ask for these permission scopes only, instead of the generous set the
    * session asks for by default. Callers validate them against the session's
-   * `loginScopes` first, so a session can take them as given.
+   * default and additional login scopes first, so a session can take them as
+   * given.
    */
   readonly scopes?: readonly string[];
 }
@@ -469,14 +470,21 @@ export abstract class ServiceSession {
   readonly supportsSystemBrowser: boolean = false;
 
   /**
-   * The permission scopes {@link login} asks for by default, for sessions that
-   * can be told to ask for fewer (`LoginOptions.scopes`). Undefined for the
+   * The permission scopes {@link login} asks for when it is not told which
+   * (`LoginOptions.scopes`), for sessions that can be told. Undefined for the
    * sessions that cannot, which is the default.
    *
    * Scopes a session cannot work without (e.g. the one its credential check
    * relies on) are requested regardless and do not belong here.
    */
-  readonly loginScopes?: readonly string[];
+  readonly defaultLoginScopes?: readonly string[];
+
+  /**
+   * Scopes a login can be told to ask for on top of the default ones: narrower
+   * alternatives to them (e.g. read-only variants), mostly. Only meaningful
+   * next to {@link defaultLoginScopes}.
+   */
+  readonly additionalLoginScopes?: readonly string[];
 
   /**
    * Generate a random, unique app name using the session's configured prefix.

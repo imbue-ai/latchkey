@@ -813,7 +813,8 @@ describe('CLI commands with dependency injection', () => {
       expect(info.capabilities).toEqual({
         detectsLoginAccount: true,
         systemBrowserLogin: false,
-        loginScopes: [],
+        defaultLoginScopes: [],
+        availableLoginScopes: [],
       });
       expect(info.credentials).toEqual({});
       expect(info.setCredentialsExample).toBe(
@@ -2784,7 +2785,9 @@ describe('CLI commands with dependency injection', () => {
           account: 'user@example.com',
         });
         const service = createMockService({
-          getSession: vi.fn().mockReturnValue({ login, loginScopes: ['read', 'write', 'admin'] }),
+          getSession: vi
+            .fn()
+            .mockReturnValue({ login, defaultLoginScopes: ['read', 'write', 'admin'] }),
         });
         const deps = createMockDependencies({ registry: new ServiceRegistry([service]) });
         saveBrowserConfig(deps.config.configPath, {

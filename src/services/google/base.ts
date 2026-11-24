@@ -757,18 +757,26 @@ async function waitForGoogleLogin(page: Page): Promise<void> {
 export interface GoogleServiceConfig {
   /** The Google API identifiers to enable (e.g., ['gmail.googleapis.com']). */
   readonly apis: readonly string[];
-  /** OAuth scopes required by this service. */
+  /** OAuth scopes a login asks for by default. */
   readonly scopes: readonly string[];
+  /**
+   * Scopes a login can be told to ask for instead (`LoginOptions.scopes`):
+   * narrower alternatives to the default ones, such as read-only variants.
+   * They have to be covered by the enabled `apis`.
+   */
+  readonly additionalScopes?: readonly string[];
 }
 
 class GoogleServiceSession extends ServiceSession {
   private readonly config: GoogleServiceConfig;
-  override readonly loginScopes: readonly string[];
+  override readonly defaultLoginScopes: readonly string[];
+  override readonly additionalLoginScopes: readonly string[];
 
   constructor(service: GoogleService, config: GoogleServiceConfig, appNamePrefix: string) {
     super(service, appNamePrefix);
     this.config = config;
-    this.loginScopes = config.scopes;
+    this.defaultLoginScopes = config.scopes;
+    this.additionalLoginScopes = config.additionalScopes ?? [];
   }
 
   onResponse(_response: Response): void {
@@ -830,7 +838,7 @@ class GoogleServiceSession extends ServiceSession {
           clientId,
           clientSecret,
           redirectUriOverride,
-          loginOptions.scopes ?? this.loginScopes,
+          loginOptions.scopes ?? this.defaultLoginScopes,
           loginOptions.strict ?? false
         );
 

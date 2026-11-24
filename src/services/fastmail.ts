@@ -208,7 +208,7 @@ class FastmailSession extends ServiceSession {
   }
 
   override readonly supportsSystemBrowser = true;
-  override readonly loginScopes = SELECTABLE_OAUTH_SCOPES;
+  override readonly defaultLoginScopes = SELECTABLE_OAUTH_SCOPES;
 
   override async login(
     encryptedStorage: EncryptedStorage,
@@ -249,7 +249,7 @@ class FastmailSession extends ServiceSession {
       authUrl.searchParams.set('client_id', clientId);
       authUrl.searchParams.set('redirect_uri', redirectUri);
       authUrl.searchParams.set('response_type', 'code');
-      const requestedScopes = withRefreshTokenScope(loginOptions.scopes ?? this.loginScopes);
+      const requestedScopes = withRefreshTokenScope(loginOptions.scopes ?? this.defaultLoginScopes);
       authUrl.searchParams.set('scope', requestedScopes.join(' '));
       authUrl.searchParams.set('resource', JMAP_RESOURCE);
       authUrl.searchParams.set('code_challenge', codeChallenge);

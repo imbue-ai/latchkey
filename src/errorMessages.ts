@@ -119,7 +119,7 @@ export const ErrorCodes = {
   systemBrowserCannotBeEphemeral: 'SYSTEM_BROWSER_CANNOT_BE_EPHEMERAL',
   /**
    * `auth browser --scopes` was asked of a service whose login has no fixed
-   * list of scopes to choose from. See `ServiceSession.loginScopes`.
+   * list of scopes to choose from. See `ServiceSession.defaultLoginScopes`.
    */
   loginScopesNotSupported: 'LOGIN_SCOPES_NOT_SUPPORTED',
   /**
