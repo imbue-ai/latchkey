@@ -19,7 +19,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Response } from 'playwright';
-import { CONFIG } from '../src/config.js';
+import { CONFIG } from '../src/globalConfig.js';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { resolveEncryptionKey } from '../src/encryption.js';
 import { withTempBrowserContext } from '../src/playwrightUtils.js';

@@ -14,8 +14,11 @@ import { ServiceRegistry } from '../src/serviceRegistry.js';
 import { Config } from '../src/config.js';
 import type { CliDependencies } from '../src/cliCommands.js';
 import type { CurlResult } from '../src/curl.js';
-import { startGateway, type GatewayServer } from '../src/gateway/server.js';
-import type { GatewayOptions } from '../src/gateway/gatewayEndpoint.js';
+import type { GatewayServer } from '../src/gateway/server.js';
+import {
+  startTestGateway,
+  type TestGatewayOptions as GatewayOptions,
+} from './gatewayTestSupport.js';
 import { LatchkeyRequestSchema } from '../src/gateway/latchkeyEndpoint.js';
 import { writeFileSync } from 'node:fs';
 import {
@@ -268,7 +271,7 @@ describe('/latchkey/ endpoint', () => {
       permissionsOverrideSigningKey: derivePermissionsOverrideSigningKey(TEST_ENCRYPTION_KEY),
     };
 
-    return startGateway(deps, apiCredentialStore, encryptedStorage, options);
+    return startTestGateway(deps, apiCredentialStore, encryptedStorage, options);
   }
 
   function getHost(): string {

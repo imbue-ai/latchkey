@@ -3,14 +3,9 @@
  */
 
 import type { Command } from 'commander';
-import { existsSync, statSync, unlinkSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { existsSync, unlinkSync } from 'node:fs';
 import { createInterface } from 'node:readline';
-import {
-  AmbiguousAccountError,
-  ApiCredentialStore,
-  ApiCredentialStoreError,
-} from './apiCredentials/store.js';
+import { AmbiguousAccountError, ApiCredentialStore } from './apiCredentials/store.js';
 import {
   ApiCredentials,
   ApiCredentialsType,
@@ -43,7 +38,8 @@ import {
   importChromeBrowserState,
   InvalidBrowserStateError,
 } from './browserStateImport.js';
-import { Config, CONFIG } from './config.js';
+import { Config } from './config.js';
+import { CONFIG } from './globalConfig.js';
 import { deleteRegisteredService, saveRegisteredService } from './configDataStore.js';
 import {
   BrowserDisabledError,
@@ -53,7 +49,7 @@ import {
 import { BrowserFeaturesUnavailableError, loadPlaywright } from './playwrightLoader.js';
 import type { CurlResult } from './curl.js';
 import { EncryptedStorage, EncryptedStorageError } from './encryptedStorage.js';
-import { encrypt, EncryptionError, resolveEncryptionKey } from './encryption.js';
+import { resolveEncryptionKey } from './encryption.js';
 import {
   BUILTIN_SERVICES,
   createServiceRegistry,
@@ -94,15 +90,18 @@ import {
   PermissionCheckError,
   type PermissionCheckMetadata,
 } from './permissions.js';
-import { CodedError, ErrorMessages, formatCodedErrorAsJson } from './errorMessages.js';
 import {
-  LATEST_VERSION,
-  MigrationError,
-  readDataFormatVersionOfDirectory,
-  writeDataFormatVersionOfDirectory,
-} from './migrations.js';
+  clearServiceCredentials,
+  InvalidDestinationKeyError,
+  reencryptCredentialFiles,
+  ReencryptCredentialsError,
+  type ReencryptCredentialsResult,
+} from './credentialOperations.js';
+import { CodedError, ErrorMessages, formatCodedErrorAsJson } from './errorMessages.js';
 import { getSkillMdContent } from './skillMd.js';
+import { loadExtensions } from './gateway/extensions.js';
 import { startGateway } from './gateway/server.js';
+import { assembleLatchkeyRuntime } from './runtime.js';
 import {
   buildCurlDryRunRequest,
   callLatchkeyEndpoint,
@@ -415,8 +414,9 @@ async function clearService(
   account: string | undefined,
   all: boolean
 ): Promise<void> {
-  const service = deps.registry.getByName(serviceName);
-  if (service === null) {
+  // Checked before the key is resolved, so that an unknown service is reported
+  // without asking the keychain for anything.
+  if (deps.registry.getByName(serviceName) === null) {
     deps.errorLog(`Error: Unknown service: ${serviceName}`);
     deps.errorLog("Use 'latchkey services list' to see available services.");
     deps.exit(1);
@@ -427,9 +427,12 @@ async function clearService(
 
   let deleted: boolean;
   try {
-    deleted = all
-      ? apiCredentialStore.deleteAll(serviceName)
-      : apiCredentialStore.delete(serviceName, account);
+    deleted = clearServiceCredentials(
+      deps.registry,
+      apiCredentialStore,
+      serviceName,
+      all ? { kind: 'allAccounts' } : { kind: 'account', account }
+    );
   } catch (error) {
     if (error instanceof AmbiguousAccountError) {
       deps.errorLog(`Error: ${error.message}`);
@@ -1339,14 +1342,28 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
 
       const encryptionKey = await resolveEncryptionKeyFromConfig(deps.config);
       const encryptedStorage = new EncryptedStorage(encryptionKey);
-      const apiCredentialStore = createApiCredentialStore(deps, encryptedStorage);
+      const runtime = assembleLatchkeyRuntime({
+        config: deps.config,
+        encryptedStorage,
+        apiCredentialStore: createApiCredentialStore(deps, encryptedStorage),
+        baseServices: deps.baseServices,
+        apiCredentialsTypes: deps.apiCredentialsTypes,
+        permissionsOverrideSigningKey: derivePermissionsOverrideSigningKey(encryptionKey),
+        runCurlAsync: deps.runCurlAsync,
+        checkPermission: deps.checkPermission,
+        log: deps.log,
+        errorLog: deps.errorLog,
+        version: deps.version,
+      });
 
-      const gateway = await startGateway(deps, apiCredentialStore, encryptedStorage, {
+      const gateway = await startGateway(runtime, {
         port,
         host: options.host ?? deps.config.gatewayListenHost,
         maxBodySize,
         password: deps.config.gatewayListenPassword,
-        permissionsOverrideSigningKey: derivePermissionsOverrideSigningKey(encryptionKey),
+        // The command line keeps loading the extensions of its directory; a
+        // program that embeds the gateway passes its own instead.
+        extensions: await loadExtensions(deps.config.extensionsDirectoryPath),
       });
 
       const shutdown = async () => {
@@ -1467,182 +1484,49 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
         // since they are not account-specific.
         const account = getAccount();
 
-        if (existsSync(destinationDirectory) && !statSync(destinationDirectory).isDirectory()) {
-          deps.errorLog(`Error: Destination is not a directory: ${destinationDirectory}`);
-          deps.exit(1);
-        }
-
-        const destination = join(destinationDirectory, basename(deps.config.credentialStorePath));
-
         const sourceKey = await resolveEncryptionKeyFromConfig(deps.config);
 
         // An empty stdin means "reuse the existing encryption key".
         const stdinKey = (await deps.readStdin()).trim();
         const destinationKey = stdinKey === '' ? sourceKey : stdinKey;
-        // Validate the key up front using the encryption routine itself, rather
-        // than duplicating its key-format checks.
+
+        let result: ReencryptCredentialsResult;
         try {
-          encrypt('', destinationKey);
+          result = reencryptCredentialFiles({
+            source: {
+              credentialStorePath: deps.config.credentialStorePath,
+              browserStatePath: deps.config.browserStatePath,
+              encryptionKey: sourceKey,
+            },
+            destination: { directory: destinationDirectory, encryptionKey: destinationKey },
+            apiCredentialsTypes: deps.apiCredentialsTypes,
+            services: options.services,
+            account,
+            isBrowserStateIncluded: options.browserState === true,
+          });
         } catch (error) {
-          if (error instanceof EncryptionError) {
+          if (error instanceof InvalidDestinationKeyError) {
             deps.errorLog(`Error: ${error.message}. Generate a key with: openssl rand -base64 32`);
             deps.exit(1);
           }
-          throw error;
-        }
-
-        const sourceStorage = new EncryptedStorage(sourceKey);
-        const sourceStore = createApiCredentialStore(deps, sourceStorage);
-
-        let allCredentials: ReadonlyMap<string, ReadonlyMap<string, ApiCredentials>>;
-        let preparedServiceNames: readonly string[];
-        try {
-          allCredentials = sourceStore.getAll();
-          preparedServiceNames = sourceStore.listPreparedServiceNames();
-        } catch (error) {
-          if (error instanceof ApiCredentialStoreError || error instanceof EncryptedStorageError) {
+          if (error instanceof ReencryptCredentialsError) {
             deps.errorLog(`Error: ${error.message}`);
+            if (error.hint !== null) {
+              deps.errorLog(error.hint);
+            }
             deps.exit(1);
           }
           throw error;
         }
 
-        const sourceBrowserStatePath = deps.config.browserStatePath;
-        let browserState: string | null = null;
-        if (options.browserState === true) {
-          try {
-            browserState = sourceStorage.readFile(sourceBrowserStatePath);
-          } catch (error) {
-            if (error instanceof EncryptedStorageError) {
-              deps.errorLog(`Error: ${error.message}`);
-              deps.exit(1);
-            }
-            throw error;
-          }
-          if (browserState === null) {
-            deps.errorLog(`Error: No browser state found at ${sourceBrowserStatePath}.`);
-            deps.exit(1);
-          }
-        }
-
-        // A service can have only a preparation and no credentials yet, so both
-        // sections of the store contribute to what can be re-encrypted.
-        const storedServiceNames = new Set([...allCredentials.keys(), ...preparedServiceNames]);
-
-        let selectedServiceNames: string[];
-        if (options.services !== undefined) {
-          const missing = options.services.filter((name) => !storedServiceNames.has(name));
-          if (missing.length > 0) {
-            deps.errorLog(`Error: No stored credentials or preparation for: ${missing.join(', ')}`);
-            deps.exit(1);
-          }
-          selectedServiceNames = options.services;
-        } else {
-          selectedServiceNames = [...storedServiceNames];
-        }
-
-        if (
-          account !== undefined &&
-          !selectedServiceNames.some((name) => allCredentials.get(name)?.has(account) === true)
-        ) {
-          deps.errorLog(`Error: No stored credentials for account: ${account}`);
-          deps.exit(1);
-        }
-
-        if (selectedServiceNames.length === 0 && browserState === null) {
-          deps.errorLog('Error: No stored credentials found to re-encrypt.');
-          deps.exit(1);
-        }
-
-        const destinationStorage = new EncryptedStorage(destinationKey);
-        const destinationStore = new ApiCredentialStore(
-          destination,
-          destinationStorage,
-          deps.apiCredentialsTypes
-        );
-        // Reading the destination store validates that it can be decrypted with
-        // the destination key before anything is written into it.
-        if (existsSync(destination)) {
-          // An existing store in an older data format would be migrated (and
-          // thereby mangled) by the next Latchkey run, so refuse to add to it.
-          let destinationVersion: number;
-          try {
-            destinationVersion = readDataFormatVersionOfDirectory(destinationDirectory);
-          } catch (error) {
-            if (error instanceof MigrationError) {
-              deps.errorLog(`Error: ${error.message}`);
-              deps.exit(1);
-            }
-            throw error;
-          }
-          if (destinationVersion !== LATEST_VERSION) {
-            deps.errorLog(
-              `Error: The existing credential store at ${destination} is in data format ` +
-                `version ${String(destinationVersion)}, but ${String(LATEST_VERSION)} is required.`
-            );
-            deps.errorLog(
-              'Point Latchkey at that directory to migrate it first, or choose an empty destination.'
-            );
-            deps.exit(1);
-          }
-
-          try {
-            destinationStore.getAll();
-          } catch (error) {
-            if (
-              error instanceof ApiCredentialStoreError ||
-              error instanceof EncryptedStorageError
-            ) {
-              deps.errorLog(
-                `Error: Cannot read the existing credential store at ${destination}: ${error.message}`
-              );
-              deps.errorLog('It must be readable with the new key to be added to.');
-              deps.exit(1);
-            }
-            throw error;
-          }
-        }
-
-        for (const serviceName of selectedServiceNames) {
-          // Without an account filter the whole service is replaced. With one,
-          // only the exported account is overwritten (by saving it below), so
-          // that accounts the source does not have stay untouched.
-          if (account === undefined) {
-            destinationStore.deleteAll(serviceName);
-          }
-          const accountMap = allCredentials.get(serviceName);
-          if (accountMap !== undefined) {
-            for (const [storedAccount, credentials] of accountMap) {
-              if (account !== undefined && storedAccount !== account) {
-                continue;
-              }
-              destinationStore.save(serviceName, credentials, storedAccount);
-            }
-          }
-          const preparation = sourceStore.getPreparation(serviceName);
-          if (preparation !== null) {
-            destinationStore.savePreparation(serviceName, preparation);
-          }
-        }
-
-        if (selectedServiceNames.length > 0) {
+        if (result.services.length > 0) {
           deps.log(
-            `Re-encrypted ${String(selectedServiceNames.length)} service(s) to ${destination}.`
+            `Re-encrypted ${String(result.services.length)} service(s) to ${result.credentialStorePath}.`
           );
         }
-
-        if (browserState !== null) {
-          const browserStateDestination = join(
-            destinationDirectory,
-            basename(sourceBrowserStatePath)
-          );
-          destinationStorage.writeFile(browserStateDestination, browserState);
-          deps.log(`Re-encrypted browser state to ${browserStateDestination}.`);
+        if (result.browserStatePath !== null) {
+          deps.log(`Re-encrypted browser state to ${result.browserStatePath}.`);
         }
-
-        // Stamp the data format version so that Latchkey does not mistake the
-        // exported directory for one in the oldest format and "migrate" it.
-        writeDataFormatVersionOfDirectory(destinationDirectory, LATEST_VERSION);
       }
     );
 

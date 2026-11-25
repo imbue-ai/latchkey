@@ -1,44 +1,59 @@
 /**
- * Local HTTP gateway server.
+ * The gateway: a request handler over a runtime, and the HTTP server the
+ * command line puts in front of it.
  *
- * Routes incoming requests to either the `/gateway/<target-url>` proxy handler
- * or the `/latchkey/` RPC endpoint.
+ * `createGatewayRequestHandler` routes a request to the `/gateway/<target-url>`
+ * proxy, to the `/latchkey/` RPC endpoint, or to the gateway's extensions. It
+ * owns no socket: the caller attaches it to a server of its own. `startGateway`
+ * is that server for a caller that wants one listener and nothing more.
  */
 
 import * as http from 'node:http';
-import type { ApiCredentialStore } from '../apiCredentials/store.js';
-import type { CliDependencies } from '../cliCommands.js';
-import type { EncryptedStorage } from '../encryptedStorage.js';
 import { ErrorMessages } from '../errorMessages.js';
 import {
   extractTargetUrl,
   GATEWAY_PATH_PREFIX,
   handleGatewayRequest,
-  type GatewayOptions,
+  type GatewayDependencies,
+  type GatewayRequestSettings,
 } from './gatewayEndpoint.js';
 import { handleLatchkeyRequest } from './latchkeyEndpoint.js';
 import { decodeHeaderValue } from './headerEncoding.js';
 import { GATEWAY_PASSWORD_HEADER, passwordsMatch } from './password.js';
-import { createServiceRegistry } from '../serviceRegistry.js';
 import {
   dispatchExtensionRequest,
-  loadExtensions,
   startExtensions,
   stopExtensions,
-  type LoadedExtension,
+  type GatewayExtension,
 } from './extensions.js';
 import {
   InvalidPermissionsOverrideError,
   PermissionsOverrideFileMissingError,
   resolveRequestPermissionsConfig,
 } from './permissionsOverride.js';
+import { getLatchkeyRuntimeInternals, type LatchkeyRuntime } from '../runtime.js';
+
+/**
+ * How long `startGateway`'s `close` waits for the requests in flight before it
+ * ends them.
+ */
+const SHUTDOWN_TIMEOUT_MS = 10_000;
+
+/**
+ * How long a `stop` that had to end requests waits for their handlers to
+ * return before it gives up on them. A killed curl and a destroyed response
+ * make a handler return at once; this only bounds the wait for one that does
+ * not.
+ */
+const FORCED_END_GRACE_MS = 5_000;
 
 function sendErrorResponse(
   response: http.ServerResponse,
   statusCode: number,
-  message: string
+  message: string,
+  extraHeaders: http.OutgoingHttpHeaders = {}
 ): void {
-  response.writeHead(statusCode, { 'Content-Type': 'application/json' });
+  response.writeHead(statusCode, { 'Content-Type': 'application/json', ...extraHeaders });
   response.end(JSON.stringify({ error: message, latchkeyError: true }));
 }
 
@@ -63,7 +78,7 @@ function enforcePassword(
   request: http.IncomingMessage,
   response: http.ServerResponse,
   expectedPassword: string | null,
-  deps: CliDependencies
+  log: (message: string) => void
 ): boolean {
   if (expectedPassword === null) return true;
   const provided = readSingleHeader(request, GATEWAY_PASSWORD_HEADER);
@@ -72,26 +87,21 @@ function enforcePassword(
   }
   const method = request.method ?? 'UNKNOWN';
   const path = request.url ?? '';
-  deps.log(`${method} ${path} -> 401 (password)`);
+  log(`${method} ${path} -> 401 (password)`);
   sendErrorResponse(response, 401, 'Unauthorized: invalid or missing Latchkey gateway password.');
   return false;
 }
 
-export interface GatewayServer {
-  readonly server: http.Server;
-  readonly close: () => Promise<void>;
-}
-
 /**
- * Run an inbound request through the loaded extensions. Resolves to true when
- * the request has been handled in some way and false if not.
+ * Run an inbound request through the extensions. Resolves to true when the
+ * request has been handled in some way and false if not.
  */
 function runExtensions(
   request: http.IncomingMessage,
   response: http.ServerResponse,
-  extensions: readonly LoadedExtension[],
-  deps: CliDependencies,
-  options: GatewayOptions
+  extensions: readonly GatewayExtension[],
+  deps: GatewayDependencies,
+  settings: GatewayRequestSettings
 ): Promise<boolean> {
   if (extensions.length === 0) return Promise.resolve(false);
 
@@ -103,7 +113,7 @@ function runExtensions(
     permissionsConfigPath = resolveRequestPermissionsConfig(
       request.headers,
       deps.config.permissionsConfigPath,
-      options.permissionsOverrideSigningKey
+      settings.permissionsOverrideSigningKey
     );
   } catch (error) {
     if (error instanceof InvalidPermissionsOverrideError) {
@@ -117,8 +127,8 @@ function runExtensions(
       return Promise.resolve(true);
     }
     // resolveRequestPermissionsConfig only throws the two known error
-    // types, so this branch is just defensive: an http.Server request
-    // listener is sync, and rethrowing here would crash the process.
+    // types, so this branch is just defensive: a request listener is sync,
+    // and rethrowing here would crash the process.
     deps.errorLog(
       `Unexpected error resolving permissions override for ${method} ${rawUrl}: ` +
         (error instanceof Error ? error.message : String(error))
@@ -130,72 +140,182 @@ function runExtensions(
   return dispatchExtensionRequest(request, response, extensions, deps, permissionsConfigPath);
 }
 
+export interface GatewayRequestHandlerOptions {
+  /**
+   * When not null, every request must present this value in the
+   * `X-Latchkey-Gateway-Password` header.
+   */
+  readonly password: string | null;
+  /** The largest request body the gateway reads, in bytes. */
+  readonly maxBodySize: number;
+  /** The extensions a request that is not the gateway's own is offered to, in order. */
+  readonly extensions: readonly GatewayExtension[];
+  /**
+   * The `customMetadata` of every permission check for which Latchkey has no
+   * account: a request offered to the extensions, and a proxied request that
+   * Latchkey injects no credentials into. When omitted, none is passed, and
+   * the permission library falls back to the DETENT_CUSTOM_METADATA
+   * environment variable.
+   */
+  readonly defaultPermissionCheckMetadata?: Readonly<Record<string, unknown>>;
+}
+
+export interface GatewayRequestHandler {
+  /**
+   * Handle one request. Pass it to `http.createServer`, or call it from a
+   * request listener of your own.
+   */
+  readonly handleRequest: (request: http.IncomingMessage, response: http.ServerResponse) => void;
+  /** Run each extension's `start`, in order. Call it once, before the first request. */
+  readonly start: () => Promise<void>;
+  /**
+   * Stop the gateway. Every call returns the promise of the first.
+   *
+   * From the first call a new request is answered 503. Each extension's
+   * `stop` is called, in order. The requests in flight are given until the
+   * deadline; then the curl process of every proxied request that has not
+   * finished is killed and every response still open is destroyed. The
+   * promise resolves when no request is being handled any more. It closes no
+   * socket, because the handler owns none.
+   */
+  readonly stop: (options: { readonly deadlineMilliseconds: number }) => Promise<void>;
+}
+
 /**
- * Start the gateway HTTP server.
+ * Create the gateway's request handler over a runtime.
+ *
+ * Loads no extension from disk: the extensions are the ones passed in. Use
+ * `loadExtensions` to pass those of a directory.
  */
-export async function startGateway(
-  deps: CliDependencies,
-  apiCredentialStore: ApiCredentialStore,
-  encryptedStorage: EncryptedStorage,
-  options: GatewayOptions
-): Promise<GatewayServer> {
-  const inFlightRequests = new Set<Promise<void>>();
+export function createGatewayRequestHandler(
+  runtime: LatchkeyRuntime,
+  options: GatewayRequestHandlerOptions
+): GatewayRequestHandler {
+  const internals = getLatchkeyRuntimeInternals(runtime);
+  const extensions = options.extensions;
+  const abortController = new AbortController();
+  const settings: GatewayRequestSettings = {
+    maxBodySize: options.maxBodySize,
+    permissionsOverrideSigningKey: internals.permissionsOverrideSigningKey,
+    abortSignal: abortController.signal,
+  };
 
-  const extensions = await loadExtensions(deps.config.extensionsDirectoryPath);
-  await startExtensions(extensions);
+  const defaultMetadata = options.defaultPermissionCheckMetadata;
+  const checkPermission: GatewayDependencies['checkPermission'] =
+    defaultMetadata === undefined
+      ? internals.checkPermission
+      : (request, configPath, doNotUseBuiltinSchemas, metadata) =>
+          internals.checkPermission(
+            request,
+            configPath,
+            doNotUseBuiltinSchemas,
+            metadata ?? defaultMetadata
+          );
 
-  const server = http.createServer((request, response) => {
+  // What `stop` waits for: the handlers that have not returned, and the
+  // responses that are not finished (an extension may return and keep its
+  // response open, as a follow stream does).
+  const pendingWork = new Set<Promise<unknown>>();
+  const openResponses = new Set<http.ServerResponse>();
+  let idleListeners: (() => void)[] = [];
+  let stopPromise: Promise<void> | null = null;
+
+  const isIdle = (): boolean => pendingWork.size === 0 && openResponses.size === 0;
+
+  const notifyWhenIdle = (): void => {
+    if (!isIdle()) return;
+    const listeners = idleListeners;
+    idleListeners = [];
+    for (const listener of listeners) listener();
+  };
+
+  const track = (work: Promise<unknown>): void => {
+    pendingWork.add(work);
+    void work.finally(() => {
+      pendingWork.delete(work);
+      notifyWhenIdle();
+    });
+  };
+
+  /** Resolves to whether the gateway became idle within the time given. */
+  const waitUntilIdle = (timeoutMilliseconds: number): Promise<boolean> =>
+    new Promise((resolve) => {
+      if (isIdle()) {
+        resolve(true);
+        return;
+      }
+      const timer = setTimeout(() => {
+        resolve(isIdle());
+      }, timeoutMilliseconds);
+      idleListeners.push(() => {
+        clearTimeout(timer);
+        resolve(true);
+      });
+    });
+
+  const handleRequest = (request: http.IncomingMessage, response: http.ServerResponse): void => {
     const rawUrl = request.url ?? '';
     const method = request.method ?? 'UNKNOWN';
 
-    if (!enforcePassword(request, response, options.password, deps)) {
+    if (stopPromise !== null) {
+      runtime.log(`${method} ${rawUrl} -> 503 (shutting down)`);
+      sendErrorResponse(response, 503, 'The Latchkey gateway is shutting down.', {
+        Connection: 'close',
+      });
+      return;
+    }
+
+    openResponses.add(response);
+    response.once('close', () => {
+      openResponses.delete(response);
+      notifyWhenIdle();
+    });
+
+    if (!enforcePassword(request, response, options.password, runtime.log)) {
       return;
     }
 
     // Health endpoint
     if (rawUrl === '/' && method === 'GET') {
       response.writeHead(200, { 'Content-Type': 'application/json' });
-      response.end(JSON.stringify({ status: 'ok', version: deps.version }));
+      response.end(JSON.stringify({ status: 'ok', version: runtime.version }));
       return;
     }
 
-    // Build the registry from config.json as it reads now, rather than using
-    // the one in `deps`, so that registering or deregistering a service while
-    // the gateway runs takes effect without a restart — the way writes to the
-    // credential store and to permissions.json already do. Each request gets
-    // its own: a shared one would be rebuilt underneath requests already in
-    // flight.
-    const requestDeps: CliDependencies = {
-      ...deps,
-      registry: createServiceRegistry(
-        deps.baseServices,
-        deps.config.configPath,
-        deps.config.hideBuiltinServices
-      ),
+    // Build the registry from config.json as it reads now, so that
+    // registering or deregistering a service while the gateway runs takes
+    // effect without a restart — the way writes to the credential store and
+    // to permissions.json already do. Each request gets its own: a shared one
+    // would be rebuilt underneath requests already in flight.
+    const requestDeps: GatewayDependencies = {
+      registry: runtime.createServiceRegistry(),
+      config: runtime.config,
+      runCurlAsync: internals.runCurlAsync,
+      checkPermission,
+      log: runtime.log,
+      errorLog: runtime.errorLog,
+      version: runtime.version,
     };
 
     // Latchkey RPC endpoint
     if (rawUrl === '/latchkey/' || rawUrl === '/latchkey') {
-      const requestPromise = handleLatchkeyRequest(
-        request,
-        response,
-        requestDeps,
-        apiCredentialStore,
-        encryptedStorage,
-        options
-      ).catch((error: unknown) => {
-        deps.errorLog(
-          `Unexpected error handling /latchkey/: ${error instanceof Error ? error.message : String(error)}`
-        );
-        if (!response.headersSent) {
-          sendErrorResponse(response, 500, 'Internal error');
-        }
-      });
-
-      inFlightRequests.add(requestPromise);
-      void requestPromise.finally(() => {
-        inFlightRequests.delete(requestPromise);
-      });
+      track(
+        handleLatchkeyRequest(
+          request,
+          response,
+          requestDeps,
+          runtime.apiCredentialStore,
+          runtime.encryptedStorage,
+          settings
+        ).catch((error: unknown) => {
+          runtime.errorLog(
+            `Unexpected error handling /latchkey/: ${error instanceof Error ? error.message : String(error)}`
+          );
+          if (!response.headersSent) {
+            sendErrorResponse(response, 500, 'Internal error');
+          }
+        })
+      );
       return;
     }
 
@@ -203,82 +323,125 @@ export async function startGateway(
     if (rawUrl.startsWith(GATEWAY_PATH_PREFIX)) {
       const targetUrl = extractTargetUrl(rawUrl);
       if (targetUrl === null) {
-        deps.log(`${method} ${rawUrl.slice(GATEWAY_PATH_PREFIX.length)} -> 400`);
+        runtime.log(`${method} ${rawUrl.slice(GATEWAY_PATH_PREFIX.length)} -> 400`);
         sendErrorResponse(response, 400, ErrorMessages.couldNotExtractUrl);
         return;
       }
 
-      const requestPromise = handleGatewayRequest(
-        request,
-        response,
-        targetUrl,
-        requestDeps,
-        apiCredentialStore,
-        options
-      ).catch((error: unknown) => {
-        deps.errorLog(
-          `Unexpected error handling ${method} ${targetUrl}: ${error instanceof Error ? error.message : String(error)}`
-        );
-        if (!response.headersSent) {
-          sendErrorResponse(response, 502, ErrorMessages.upstreamRequestFailed);
-        }
-      });
-
-      inFlightRequests.add(requestPromise);
-      void requestPromise.finally(() => {
-        inFlightRequests.delete(requestPromise);
-      });
+      track(
+        handleGatewayRequest(
+          request,
+          response,
+          targetUrl,
+          requestDeps,
+          runtime.apiCredentialStore,
+          settings
+        ).catch((error: unknown) => {
+          runtime.errorLog(
+            `Unexpected error handling ${method} ${targetUrl}: ${error instanceof Error ? error.message : String(error)}`
+          );
+          if (!response.headersSent) {
+            sendErrorResponse(response, 502, ErrorMessages.upstreamRequestFailed);
+          }
+        })
+      );
       return;
     }
 
     // Finally, try extensions (if any).
-    const requestPromise = runExtensions(request, response, extensions, requestDeps, options)
-      .then((handled) => {
-        if (!handled && !response.headersSent) {
-          response.writeHead(404);
-          response.end();
-        }
-      })
-      .catch((error: unknown) => {
-        deps.errorLog(
-          `Unexpected error handling extension request ${method} ${rawUrl}: ` +
-            (error instanceof Error ? error.message : String(error))
-        );
-        if (!response.headersSent) {
-          sendErrorResponse(response, 500, 'Internal error');
-        }
-      });
-    inFlightRequests.add(requestPromise);
-    void requestPromise.finally(() => {
-      inFlightRequests.delete(requestPromise);
-    });
-  });
+    track(
+      runExtensions(request, response, extensions, requestDeps, settings)
+        .then((handled) => {
+          if (!handled && !response.headersSent) {
+            response.writeHead(404);
+            response.end();
+          }
+        })
+        .catch((error: unknown) => {
+          runtime.errorLog(
+            `Unexpected error handling extension request ${method} ${rawUrl}: ` +
+              (error instanceof Error ? error.message : String(error))
+          );
+          if (!response.headersSent) {
+            sendErrorResponse(response, 500, 'Internal error');
+          }
+        })
+    );
+  };
 
-  const SHUTDOWN_TIMEOUT_MS = 10_000;
+  const runStop = async (deadlineMilliseconds: number): Promise<void> => {
+    // A well-behaved stop() hook ends every response the extension is
+    // holding open, which lets the gateway become idle well before the
+    // deadline. The hooks count as work in flight, so the gateway is not
+    // idle while one of them is still running.
+    track(stopExtensions(extensions, runtime));
 
-  const close = (): Promise<void> => {
-    return new Promise((resolve) => {
-      deps.log('Shutting down...');
+    if (await waitUntilIdle(deadlineMilliseconds)) {
+      return;
+    }
 
-      // Give extensions a chance to release long-lived connections. A
-      // well-behaved stop() hook ends every response the extension is
-      // holding open, which lets server.close() complete naturally well
-      // before the force-close timeout fires. We don't await this here:
-      // server.close() will only signal completion once the response
-      // count actually drops to zero, so the two run concurrently and
-      // the result is the same either way.
-      void stopExtensions(extensions, deps);
+    abortController.abort();
+    for (const response of openResponses) {
+      response.destroy();
+    }
 
+    if (!(await waitUntilIdle(FORCED_END_GRACE_MS))) {
+      runtime.errorLog(
+        `Gave up waiting for ${String(pendingWork.size)} request handler(s) and ` +
+          `${String(openResponses.size)} response(s) that outlived the gateway's shutdown.`
+      );
+    }
+  };
+
+  return {
+    handleRequest,
+    start: () => startExtensions(extensions),
+    stop: ({ deadlineMilliseconds }) => {
+      stopPromise ??= runStop(deadlineMilliseconds);
+      return stopPromise;
+    },
+  };
+}
+
+export interface GatewayServer {
+  readonly server: http.Server;
+  readonly close: () => Promise<void>;
+}
+
+export interface GatewayServerOptions extends GatewayRequestHandlerOptions {
+  readonly host: string;
+  readonly port: number;
+}
+
+/**
+ * Start the gateway on an HTTP server of its own.
+ */
+export async function startGateway(
+  runtime: LatchkeyRuntime,
+  options: GatewayServerOptions
+): Promise<GatewayServer> {
+  const handler = createGatewayRequestHandler(runtime, options);
+  await handler.start();
+
+  const server = http.createServer(handler.handleRequest);
+
+  let closePromise: Promise<void> | null = null;
+  const runClose = async (): Promise<void> => {
+    runtime.log('Shutting down...');
+    const serverClosed = new Promise<void>((resolve) => {
       server.close(() => {
         resolve();
       });
-
-      // Force-close after timeout
-      setTimeout(() => {
-        server.closeAllConnections();
-        resolve();
-      }, SHUTDOWN_TIMEOUT_MS);
     });
+    await handler.stop({ deadlineMilliseconds: SHUTDOWN_TIMEOUT_MS });
+    // The handler is done with every request, so whatever connection is still
+    // open is an idle one, which nothing is waiting on.
+    server.closeAllConnections();
+    await serverClosed;
+  };
+  const close = (): Promise<void> => {
+    closePromise ??= runClose();
+    return closePromise;
   };
 
   return new Promise((resolve, reject) => {
@@ -286,7 +449,7 @@ export async function startGateway(
 
     server.listen(options.port, options.host, () => {
       const passwordNote = options.password === null ? '' : ' (password authentication enabled)';
-      deps.log(
+      runtime.log(
         `Latchkey gateway listening on ${options.host}:${String(options.port)}${passwordNote}`
       );
       resolve({ server, close });

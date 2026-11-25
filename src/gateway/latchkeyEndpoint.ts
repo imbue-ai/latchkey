@@ -10,7 +10,6 @@ import { text } from 'node:stream/consumers';
 import { z } from 'zod';
 import { ApiCredentialsUsageError } from '../apiCredentials/base.js';
 import { AmbiguousAccountError, type ApiCredentialStore } from '../apiCredentials/store.js';
-import type { CliDependencies } from '../cliCommands.js';
 import {
   buildCurlDryRunReport,
   CredentialsExpiredError,
@@ -22,7 +21,11 @@ import {
 } from '../curlInjection.js';
 import type { EncryptedStorage } from '../encryptedStorage.js';
 import { PermissionCheckError } from '../permissions.js';
-import { buildCurlArguments, type GatewayOptions } from './gatewayEndpoint.js';
+import {
+  buildCurlArguments,
+  type GatewayDependencies,
+  type GatewayRequestSettings,
+} from './gatewayEndpoint.js';
 import {
   InvalidPermissionsOverrideError,
   PermissionsOverrideFileMissingError,
@@ -217,9 +220,9 @@ function describeRequest(parsed: LatchkeyRequest): string {
 async function curlDryRun(
   params: z.infer<typeof CurlDryRunRequestSchema>['params'],
   requestHeaders: http.IncomingHttpHeaders,
-  deps: CliDependencies,
+  deps: GatewayDependencies,
   apiCredentialStore: ApiCredentialStore,
-  options: GatewayOptions
+  options: GatewayRequestSettings
 ): Promise<unknown> {
   const permissionsConfigPath = resolveRequestPermissionsConfig(
     requestHeaders,
@@ -254,10 +257,10 @@ async function curlDryRun(
 async function dispatch(
   parsed: LatchkeyRequest,
   requestHeaders: http.IncomingHttpHeaders,
-  deps: CliDependencies,
+  deps: GatewayDependencies,
   apiCredentialStore: ApiCredentialStore,
   encryptedStorage: EncryptedStorage,
-  options: GatewayOptions
+  options: GatewayRequestSettings
 ): Promise<unknown> {
   switch (parsed.command) {
     case 'services list':
@@ -320,10 +323,10 @@ async function dispatch(
 export async function handleLatchkeyRequest(
   request: http.IncomingMessage,
   response: http.ServerResponse,
-  deps: CliDependencies,
+  deps: GatewayDependencies,
   apiCredentialStore: ApiCredentialStore,
   encryptedStorage: EncryptedStorage,
-  options: GatewayOptions
+  options: GatewayRequestSettings
 ): Promise<void> {
   if (request.method !== 'POST') {
     sendErrorResponse(response, 405, 'Method not allowed. Use POST.');

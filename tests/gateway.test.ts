@@ -9,14 +9,17 @@ import {
   extractTargetUrl,
   buildCurlArguments,
   parseResponseHeaders,
-  type GatewayOptions,
 } from '../src/gateway/gatewayEndpoint.js';
 import {
   createPermissionsOverrideJwt,
   derivePermissionsOverrideSigningKey,
   PERMISSIONS_OVERRIDE_HEADER,
 } from '../src/gateway/permissionsOverride.js';
-import { startGateway, type GatewayServer } from '../src/gateway/server.js';
+import type { GatewayServer } from '../src/gateway/server.js';
+import {
+  startTestGateway,
+  type TestGatewayOptions as GatewayOptions,
+} from './gatewayTestSupport.js';
 import type { AsyncCurlResult, CurlResult } from '../src/curl.js';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { ApiCredentialStore } from '../src/apiCredentials/store.js';
@@ -299,7 +302,7 @@ describe('gateway server', () => {
       ...optionOverrides,
     };
 
-    return startGateway(deps, apiCredentialStore, encryptedStorage, options);
+    return startTestGateway(deps, apiCredentialStore, encryptedStorage, options);
   }
 
   function getHost(): string {

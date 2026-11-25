@@ -12,11 +12,12 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { ApiCredentialsUsageError } from '../apiCredentials/base.js';
 import { AmbiguousAccountError, type ApiCredentialStore } from '../apiCredentials/store.js';
-import type { AsyncCurlResult } from '../curl.js';
-import type { CliDependencies } from '../cliCommands.js';
+import type { Config } from '../config.js';
+import type { AsyncCurlResult, runAsync as curlRunAsync } from '../curl.js';
 import {
   CredentialsExpiredError,
   ensureCurlRequestIsPermitted,
+  type PermissionCheckDependencies,
   NoCredentialsForServiceError,
   NoServiceForUrlError,
   prepareCurlInvocation,
@@ -24,6 +25,7 @@ import {
   UrlExtractionFailedError,
 } from '../curlInjection.js';
 import { PermissionCheckError } from '../permissions.js';
+import type { ServiceRegistry } from '../serviceRegistry.js';
 import { ErrorMessages } from '../errorMessages.js';
 import { GATEWAY_ACCOUNT_HEADER } from './account.js';
 import { decodeHeaderValue } from './headerEncoding.js';
@@ -82,21 +84,36 @@ export class BodyTooLargeError extends Error {
   }
 }
 
-export interface GatewayOptions {
-  readonly port: number;
-  readonly host: string;
+/**
+ * What the gateway needs from its surroundings to serve one request. The
+ * registry is the one built for that request, so that a service registered
+ * while the gateway runs is known to the next request.
+ */
+export interface GatewayDependencies {
+  readonly registry: ServiceRegistry;
+  readonly config: Config;
+  readonly runCurlAsync: typeof curlRunAsync;
+  readonly checkPermission: PermissionCheckDependencies['checkPermission'];
+  readonly log: (message: string) => void;
+  readonly errorLog: (message: string) => void;
+  readonly version: string;
+}
+
+/**
+ * The settings of a gateway that its request handlers share.
+ */
+export interface GatewayRequestSettings {
   readonly maxBodySize: number;
-  /**
-   * When set, the gateway requires every incoming request to present this
-   * value in the `X-Latchkey-Gateway-Password` header. When null, no
-   * authentication is enforced.
-   */
-  readonly password: string | null;
   /**
    * HMAC key used to verify per-request `X-Latchkey-Gateway-Permissions-Override`
    * JWTs.
    */
   readonly permissionsOverrideSigningKey: Buffer;
+  /**
+   * Aborted when the gateway stops waiting for the requests still in flight;
+   * the curl process of a proxied request is killed then.
+   */
+  readonly abortSignal?: AbortSignal;
 }
 
 function sendErrorResponse(
@@ -302,9 +319,9 @@ export async function handleGatewayRequest(
   request: http.IncomingMessage,
   response: http.ServerResponse,
   targetUrl: string,
-  deps: CliDependencies,
+  deps: GatewayDependencies,
   apiCredentialStore: ApiCredentialStore,
-  options: GatewayOptions
+  options: GatewayRequestSettings
 ): Promise<void> {
   // A request marked as carrying its own credentials (see
   // `GATEWAY_NO_CREDENTIALS_HEADER`) makes the gateway a plain proxy for an
@@ -463,6 +480,7 @@ export async function handleGatewayRequest(
 
     const result: AsyncCurlResult = await deps.runCurlAsync(curlArgs, {
       stdin: body ?? undefined,
+      signal: options.abortSignal,
     });
 
     if (result.returncode !== 0) {

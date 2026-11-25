@@ -22,7 +22,7 @@
  */
 
 import { loadBrowserConfig } from '../src/configDataStore.js';
-import { CONFIG } from '../src/config.js';
+import { CONFIG } from '../src/globalConfig.js';
 import { runCodegen } from './codegen/index.js';
 
 class InvalidArgumentsError extends Error {

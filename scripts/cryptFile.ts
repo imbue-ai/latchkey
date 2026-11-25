@@ -20,7 +20,7 @@
 
 import { program } from 'commander';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { CONFIG } from '../src/config.js';
+import { CONFIG } from '../src/globalConfig.js';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { encrypt, generateKey, resolveEncryptionKey } from '../src/encryption.js';
 import { retrieveFromKeychain, KeychainNotAvailableError } from '../src/keychain.js';

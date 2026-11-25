@@ -36,10 +36,13 @@ import * as http from 'node:http';
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import type { CliDependencies } from '../cliCommands.js';
 import { PermissionCheckError } from '../permissions.js';
 import { RequestNotPermittedError } from '../curlInjection.js';
-import { GATEWAY_INTERNAL_HEADERS, HOP_BY_HOP_HEADERS } from './gatewayEndpoint.js';
+import {
+  GATEWAY_INTERNAL_HEADERS,
+  HOP_BY_HOP_HEADERS,
+  type GatewayDependencies,
+} from './gatewayEndpoint.js';
 
 /**
  * Placeholder URL parts that stand in for "this gateway" when extension
@@ -80,12 +83,20 @@ export type ExtensionHandler = (
 
 export type ExtensionLifecycleHook = () => void | Promise<void>;
 
-export interface LoadedExtension {
+/**
+ * An extension of the gateway: a request handler with optional lifecycle
+ * hooks. `loadExtensions` builds one from each file of a directory, and a
+ * program that embeds the gateway builds its own and passes them as values.
+ */
+export interface GatewayExtension {
+  /**
+   * Names the extension in logs and errors. For an extension loaded from a
+   * file, the absolute path of that file.
+   */
+  readonly name: string;
   readonly handler: ExtensionHandler;
   readonly start?: ExtensionLifecycleHook;
   readonly stop?: ExtensionLifecycleHook;
-  /** Absolute path of the file the handler was loaded from. */
-  readonly sourceFile: string;
 }
 
 export class ExtensionLoadError extends Error {
@@ -140,7 +151,7 @@ function extractOptionalLifecycleHook(
  * directory does not exist. Throws `ExtensionLoadError` on the first file
  * that fails to import or has the wrong shape.
  */
-export async function loadExtensions(directory: string): Promise<readonly LoadedExtension[]> {
+export async function loadExtensions(directory: string): Promise<readonly GatewayExtension[]> {
   if (!existsSync(directory)) {
     return [];
   }
@@ -154,7 +165,7 @@ export async function loadExtensions(directory: string): Promise<readonly Loaded
     .map((entry) => entry.name)
     .sort();
 
-  const extensions: LoadedExtension[] = [];
+  const extensions: GatewayExtension[] = [];
   for (const fileName of fileNames) {
     const filePath = join(directory, fileName);
     let importedModule: unknown;
@@ -174,9 +185,9 @@ export async function loadExtensions(directory: string): Promise<readonly Loaded
     const stop = extractOptionalLifecycleHook(importedModule, 'stop', filePath);
     extensions.push({
       handler: importedModule.default,
+      name: filePath,
       start,
       stop,
-      sourceFile: filePath,
     });
   }
   return extensions;
@@ -191,16 +202,14 @@ export async function loadExtensions(directory: string): Promise<readonly Loaded
  * `stop` on failure - the gateway process is expected to exit on startup
  * failure, letting the OS reclaim any resources.
  */
-export async function startExtensions(extensions: readonly LoadedExtension[]): Promise<void> {
+export async function startExtensions(extensions: readonly GatewayExtension[]): Promise<void> {
   for (const extension of extensions) {
     if (extension.start === undefined) continue;
     try {
       await extension.start();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      throw new ExtensionStartError(
-        `Extension '${extension.sourceFile}' failed to start: ${message}`
-      );
+      throw new ExtensionStartError(`Extension '${extension.name}' failed to start: ${message}`);
     }
   }
 }
@@ -211,8 +220,8 @@ export async function startExtensions(extensions: readonly LoadedExtension[]): P
  * swallowed so that one misbehaving extension cannot block shutdown.
  */
 export async function stopExtensions(
-  extensions: readonly LoadedExtension[],
-  deps: CliDependencies
+  extensions: readonly GatewayExtension[],
+  deps: Pick<GatewayDependencies, 'errorLog'>
 ): Promise<void> {
   for (const extension of extensions) {
     if (extension.stop === undefined) continue;
@@ -220,7 +229,7 @@ export async function stopExtensions(
       await extension.stop();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      deps.errorLog(`Extension '${extension.sourceFile}' stop hook threw: ${message}`);
+      deps.errorLog(`Extension '${extension.name}' stop hook threw: ${message}`);
     }
   }
 }
@@ -275,8 +284,8 @@ function sendErrorResponse(
 export async function dispatchExtensionRequest(
   request: http.IncomingMessage,
   response: http.ServerResponse,
-  extensions: readonly LoadedExtension[],
-  deps: CliDependencies,
+  extensions: readonly GatewayExtension[],
+  deps: Pick<GatewayDependencies, 'checkPermission' | 'config' | 'log' | 'errorLog'>,
   permissionsConfigPath: string
 ): Promise<boolean> {
   const method = (request.method ?? 'GET').toUpperCase();
@@ -313,7 +322,7 @@ export async function dispatchExtensionRequest(
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       deps.errorLog(
-        `Unexpected error in extension '${extension.sourceFile}' ` +
+        `Unexpected error in extension '${extension.name}' ` +
           `(${method} ${pathAndQuery}): ${message}`
       );
       sendErrorResponse(response, 500, 'Internal error');

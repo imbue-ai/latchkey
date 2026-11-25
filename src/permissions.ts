@@ -24,6 +24,12 @@ export interface PermissionCheckMetadata {
    * i.e. when the request is passed through or handled by an extension.
    */
   readonly account?: string;
+  /**
+   * Anything else the caller wants a schema to see. A gateway embedded in
+   * another program passes its own metadata for the checks that have no
+   * account.
+   */
+  readonly [key: string]: unknown;
 }
 
 /**

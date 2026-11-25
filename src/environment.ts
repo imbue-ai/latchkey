@@ -153,12 +153,17 @@ function loadProcessEnvironmentOverrides(): EnvironmentOverrides {
   return loadEnvironmentOverrides(fileDescriptorValue);
 }
 
-const ENVIRONMENT_OVERRIDES = loadProcessEnvironmentOverrides();
+let environmentOverrides: EnvironmentOverrides | null = null;
 
 /**
  * Look up an environment variable; overrides supplied through
  * LATCHKEY_ENV_OVERRIDES_FD take precedence over the process environment.
+ *
+ * The overrides are read on the first lookup rather than when this module is
+ * imported, so that a program which embeds Latchkey and never asks for a
+ * variable has neither its environment nor its file descriptors touched.
  */
 export function getEnvironmentVariable(name: string): string | undefined {
-  return ENVIRONMENT_OVERRIDES[name] ?? process.env[name];
+  environmentOverrides ??= loadProcessEnvironmentOverrides();
+  return environmentOverrides[name] ?? process.env[name];
 }

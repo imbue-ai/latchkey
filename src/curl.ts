@@ -4,12 +4,33 @@
 
 import { spawn, spawnSync, SpawnSyncReturns } from 'node:child_process';
 import { CurlParseError, parseCurlArgs } from '@imbue-ai/detent';
-import { CONFIG } from './config.js';
 
 // Re-export detent's curl-parsing primitives so the rest of the codebase can
 // treat `./curl.js` as the single entry point for curl parsing and doesn't
 // have to depend on detent directly.
 export { CurlParseError, parseCurlArgs };
+
+const DEFAULT_CURL_COMMAND = 'curl';
+
+/**
+ * The curl program every runner in this module starts. It is a value of the
+ * module rather than an argument because services (and plugins, through the
+ * SDK) run curl from places that hold no configuration. The command line sets
+ * it from its configuration, and an embedding program through its runtime.
+ */
+let curlCommand = DEFAULT_CURL_COMMAND;
+
+export function setCurlCommand(command: string): void {
+  curlCommand = command;
+}
+
+export function getCurlCommand(): string {
+  return curlCommand;
+}
+
+export function resetCurlCommand(): void {
+  curlCommand = DEFAULT_CURL_COMMAND;
+}
 
 export interface CurlResult {
   readonly returncode: number;
@@ -28,7 +49,7 @@ export type SubprocessRunner = (args: readonly string[]) => CurlResult;
 export type DetachedSubprocessRunner = (args: readonly string[]) => void;
 
 function defaultSubprocessRunner(args: readonly string[]): CurlResult {
-  const result: SpawnSyncReturns<Buffer> = spawnSync(CONFIG.curlCommand, args as string[], {
+  const result: SpawnSyncReturns<Buffer> = spawnSync(curlCommand, args as string[], {
     stdio: ['inherit', 'inherit', 'inherit'],
   });
   return {
@@ -39,7 +60,7 @@ function defaultSubprocessRunner(args: readonly string[]): CurlResult {
 }
 
 function defaultDetachedSubprocessRunner(args: readonly string[]): void {
-  const child = spawn(CONFIG.curlCommand, args as string[], {
+  const child = spawn(curlCommand, args as string[], {
     stdio: 'ignore',
     detached: true,
     // A detached child gets its own console window on Windows; keep it hidden.
@@ -67,6 +88,11 @@ export interface AsyncCurlResult {
 export interface AsyncSubprocessOptions {
   readonly stdin?: Buffer;
   readonly timeout?: number;
+  /**
+   * When aborted, curl is killed and the run resolves, once the process has
+   * exited, with whatever was captured so far and a non-zero return code.
+   */
+  readonly signal?: AbortSignal;
 }
 
 /**
@@ -82,9 +108,10 @@ function defaultAsyncSubprocessRunner(
   options?: AsyncSubprocessOptions
 ): Promise<AsyncCurlResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(CONFIG.curlCommand, args as string[], {
+    const child = spawn(curlCommand, args as string[], {
       stdio: ['pipe', 'pipe', 'pipe'],
       ...(options?.timeout !== undefined ? { timeout: options.timeout * 1000 } : {}),
+      ...(options?.signal !== undefined ? { signal: options.signal, killSignal: 'SIGKILL' } : {}),
     });
 
     const stdoutChunks: Buffer[] = [];
@@ -98,7 +125,15 @@ function defaultAsyncSubprocessRunner(
       stderrChunks.push(chunk.toString());
     });
 
-    child.on('error', reject);
+    child.on('error', (error) => {
+      // An abort is reported by the `close` event below, once the killed
+      // process has really exited, so that a caller that waits for the run
+      // knows no curl process is left behind.
+      if (options?.signal?.aborted === true && error.name === 'AbortError') {
+        return;
+      }
+      reject(error);
+    });
 
     child.on('close', (code) => {
       resolve({

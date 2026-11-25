@@ -7,7 +7,7 @@ import type { ApiCredentialStore } from './store.js';
 import type { Service } from '../services/core/base.js';
 
 /**
- * Refreshes currently in flight, keyed by service and account. A long-running
+ * Refreshes currently in flight, keyed by store, service and account. A long-running
  * process such as the gateway can receive many requests for the same expired
  * credentials at once; without this, each of them would call the service's
  * refresh endpoint with the same refresh token, which risks exhausting it
@@ -15,10 +15,12 @@ import type { Service } from '../services/core/base.js';
  */
 const inFlightRefreshes = new Map<string, Promise<ApiCredentials | null>>();
 
-function refreshKey(serviceName: string, account: string | undefined): string {
+function refreshKey(storePath: string, serviceName: string, account: string | undefined): string {
   // An unspecified account always resolves to the service's single stored
-  // account, so it is safe to treat it as its own key.
-  return `${serviceName}\u0000${account ?? ''}`;
+  // account, so it is safe to treat it as its own key. The store is part of
+  // the key because one process can work on several stores, and a refresh of
+  // one store's credentials says nothing about another's.
+  return `${storePath}\u0000${serviceName}\u0000${account ?? ''}`;
 }
 
 async function refreshAndSave(
@@ -56,7 +58,7 @@ export async function maybeRefreshCredentials(
   if (disableRefresh || apiCredentials.isExpired() !== true || !service.refreshCredentials) {
     return apiCredentials;
   }
-  const key = refreshKey(service.name, account);
+  const key = refreshKey(apiCredentialStore.path, service.name, account);
   let refresh = inFlightRefreshes.get(key);
   if (refresh === undefined) {
     refresh = refreshAndSave(service, apiCredentials, apiCredentialStore, account).finally(() => {

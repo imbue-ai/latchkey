@@ -19,7 +19,8 @@ export { SlackApiCredentials } from './services/slack.js';
 
 export { ApiCredentialStore, ApiCredentialStoreError } from './apiCredentials/store.js';
 
-export { Config, CONFIG, InsecureFilePermissionsError } from './config.js';
+export { Config, InsecureFilePermissionsError } from './config.js';
+export { CONFIG } from './globalConfig.js';
 
 export {
   encrypt,

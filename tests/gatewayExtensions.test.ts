@@ -8,13 +8,16 @@ import { ApiCredentialStore } from '../src/apiCredentials/store.js';
 import { Config } from '../src/config.js';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { ServiceRegistry } from '../src/serviceRegistry.js';
-import { startGateway, type GatewayServer } from '../src/gateway/server.js';
+import type { GatewayServer } from '../src/gateway/server.js';
+import {
+  startTestGateway,
+  type TestGatewayOptions as GatewayOptions,
+} from './gatewayTestSupport.js';
 import {
   derivePermissionsOverrideSigningKey,
   createPermissionsOverrideJwt,
   PERMISSIONS_OVERRIDE_HEADER,
 } from '../src/gateway/permissionsOverride.js';
-import type { GatewayOptions } from '../src/gateway/gatewayEndpoint.js';
 import {
   EXTENSION_PLACEHOLDER_HOST,
   ExtensionLoadError,
@@ -85,7 +88,7 @@ describe('loadExtensions', () => {
     );
     const extensions = await loadExtensions(extensionsDir);
     expect(extensions).toHaveLength(1);
-    expect(extensions[0]!.sourceFile).toContain('hello.mjs');
+    expect(extensions[0]!.name).toContain('hello.mjs');
     expect(typeof extensions[0]!.handler).toBe('function');
   });
 
@@ -93,11 +96,11 @@ describe('loadExtensions', () => {
     writeExtension(extensionsDir, 'b-second.mjs', `export default () => false;`);
     writeExtension(extensionsDir, 'a-first.mjs', `export default () => false;`);
     const extensions = await loadExtensions(extensionsDir);
-    expect(extensions.map((extension) => extension.sourceFile.endsWith('a-first.mjs'))).toEqual([
+    expect(extensions.map((extension) => extension.name.endsWith('a-first.mjs'))).toEqual([
       true,
       false,
     ]);
-    expect(extensions.map((extension) => extension.sourceFile.endsWith('b-second.mjs'))).toEqual([
+    expect(extensions.map((extension) => extension.name.endsWith('b-second.mjs'))).toEqual([
       false,
       true,
     ]);
@@ -393,7 +396,7 @@ describe('gateway extensions integration', () => {
       ...optionOverrides,
     };
 
-    return startGateway(deps, apiCredentialStore, encryptedStorage, options);
+    return startTestGateway(deps, apiCredentialStore, encryptedStorage, options);
   }
 
   function getHost(): string {

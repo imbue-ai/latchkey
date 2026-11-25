@@ -23,6 +23,10 @@
       "types": "./dist/src/pluginSdk.d.ts",
       "default": "./dist/src/pluginSdk.js"
     },
+    "./embed": {
+      "types": "./dist/src/embed.d.ts",
+      "default": "./dist/src/embed.js"
+    },
     "./package.json": "./package.json",
     "./dist/*": "./dist/*"
   },

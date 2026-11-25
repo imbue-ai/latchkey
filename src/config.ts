@@ -483,8 +483,3 @@ export class Config {
     }
   }
 }
-
-/**
- * Global configuration singleton, initialized from the environment at import time.
- */
-export const CONFIG = new Config();

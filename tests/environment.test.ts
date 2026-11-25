@@ -87,7 +87,7 @@ describe.skipIf(process.platform === 'win32')('LATCHKEY_ENV_OVERRIDES_FD end to 
         JSON.stringify({ LATCHKEY_ENCRYPTION_KEY: 'from-descriptor', LATCHKEY_CURL: '/opt/curl' })
       );
       const script = [
-        "const { CONFIG } = await import('./src/config.ts');",
+        "const { CONFIG } = await import('./src/globalConfig.ts');",
         'console.log(JSON.stringify({',
         '  encryptionKey: CONFIG.encryptionKeyOverride,',
         '  curlCommand: CONFIG.curlCommand,',
