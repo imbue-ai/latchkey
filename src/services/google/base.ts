@@ -754,17 +754,32 @@ async function waitForGoogleLogin(page: Page): Promise<void> {
 /**
  * Configuration for a specific Google API service.
  */
-export interface GoogleServiceConfig {
+export type GoogleServiceConfig = {
   /** The Google API identifiers to enable (e.g., ['gmail.googleapis.com']). */
   readonly apis: readonly string[];
-  /** OAuth scopes a login asks for by default. */
-  readonly defaultScopes: readonly string[];
   /**
    * Scopes a login can be told to ask for instead (`LoginOptions.scopes`):
    * narrower alternatives to the default ones, such as read-only variants.
    * They have to be covered by the enabled `apis`.
    */
   readonly additionalScopes?: readonly string[];
+} & (
+  | {
+      /** OAuth scopes a login asks for by default. */
+      readonly defaultScopes: readonly string[];
+    }
+  | {
+      /**
+       * @deprecated The former name of `defaultScopes`, still accepted so that
+       * plugins built against an earlier version keep working.
+       */
+      readonly scopes: readonly string[];
+    }
+);
+
+function resolveDefaultScopes(config: GoogleServiceConfig): readonly string[] {
+  // eslint-disable-next-line @typescript-eslint/no-deprecated -- the one place the alias is read
+  return 'defaultScopes' in config ? config.defaultScopes : config.scopes;
 }
 
 class GoogleServiceSession extends ServiceSession {
@@ -775,7 +790,7 @@ class GoogleServiceSession extends ServiceSession {
   constructor(service: GoogleService, config: GoogleServiceConfig, appNamePrefix: string) {
     super(service, appNamePrefix);
     this.config = config;
-    this.defaultScopes = config.defaultScopes;
+    this.defaultScopes = resolveDefaultScopes(config);
     this.additionalScopes = config.additionalScopes ?? [];
   }
 

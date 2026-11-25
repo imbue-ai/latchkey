@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { OAuthCredentials } from '../src/apiCredentials/base.js';
 import { GOOGLE_GMAIL } from '../src/services/google/gmail.js';
-import type { GoogleServiceConfig } from '../src/services/google/base.js';
+import { GoogleService, type GoogleServiceConfig } from '../src/services/google/base.js';
 import { ScopesNotGrantedError } from '../src/services/core/base.js';
 import * as playwrightUtils from '../src/playwrightUtils.js';
 import * as oauthUtils from '../src/oauthUtils.js';
@@ -10,10 +10,7 @@ import * as curl from '../src/curl.js';
 
 const TEST_ENCRYPTION_KEY = 'dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q=';
 
-// The service's own scopes are a protected implementation detail; the test
-// reaches in so it need not duplicate the list.
-const GMAIL_SCOPES = (GOOGLE_GMAIL as unknown as { config: GoogleServiceConfig }).config
-  .defaultScopes;
+const GMAIL_SCOPES = GOOGLE_GMAIL.getSession('Latchkey-').defaultScopes;
 
 /**
  * Drives a Google login without a browser: the temp browser context and the
@@ -139,6 +136,25 @@ describe('Google login with chosen scopes', () => {
     await expect(
       login({ ...FULL_GRANT, scope: EXPECTED_SCOPES }, true, [CHOSEN_SCOPE])
     ).resolves.toBeDefined();
+  });
+});
+
+describe('Google service config', () => {
+  it('still accepts the default scopes under their former name', () => {
+    class LegacyGoogleService extends GoogleService {
+      readonly name = 'google-legacy';
+      readonly displayName = 'Google Legacy';
+      readonly baseApiUrls = ['https://legacy.googleapis.com/'] as const;
+      readonly info = '';
+      protected readonly config: GoogleServiceConfig = {
+        apis: ['legacy.googleapis.com'],
+        scopes: ['https://www.googleapis.com/auth/legacy'],
+      };
+    }
+
+    expect(new LegacyGoogleService().getSession('Latchkey-').defaultScopes).toEqual([
+      'https://www.googleapis.com/auth/legacy',
+    ]);
   });
 });
 
