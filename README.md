@@ -240,14 +240,7 @@ Among other things, `latchkey services info <service_name>` shows a list of capa
 - `detectsLoginAccount`: Whether `latchkey auth browser` automatically resolves the account upon success.
 - `systemBrowserLogin`: When true, `latchkey auth browser` accepts the `--system`
   flag to open the user's system browser instead of the browser Latchkey controls.
-- `scopes`: The permission scopes the `--scopes` flag of
-  `latchkey auth browser` accepts. Without the flag, a login asks for a generous subset
-  of them; with it, only for the listed ones, which may include scopes that are not
-  requested by default, such as read-only variants. For example,
-  `latchkey auth browser google-docs --scopes=https://www.googleapis.com/auth/documents.readonly`
-  logs in with read-only access to documents. Scopes that Latchkey itself relies on
-  (e.g. to tell which account was logged in) are always requested and are not listed.
-  Empty when the service does not support `--scopes`.
+- `scopes`: The permission scopes the `--scopes` flag of `latchkey auth browser` accepts, if any.
 
 
 ### Plugins
@@ -308,7 +301,8 @@ Each entry reports a credentials status of:
 When it is known that the credentials stop working after some
 date the entry also carries a `validUntil` timestamp. Similarly,
 credentials obtained by a browser login that asks for permission
-scopes carry a `scopes` list with the scopes they were granted.
+scopes carry a `scopes` list with the scopes they were granted
+(when known).
 
 A service with no stored credentials shows an empty `credentials`
 object.
