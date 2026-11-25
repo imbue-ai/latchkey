@@ -12,7 +12,8 @@ const TEST_ENCRYPTION_KEY = 'dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q=';
 
 // The service's own scopes are a protected implementation detail; the test
 // reaches in so it need not duplicate the list.
-const GMAIL_SCOPES = (GOOGLE_GMAIL as unknown as { config: GoogleServiceConfig }).config.scopes;
+const GMAIL_SCOPES = (GOOGLE_GMAIL as unknown as { config: GoogleServiceConfig }).config
+  .defaultScopes;
 
 /**
  * Drives a Google login without a browser: the temp browser context and the

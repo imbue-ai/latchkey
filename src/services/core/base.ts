@@ -477,14 +477,14 @@ export abstract class ServiceSession {
    * Scopes a session cannot work without (e.g. the one its credential check
    * relies on) are requested regardless and do not belong here.
    */
-  readonly defaultLoginScopes?: readonly string[];
+  readonly defaultScopes?: readonly string[];
 
   /**
    * Scopes a login can be told to ask for on top of the default ones: narrower
    * alternatives to them (e.g. read-only variants), mostly. Only meaningful
-   * next to {@link defaultLoginScopes}.
+   * next to {@link defaultScopes}.
    */
-  readonly additionalLoginScopes?: readonly string[];
+  readonly additionalScopes?: readonly string[];
 
   /**
    * Generate a random, unique app name using the session's configured prefix.

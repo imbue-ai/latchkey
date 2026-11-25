@@ -2784,9 +2784,7 @@ describe('CLI commands with dependency injection', () => {
           account: 'user@example.com',
         });
         const service = createMockService({
-          getSession: vi
-            .fn()
-            .mockReturnValue({ login, defaultLoginScopes: ['read', 'write', 'admin'] }),
+          getSession: vi.fn().mockReturnValue({ login, defaultScopes: ['read', 'write', 'admin'] }),
         });
         const deps = createMockDependencies({ registry: new ServiceRegistry([service]) });
         saveBrowserConfig(deps.config.configPath, {

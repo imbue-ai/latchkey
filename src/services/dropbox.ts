@@ -52,7 +52,7 @@ const ACCOUNT_INFO_SCOPE = 'account_info.read';
 // Scopes enabled on the created app, unless the login asks for fewer
 // (`LoginOptions.scopes`). The same list is requested during authorization so
 // the resulting token carries exactly these permissions.
-const DROPBOX_SCOPES = [
+const DEFAULT_SCOPES = [
   'files.metadata.write',
   'files.metadata.read',
   'files.content.write',
@@ -96,7 +96,7 @@ interface ScrollableElement {
 
 class DropboxServiceSession extends BrowserFollowupServiceSession {
   protected readonly followupWork = FollowupWork.CreateApp;
-  override readonly defaultLoginScopes = DROPBOX_SCOPES;
+  override readonly defaultScopes = DEFAULT_SCOPES;
   private isLoggedIn = false;
   private currentAccountUid?: string;
 
@@ -248,7 +248,7 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
     oldCredentials?: ApiCredentials,
     loginOptions: LoginOptions = {}
   ): Promise<ApiCredentials | null> {
-    const scopes = [ACCOUNT_INFO_SCOPE, ...(loginOptions.scopes ?? this.defaultLoginScopes)];
+    const scopes = [ACCOUNT_INFO_SCOPE, ...(loginOptions.scopes ?? this.defaultScopes)];
 
     const page = context.pages()[0];
     if (!page) {

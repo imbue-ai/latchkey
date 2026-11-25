@@ -93,7 +93,7 @@ const JMAP_RESOURCE = 'https://api.fastmail.com/jmap/session';
  * token screen) supplied with `latchkey auth set`, which this service also
  * accepts.
  */
-const SELECTABLE_OAUTH_SCOPES = [
+const DEFAULT_SCOPES = [
   'urn:ietf:params:oauth:scope:mail',
   'urn:ietf:params:oauth:scope:contacts',
   'urn:ietf:params:oauth:scope:calendars',
@@ -134,7 +134,7 @@ async function registerClient(
     // the client with an empty scope, and every later authorize call comes back
     // to the callback with an error and no code. A login may then ask for
     // fewer (`LoginOptions.scopes`), so the client is registered with all.
-    scope: withRefreshTokenScope(SELECTABLE_OAUTH_SCOPES).join(' '),
+    scope: withRefreshTokenScope(DEFAULT_SCOPES).join(' '),
   });
 
   const result = await runCapturedAsync(
@@ -208,7 +208,7 @@ class FastmailSession extends ServiceSession {
   }
 
   override readonly supportsSystemBrowser = true;
-  override readonly defaultLoginScopes = SELECTABLE_OAUTH_SCOPES;
+  override readonly defaultScopes = DEFAULT_SCOPES;
 
   override async login(
     encryptedStorage: EncryptedStorage,
@@ -249,7 +249,7 @@ class FastmailSession extends ServiceSession {
       authUrl.searchParams.set('client_id', clientId);
       authUrl.searchParams.set('redirect_uri', redirectUri);
       authUrl.searchParams.set('response_type', 'code');
-      const requestedScopes = withRefreshTokenScope(loginOptions.scopes ?? this.defaultLoginScopes);
+      const requestedScopes = withRefreshTokenScope(loginOptions.scopes ?? this.defaultScopes);
       authUrl.searchParams.set('scope', requestedScopes.join(' '));
       authUrl.searchParams.set('resource', JMAP_RESOURCE);
       authUrl.searchParams.set('code_challenge', codeChallenge);

@@ -684,7 +684,7 @@ describe('operations', () => {
         const login = vi.fn();
 
         const loginAttempt = attemptLogin(
-          { login, defaultLoginScopes: ['read'], additionalLoginScopes: ['write'] },
+          { login, defaultScopes: ['read'], additionalScopes: ['write'] },
           scopes
         );
 

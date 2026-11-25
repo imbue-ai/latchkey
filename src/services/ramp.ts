@@ -59,7 +59,7 @@ const RAMP_ACCOUNT_SCOPE = 'users:read';
  * (returned in the token's `scope`), so over-requesting is harmless, but omitting a
  * scope an endpoint needs fails at call time with DEVELOPER_7100.
  */
-const RAMP_OAUTH_SCOPES = [
+const DEFAULT_SCOPES = [
   'accounting:read',
   'ai_spend:read',
   'approvals:write',
@@ -115,7 +115,7 @@ class RampOAuthServiceSession extends ServiceSession {
   }
 
   override readonly supportsSystemBrowser = true;
-  override readonly defaultLoginScopes = RAMP_OAUTH_SCOPES;
+  override readonly defaultScopes = DEFAULT_SCOPES;
 
   override async login(
     encryptedStorage: EncryptedStorage,
@@ -144,10 +144,7 @@ class RampOAuthServiceSession extends ServiceSession {
       authUrl.searchParams.set('response_type', 'code');
       authUrl.searchParams.set('client_id', clientId);
       authUrl.searchParams.set('redirect_uri', redirectUri);
-      const requestedScopes = [
-        RAMP_ACCOUNT_SCOPE,
-        ...(loginOptions.scopes ?? this.defaultLoginScopes),
-      ];
+      const requestedScopes = [RAMP_ACCOUNT_SCOPE, ...(loginOptions.scopes ?? this.defaultScopes)];
       authUrl.searchParams.set('scope', requestedScopes.join(' '));
       authUrl.searchParams.set('state', randomUUID());
       authUrl.searchParams.set('code_challenge', codeChallenge);

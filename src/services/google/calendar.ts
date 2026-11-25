@@ -2,7 +2,7 @@ import { GoogleService, type GoogleServiceConfig } from './base.js';
 
 const CONFIG: GoogleServiceConfig = {
   apis: ['calendar-json.googleapis.com'],
-  scopes: [
+  defaultScopes: [
     'https://www.googleapis.com/auth/calendar',
     'https://www.googleapis.com/auth/calendar.events',
   ],

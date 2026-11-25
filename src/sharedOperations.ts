@@ -383,10 +383,10 @@ function buildCapabilities(service: Service, config: Config): ServiceCapabilitie
 
 /** Everything `--scopes` may name, or undefined when the login offers no choice. */
 function listAvailableLoginScopes(session: ServiceSession): readonly string[] | undefined {
-  if (session.defaultLoginScopes === undefined) {
+  if (session.defaultScopes === undefined) {
     return undefined;
   }
-  return [...session.defaultLoginScopes, ...(session.additionalLoginScopes ?? [])];
+  return [...session.defaultScopes, ...(session.additionalScopes ?? [])];
 }
 
 function validateLoginScopes(
