@@ -117,6 +117,16 @@ export const ErrorCodes = {
    * which only the browser Latchkey controls can honour.
    */
   systemBrowserCannotBeEphemeral: 'SYSTEM_BROWSER_CANNOT_BE_EPHEMERAL',
+  /**
+   * `auth browser --scopes` was asked of a service whose login has no fixed
+   * list of scopes to choose from. See `ServiceSession.defaultScopes`.
+   */
+  loginScopesNotSupported: 'LOGIN_SCOPES_NOT_SUPPORTED',
+  /**
+   * `auth browser --scopes` named no scope at all, or one the service's login
+   * does not offer.
+   */
+  invalidLoginScopes: 'INVALID_LOGIN_SCOPES',
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];

@@ -27,6 +27,7 @@ import {
   generateCodeVerifier,
   refreshAccessToken,
   startOAuthCallbackServer,
+  resolveGrantedScopes,
 } from '../oauthUtils.js';
 import type { EncryptedStorage } from '../encryptedStorage.js';
 import type { BrowserLaunchOptions } from '../playwrightUtils.js';
@@ -46,13 +47,19 @@ const RAMP_PKCE_TOKEN_ENDPOINT = 'https://api.ramp.com/developer/v1/token/pkce';
 const RAMP_OAUTH_CALLBACK_PATH = '/callback';
 
 /**
+ * Always requested: the account lookup relies on it (see `getAccount`), and
+ * without it a login could not tell which account it belongs to.
+ */
+const RAMP_ACCOUNT_SCOPE = 'users:read';
+
+/**
  * Scopes requested on the authorize URL: exactly the scopes Ramp's agent-tools
  * OpenAPI declares (no regular-REST-only scopes -- agent keys can't use the standard
  * REST API anyway). Ramp grants only the subset the signed-in user is entitled to
  * (returned in the token's `scope`), so over-requesting is harmless, but omitting a
  * scope an endpoint needs fails at call time with DEVELOPER_7100.
  */
-const RAMP_OAUTH_SCOPES = [
+const DEFAULT_SCOPES = [
   'accounting:read',
   'ai_spend:read',
   'approvals:write',
@@ -75,11 +82,10 @@ const RAMP_OAUTH_SCOPES = [
   'trips:read',
   'trips:write',
   'unified_requests:read',
-  'users:read',
   'vendors:read',
   'vendors:write',
   'x402:write',
-].join(' ');
+] as const;
 
 /**
  * Browser login session: runs the OAuth authorization-code + PKCE flow in the
@@ -109,6 +115,7 @@ class RampOAuthServiceSession extends ServiceSession {
   }
 
   override readonly supportsSystemBrowser = true;
+  override readonly defaultScopes = DEFAULT_SCOPES;
 
   override async login(
     encryptedStorage: EncryptedStorage,
@@ -137,7 +144,8 @@ class RampOAuthServiceSession extends ServiceSession {
       authUrl.searchParams.set('response_type', 'code');
       authUrl.searchParams.set('client_id', clientId);
       authUrl.searchParams.set('redirect_uri', redirectUri);
-      authUrl.searchParams.set('scope', RAMP_OAUTH_SCOPES);
+      const requestedScopes = [RAMP_ACCOUNT_SCOPE, ...(loginOptions.scopes ?? this.defaultScopes)];
+      authUrl.searchParams.set('scope', requestedScopes.join(' '));
       authUrl.searchParams.set('state', randomUUID());
       authUrl.searchParams.set('code_challenge', codeChallenge);
       authUrl.searchParams.set('code_challenge_method', 'S256');
@@ -165,7 +173,10 @@ class RampOAuthServiceSession extends ServiceSession {
         '',
         tokens.access_token,
         tokens.refresh_token,
-        accessTokenExpiresAt
+        accessTokenExpiresAt,
+        undefined,
+        undefined,
+        resolveGrantedScopes(requestedScopes, tokens.scope)
       );
       const account = (await this.service.getAccount?.(credentials)) ?? DEFAULT_ACCOUNT;
       return { credentials, account };
@@ -267,7 +278,9 @@ export class Ramp extends Service {
       tokens.access_token,
       tokens.refresh_token ?? apiCredentials.refreshToken,
       accessTokenExpiresAt,
-      apiCredentials.refreshTokenExpiresAt
+      apiCredentials.refreshTokenExpiresAt,
+      undefined,
+      apiCredentials.scopes
     );
   }
 }

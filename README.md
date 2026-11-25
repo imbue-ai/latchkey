@@ -240,6 +240,7 @@ Among other things, `latchkey services info <service_name>` shows a list of capa
 - `detectsLoginAccount`: Whether `latchkey auth browser` automatically resolves the account upon success.
 - `systemBrowserLogin`: When true, `latchkey auth browser` accepts the `--system`
   flag to open the user's system browser instead of the browser Latchkey controls.
+- `scopes`: The permission scopes the `--scopes` flag of `latchkey auth browser` accepts, if any.
 
 
 ### Plugins
@@ -298,7 +299,10 @@ Each entry reports a credentials status of:
 - `unknown` (for user-registered services)
 
 When it is known that the credentials stop working after some
-date the entry also carries a `validUntil` timestamp.
+date the entry also carries a `validUntil` timestamp. Similarly,
+credentials obtained by a browser login that asks for permission
+scopes carry a `scopes` list with the scopes they were granted
+(when known).
 
 A service with no stored credentials shows an empty `credentials`
 object.

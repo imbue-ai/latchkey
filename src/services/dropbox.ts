@@ -14,12 +14,14 @@ import {
   readRedirectUriOverride,
   refreshAccessToken,
   startOAuthCallbackServer,
+  resolveGrantedScopes,
 } from '../oauthUtils.js';
 import {
   Service,
   BrowserFollowupServiceSession,
   FollowupWork,
   LoginFailedError,
+  type LoginOptions,
   isBrowserClosedError,
   LoginCancelledError,
   DynamicClientPrepareInputSchema,
@@ -44,10 +46,13 @@ const CREATE_APP_URL = 'https://www.dropbox.com/developers/console/apps/create';
 const appConsoleUrl = (appId: string, section: 'settings' | 'permissions') =>
   `https://www.dropbox.com/developers/console/apps/${appId}/${section}`;
 
-// Scopes enabled on the created app. The same list is requested during
-// authorization so the resulting token carries exactly these permissions.
-const DROPBOX_SCOPES = [
-  'account_info.read',
+// Always enabled: the credential check and the account lookup rely on it.
+const ACCOUNT_INFO_SCOPE = 'account_info.read';
+
+// Scopes enabled on the created app, unless the login asks for fewer
+// (`LoginOptions.scopes`). The same list is requested during authorization so
+// the resulting token carries exactly these permissions.
+const DEFAULT_SCOPES = [
   'files.metadata.write',
   'files.metadata.read',
   'files.content.write',
@@ -62,7 +67,7 @@ const DROPBOX_SCOPES = [
 // The legacy App Console left a handful of scopes (account_info.read,
 // files.metadata.read) implicitly granted with no checkbox to tick. The new
 // Developer Console exposes every scope as an explicit checkbox, so we simply
-// check all of DROPBOX_SCOPES instead of maintaining an implicit-grant list.
+// check all the scopes we want instead of maintaining an implicit-grant list.
 
 const CODE_ARRIVED = Symbol('codeArrived');
 
@@ -91,6 +96,7 @@ interface ScrollableElement {
 
 class DropboxServiceSession extends BrowserFollowupServiceSession {
   protected readonly followupWork = FollowupWork.CreateApp;
+  override readonly defaultScopes = DEFAULT_SCOPES;
   private isLoggedIn = false;
   private currentAccountUid?: string;
 
@@ -160,31 +166,32 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
 
   /**
    * Accounts that have not accepted the Dropbox API Terms and Conditions yet
-   * see a checkbox that keeps the "Create app" button disabled.
+   * see a checkbox that keeps the "Create app" button disabled. Accepting the
+   * terms is the user's decision, so the page is surfaced for them to tick the
+   * checkbox, and the spinner is restored afterwards.
    *
    * The new Developer Console renders this as a single
    * `input#create-app-terms` checkbox inside the create-app form (present only
-   * for accounts that still need to accept). Accepting the API Terms is an
-   * inherent requirement of the app creation the operator just initiated, so we
-   * tick it on their behalf rather than blocking on a manual step.
+   * for accounts that still need to accept).
    *
    * The legacy App Console instead wrapped the checkbox in an
-   * `#accept-tos-wrapper` that it hid for accounts that had already accepted;
-   * there, accepting the terms is the user's decision, so we surface the page
-   * with the checkbox parked just below the top bar and wait (up to the long
-   * ToS timeout) for the user to tick it. Kept for completeness even though the
-   * legacy console has been retired.
-   *
-   * Waiting for the "Create app" button to become enabled (in the legacy path)
-   * rather than for the checkbox state keeps the flow going even if Dropbox
-   * concludes the terms are not needed after all and hides the wrapper again.
+   * `#accept-tos-wrapper` that it hid for accounts that had already accepted.
+   * Kept for completeness even though the legacy console has been retired.
+   * Waiting for the "Create app" button to become enabled there rather than for
+   * the checkbox state keeps the flow going even if Dropbox concludes the terms
+   * are not needed after all and hides the wrapper again.
    */
   private async waitForTermsOfServiceAcceptance(page: Page): Promise<void> {
     // New Developer Console.
     const newTermsCheckbox = page.locator('input#create-app-terms[type="checkbox"]');
     if ((await newTermsCheckbox.count()) > 0 && !(await newTermsCheckbox.isChecked())) {
-      await page.bringToFront();
-      await newTermsCheckbox.check();
+      await this.letUserAcceptTerms(page, async () => {
+        await newTermsCheckbox.scrollIntoViewIfNeeded();
+        await page.locator('input#create-app-terms[type="checkbox"]:checked').waitFor({
+          timeout: TERMS_OF_SERVICE_USER_INTERACTION_TIMEOUT_MS,
+        });
+      });
+      return;
     }
 
     // Legacy App Console (retired, kept for completeness).
@@ -198,8 +205,7 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
       return;
     }
 
-    try {
-      await page.bringToFront();
+    await this.letUserAcceptTerms(page, async () => {
       // Scrolling by the element's own offset (instead of scrollIntoView)
       // keeps the requested top margin: the browser clamps at the end of the
       // document, which would otherwise hide the checkbox behind the top bar.
@@ -213,6 +219,20 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
       await page.locator(ENABLED_CREATE_APP_BUTTON_SELECTOR).waitFor({
         timeout: TERMS_OF_SERVICE_USER_INTERACTION_TIMEOUT_MS,
       });
+    });
+  }
+
+  /**
+   * Surface the working page while the user accepts the terms, then hide the
+   * automation behind the spinner again.
+   */
+  private async letUserAcceptTerms(
+    page: Page,
+    waitForAcceptance: () => Promise<void>
+  ): Promise<void> {
+    try {
+      await page.bringToFront();
+      await waitForAcceptance();
     } catch (error: unknown) {
       if (error instanceof Error && isBrowserClosedError(error)) {
         throw new LoginCancelledError();
@@ -225,8 +245,11 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
 
   protected async performBrowserFollowup(
     context: BrowserContext,
-    oldCredentials?: ApiCredentials
+    oldCredentials?: ApiCredentials,
+    loginOptions: LoginOptions = {}
   ): Promise<ApiCredentials | null> {
+    const scopes = [ACCOUNT_INFO_SCOPE, ...(loginOptions.scopes ?? this.defaultScopes)];
+
     const page = context.pages()[0];
     if (!page) {
       throw new LoginFailedError('No page available in browser context.');
@@ -280,8 +303,8 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
       waitUntil: 'domcontentloaded',
     });
 
-    // Enable all necessary permissions.
-    for (const permissionId of DROPBOX_SCOPES) {
+    // Enable the requested permissions (all of them by default).
+    for (const permissionId of scopes) {
       const escapedPermissionId = permissionId.replace(/\./g, '\\.');
       const checkbox = page.locator(`input#permission-${escapedPermissionId}`);
       await checkbox.waitFor({ timeout: DEFAULT_TIMEOUT_MS });
@@ -306,7 +329,7 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
       throw new LoginFailedError('Failed to read Dropbox app key.');
     }
 
-    return await this.authorizeApp(page, appKey, oldCredentials);
+    return await this.authorizeApp(page, appKey, scopes, oldCredentials);
   }
 
   /**
@@ -327,6 +350,7 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
   private async authorizeApp(
     page: Page,
     appKey: string,
+    scopes: readonly string[],
     oldCredentials?: ApiCredentials
   ): Promise<ApiCredentials> {
     const abortController = new AbortController();
@@ -356,16 +380,14 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
       authorizeUrl.searchParams.set('token_access_type', 'offline');
       authorizeUrl.searchParams.set('code_challenge', codeChallenge);
       authorizeUrl.searchParams.set('code_challenge_method', 'S256');
-      authorizeUrl.searchParams.set('scope', DROPBOX_SCOPES.join(' '));
+      authorizeUrl.searchParams.set('scope', scopes.join(' '));
       // Carry the loopback port in `state` so a prepared redirect-URI page can
       // forward the result to the callback it could not have known in advance.
       // Sent for loopback logins too, so both paths look alike.
       authorizeUrl.searchParams.set('state', buildAuthorizationState(port));
 
-      // The finalize spinner runs in a separate tab that is kept in the
-      // foreground. Bring the working page forward so the user can actually see
-      // and confirm the authorization dialog.
-      await page.bringToFront();
+      // The page stays hidden behind the spinner tab: the consent screens are
+      // clicked through on the user's behalf below.
       await page.goto(authorizeUrl.toString(), { waitUntil: 'domcontentloaded' });
 
       // The app was just created by the operator on their own account, so
@@ -397,7 +419,8 @@ class DropboxServiceSession extends BrowserFollowupServiceSession {
         accessTokenExpiresAt,
         undefined,
         // Carried over so a re-login reuses the prepared redirect URI.
-        redirectUriOverride
+        redirectUriOverride,
+        resolveGrantedScopes(scopes, tokens.scope)
       );
     } catch (error: unknown) {
       if (error instanceof Error && isBrowserClosedError(error)) {
@@ -519,7 +542,7 @@ export class Dropbox extends Service {
 
   // get_current_account both validates the token and identifies the account.
   // The account_info.read scope it needs is always granted (it is mandatory in
-  // the Dropbox App Console and included in DROPBOX_SCOPES for browser login).
+  // the Dropbox App Console and always requested by the browser login).
   readonly credentialCheckCurlArguments = [
     '-X',
     'POST',
@@ -596,7 +619,8 @@ export class Dropbox extends Service {
       apiCredentials.refreshTokenExpiresAt,
       // Preserve a prepared redirect URI across refresh so the next login can
       // reuse the bounce page.
-      apiCredentials.redirectUri
+      apiCredentials.redirectUri,
+      apiCredentials.scopes
     );
   }
 }

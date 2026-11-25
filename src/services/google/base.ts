@@ -27,6 +27,7 @@ import {
   buildLoopbackRedirectUri,
   exchangeCodeForTokens,
   findScopesNotGranted,
+  resolveGrantedScopes,
   generateCodeChallenge,
   generateCodeVerifier,
   refreshAccessToken,
@@ -753,19 +754,44 @@ async function waitForGoogleLogin(page: Page): Promise<void> {
 /**
  * Configuration for a specific Google API service.
  */
-export interface GoogleServiceConfig {
+export type GoogleServiceConfig = {
   /** The Google API identifiers to enable (e.g., ['gmail.googleapis.com']). */
   readonly apis: readonly string[];
-  /** OAuth scopes required by this service. */
-  readonly scopes: readonly string[];
+  /**
+   * Scopes a login can be told to ask for instead (`LoginOptions.scopes`):
+   * narrower alternatives to the default ones, such as read-only variants.
+   * They have to be covered by the enabled `apis`.
+   */
+  readonly additionalScopes?: readonly string[];
+} & (
+  | {
+      /** OAuth scopes a login asks for by default. */
+      readonly defaultScopes: readonly string[];
+    }
+  | {
+      /**
+       * @deprecated The former name of `defaultScopes`, still accepted so that
+       * plugins built against an earlier version keep working.
+       */
+      readonly scopes: readonly string[];
+    }
+);
+
+function resolveDefaultScopes(config: GoogleServiceConfig): readonly string[] {
+  // eslint-disable-next-line @typescript-eslint/no-deprecated -- the one place the alias is read
+  return 'defaultScopes' in config ? config.defaultScopes : config.scopes;
 }
 
 class GoogleServiceSession extends ServiceSession {
   private readonly config: GoogleServiceConfig;
+  override readonly defaultScopes: readonly string[];
+  override readonly additionalScopes: readonly string[];
 
   constructor(service: GoogleService, config: GoogleServiceConfig, appNamePrefix: string) {
     super(service, appNamePrefix);
     this.config = config;
+    this.defaultScopes = resolveDefaultScopes(config);
+    this.additionalScopes = config.additionalScopes ?? [];
   }
 
   onResponse(_response: Response): void {
@@ -821,12 +847,13 @@ class GoogleServiceSession extends ServiceSession {
     const redirectUriOverride = oldCredentials.redirectUri;
 
     return withOAuthLoginBrowser(encryptedStorage, launchOptions, loginOptions, async (browser) => {
-      const { accessToken, refreshToken, accessTokenExpiresAt, refreshTokenExpiresAt } =
+      const { accessToken, refreshToken, accessTokenExpiresAt, refreshTokenExpiresAt, scopes } =
         await this.performOAuthFlow(
           browser,
           clientId,
           clientSecret,
           redirectUriOverride,
+          loginOptions.scopes ?? this.defaultScopes,
           loginOptions.strict ?? false
         );
 
@@ -837,7 +864,8 @@ class GoogleServiceSession extends ServiceSession {
         refreshToken,
         accessTokenExpiresAt,
         refreshTokenExpiresAt,
-        redirectUriOverride
+        redirectUriOverride,
+        scopes
       );
       const account = (await this.service.getAccount?.(credentials)) ?? DEFAULT_ACCOUNT;
       return { credentials, account };
@@ -948,14 +976,16 @@ class GoogleServiceSession extends ServiceSession {
     clientId: string,
     clientSecret: string,
     redirectUriOverride: string | undefined,
+    serviceScopes: readonly string[],
     strict: boolean
   ): Promise<{
     accessToken: string;
     refreshToken: string;
     accessTokenExpiresAt?: string;
     refreshTokenExpiresAt?: string;
+    scopes?: readonly string[];
   }> {
-    const allScopes = [...COMMON_SCOPES, ...this.config.scopes];
+    const allScopes = [...COMMON_SCOPES, ...serviceScopes];
 
     // The callback server only accepts the redirect that echoes its `state`,
     // so a request forged by something else on this machine can neither pass
@@ -982,7 +1012,10 @@ class GoogleServiceSession extends ServiceSession {
     authUrl.searchParams.set('response_type', 'code');
     authUrl.searchParams.set('scope', allScopes.join(' '));
     authUrl.searchParams.set('access_type', 'offline');
-    authUrl.searchParams.set('prompt', 'consent');
+    // `consent` makes Google return a refresh token on every login, not just
+    // the first one; `select_account` always offers the account chooser, even
+    // when the browser has a single signed-in Google session.
+    authUrl.searchParams.set('prompt', 'select_account consent');
     authUrl.searchParams.set('code_challenge', codeChallenge);
     authUrl.searchParams.set('code_challenge_method', 'S256');
     authUrl.searchParams.set('state', state);
@@ -1016,6 +1049,7 @@ class GoogleServiceSession extends ServiceSession {
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token,
       accessTokenExpiresAt,
+      scopes: resolveGrantedScopes(allScopes, tokens.scope),
     };
   }
 }
@@ -1126,7 +1160,8 @@ export abstract class GoogleService extends Service {
       tokens.refresh_token ?? apiCredentials.refreshToken,
       accessTokenExpiresAt,
       apiCredentials.refreshTokenExpiresAt,
-      apiCredentials.redirectUri
+      apiCredentials.redirectUri,
+      apiCredentials.scopes
     );
   }
 }

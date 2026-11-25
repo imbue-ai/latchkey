@@ -28,6 +28,7 @@ import {
   type LoginOptions,
   PrepareInputInvalidError,
   PrepareNotSupportedError,
+  type ServiceSession,
 } from './services/core/base.js';
 import { RegisteredService } from './services/core/registered.js';
 import type { Service } from './services/index.js';
@@ -83,6 +84,40 @@ export class SystemBrowserCannotBeEphemeralError extends CodedError {
         'Latchkey does not control. Unset it, or log in without --system.'
     );
     this.name = 'SystemBrowserCannotBeEphemeralError';
+  }
+}
+
+/**
+ * Thrown when `auth browser --scopes` names a service whose login has no fixed
+ * list of scopes to choose from. Not a fallback to the usual login: the user
+ * asked for limited permissions and would get whatever the service hands out.
+ */
+export class LoginScopesNotSupportedError extends CodedError {
+  constructor(serviceName: string) {
+    super(
+      ErrorCodes.loginScopesNotSupported,
+      `Service '${serviceName}' does not support choosing the scopes of its browser login. ` +
+        `Run 'latchkey auth browser ${serviceName}' without --scopes instead.`
+    );
+    this.name = 'LoginScopesNotSupportedError';
+  }
+}
+
+export class InvalidLoginScopesError extends CodedError {
+  constructor(
+    serviceName: string,
+    unknownScopes: readonly string[],
+    availableScopes: readonly string[]
+  ) {
+    const problem =
+      unknownScopes.length === 0
+        ? 'No scopes were given.'
+        : `Unknown scopes for service '${serviceName}': ${unknownScopes.join(', ')}.`;
+    super(
+      ErrorCodes.invalidLoginScopes,
+      `${problem} Available scopes: ${availableScopes.join(', ')}.`
+    );
+    this.name = 'InvalidLoginScopesError';
   }
 }
 
@@ -226,6 +261,11 @@ export interface CredentialStatusEntry {
    * one, since they are renewed before their expiry matters.
    */
   readonly validUntil?: string;
+  /**
+   * The permission scopes the credentials carry, when known: browser logins
+   * that ask for scopes record them, credentials set by hand have none.
+   */
+  readonly scopes?: readonly string[];
 }
 
 /**
@@ -233,6 +273,11 @@ export interface CredentialStatusEntry {
  * keyed by the empty string.
  */
 export type AccountCredentialStatuses = Record<string, CredentialStatusEntry>;
+
+/** Scope lists are shown sorted, so that they are easy to scan and compare. */
+function sortScopes(scopes: readonly string[]): readonly string[] {
+  return [...scopes].sort();
+}
 
 async function computeAccountStatuses(
   registry: ServiceRegistry,
@@ -257,12 +302,14 @@ async function computeAccountStatuses(
             )
           : ApiCredentialStatus.Valid;
       const validUntil = credentials.validUntil;
+      const scopes = credentials.scopes;
       return [
         account,
         {
           credentialType: credentials.objectType,
           credentialStatus,
           ...(validUntil === undefined ? {} : { validUntil }),
+          ...(scopes === undefined ? {} : { scopes: sortScopes(scopes) }),
         },
       ] as const;
     })
@@ -295,6 +342,13 @@ export interface ServiceCapabilities {
    * the browser Latchkey controls. False when there is no browser login at all.
    */
   readonly systemBrowserLogin: boolean;
+  /**
+   * The scopes `auth browser --scopes` accepts: the ones a login asks for by
+   * default, plus any the service offers besides (e.g. read-only variants).
+   * Empty when the service's browser login has no choice of scopes to offer,
+   * or when there is no browser login at all.
+   */
+  readonly scopes: readonly string[];
 }
 
 export interface ServicesInfoResult {
@@ -324,10 +378,35 @@ function supportsSystemBrowserLogin(service: Service, appNamePrefix: string): bo
 }
 
 function buildCapabilities(service: Service, config: Config): ServiceCapabilities {
+  const session = service.getSession?.(config.appNamePrefix);
   return {
     detectsLoginAccount: detectsLoginAccount(service),
     systemBrowserLogin: supportsSystemBrowserLogin(service, config.appNamePrefix),
+    scopes: session === undefined ? [] : sortScopes(listAvailableLoginScopes(session) ?? []),
   };
+}
+
+/** Everything `--scopes` may name, or undefined when the login offers no choice. */
+function listAvailableLoginScopes(session: ServiceSession): readonly string[] | undefined {
+  if (session.defaultScopes === undefined) {
+    return undefined;
+  }
+  return [...session.defaultScopes, ...(session.additionalScopes ?? [])];
+}
+
+function validateLoginScopes(
+  serviceName: string,
+  session: ServiceSession,
+  requestedScopes: readonly string[]
+): void {
+  const availableScopes = listAvailableLoginScopes(session);
+  if (availableScopes === undefined) {
+    throw new LoginScopesNotSupportedError(serviceName);
+  }
+  const unknownScopes = requestedScopes.filter((scope) => !availableScopes.includes(scope));
+  if (requestedScopes.length === 0 || unknownScopes.length > 0) {
+    throw new InvalidLoginScopesError(serviceName, unknownScopes, availableScopes);
+  }
 }
 
 export async function servicesInfo(
@@ -413,6 +492,9 @@ export async function authBrowser(
   }
   if (loginOptions.systemBrowser === true && !session.supportsSystemBrowser) {
     throw new SystemBrowserLoginNotSupportedError(serviceName);
+  }
+  if (loginOptions.scopes !== undefined) {
+    validateLoginScopes(serviceName, session, loginOptions.scopes);
   }
 
   const serviceDetectsLoginAccount = detectsLoginAccount(service);

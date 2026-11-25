@@ -2,11 +2,17 @@ import { GoogleService, type GoogleServiceConfig } from './base.js';
 
 const CONFIG: GoogleServiceConfig = {
   apis: ['gmail.googleapis.com'],
-  scopes: [
+  defaultScopes: [
     // gmail.modify covers reading/labeling messages and reading filters/labels,
     // but creating or deleting filters requires gmail.settings.basic.
     'https://www.googleapis.com/auth/gmail.modify',
     'https://www.googleapis.com/auth/gmail.settings.basic',
+  ],
+  additionalScopes: [
+    'https://www.googleapis.com/auth/gmail.readonly',
+    'https://www.googleapis.com/auth/gmail.send',
+    'https://www.googleapis.com/auth/gmail.compose',
+    'https://www.googleapis.com/auth/gmail.labels',
   ],
 };
 

@@ -2,10 +2,11 @@ import { GoogleService, type GoogleServiceConfig } from './base.js';
 
 const CONFIG: GoogleServiceConfig = {
   apis: ['slides.googleapis.com', 'drive.googleapis.com'],
-  scopes: [
+  defaultScopes: [
     'https://www.googleapis.com/auth/presentations',
     'https://www.googleapis.com/auth/drive.readonly',
   ],
+  additionalScopes: ['https://www.googleapis.com/auth/presentations.readonly'],
 };
 
 export class GoogleSlides extends GoogleService {

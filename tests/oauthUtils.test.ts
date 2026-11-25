@@ -11,6 +11,7 @@ import {
   readRedirectUriOverride,
   refreshAccessToken,
   findScopesNotGranted,
+  resolveGrantedScopes,
 } from '../src/oauthUtils.js';
 import { AuthorizationBearer, OAuthCredentials } from '../src/apiCredentials/base.js';
 import * as curl from '../src/curl.js';
@@ -332,6 +333,20 @@ describe('findScopesNotGranted', () => {
 
   it('tolerates irregular whitespace between scopes', () => {
     expect(findScopesNotGranted(requested, '  scope-a \n scope-b\tscope-c ')).toEqual([]);
+  });
+});
+
+describe('resolveGrantedScopes', () => {
+  it('prefers what the token response reports over what was requested', () => {
+    expect(resolveGrantedScopes(['read', 'write'], 'read')).toEqual(['read']);
+  });
+
+  it('falls back to the requested scopes when the response reports none', () => {
+    expect(resolveGrantedScopes(['read', 'write'], undefined)).toEqual(['read', 'write']);
+  });
+
+  it('is undefined when there are no scopes at all', () => {
+    expect(resolveGrantedScopes([], undefined)).toBeUndefined();
   });
 });
 

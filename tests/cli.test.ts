@@ -810,7 +810,11 @@ describe('CLI commands with dependency injection', () => {
       expect(info.type).toBe('built-in');
       expect(info.baseApiUrls).toEqual(['https://slack.com/api/']);
       expect(info.authOptions).toEqual(['browser', 'set']);
-      expect(info.capabilities).toEqual({ detectsLoginAccount: true, systemBrowserLogin: false });
+      expect(info.capabilities).toEqual({
+        detectsLoginAccount: true,
+        systemBrowserLogin: false,
+        scopes: [],
+      });
       expect(info.credentials).toEqual({});
       expect(info.setCredentialsExample).toBe(
         'latchkey auth set slack -H "Authorization: Bearer xoxb-your-token"'
@@ -2766,6 +2770,11 @@ describe('CLI commands with dependency injection', () => {
         { strict: true, systemBrowser: false },
       ],
       ['logs in leniently without --strict', [], { strict: false, systemBrowser: false }],
+      [
+        '--scopes asks the session for the listed scopes only',
+        ['--scopes=read, write,read'],
+        { strict: false, systemBrowser: false, scopes: ['read', 'write'] },
+      ],
     ])('%s', async (_name, extraArguments, expectedLoginOptions) => {
       const originalPlatform = process.platform;
       Object.defineProperty(process, 'platform', { value: 'darwin' });
@@ -2774,7 +2783,9 @@ describe('CLI commands with dependency injection', () => {
           credentials: new SlackApiCredentials('xoxc-token', 'cookie'),
           account: 'user@example.com',
         });
-        const service = createMockService({ getSession: vi.fn().mockReturnValue({ login }) });
+        const service = createMockService({
+          getSession: vi.fn().mockReturnValue({ login, defaultScopes: ['read', 'write', 'admin'] }),
+        });
         const deps = createMockDependencies({ registry: new ServiceRegistry([service]) });
         saveBrowserConfig(deps.config.configPath, {
           executablePath: process.execPath,
@@ -4203,6 +4214,23 @@ describe('CLI commands with dependency injection', () => {
       expect(JSON.parse(init.body as string) as unknown).toEqual({
         command: 'auth browser',
         params: { serviceName: 'slack', strict: true },
+      });
+    });
+
+    it('forwards `auth browser --scopes` to the gateway as a list of scopes', async () => {
+      const fetchMock = makeFetchMock(
+        new Response(JSON.stringify({ result: null }), { status: 200 })
+      );
+      const deps = createMockDependencies({
+        config: createMockConfig({ gatewayUrl: GATEWAY_URL }),
+      });
+
+      await runCommand(['auth', 'browser', 'slack', '--scopes', 'read,write'], deps);
+
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(JSON.parse(init.body as string) as unknown).toEqual({
+        command: 'auth browser',
+        params: { serviceName: 'slack', scopes: ['read', 'write'] },
       });
     });
 

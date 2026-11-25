@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { EncryptedStorage } from '../src/encryptedStorage.js';
 import { OAuthCredentials } from '../src/apiCredentials/base.js';
 import { GOOGLE_GMAIL } from '../src/services/google/gmail.js';
-import type { GoogleServiceConfig } from '../src/services/google/base.js';
+import { GoogleService, type GoogleServiceConfig } from '../src/services/google/base.js';
 import { ScopesNotGrantedError } from '../src/services/core/base.js';
 import * as playwrightUtils from '../src/playwrightUtils.js';
 import * as oauthUtils from '../src/oauthUtils.js';
@@ -10,9 +10,7 @@ import * as curl from '../src/curl.js';
 
 const TEST_ENCRYPTION_KEY = 'dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q=';
 
-// The service's own scopes are a protected implementation detail; the test
-// reaches in so it need not duplicate the list.
-const GMAIL_SCOPES = (GOOGLE_GMAIL as unknown as { config: GoogleServiceConfig }).config.scopes;
+const GMAIL_SCOPES = GOOGLE_GMAIL.getSession('Latchkey-').defaultScopes;
 
 /**
  * Drives a Google login without a browser: the temp browser context and the
@@ -76,13 +74,17 @@ const PARTIAL_GRANT = {
     'https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email',
 };
 
-function login(tokenResponse: Record<string, unknown>, strict: boolean) {
+function login(
+  tokenResponse: Record<string, unknown>,
+  strict: boolean,
+  scopes?: readonly string[]
+) {
   const stubs = stubGoogleLogin(tokenResponse);
   const result = GOOGLE_GMAIL.getSession('Latchkey-').login(
     new EncryptedStorage(TEST_ENCRYPTION_KEY),
     {},
     OAuthCredentials.prepared('client-id', 'client-secret'),
-    { strict }
+    { strict, scopes }
   );
   return Object.assign(result, stubs);
 }
@@ -103,6 +105,56 @@ describe('Google login state', () => {
     );
     const authorizationUrl = new URL(pendingLogin.fakePage.goto.mock.calls[0]?.[0] as string);
     expect(authorizationUrl.searchParams.get('state')).toBe(EXPECTED_STATE);
+  });
+});
+
+describe('Google login with chosen scopes', () => {
+  const CHOSEN_SCOPE = 'https://www.googleapis.com/auth/gmail.modify';
+  const EXPECTED_SCOPES = [
+    'https://www.googleapis.com/auth/userinfo.profile',
+    'https://www.googleapis.com/auth/userinfo.email',
+    CHOSEN_SCOPE,
+  ].join(' ');
+
+  it('requests only the chosen scopes, next to the ones the credential check needs', async () => {
+    const pendingLogin = login(FULL_GRANT, false, [CHOSEN_SCOPE]);
+    await pendingLogin;
+
+    const authorizationUrl = new URL(pendingLogin.fakePage.goto.mock.calls[0]?.[0] as string);
+    expect(authorizationUrl.searchParams.get('scope')).toBe(EXPECTED_SCOPES);
+  });
+
+  it('records the granted scopes on the credentials', async () => {
+    const { credentials } = await login({ ...FULL_GRANT, scope: EXPECTED_SCOPES }, false, [
+      CHOSEN_SCOPE,
+    ]);
+
+    expect(credentials.scopes).toEqual(EXPECTED_SCOPES.split(' '));
+  });
+
+  it('is strict about the chosen scopes only', async () => {
+    await expect(
+      login({ ...FULL_GRANT, scope: EXPECTED_SCOPES }, true, [CHOSEN_SCOPE])
+    ).resolves.toBeDefined();
+  });
+});
+
+describe('Google service config', () => {
+  it('still accepts the default scopes under their former name', () => {
+    class LegacyGoogleService extends GoogleService {
+      readonly name = 'google-legacy';
+      readonly displayName = 'Google Legacy';
+      readonly baseApiUrls = ['https://legacy.googleapis.com/'] as const;
+      readonly info = '';
+      protected readonly config: GoogleServiceConfig = {
+        apis: ['legacy.googleapis.com'],
+        scopes: ['https://www.googleapis.com/auth/legacy'],
+      };
+    }
+
+    expect(new LegacyGoogleService().getSession('Latchkey-').defaultScopes).toEqual([
+      'https://www.googleapis.com/auth/legacy',
+    ]);
   });
 });
 
