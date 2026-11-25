@@ -253,9 +253,12 @@ function buildRuntimeConfig(directory: string, settings: LatchkeyRuntimeSettings
  * 5. loads the plugins of the directory (`PluginLoadError`);
  * 6. runs the data-format migrations of the directory (`MigrationError`).
  *
- * It does not open the credential store, so a key that cannot decrypt it is
- * found by the first operation that reads the store. It never consults the
- * keychain, never sends the usage ping and loads no browser.
+ * It does not open a credential store that is in the newest data format, so a
+ * key that cannot decrypt it is found by the first operation that reads the
+ * store. A store in an older format has to be read to be migrated, and a key
+ * that cannot decrypt that one fails the creation with `EncryptedStorageError`.
+ * It never consults the keychain, never sends the usage ping and loads no
+ * browser.
  */
 export async function createLatchkeyRuntime(
   options: LatchkeyRuntimeOptions
@@ -270,17 +273,29 @@ export async function createLatchkeyRuntime(
   const config = buildRuntimeConfig(options.directory, options.settings ?? {});
   config.checkSystemPrerequisites();
   config.checkSensitiveFilePermissions();
+
+  // The migrations may run curl, so the command is claimed before them; a
+  // creation that then fails gives the claim back, since no runtime holds it.
+  const previousClaim = claimedCurlCommand;
+  const previousCurlCommand = getCurlCommand();
   claimCurlCommand(config.curlCommand);
 
-  const plugins = await loadPlugins(config.pluginsDirectoryPath, createLatchkeySdk(VERSION));
-  const baseServices = combineWithPluginServices(BUILTIN_SERVICES, plugins);
-  const apiCredentialsTypes = combineWithPluginApiCredentialsTypes(
-    BUILTIN_API_CREDENTIALS_TYPES,
-    plugins
-  );
-
+  let baseServices: readonly Service[];
+  let apiCredentialsTypes: readonly ApiCredentialsType[];
   const encryptedStorage = new EncryptedStorage(options.encryptionKey);
-  await runMigrations(config, encryptedStorage);
+  try {
+    const plugins = await loadPlugins(config.pluginsDirectoryPath, createLatchkeySdk(VERSION));
+    baseServices = combineWithPluginServices(BUILTIN_SERVICES, plugins);
+    apiCredentialsTypes = combineWithPluginApiCredentialsTypes(
+      BUILTIN_API_CREDENTIALS_TYPES,
+      plugins
+    );
+    await runMigrations(config, encryptedStorage);
+  } catch (error) {
+    claimedCurlCommand = previousClaim;
+    setCurlCommand(previousCurlCommand);
+    throw error;
+  }
 
   return assembleLatchkeyRuntime({
     config,

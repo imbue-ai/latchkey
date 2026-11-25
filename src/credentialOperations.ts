@@ -186,6 +186,29 @@ export interface ReencryptCredentialsResult {
 }
 
 /**
+ * The checks of a destination that need nothing from the source: that it is
+ * not a file, and that its key is one credentials can be encrypted with.
+ */
+function ensureDestinationIsUsable(destination: {
+  readonly directory: string;
+  readonly encryptionKey: string;
+}): void {
+  if (existsSync(destination.directory) && !statSync(destination.directory).isDirectory()) {
+    throw new DestinationNotADirectoryError(destination.directory);
+  }
+  // Validate the key up front using the encryption routine itself, rather
+  // than duplicating its key-format checks.
+  try {
+    encrypt('', destination.encryptionKey);
+  } catch (error) {
+    if (error instanceof EncryptionError) {
+      throw new InvalidDestinationKeyError(error.message);
+    }
+    throw error;
+  }
+}
+
+/**
  * Re-encrypt credentials from a store into a destination directory, under the
  * destination's key, using the file names the source uses.
  *
@@ -203,25 +226,12 @@ export function reencryptCredentialFiles(
   options: ReencryptCredentialFilesOptions
 ): ReencryptCredentialsResult {
   const destinationDirectory = options.destination.directory;
-  if (existsSync(destinationDirectory) && !statSync(destinationDirectory).isDirectory()) {
-    throw new DestinationNotADirectoryError(destinationDirectory);
-  }
+  ensureDestinationIsUsable(options.destination);
 
   const destinationStorePath = join(
     destinationDirectory,
     basename(options.source.credentialStorePath)
   );
-
-  // Validate the key up front using the encryption routine itself, rather
-  // than duplicating its key-format checks.
-  try {
-    encrypt('', options.destination.encryptionKey);
-  } catch (error) {
-    if (error instanceof EncryptionError) {
-      throw new InvalidDestinationKeyError(error.message);
-    }
-    throw error;
-  }
 
   const sourceStorage = new EncryptedStorage(options.source.encryptionKey);
   const sourceStore = new ApiCredentialStore(
@@ -402,9 +412,20 @@ function configOfDirectory(directory: string): Config {
 export async function reencryptCredentials(
   options: ReencryptCredentialsOptions
 ): Promise<ReencryptCredentialsResult> {
+  // Checked before the source is migrated, so that a call refused for its
+  // destination has not rewritten the source.
+  ensureDestinationIsUsable(options.destination);
+
   const sourceConfig = configOfDirectory(options.source.directory);
   if (existsSync(sourceConfig.credentialStorePath)) {
-    await runMigrations(sourceConfig, new EncryptedStorage(options.source.encryptionKey));
+    try {
+      await runMigrations(sourceConfig, new EncryptedStorage(options.source.encryptionKey));
+    } catch (error) {
+      if (error instanceof ApiCredentialStoreError || error instanceof EncryptedStorageError) {
+        throw new SourceCredentialsUnreadableError(error.message);
+      }
+      throw error;
+    }
   }
   return reencryptCredentialFiles({
     source: {

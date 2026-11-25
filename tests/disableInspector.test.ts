@@ -74,4 +74,42 @@ describe.skipIf(process.platform === 'win32')('inspector activation via SIGUSR1'
     expect(exitCode).toBeNull();
     expect(exitSignal).toBeNull();
   }, 60_000);
+
+  it('is disabled for a process that only imported latchkey/embed and called ignoreInspectorSignal', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'latchkey-inspector-test-'));
+    const script = [
+      "const { ignoreInspectorSignal } = await import('./src/embed.ts');",
+      'ignoreInspectorSignal();',
+      "console.log('signal handler installed');",
+      'setInterval(() => undefined, 1_000);',
+    ].join('\n');
+    let output = '';
+    child = spawn(process.execPath, ['--import', 'tsx', '--input-type=module', '--eval', script], {
+      cwd: projectRoot,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    child.stdout?.on('data', (chunk: Buffer) => {
+      output += chunk.toString();
+    });
+    child.stderr?.on('data', (chunk: Buffer) => {
+      output += chunk.toString();
+    });
+    let exitCode: number | null = null;
+    let exitSignal: string | null = null;
+    child.on('exit', (code, signal) => {
+      exitCode = code;
+      exitSignal = signal;
+    });
+
+    await waitFor(() => output.includes('signal handler installed'), 30_000);
+
+    child.kill('SIGUSR1');
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+
+    expect(output).not.toContain('Debugger listening');
+    expect(output).not.toContain('nodejs.org/en/docs/inspector');
+    // The signal must neither open the inspector nor terminate the process.
+    expect(exitCode).toBeNull();
+    expect(exitSignal).toBeNull();
+  }, 60_000);
 });

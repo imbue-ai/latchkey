@@ -452,6 +452,15 @@ You can extend the gateway with your own HTTP endpoints. For
 details, see the [extensions docs](./docs/extensions.md).
 
 
+#### Embedding
+
+A program can also run the gateway inside its own process: it
+passes the encryption key and the settings itself, attaches
+the gateway to a server of its own, and extends it with
+handlers that can reach the credential store. For details,
+see the [embedding docs](./docs/embedding.md).
+
+
 ### Other configuration
 
 You can set these environment variables to override certain
