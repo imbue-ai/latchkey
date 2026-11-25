@@ -813,7 +813,7 @@ describe('CLI commands with dependency injection', () => {
       expect(info.capabilities).toEqual({
         detectsLoginAccount: true,
         systemBrowserLogin: false,
-        loginScopes: [],
+        scopes: [],
       });
       expect(info.credentials).toEqual({});
       expect(info.setCredentialsExample).toBe(

@@ -937,7 +937,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .option(
       '--scopes <scopes>',
       'Comma-separated list of scopes to request, instead of the generous default set. ' +
-        "Only accepts the scopes listed as 'loginScopes' in the capabilities shown by " +
+        "Only accepts the scopes listed as 'scopes' in the capabilities shown by " +
         "'latchkey services info'; services that list none do not support this option."
     )
     .action(

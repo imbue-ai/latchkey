@@ -343,7 +343,7 @@ export interface ServiceCapabilities {
    * Empty when the service's browser login has no choice of scopes to offer,
    * or when there is no browser login at all.
    */
-  readonly loginScopes: readonly string[];
+  readonly scopes: readonly string[];
 }
 
 export interface ServicesInfoResult {
@@ -377,7 +377,7 @@ function buildCapabilities(service: Service, config: Config): ServiceCapabilitie
   return {
     detectsLoginAccount: detectsLoginAccount(service),
     systemBrowserLogin: supportsSystemBrowserLogin(service, config.appNamePrefix),
-    loginScopes: session === undefined ? [] : (listAvailableLoginScopes(session) ?? []),
+    scopes: session === undefined ? [] : (listAvailableLoginScopes(session) ?? []),
   };
 }
 

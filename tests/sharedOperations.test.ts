@@ -158,7 +158,7 @@ describe('operations', () => {
       expect(info.capabilities).toEqual({
         detectsLoginAccount: true,
         systemBrowserLogin: false,
-        loginScopes: [],
+        scopes: [],
       });
       expect(info.credentials).toEqual({});
       expect(info.developerNotes).toBe('Test info for Slack service.');
@@ -175,7 +175,7 @@ describe('operations', () => {
       expect(info.capabilities).toEqual({
         detectsLoginAccount: false,
         systemBrowserLogin: false,
-        loginScopes: [],
+        scopes: [],
       });
     });
 
@@ -205,7 +205,7 @@ describe('operations', () => {
 
       const info = await servicesInfo(registry, store, config, service.name);
 
-      expect(info.capabilities.loginScopes).toContain(scope);
+      expect(info.capabilities.scopes).toContain(scope);
     });
 
     it('lists scopes that a login does not ask for by default', async () => {
@@ -219,7 +219,7 @@ describe('operations', () => {
         GOOGLE_DOCS.name
       );
 
-      expect(info.capabilities.loginScopes).toContain(readOnlyScope);
+      expect(info.capabilities.scopes).toContain(readOnlyScope);
     });
 
     it('reports the system browser login for a service registered with the mcp login flow', async () => {
@@ -242,7 +242,7 @@ describe('operations', () => {
       expect(info.capabilities).toEqual({
         detectsLoginAccount: false,
         systemBrowserLogin: true,
-        loginScopes: [],
+        scopes: [],
       });
     });
 
@@ -280,7 +280,7 @@ describe('operations', () => {
       expect(info.capabilities).toEqual({
         detectsLoginAccount: false,
         systemBrowserLogin: false,
-        loginScopes: [],
+        scopes: [],
       });
     });
 

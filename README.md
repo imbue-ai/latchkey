@@ -240,7 +240,7 @@ Among other things, `latchkey services info <service_name>` shows a list of capa
 - `detectsLoginAccount`: Whether `latchkey auth browser` automatically resolves the account upon success.
 - `systemBrowserLogin`: When true, `latchkey auth browser` accepts the `--system`
   flag to open the user's system browser instead of the browser Latchkey controls.
-- `loginScopes`: The permission scopes the `--scopes` flag of
+- `scopes`: The permission scopes the `--scopes` flag of
   `latchkey auth browser` accepts. Without the flag, a login asks for a generous subset
   of them; with it, only for the listed ones, which may include scopes that are not
   requested by default, such as read-only variants. For example,
