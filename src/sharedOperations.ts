@@ -338,16 +338,12 @@ export interface ServiceCapabilities {
    */
   readonly systemBrowserLogin: boolean;
   /**
-   * The scopes `auth browser` asks for when run without `--scopes`. Empty when
-   * the service's browser login has no choice of scopes to offer, or when
-   * there is no browser login at all.
+   * The scopes `auth browser --scopes` accepts: the ones a login asks for by
+   * default, plus any the service offers besides (e.g. read-only variants).
+   * Empty when the service's browser login has no choice of scopes to offer,
+   * or when there is no browser login at all.
    */
-  readonly defaultLoginScopes: readonly string[];
-  /**
-   * The scopes `auth browser --scopes` accepts: the default ones, plus any the
-   * service offers but does not ask for by default (e.g. read-only variants).
-   */
-  readonly availableLoginScopes: readonly string[];
+  readonly loginScopes: readonly string[];
 }
 
 export interface ServicesInfoResult {
@@ -381,13 +377,12 @@ function buildCapabilities(service: Service, config: Config): ServiceCapabilitie
   return {
     detectsLoginAccount: detectsLoginAccount(service),
     systemBrowserLogin: supportsSystemBrowserLogin(service, config.appNamePrefix),
-    defaultLoginScopes: session?.defaultLoginScopes ?? [],
-    availableLoginScopes: session === undefined ? [] : (availableLoginScopes(session) ?? []),
+    loginScopes: session === undefined ? [] : (listAvailableLoginScopes(session) ?? []),
   };
 }
 
 /** Everything `--scopes` may name, or undefined when the login offers no choice. */
-function availableLoginScopes(session: ServiceSession): readonly string[] | undefined {
+function listAvailableLoginScopes(session: ServiceSession): readonly string[] | undefined {
   if (session.defaultLoginScopes === undefined) {
     return undefined;
   }
@@ -399,7 +394,7 @@ function validateLoginScopes(
   session: ServiceSession,
   requestedScopes: readonly string[]
 ): void {
-  const availableScopes = availableLoginScopes(session);
+  const availableScopes = listAvailableLoginScopes(session);
   if (availableScopes === undefined) {
     throw new LoginScopesNotSupportedError(serviceName);
   }

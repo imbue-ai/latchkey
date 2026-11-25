@@ -240,14 +240,14 @@ Among other things, `latchkey services info <service_name>` shows a list of capa
 - `detectsLoginAccount`: Whether `latchkey auth browser` automatically resolves the account upon success.
 - `systemBrowserLogin`: When true, `latchkey auth browser` accepts the `--system`
   flag to open the user's system browser instead of the browser Latchkey controls.
-- `defaultLoginScopes`: The permission scopes `latchkey auth browser` asks for when run
-  without the `--scopes` flag. Scopes that Latchkey itself relies on (e.g. to tell which
-  account was logged in) are always requested and are not listed.
-- `availableLoginScopes`: The scopes the `--scopes` flag accepts: the default ones, plus
-  others the service offers, such as read-only variants. For example,
+- `loginScopes`: The permission scopes the `--scopes` flag of
+  `latchkey auth browser` accepts. Without the flag, a login asks for a generous subset
+  of them; with it, only for the listed ones, which may include scopes that are not
+  requested by default, such as read-only variants. For example,
   `latchkey auth browser google-docs --scopes=https://www.googleapis.com/auth/documents.readonly`
-  logs in with read-only access to documents. Empty when the service does not support
-  `--scopes`.
+  logs in with read-only access to documents. Scopes that Latchkey itself relies on
+  (e.g. to tell which account was logged in) are always requested and are not listed.
+  Empty when the service does not support `--scopes`.
 
 
 ### Plugins
