@@ -208,6 +208,18 @@ describe('operations', () => {
       expect(info.capabilities.scopes).toContain(scope);
     });
 
+    it('lists the login scopes sorted', async () => {
+      const info = await servicesInfo(
+        new ServiceRegistry([GITHUB]),
+        createApiCredentialStore(),
+        createMockConfig(),
+        GITHUB.name
+      );
+
+      expect(info.capabilities.scopes).toEqual([...info.capabilities.scopes].sort());
+      expect(info.capabilities.scopes.length).toBeGreaterThan(1);
+    });
+
     it('lists scopes that a login does not ask for by default', async () => {
       const readOnlyScope = 'https://www.googleapis.com/auth/documents.readonly';
       const registry = new ServiceRegistry([GOOGLE_DOCS]);
@@ -319,11 +331,12 @@ describe('operations', () => {
       const registry = new ServiceRegistry([createMockService({ name: 'github' })]);
       const store = createApiCredentialStore();
       store.save('github', new AuthorizationBearer('ghp_a', undefined, ['repo', 'gist']), 'scoped');
+      // Listed sorted, whatever order the login recorded them in.
       store.save('github', new AuthorizationBearer('ghp_b'), 'by-hand');
 
       const info = await servicesInfo(registry, store, createMockConfig(), 'github');
 
-      expect(info.credentials.scoped?.scopes).toEqual(['repo', 'gist']);
+      expect(info.credentials.scoped?.scopes).toEqual(['gist', 'repo']);
       expect(info.credentials['by-hand']).not.toHaveProperty('scopes');
     });
 

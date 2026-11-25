@@ -274,6 +274,11 @@ export interface CredentialStatusEntry {
  */
 export type AccountCredentialStatuses = Record<string, CredentialStatusEntry>;
 
+/** Scope lists are shown sorted, so that they are easy to scan and compare. */
+function sortScopes(scopes: readonly string[]): readonly string[] {
+  return [...scopes].sort();
+}
+
 async function computeAccountStatuses(
   registry: ServiceRegistry,
   apiCredentialStore: ApiCredentialStore,
@@ -304,7 +309,7 @@ async function computeAccountStatuses(
           credentialType: credentials.objectType,
           credentialStatus,
           ...(validUntil === undefined ? {} : { validUntil }),
-          ...(scopes === undefined ? {} : { scopes }),
+          ...(scopes === undefined ? {} : { scopes: sortScopes(scopes) }),
         },
       ] as const;
     })
@@ -377,7 +382,7 @@ function buildCapabilities(service: Service, config: Config): ServiceCapabilitie
   return {
     detectsLoginAccount: detectsLoginAccount(service),
     systemBrowserLogin: supportsSystemBrowserLogin(service, config.appNamePrefix),
-    scopes: session === undefined ? [] : (listAvailableLoginScopes(session) ?? []),
+    scopes: session === undefined ? [] : sortScopes(listAvailableLoginScopes(session) ?? []),
   };
 }
 
