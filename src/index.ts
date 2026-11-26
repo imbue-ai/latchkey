@@ -87,3 +87,17 @@ export {
 
 // ServiceRegistry
 export { ServiceRegistry } from './serviceRegistry.js';
+
+// Gateway, for serving it from an existing HTTP server
+export {
+  createEmbeddedGateway,
+  EmbeddedGatewayInGatewayModeError,
+  type EmbeddedGatewayOptions,
+} from './gateway/embedded.js';
+export type { GatewayRequestHandler } from './gateway/server.js';
+export type {
+  Extension,
+  ExtensionContext,
+  ExtensionHandler,
+  ExtensionLifecycleHook,
+} from './gateway/extensions.js';

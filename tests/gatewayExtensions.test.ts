@@ -85,7 +85,7 @@ describe('loadExtensions', () => {
     );
     const extensions = await loadExtensions(extensionsDir);
     expect(extensions).toHaveLength(1);
-    expect(extensions[0]!.sourceFile).toContain('hello.mjs');
+    expect(extensions[0]!.name).toContain('hello.mjs');
     expect(typeof extensions[0]!.handler).toBe('function');
   });
 
@@ -93,11 +93,11 @@ describe('loadExtensions', () => {
     writeExtension(extensionsDir, 'b-second.mjs', `export default () => false;`);
     writeExtension(extensionsDir, 'a-first.mjs', `export default () => false;`);
     const extensions = await loadExtensions(extensionsDir);
-    expect(extensions.map((extension) => extension.sourceFile.endsWith('a-first.mjs'))).toEqual([
+    expect(extensions.map((extension) => extension.name.endsWith('a-first.mjs'))).toEqual([
       true,
       false,
     ]);
-    expect(extensions.map((extension) => extension.sourceFile.endsWith('b-second.mjs'))).toEqual([
+    expect(extensions.map((extension) => extension.name.endsWith('b-second.mjs'))).toEqual([
       false,
       true,
     ]);

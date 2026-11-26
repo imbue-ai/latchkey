@@ -102,6 +102,7 @@ import {
   writeDataFormatVersionOfDirectory,
 } from './migrations.js';
 import { getSkillMdContent } from './skillMd.js';
+import { DEFAULT_GATEWAY_MAX_BODY_SIZE } from './gateway/gatewayEndpoint.js';
 import { startGateway } from './gateway/server.js';
 import {
   buildCurlDryRunRequest,
@@ -382,7 +383,7 @@ async function clearAll(deps: CliDependencies, yes: boolean): Promise<void> {
   }
 }
 
-async function resolveEncryptionKeyFromConfig(config: Config): Promise<string> {
+export async function resolveEncryptionKeyFromConfig(config: Config): Promise<string> {
   const hasEncryptedData =
     existsSync(config.credentialStorePath) || existsSync(config.browserStatePath);
   return resolveEncryptionKey({
@@ -398,7 +399,7 @@ async function createEncryptedStorageFromConfig(config: Config): Promise<Encrypt
   return new EncryptedStorage(key);
 }
 
-function createApiCredentialStore(
+export function createApiCredentialStore(
   deps: CliDependencies,
   encryptedStorage: EncryptedStorage
 ): ApiCredentialStore {
@@ -1320,7 +1321,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .option(
       '--max-body-size <bytes>',
       'Maximum request body size in bytes',
-      String(10 * 1024 * 1024)
+      String(DEFAULT_GATEWAY_MAX_BODY_SIZE)
     )
     .action(async (options: { port?: string; host?: string; maxBodySize: string }) => {
       refuseInGatewayMode(deps, 'gateway');

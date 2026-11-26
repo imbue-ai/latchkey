@@ -82,9 +82,9 @@ export class BodyTooLargeError extends Error {
   }
 }
 
-export interface GatewayOptions {
-  readonly port: number;
-  readonly host: string;
+export const DEFAULT_GATEWAY_MAX_BODY_SIZE = 10 * 1024 * 1024;
+
+export interface GatewayHandlerOptions {
   readonly maxBodySize: number;
   /**
    * When set, the gateway requires every incoming request to present this
@@ -97,6 +97,11 @@ export interface GatewayOptions {
    * JWTs.
    */
   readonly permissionsOverrideSigningKey: Buffer;
+}
+
+export interface GatewayOptions extends GatewayHandlerOptions {
+  readonly port: number;
+  readonly host: string;
 }
 
 function sendErrorResponse(
@@ -304,7 +309,7 @@ export async function handleGatewayRequest(
   targetUrl: string,
   deps: CliDependencies,
   apiCredentialStore: ApiCredentialStore,
-  options: GatewayOptions
+  options: GatewayHandlerOptions
 ): Promise<void> {
   // A request marked as carrying its own credentials (see
   // `GATEWAY_NO_CREDENTIALS_HEADER`) makes the gateway a plain proxy for an
