@@ -9,9 +9,8 @@ import {
   createDefaultDependencies,
   resolveEncryptionKeyFromConfig,
 } from '../cliCommands.js';
-import { countDailyIfNeeded } from '../dailyCounting.js';
 import { EncryptedStorage } from '../encryptedStorage.js';
-import { runMigrations } from '../migrations.js';
+import { runStartupTasks } from '../startup.js';
 import type { Extension } from './extensions.js';
 import { DEFAULT_GATEWAY_MAX_BODY_SIZE } from './gatewayEndpoint.js';
 import { derivePermissionsOverrideSigningKey } from './permissionsOverride.js';
@@ -58,17 +57,10 @@ export async function createEmbeddedGateway(
   if (deps.config.gatewayUrl !== null) {
     throw new EmbeddedGatewayInGatewayModeError();
   }
-  deps.config.checkSystemPrerequisites();
-  deps.config.checkSensitiveFilePermissions();
-  try {
-    countDailyIfNeeded(deps.config);
-  } catch {
-    // Non-essential daily usage counting — never prevent the gateway from being served.
-  }
+  await runStartupTasks(deps.config);
 
   const encryptionKey = await resolveEncryptionKeyFromConfig(deps.config);
   const encryptedStorage = new EncryptedStorage(encryptionKey);
-  await runMigrations(deps.config, encryptedStorage);
 
   return createGatewayRequestHandler(
     deps,

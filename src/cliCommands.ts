@@ -2,7 +2,7 @@
  * CLI command implementations with dependency injection for testability.
  */
 
-import type { Command } from 'commander';
+import { Command } from 'commander';
 import { existsSync, statSync, unlinkSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -477,6 +477,23 @@ function fullCommandPath(command: Command): string {
     current = current.parent;
   }
   return parts.join(' ');
+}
+
+/**
+ * Build the `latchkey` command-line program on top of `program`. Settings
+ * that subcommands inherit, such as `exitOverride()`, have to be applied to
+ * `program` beforehand, because commander copies them when a subcommand is
+ * created.
+ */
+export function createProgram(deps: CliDependencies, program: Command = new Command()): Command {
+  program
+    .name('latchkey')
+    .description(
+      'A command-line tool that injects API credentials to curl requests to known public APIs.'
+    )
+    .version(VERSION);
+  registerCommands(program, deps);
+  return program;
 }
 
 /**

@@ -101,3 +101,6 @@ export type {
   ExtensionHandler,
   ExtensionLifecycleHook,
 } from './gateway/extensions.js';
+
+// The command-line interface, for running commands without spawning a process
+export { runCli, type CliResult, type RunCliOptions } from './runCli.js';
