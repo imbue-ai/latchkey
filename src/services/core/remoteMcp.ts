@@ -289,7 +289,72 @@ interface RegistrationResponse {
   client_secret: string;
 }
 
-async function registerClient(
+/**
+ * The authorization server refused to register latchkey as a client: an HTTP
+ * 401 or 403, or an RFC 7591 error response (one with an `error` field).
+ * Trying again does not help, as the server answers the same registration
+ * request the same way every time.
+ */
+export class ClientRegistrationRefusedError extends LoginFailedError {
+  readonly registrationEndpoint: string;
+  readonly httpStatusCode: string;
+
+  constructor(
+    serviceName: string,
+    registrationEndpoint: string,
+    httpStatusCode: string,
+    reason: string
+  ) {
+    super(
+      `OAuth client registration was refused by ${registrationEndpoint} ` +
+        `(HTTP ${httpStatusCode}): ${reason}. Logging in without registration needs ` +
+        `an OAuth client id prepared in advance: latchkey auth prepare ` +
+        `${serviceName} '{"clientId": "<client id or metadata document URL>"}'`
+    );
+    this.name = 'ClientRegistrationRefusedError';
+    this.registrationEndpoint = registrationEndpoint;
+    this.httpStatusCode = httpStatusCode;
+  }
+}
+
+/**
+ * The client registration endpoint answered with an error status other than a
+ * refusal (e.g. a 5xx or a 429), which may well go away on a later attempt.
+ */
+export class ClientRegistrationFailedError extends LoginFailedError {
+  readonly registrationEndpoint: string;
+  readonly httpStatusCode: string;
+
+  constructor(registrationEndpoint: string, httpStatusCode: string, responseBody: string) {
+    super(
+      `OAuth client registration at ${registrationEndpoint} failed ` +
+        `(HTTP ${httpStatusCode}): ${responseBody}`
+    );
+    this.name = 'ClientRegistrationFailedError';
+    this.registrationEndpoint = registrationEndpoint;
+    this.httpStatusCode = httpStatusCode;
+  }
+}
+
+/** The `error` (and `error_description`) of an RFC 7591 error response, if it is one. */
+function describeRegistrationError(response: unknown): string | null {
+  if (response === null || typeof response !== 'object') {
+    return null;
+  }
+  const { error, error_description: errorDescription } = response as {
+    error?: unknown;
+    error_description?: unknown;
+  };
+  if (typeof error !== 'string') {
+    return null;
+  }
+  return typeof errorDescription === 'string' && errorDescription !== ''
+    ? `${error}: ${errorDescription}`
+    : error;
+}
+
+export async function registerClient(
+  serviceName: string,
   registrationEndpoint: string,
   redirectUri: string,
   clientName: string,
@@ -298,6 +363,8 @@ async function registerClient(
   const result = await runCapturedAsync(
     [
       '-s',
+      '-w',
+      '\n%{http_code}',
       '-X',
       'POST',
       '-H',
@@ -313,12 +380,29 @@ async function registerClient(
     throw new LoginFailedError(`Failed to register OAuth client: ${result.stderr}`);
   }
 
-  const response = tryParseJson(result.stdout) as Partial<RegistrationResponse> | null;
+  // The `-w '\n%{http_code}'` above appends the status code as the final line.
+  const separatorIndex = result.stdout.lastIndexOf('\n');
+  const httpStatusCode = result.stdout.slice(separatorIndex + 1).trim();
+  const responseBody = separatorIndex === -1 ? '' : result.stdout.slice(0, separatorIndex);
+
+  const response = tryParseJson(responseBody) as Partial<RegistrationResponse> | null;
+  const registrationError = describeRegistrationError(response);
+  if (registrationError !== null || httpStatusCode === '401' || httpStatusCode === '403') {
+    throw new ClientRegistrationRefusedError(
+      serviceName,
+      registrationEndpoint,
+      httpStatusCode,
+      registrationError ?? responseBody.trim()
+    );
+  }
+  if (!httpStatusCode.startsWith('2')) {
+    throw new ClientRegistrationFailedError(registrationEndpoint, httpStatusCode, responseBody);
+  }
   if (response === null || typeof response !== 'object') {
-    throw new LoginFailedError(`Failed to parse client registration response: ${result.stdout}`);
+    throw new LoginFailedError(`Failed to parse client registration response: ${responseBody}`);
   }
   if (!response.client_id) {
-    throw new LoginFailedError(`Client registration response missing client_id: ${result.stdout}`);
+    throw new LoginFailedError(`Client registration response missing client_id: ${responseBody}`);
   }
   return {
     client_id: response.client_id,
@@ -389,6 +473,7 @@ export class RemoteMcpSession extends ServiceSession {
       );
     }
     return registerClient(
+      this.service.name,
       registrationEndpoint,
       redirectUri,
       // Just the app name: `client_name` is a display label (RFC 7591

@@ -7,9 +7,12 @@ import {
   buildAuthorizationUrl,
   buildClientRegistrationBody,
   buildMcpInitializeCurlArguments,
+  ClientRegistrationFailedError,
+  ClientRegistrationRefusedError,
   extractMcpToolResultTexts,
   fetchAccountFromMcpTool,
   parseMcpResponseBody,
+  registerClient,
   RemoteMcpService,
 } from '../src/services/core/remoteMcp.js';
 import { BUILTIN_SERVICES } from '../src/serviceRegistry.js';
@@ -200,6 +203,81 @@ describe('fetchAccountFromMcpTool', () => {
     );
 
     expect(account).toBeNull();
+  });
+});
+
+describe('registerClient', () => {
+  const registrationEndpoint = 'https://mcp.example.com/register';
+
+  afterEach(() => {
+    resetAsyncSubprocessRunner();
+  });
+
+  function respondWith(body: string, httpStatusCode: string): void {
+    setAsyncSubprocessRunner(() =>
+      Promise.resolve({
+        returncode: 0,
+        stdout: Buffer.from(`${body}\n${httpStatusCode}`),
+        stderr: '',
+      })
+    );
+  }
+
+  function register() {
+    return registerClient(
+      'example-mcp',
+      registrationEndpoint,
+      'http://localhost:1/cb',
+      'Latchkey',
+      []
+    );
+  }
+
+  it('returns the registered client', async () => {
+    respondWith(JSON.stringify({ client_id: 'client-1', client_secret: 'secret-1' }), '201');
+
+    expect(await register()).toEqual({ client_id: 'client-1', client_secret: 'secret-1' });
+  });
+
+  it('reports a 403 with a plain-text body as a refusal', async () => {
+    respondWith('Forbidden', '403');
+
+    const error = await register().catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ClientRegistrationRefusedError);
+    expect((error as ClientRegistrationRefusedError).httpStatusCode).toBe('403');
+    expect((error as Error).message).toMatch(
+      /^OAuth client registration was refused by https:\/\/mcp\.example\.com\/register \(HTTP 403\): Forbidden\./
+    );
+    expect((error as Error).message).toContain('latchkey auth prepare example-mcp');
+  });
+
+  it('reports an RFC 7591 error response as a refusal', async () => {
+    respondWith(
+      JSON.stringify({ error: 'invalid_client_metadata', error_description: 'unknown client' }),
+      '400'
+    );
+
+    const error = await register().catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ClientRegistrationRefusedError);
+    expect((error as Error).message).toContain(
+      '(HTTP 400): invalid_client_metadata: unknown client.'
+    );
+  });
+
+  it('reports a server error as a failure naming the status, not as a refusal', async () => {
+    respondWith('<html><body>Service Unavailable</body></html>', '503');
+
+    const error = await register().catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ClientRegistrationFailedError);
+    expect(error).not.toBeInstanceOf(ClientRegistrationRefusedError);
+    expect((error as ClientRegistrationFailedError).httpStatusCode).toBe('503');
+    expect((error as Error).message).toBe(
+      'OAuth client registration at https://mcp.example.com/register failed (HTTP 503): ' +
+        '<html><body>Service Unavailable</body></html>'
+    );
   });
 });
 

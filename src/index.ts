@@ -73,6 +73,8 @@ export {
   LoginCancelledError,
   LoginFailedError,
   UnrecoverableLoginFailedError,
+  ClientRegistrationRefusedError,
+  ClientRegistrationFailedError,
   Slack,
   SLACK,
   Discord,
