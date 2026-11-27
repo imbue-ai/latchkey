@@ -1,13 +1,26 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import * as http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { GatewayRequestHandler } from '../src/index.js';
 
 const MOUNT_PATH = '/internal/latchkey';
 const PASSWORD = 'embedded-test-password';
+
+function writeDirectoryExtension(latchkeyDirectory: string): void {
+  const extensionsDirectory = join(latchkeyDirectory, 'extensions');
+  mkdirSync(extensionsDirectory, { recursive: true });
+  writeFileSync(
+    join(extensionsDirectory, 'from-directory.mjs'),
+    `export default (request, response) => {
+       if (request.url !== '/extensions/from-directory') return false;
+       response.end('hello from the directory');
+       return true;
+     };`
+  );
+}
 
 describe('createEmbeddedGateway', () => {
   let directory: string;
@@ -19,6 +32,7 @@ describe('createEmbeddedGateway', () => {
 
   beforeAll(async () => {
     directory = mkdtempSync(join(tmpdir(), 'latchkey-embedded-test-'));
+    writeDirectoryExtension(directory);
     vi.stubEnv('LATCHKEY_DIRECTORY', directory);
     vi.stubEnv('LATCHKEY_ENCRYPTION_KEY', 'dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q=');
     vi.stubEnv('LATCHKEY_GATEWAY_LISTEN_PASSWORD', PASSWORD);
@@ -104,6 +118,13 @@ describe('createEmbeddedGateway', () => {
     expect(unclaimed.status).toBe(404);
   });
 
+  it('does not serve the extensions directory when extensions are passed', async () => {
+    const response = await fetch(`${hostUrl}${MOUNT_PATH}/extensions/from-directory`, {
+      headers: { 'X-Latchkey-Gateway-Password': PASSWORD },
+    });
+    expect(response.status).toBe(404);
+  });
+
   it('enforces the password from the environment', async () => {
     const response = await fetch(`${hostUrl}${MOUNT_PATH}/gateway/https://slack.com/api/auth.test`);
     expect(response.status).toBe(401);
@@ -120,6 +141,7 @@ describe('createEmbeddedGateway with an environment of its own', () => {
 
   beforeAll(async () => {
     directory = mkdtempSync(join(tmpdir(), 'latchkey-embedded-env-test-'));
+    writeDirectoryExtension(directory);
     const env = {
       LATCHKEY_DIRECTORY: directory,
       LATCHKEY_ENCRYPTION_KEY: 'b3RoZXJrZXlvdGhlcmtleW90aGVya2V5b3RoZXJrZXk=',
@@ -171,5 +193,13 @@ describe('createEmbeddedGateway with an environment of its own', () => {
     });
     expect(response.status).toBe(200);
     expect(JSON.stringify(await response.json())).toContain('env-service');
+  });
+
+  it('serves the extensions directory when no extensions are passed', async () => {
+    const response = await fetch(`${hostUrl}/extensions/from-directory`, {
+      headers: { 'X-Latchkey-Gateway-Password': password },
+    });
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe('hello from the directory');
   });
 });

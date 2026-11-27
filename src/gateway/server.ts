@@ -152,20 +152,18 @@ function runExtensions(
 
 /**
  * Load and start the extensions and build the gateway's request handler.
- * `additionalExtensions` are tried before the ones loaded from the extensions
- * directory.
+ * `extensionsOverride`, when given, replaces the extensions in the extensions
+ * directory, which is then not read.
  */
 export async function createGatewayRequestHandler(
   deps: CliDependencies,
   apiCredentialStore: ApiCredentialStore,
   encryptedStorage: EncryptedStorage,
   options: GatewayHandlerOptions,
-  additionalExtensions: readonly Extension[] = []
+  extensionsOverride?: readonly Extension[]
 ): Promise<GatewayRequestHandler> {
-  const extensions = [
-    ...additionalExtensions,
-    ...(await loadExtensions(deps.config.extensionsDirectoryPath)),
-  ];
+  const extensions =
+    extensionsOverride ?? (await loadExtensions(deps.config.extensionsDirectoryPath));
   await startExtensions(extensions);
 
   const handleRequest = (request: http.IncomingMessage, response: http.ServerResponse): void => {

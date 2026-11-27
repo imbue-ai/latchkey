@@ -34,8 +34,10 @@ export interface EmbeddedGatewayOptions {
   /** Defaults to `console.error`. */
   readonly errorLog?: (message: string) => void;
   /**
-   * Extensions to serve in addition to the ones in the extensions directory,
-   * and tried before them. They go through the same permission check.
+   * Extensions to serve instead of the ones in the extensions directory,
+   * which is then not read at all; an empty list means no extensions. They
+   * go through the same permission check. To serve both, add the result of
+   * `loadExtensions` on that directory to the list.
    */
   readonly extensions?: readonly Extension[];
   /**

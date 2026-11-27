@@ -107,6 +107,7 @@ export type { GatewayRequestHandler } from './gateway/server.js';
 export {
   ExtensionLoadError,
   ExtensionStartError,
+  loadExtensions,
   type Extension,
   type ExtensionContext,
   type ExtensionHandler,
