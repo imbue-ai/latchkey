@@ -209,7 +209,7 @@ export class Ramp extends Service {
   ] as const;
 
   setCredentialsExample(serviceName: string): string {
-    return `latchkey auth browser ${serviceName}`;
+    return `latchkey auth set ${serviceName} -H "Authorization: Bearer <token>"`;
   }
 
   /**
