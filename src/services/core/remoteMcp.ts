@@ -278,7 +278,7 @@ export function fetchAccountFromMcpTool(
   );
 }
 
-interface RegistrationResponse {
+export interface ClientRegistrationResponse {
   client_id: string;
   /**
    * Some servers hand a secret even to a client that registered as public
@@ -289,15 +289,130 @@ interface RegistrationResponse {
   client_secret: string;
 }
 
+const MAXIMUM_REPORTED_RESPONSE_BODY_LENGTH = 500;
+
+/**
+ * The authorization server refused to register latchkey as an OAuth client
+ * (RFC 7591): it answered HTTP 401 or 403, or with an RFC 7591 error body.
+ * Some servers publish a registration endpoint but only accept the clients on
+ * an allowlist of their own. Running the login again fails the same way, which
+ * is what sets this apart from a {@link ClientRegistrationFailedError}.
+ *
+ * The message always starts with `OAuth client registration was refused by`,
+ * for callers that only see the command's output.
+ */
+export class ClientRegistrationRefusedError extends LoginFailedError {
+  readonly registrationEndpoint: string;
+  readonly httpStatusCode: number;
+
+  constructor(registrationEndpoint: string, httpStatusCode: number, detail: string) {
+    super(
+      `OAuth client registration was refused by ${registrationEndpoint} ` +
+        `(HTTP ${httpStatusCode.toString()}): ${detail}\n`
+    );
+    this.name = 'ClientRegistrationRefusedError';
+    this.registrationEndpoint = registrationEndpoint;
+    this.httpStatusCode = httpStatusCode;
+  }
+}
+
+/**
+ * The client registration request was answered with an HTTP error that is not
+ * a refusal (a server error, rate limiting, an error page), so trying again
+ * later may well succeed.
+ *
+ * The message always starts with `OAuth client registration failed at`, for
+ * callers that only see the command's output.
+ */
+export class ClientRegistrationFailedError extends LoginFailedError {
+  readonly registrationEndpoint: string;
+  readonly httpStatusCode: number;
+
+  constructor(registrationEndpoint: string, httpStatusCode: number, detail: string) {
+    super(
+      `OAuth client registration failed at ${registrationEndpoint} ` +
+        `(HTTP ${httpStatusCode.toString()}): ${detail}`
+    );
+    this.name = 'ClientRegistrationFailedError';
+    this.registrationEndpoint = registrationEndpoint;
+    this.httpStatusCode = httpStatusCode;
+  }
+}
+
+function describeRegistrationResponseBody(body: string): string {
+  const trimmed = body.trim();
+  if (trimmed === '') {
+    return '(empty response)';
+  }
+  return trimmed.length > MAXIMUM_REPORTED_RESPONSE_BODY_LENGTH
+    ? `${trimmed.slice(0, MAXIMUM_REPORTED_RESPONSE_BODY_LENGTH)}...`
+    : trimmed;
+}
+
+/**
+ * Interpret the authorization server's answer to a client registration
+ * request, telling a refusal apart from a failure worth retrying.
+ */
+export function parseClientRegistrationResponse(
+  registrationEndpoint: string,
+  httpStatusCode: number,
+  body: string
+): ClientRegistrationResponse {
+  const parsed = tryParseJson(body);
+  const response: Partial<ClientRegistrationResponse> & {
+    error?: unknown;
+    error_description?: unknown;
+  } = parsed !== null && typeof parsed === 'object' ? parsed : {};
+  const isSuccess = httpStatusCode >= 200 && httpStatusCode < 300;
+
+  if (isSuccess && typeof response.client_id === 'string' && response.client_id !== '') {
+    return {
+      client_id: response.client_id,
+      client_secret: typeof response.client_secret === 'string' ? response.client_secret : '',
+    };
+  }
+
+  // A server error or rate limiting is not a verdict on the client, whatever
+  // the body says.
+  const isTransient = httpStatusCode >= 500 || httpStatusCode === 429;
+  const errorCode = typeof response.error === 'string' ? response.error : null;
+  if (!isTransient && (errorCode !== null || httpStatusCode === 401 || httpStatusCode === 403)) {
+    const errorDescription =
+      typeof response.error_description === 'string' ? response.error_description : null;
+    const detail =
+      errorCode === null
+        ? describeRegistrationResponseBody(body)
+        : [errorCode, errorDescription].filter((part) => part !== null).join(': ');
+    throw new ClientRegistrationRefusedError(registrationEndpoint, httpStatusCode, detail);
+  }
+  if (!isSuccess) {
+    throw new ClientRegistrationFailedError(
+      registrationEndpoint,
+      httpStatusCode,
+      describeRegistrationResponseBody(body)
+    );
+  }
+  if (parsed === null || typeof parsed !== 'object') {
+    throw new LoginFailedError(
+      `Failed to parse client registration response: ${describeRegistrationResponseBody(body)}`
+    );
+  }
+  throw new LoginFailedError(
+    `Client registration response missing client_id: ${describeRegistrationResponseBody(body)}`
+  );
+}
+
 async function registerClient(
   registrationEndpoint: string,
   redirectUri: string,
   clientName: string,
   scopes: readonly string[]
-): Promise<RegistrationResponse> {
+): Promise<ClientRegistrationResponse> {
   const result = await runCapturedAsync(
     [
       '-s',
+      '-w',
+      '\n%{http_code}',
       '-X',
       'POST',
       '-H',
@@ -313,17 +428,12 @@ async function registerClient(
     throw new LoginFailedError(`Failed to register OAuth client: ${result.stderr}`);
   }
 
-  const response = tryParseJson(result.stdout) as Partial<RegistrationResponse> | null;
-  if (response === null || typeof response !== 'object') {
-    throw new LoginFailedError(`Failed to parse client registration response: ${result.stdout}`);
-  }
-  if (!response.client_id) {
-    throw new LoginFailedError(`Client registration response missing client_id: ${result.stdout}`);
-  }
-  return {
-    client_id: response.client_id,
-    client_secret: typeof response.client_secret === 'string' ? response.client_secret : '',
-  };
+  // The `-w '\n%{http_code}'` above appends the status code as the final
+  // line, so the body is everything before the last newline.
+  const separatorIndex = result.stdout.lastIndexOf('\n');
+  const httpStatusCode = Number(result.stdout.slice(separatorIndex + 1).trim());
+  const body = separatorIndex === -1 ? '' : result.stdout.slice(0, separatorIndex);
+  return parseClientRegistrationResponse(registrationEndpoint, httpStatusCode, body);
 }
 
 /**
@@ -376,7 +486,7 @@ export class RemoteMcpSession extends ServiceSession {
   private async resolveClient(
     oldCredentials: ApiCredentials | undefined,
     redirectUri: string
-  ): Promise<RegistrationResponse> {
+  ): Promise<ClientRegistrationResponse> {
     if (oldCredentials instanceof OAuthCredentials && oldCredentials.clientId) {
       return { client_id: oldCredentials.clientId, client_secret: oldCredentials.clientSecret };
     }

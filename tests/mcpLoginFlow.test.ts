@@ -17,7 +17,10 @@ import { LoginFlowParamsInvalidError } from '../src/services/core/loginFlows/bas
 import { LOGIN_FLOWS, resolveLoginFlow } from '../src/services/core/loginFlows/registry.js';
 import { McpLoginFlow } from '../src/services/core/loginFlows/mcp.js';
 import { RegisteredService } from '../src/services/core/registered.js';
-import { RemoteMcpSession } from '../src/services/core/remoteMcp.js';
+import {
+  ClientRegistrationRefusedError,
+  RemoteMcpSession,
+} from '../src/services/core/remoteMcp.js';
 import * as systemBrowser from '../src/systemBrowser.js';
 
 const AUTHORIZATION_ENDPOINT = 'https://auth.example.com/authorize';
@@ -208,6 +211,32 @@ describe('McpLoginFlow', () => {
 
     await expect(login).rejects.toThrow(LoginFailedError);
     await expect(login).rejects.toThrow(/latchkey auth prepare my-mcp/);
+    expect(openInSystemBrowser).not.toHaveBeenCalled();
+  });
+
+  it('reports a refused client registration without opening the browser', async () => {
+    const service = registerService(new McpLoginFlow(PARAMS));
+    const openInSystemBrowser = vi
+      .spyOn(systemBrowser, 'openInSystemBrowser')
+      .mockResolvedValue(undefined);
+    let curlArguments: readonly string[] = [];
+    setAsyncSubprocessRunner((args) => {
+      curlArguments = args;
+      return Promise.resolve({ returncode: 0, stdout: Buffer.from('Forbidden\n403'), stderr: '' });
+    });
+
+    const login = service.getSession!('latchkey').login(
+      new EncryptedStorage(TEST_ENCRYPTION_KEY),
+      {},
+      undefined,
+      { systemBrowser: true }
+    );
+
+    await expect(login).rejects.toThrow(ClientRegistrationRefusedError);
+    await expect(login).rejects.toThrow(
+      `OAuth client registration was refused by ${PARAMS.registrationEndpoint} (HTTP 403): Forbidden`
+    );
+    expect(curlArguments[curlArguments.length - 1]).toBe(PARAMS.registrationEndpoint);
     expect(openInSystemBrowser).not.toHaveBeenCalled();
   });
 
