@@ -104,3 +104,4 @@ export type {
 
 // The command-line interface, for running commands without spawning a process
 export { runCli, type CliResult, type RunCliOptions } from './runCli.js';
+export type { LatchkeyEnvironment } from './config.js';

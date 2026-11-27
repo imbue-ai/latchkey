@@ -110,3 +110,66 @@ describe('createEmbeddedGateway', () => {
     expect(logs.some((line) => line.includes('401 (password)'))).toBe(true);
   });
 });
+
+describe('createEmbeddedGateway with an environment of its own', () => {
+  const password = 'password-from-the-env-option';
+  let directory: string;
+  let gateway: GatewayRequestHandler;
+  let hostServer: http.Server;
+  let hostUrl: string;
+
+  beforeAll(async () => {
+    directory = mkdtempSync(join(tmpdir(), 'latchkey-embedded-env-test-'));
+    const env = {
+      LATCHKEY_DIRECTORY: directory,
+      LATCHKEY_ENCRYPTION_KEY: 'b3RoZXJrZXlvdGhlcmtleW90aGVya2V5b3RoZXJrZXk=',
+      LATCHKEY_GATEWAY_LISTEN_PASSWORD: password,
+      LATCHKEY_DISABLE_COUNTING: '1',
+    };
+    // Whatever the process environment says must not matter.
+    vi.stubEnv('LATCHKEY_DIRECTORY', join(directory, 'unused'));
+    vi.stubEnv('LATCHKEY_GATEWAY_LISTEN_PASSWORD', 'password-of-the-process');
+    vi.stubEnv('LATCHKEY_GATEWAY', 'http://remote-gateway.invalid');
+    vi.resetModules();
+    const { createEmbeddedGateway, runCli } = await import('../src/index.js');
+    const register = await runCli(
+      ['services', 'register', 'env-service', '--base-api-url=https://env.example.com/api/'],
+      { env }
+    );
+    expect(register).toEqual({ exitCode: 0, stdout: expect.any(String) as string, stderr: '' });
+    gateway = await createEmbeddedGateway({ env, log: () => undefined });
+
+    hostServer = http.createServer(gateway.handleRequest);
+    await new Promise<void>((resolve) => hostServer.listen(0, '127.0.0.1', resolve));
+    hostUrl = `http://127.0.0.1:${String((hostServer.address() as AddressInfo).port)}`;
+  });
+
+  afterAll(async () => {
+    await gateway.close();
+    await new Promise((resolve) => hostServer.close(resolve));
+    vi.unstubAllEnvs();
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  it('takes the password from the given environment', async () => {
+    const withProcessPassword = await fetch(hostUrl, {
+      headers: { 'X-Latchkey-Gateway-Password': 'password-of-the-process' },
+    });
+    expect(withProcessPassword.status).toBe(401);
+
+    const withGivenPassword = await fetch(hostUrl, {
+      headers: { 'X-Latchkey-Gateway-Password': password },
+    });
+    expect(withGivenPassword.status).toBe(200);
+  });
+
+  it('serves the Latchkey directory of the given environment', async () => {
+    const response = await fetch(`${hostUrl}/latchkey`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Latchkey-Gateway-Password': password },
+      body: JSON.stringify({ command: 'services list', params: {} }),
+    });
+    expect(response.status).toBe(200);
+    expect(JSON.stringify(await response.json())).toContain('env-service');
+  });
+});

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { runCli as runCliType } from '../src/index.js';
@@ -65,6 +65,38 @@ describe('runCli', () => {
     const version = await runCli(['--version']);
     expect(version.exitCode).toBe(0);
     expect(version.stdout).toMatch(/^\d+\.\d+\.\d+/);
+  });
+
+  it('takes the Latchkey variables from the environment it is given', async () => {
+    const otherDirectory = mkdtempSync(join(tmpdir(), 'latchkey-run-cli-env-test-'));
+    const env = {
+      LATCHKEY_DIRECTORY: otherDirectory,
+      LATCHKEY_ENCRYPTION_KEY: 'b3RoZXJrZXlvdGhlcmtleW90aGVya2V5b3RoZXJrZXk=',
+      LATCHKEY_DISABLE_COUNTING: '1',
+    };
+    try {
+      const register = await runCli(
+        ['services', 'register', 'env-service', '--base-api-url=https://env.example.com/api/'],
+        { env }
+      );
+      expect(register.exitCode).toBe(0);
+      expect(existsSync(join(otherDirectory, 'config.json'))).toBe(true);
+
+      const inGivenEnvironment = await runCli(['services', 'info', 'env-service', '--offline'], {
+        env,
+      });
+      expect(inGivenEnvironment.exitCode).toBe(0);
+      const inProcessEnvironment = await runCli(['services', 'info', 'env-service', '--offline']);
+      expect(inProcessEnvironment.exitCode).toBe(1);
+
+      const withOtherCurl = await runCli(['services', 'list'], {
+        env: { ...env, LATCHKEY_CURL: 'no-such-curl' },
+      });
+      expect(withOtherCurl.exitCode).toBe(1);
+      expect(withOtherCurl.stderr).toContain("'no-such-curl' is not available");
+    } finally {
+      rmSync(otherDirectory, { recursive: true, force: true });
+    }
   });
 
   it('declines confirmation prompts unless told otherwise', async () => {

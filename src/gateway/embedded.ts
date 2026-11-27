@@ -9,6 +9,7 @@ import {
   createDefaultDependencies,
   resolveEncryptionKeyFromConfig,
 } from '../cliCommands.js';
+import { runWithConfig, configFromEnvironment, type LatchkeyEnvironment } from '../config.js';
 import { EncryptedStorage } from '../encryptedStorage.js';
 import { runStartupTasks } from '../startup.js';
 import type { Extension } from './extensions.js';
@@ -37,6 +38,14 @@ export interface EmbeddedGatewayOptions {
    * and tried before them. They go through the same permission check.
    */
   readonly extensions?: readonly Extension[];
+  /**
+   * Where the `LATCHKEY_*` variables are taken from, instead of `process.env`
+   * (and `LATCHKEY_ENV_OVERRIDES_FD`): one that is set there but not here
+   * counts as unset. Everything else, such as `PATH` and the environment curl
+   * is spawned with, stays that of the process. Read once, when the gateway
+   * is created.
+   */
+  readonly env?: LatchkeyEnvironment;
 }
 
 /**
@@ -47,6 +56,25 @@ export interface EmbeddedGatewayOptions {
  */
 export async function createEmbeddedGateway(
   options: EmbeddedGatewayOptions = {}
+): Promise<GatewayRequestHandler> {
+  const config = configFromEnvironment(options.env);
+  const gateway = await runWithConfig(config, () =>
+    createEmbeddedGatewayWithCurrentConfig(options)
+  );
+  // Requests come in outside of this call, so each has to be given the
+  // configuration again.
+  return {
+    handleRequest: (request, response) => {
+      runWithConfig(config, () => {
+        gateway.handleRequest(request, response);
+      });
+    },
+    close: () => runWithConfig(config, () => gateway.close()),
+  };
+}
+
+async function createEmbeddedGatewayWithCurrentConfig(
+  options: EmbeddedGatewayOptions
 ): Promise<GatewayRequestHandler> {
   const defaultDependencies = await createDefaultDependencies();
   const deps = {

@@ -43,7 +43,7 @@ import {
   importChromeBrowserState,
   InvalidBrowserStateError,
 } from './browserStateImport.js';
-import { Config, CONFIG } from './config.js';
+import { Config, getConfig } from './config.js';
 import { deleteRegisteredService, saveRegisteredService } from './configDataStore.js';
 import {
   BrowserDisabledError,
@@ -180,7 +180,8 @@ export interface CliDependencies {
  * it is asynchronous; throws `PluginLoadError` when one of them is broken.
  */
 export async function createDefaultDependencies(): Promise<CliDependencies> {
-  const plugins = await loadPlugins(CONFIG.pluginsDirectoryPath, createLatchkeySdk(VERSION));
+  const config = getConfig();
+  const plugins = await loadPlugins(config.pluginsDirectoryPath, createLatchkeySdk(VERSION));
   const baseServices = combineWithPluginServices(BUILTIN_SERVICES, plugins);
   return {
     // Pointed at a remote gateway, the CLI forwards commands rather than
@@ -188,15 +189,15 @@ export async function createDefaultDependencies(): Promise<CliDependencies> {
     // gateway.
     registry: createServiceRegistry(
       baseServices,
-      CONFIG.gatewayUrl === null ? CONFIG.configPath : null,
-      CONFIG.hideBuiltinServices
+      config.gatewayUrl === null ? config.configPath : null,
+      config.hideBuiltinServices
     ),
     baseServices,
     apiCredentialsTypes: combineWithPluginApiCredentialsTypes(
       BUILTIN_API_CREDENTIALS_TYPES,
       plugins
     ),
-    config: CONFIG,
+    config,
     runCurl: curlRun,
     runCurlAsync: curlRunAsync,
     checkPermission: checkPermission,

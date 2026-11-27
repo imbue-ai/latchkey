@@ -20,6 +20,12 @@ import {
 } from '../src/services/core/base.js';
 import { HUGGINGFACE } from '../src/services/huggingface.js';
 
+// The spinner page is not part of what is tested here. The configuration is
+// read from the environment when the modules load, hence the hoisting.
+vi.hoisted(() => {
+  process.env.LATCHKEY_DISABLE_SPINNER = '1';
+});
+
 class FailingFollowupSession extends BrowserFollowupServiceSession {
   protected readonly followupWork = FollowupWork.CreateApiToken;
   override readonly manualCredentialForm: ManualCredentialForm = {
@@ -94,12 +100,10 @@ function createFakeBrowser(): FakeBrowser {
 
 describe('browser followup failure recovery', () => {
   beforeEach(() => {
-    vi.stubEnv('LATCHKEY_DISABLE_SPINNER', '1');
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
   });
 
   afterEach(() => {
-    vi.unstubAllEnvs();
     vi.restoreAllMocks();
   });
 

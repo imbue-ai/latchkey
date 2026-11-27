@@ -6,6 +6,7 @@
 import { spawnSync } from 'node:child_process';
 import { Command, CommanderError } from 'commander';
 import { createDefaultDependencies, createProgram, type CliDependencies } from './cliCommands.js';
+import { type LatchkeyEnvironment, configFromEnvironment, runWithConfig } from './config.js';
 import { describeStartupError, runStartupTasks } from './startup.js';
 
 export interface RunCliOptions {
@@ -13,6 +14,13 @@ export interface RunCliOptions {
   readonly stdin?: string;
   /** Answers the command's confirmation prompts. Defaults to declining. */
   readonly confirm?: (message: string) => Promise<boolean>;
+  /**
+   * Where the `LATCHKEY_*` variables are taken from, instead of `process.env`
+   * (and `LATCHKEY_ENV_OVERRIDES_FD`): one that is set there but not here
+   * counts as unset. Everything else, such as `PATH` and the environment curl
+   * is spawned with, stays that of the process. Read once per call.
+   */
+  readonly env?: LatchkeyEnvironment;
 }
 
 export interface CliResult {
@@ -35,9 +43,15 @@ class CliExit extends Error {
  *
  * `latchkey curl` blocks the event loop until curl finishes.
  */
-export async function runCli(
+export function runCli(args: readonly string[], options: RunCliOptions = {}): Promise<CliResult> {
+  return runWithConfig(configFromEnvironment(options.env), () =>
+    runCliWithCurrentConfig(args, options)
+  );
+}
+
+async function runCliWithCurrentConfig(
   args: readonly string[],
-  options: RunCliOptions = {}
+  options: RunCliOptions
 ): Promise<CliResult> {
   const stdout: string[] = [];
   const stderr: string[] = [];

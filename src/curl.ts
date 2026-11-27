@@ -4,7 +4,7 @@
 
 import { spawn, spawnSync, SpawnSyncReturns } from 'node:child_process';
 import { CurlParseError, parseCurlArgs } from '@imbue-ai/detent';
-import { CONFIG } from './config.js';
+import { getConfig } from './config.js';
 
 // Re-export detent's curl-parsing primitives so the rest of the codebase can
 // treat `./curl.js` as the single entry point for curl parsing and doesn't
@@ -28,7 +28,7 @@ export type SubprocessRunner = (args: readonly string[]) => CurlResult;
 export type DetachedSubprocessRunner = (args: readonly string[]) => void;
 
 function defaultSubprocessRunner(args: readonly string[]): CurlResult {
-  const result: SpawnSyncReturns<Buffer> = spawnSync(CONFIG.curlCommand, args as string[], {
+  const result: SpawnSyncReturns<Buffer> = spawnSync(getConfig().curlCommand, args as string[], {
     stdio: ['inherit', 'inherit', 'inherit'],
   });
   return {
@@ -39,7 +39,7 @@ function defaultSubprocessRunner(args: readonly string[]): CurlResult {
 }
 
 function defaultDetachedSubprocessRunner(args: readonly string[]): void {
-  const child = spawn(CONFIG.curlCommand, args as string[], {
+  const child = spawn(getConfig().curlCommand, args as string[], {
     stdio: 'ignore',
     detached: true,
     // A detached child gets its own console window on Windows; keep it hidden.
@@ -82,7 +82,7 @@ function defaultAsyncSubprocessRunner(
   options?: AsyncSubprocessOptions
 ): Promise<AsyncCurlResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(CONFIG.curlCommand, args as string[], {
+    const child = spawn(getConfig().curlCommand, args as string[], {
       stdio: ['pipe', 'pipe', 'pipe'],
       ...(options?.timeout !== undefined ? { timeout: options.timeout * 1000 } : {}),
     });
