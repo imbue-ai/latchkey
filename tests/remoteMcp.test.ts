@@ -103,11 +103,10 @@ describe('parseClientRegistrationResponse', () => {
 
     expect(error).toBeInstanceOf(ClientRegistrationRefusedError);
     expect(error).toBeInstanceOf(LoginFailedError);
-    expect(error.message).toContain(
+    expect(error.message).toBe(
       `OAuth client registration was refused by ${REGISTRATION_ENDPOINT} ` +
-        `(HTTP ${httpStatusCode.toString()}): ${detail}\n`
+        `(HTTP ${httpStatusCode.toString()}): ${detail}`
     );
-    expect(error.message).toContain('latchkey auth prepare');
     expect((error as ClientRegistrationRefusedError).httpStatusCode).toBe(httpStatusCode);
   });
 

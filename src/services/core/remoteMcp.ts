@@ -308,7 +308,7 @@ export class ClientRegistrationRefusedError extends LoginFailedError {
   constructor(registrationEndpoint: string, httpStatusCode: number, detail: string) {
     super(
       `OAuth client registration was refused by ${registrationEndpoint} ` +
-        `(HTTP ${httpStatusCode.toString()}): ${detail}\n`
+        `(HTTP ${httpStatusCode.toString()}): ${detail}`
     );
     this.name = 'ClientRegistrationRefusedError';
     this.registrationEndpoint = registrationEndpoint;
