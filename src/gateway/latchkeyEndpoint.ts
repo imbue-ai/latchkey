@@ -22,7 +22,7 @@ import {
 } from '../curlInjection.js';
 import type { EncryptedStorage } from '../encryptedStorage.js';
 import { PermissionCheckError } from '../permissions.js';
-import { buildCurlArguments, type GatewayOptions } from './gatewayEndpoint.js';
+import { buildCurlArguments, type GatewayHandlerOptions } from './gatewayEndpoint.js';
 import {
   InvalidPermissionsOverrideError,
   PermissionsOverrideFileMissingError,
@@ -219,7 +219,7 @@ async function curlDryRun(
   requestHeaders: http.IncomingHttpHeaders,
   deps: CliDependencies,
   apiCredentialStore: ApiCredentialStore,
-  options: GatewayOptions
+  options: GatewayHandlerOptions
 ): Promise<unknown> {
   const permissionsConfigPath = resolveRequestPermissionsConfig(
     requestHeaders,
@@ -257,7 +257,7 @@ async function dispatch(
   deps: CliDependencies,
   apiCredentialStore: ApiCredentialStore,
   encryptedStorage: EncryptedStorage,
-  options: GatewayOptions
+  options: GatewayHandlerOptions
 ): Promise<unknown> {
   switch (parsed.command) {
     case 'services list':
@@ -323,7 +323,7 @@ export async function handleLatchkeyRequest(
   deps: CliDependencies,
   apiCredentialStore: ApiCredentialStore,
   encryptedStorage: EncryptedStorage,
-  options: GatewayOptions
+  options: GatewayHandlerOptions
 ): Promise<void> {
   if (request.method !== 'POST') {
     sendErrorResponse(response, 405, 'Method not allowed. Use POST.');

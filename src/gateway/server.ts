@@ -14,6 +14,7 @@ import {
   extractTargetUrl,
   GATEWAY_PATH_PREFIX,
   handleGatewayRequest,
+  type GatewayHandlerOptions,
   type GatewayOptions,
 } from './gatewayEndpoint.js';
 import { handleLatchkeyRequest } from './latchkeyEndpoint.js';
@@ -25,7 +26,7 @@ import {
   loadExtensions,
   startExtensions,
   stopExtensions,
-  type LoadedExtension,
+  type Extension,
 } from './extensions.js';
 import {
   InvalidPermissionsOverrideError,
@@ -77,6 +78,25 @@ function enforcePassword(
   return false;
 }
 
+/**
+ * The gateway as a plain Node request listener, for serving it from an HTTP
+ * server owned by someone else.
+ */
+export interface GatewayRequestHandler {
+  /**
+   * Handles every request it is given, answering `404` for paths the gateway
+   * does not know. Routes are matched against `request.url` as it is, so a
+   * host mounting the gateway under a path prefix has to strip the prefix
+   * first.
+   */
+  readonly handleRequest: (request: http.IncomingMessage, response: http.ServerResponse) => void;
+  /**
+   * Stops the extensions, which lets them end the responses they hold open.
+   * To be called before the server serving the handler is closed.
+   */
+  readonly close: () => Promise<void>;
+}
+
 export interface GatewayServer {
   readonly server: http.Server;
   readonly close: () => Promise<void>;
@@ -89,9 +109,9 @@ export interface GatewayServer {
 function runExtensions(
   request: http.IncomingMessage,
   response: http.ServerResponse,
-  extensions: readonly LoadedExtension[],
+  extensions: readonly Extension[],
   deps: CliDependencies,
-  options: GatewayOptions
+  options: GatewayHandlerOptions
 ): Promise<boolean> {
   if (extensions.length === 0) return Promise.resolve(false);
 
@@ -131,20 +151,22 @@ function runExtensions(
 }
 
 /**
- * Start the gateway HTTP server.
+ * Load and start the extensions and build the gateway's request handler.
+ * `extensionsOverride`, when given, replaces the extensions in the extensions
+ * directory, which is then not read.
  */
-export async function startGateway(
+export async function createGatewayRequestHandler(
   deps: CliDependencies,
   apiCredentialStore: ApiCredentialStore,
   encryptedStorage: EncryptedStorage,
-  options: GatewayOptions
-): Promise<GatewayServer> {
-  const inFlightRequests = new Set<Promise<void>>();
-
-  const extensions = await loadExtensions(deps.config.extensionsDirectoryPath);
+  options: GatewayHandlerOptions,
+  extensionsOverride?: readonly Extension[]
+): Promise<GatewayRequestHandler> {
+  const extensions =
+    extensionsOverride ?? (await loadExtensions(deps.config.extensionsDirectoryPath));
   await startExtensions(extensions);
 
-  const server = http.createServer((request, response) => {
+  const handleRequest = (request: http.IncomingMessage, response: http.ServerResponse): void => {
     const rawUrl = request.url ?? '';
     const method = request.method ?? 'UNKNOWN';
 
@@ -176,7 +198,7 @@ export async function startGateway(
 
     // Latchkey RPC endpoint
     if (rawUrl === '/latchkey/' || rawUrl === '/latchkey') {
-      const requestPromise = handleLatchkeyRequest(
+      void handleLatchkeyRequest(
         request,
         response,
         requestDeps,
@@ -191,11 +213,6 @@ export async function startGateway(
           sendErrorResponse(response, 500, 'Internal error');
         }
       });
-
-      inFlightRequests.add(requestPromise);
-      void requestPromise.finally(() => {
-        inFlightRequests.delete(requestPromise);
-      });
       return;
     }
 
@@ -208,7 +225,7 @@ export async function startGateway(
         return;
       }
 
-      const requestPromise = handleGatewayRequest(
+      void handleGatewayRequest(
         request,
         response,
         targetUrl,
@@ -223,16 +240,11 @@ export async function startGateway(
           sendErrorResponse(response, 502, ErrorMessages.upstreamRequestFailed);
         }
       });
-
-      inFlightRequests.add(requestPromise);
-      void requestPromise.finally(() => {
-        inFlightRequests.delete(requestPromise);
-      });
       return;
     }
 
     // Finally, try extensions (if any).
-    const requestPromise = runExtensions(request, response, extensions, requestDeps, options)
+    void runExtensions(request, response, extensions, requestDeps, options)
       .then((handled) => {
         if (!handled && !response.headersSent) {
           response.writeHead(404);
@@ -248,11 +260,27 @@ export async function startGateway(
           sendErrorResponse(response, 500, 'Internal error');
         }
       });
-    inFlightRequests.add(requestPromise);
-    void requestPromise.finally(() => {
-      inFlightRequests.delete(requestPromise);
-    });
-  });
+  };
+
+  return { handleRequest, close: () => stopExtensions(extensions, deps) };
+}
+
+/**
+ * Start the gateway HTTP server.
+ */
+export async function startGateway(
+  deps: CliDependencies,
+  apiCredentialStore: ApiCredentialStore,
+  encryptedStorage: EncryptedStorage,
+  options: GatewayOptions
+): Promise<GatewayServer> {
+  const handler = await createGatewayRequestHandler(
+    deps,
+    apiCredentialStore,
+    encryptedStorage,
+    options
+  );
+  const server = http.createServer(handler.handleRequest);
 
   const SHUTDOWN_TIMEOUT_MS = 10_000;
 
@@ -267,7 +295,7 @@ export async function startGateway(
       // server.close() will only signal completion once the response
       // count actually drops to zero, so the two run concurrently and
       // the result is the same either way.
-      void stopExtensions(extensions, deps);
+      void handler.close();
 
       server.close(() => {
         resolve();

@@ -2,6 +2,7 @@
  * Configuration management for Latchkey.
  */
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { accessSync, constants, existsSync, statSync } from 'node:fs';
 import { homedir, platform } from 'node:os';
 import { delimiter, extname, isAbsolute, join, resolve } from 'node:path';
@@ -29,6 +30,8 @@ import {
   LATCHKEY_GATEWAY_LISTEN_PASSWORD_ENV_VAR,
   LATCHKEY_GATEWAY_PERMISSIONS_OVERRIDE_ENV_VAR,
   LATCHKEY_APP_NAME_PREFIX_ENV_VAR,
+  LATCHKEY_DEBUG_ENV_VAR,
+  LATCHKEY_DISABLE_SPINNER_ENV_VAR,
 } from './environment.js';
 
 export class InsecureFilePermissionsError extends Error {
@@ -309,6 +312,17 @@ export class Config {
    * on behalf of the user inside third-party consoles.
    */
   readonly appNamePrefix: string;
+  /**
+   * When true, browser flows report more and, when they fail, save debug
+   * artifacts and leave the browser open for inspection.
+   * Sourced from `LATCHKEY_DEBUG=1` (env-only).
+   */
+  readonly debug: boolean;
+  /**
+   * When true, the spinner page that hides browser activity is not shown.
+   * Sourced from `LATCHKEY_DISABLE_SPINNER=1` (env-only).
+   */
+  readonly spinnerDisabled: boolean;
 
   constructor(
     getEnv: (name: string) => string | undefined = getEnvironmentVariable,
@@ -407,6 +421,9 @@ export class Config {
       settings.appNamePrefix,
       DEFAULT_APP_NAME_PREFIX
     );
+
+    this.debug = getEnv(LATCHKEY_DEBUG_ENV_VAR) === '1';
+    this.spinnerDisabled = getEnv(LATCHKEY_DISABLE_SPINNER_ENV_VAR) === '1';
   }
 
   get credentialStorePath(): string {
@@ -488,3 +505,36 @@ export class Config {
  * Global configuration singleton, initialized from the environment at import time.
  */
 export const CONFIG = new Config();
+
+const REPLACEMENT_CONFIG = new AsyncLocalStorage<Config>();
+
+/**
+ * Run the callback, and everything it starts asynchronously, with the given
+ * configuration in place of `CONFIG`.
+ */
+export function runWithConfig<Result>(config: Config, callback: () => Result): Result {
+  return REPLACEMENT_CONFIG.run(config, callback);
+}
+
+/**
+ * The configuration in effect for the caller: `CONFIG`, unless the caller
+ * runs inside `runWithConfig`.
+ */
+export function getConfig(): Config {
+  return REPLACEMENT_CONFIG.getStore() ?? CONFIG;
+}
+
+/**
+ * Latchkey's environment variables, given by an embedding program to be used
+ * instead of the ones in the process environment.
+ */
+export type LatchkeyEnvironment = Readonly<Record<string, string | undefined>>;
+
+/**
+ * A configuration read from the given environment variables instead of the
+ * process environment (and the overrides supplied through
+ * LATCHKEY_ENV_OVERRIDES_FD), or `CONFIG` when there are none.
+ */
+export function configFromEnvironment(environment: LatchkeyEnvironment | undefined): Config {
+  return environment === undefined ? CONFIG : new Config((name) => environment[name]);
+}

@@ -482,6 +482,8 @@ describe('CLI commands with dependency injection', () => {
       gatewayListenPassword: overrides.gatewayListenPassword ?? null,
       gatewayPermissionsOverride: overrides.gatewayPermissionsOverride ?? null,
       appNamePrefix: overrides.appNamePrefix ?? defaultConfig.appNamePrefix,
+      debug: overrides.debug ?? defaultConfig.debug,
+      spinnerDisabled: overrides.spinnerDisabled ?? defaultConfig.spinnerDisabled,
       checkSensitiveFilePermissions: () => undefined,
       checkSystemPrerequisites: () => undefined,
     };

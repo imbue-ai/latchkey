@@ -51,12 +51,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Browser, BrowserContext, Page, Locator, LaunchOptions } from 'playwright';
 import { parseBrowserStorageState, type BrowserStorageState } from './browserStateImport.js';
+import { getConfig } from './config.js';
 import { EncryptedStorage } from './encryptedStorage.js';
-import {
-  getEnvironmentVariable,
-  LATCHKEY_DEBUG_ENV_VAR,
-  LATCHKEY_DISABLE_SPINNER_ENV_VAR,
-} from './environment.js';
 import { mergeLazilyRestoredStorageState, seedLocalStorageLazily } from './lazyLocalStorage.js';
 import { loadPlaywright } from './playwrightLoader.js';
 
@@ -157,7 +153,7 @@ export async function withTempBrowserContext<T>(
     // restoring it here would visibly navigate through every saved origin.
     context = await browser.newContext({ storageState: { ...savedState, origins: [] } });
     const lazyLocalStorage = seedLocalStorageLazily(context, savedState.origins, (origin) => {
-      if (getEnvironmentVariable(LATCHKEY_DEBUG_ENV_VAR) === '1') {
+      if (getConfig().debug) {
         console.error(`[latchkey] Saved localStorage of ${origin} was not restored in time.`);
       }
     });
@@ -176,7 +172,7 @@ export async function withTempBrowserContext<T>(
 
     return result;
   } catch (error) {
-    if (getEnvironmentVariable(LATCHKEY_DEBUG_ENV_VAR) === '1') {
+    if (getConfig().debug) {
       if (context) {
         const artifactsDir = await captureFailureArtifacts(context);
         if (artifactsDir) {
@@ -449,7 +445,7 @@ export async function showSpinnerPage(
   message: string,
   details = ''
 ): Promise<Page | null> {
-  if (getEnvironmentVariable(LATCHKEY_DISABLE_SPINNER_ENV_VAR) === '1') {
+  if (getConfig().spinnerDisabled) {
     return null;
   }
   const spinnerPage = await context.newPage();

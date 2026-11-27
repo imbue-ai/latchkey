@@ -19,7 +19,16 @@ export { SlackApiCredentials } from './services/slack.js';
 
 export { ApiCredentialStore, ApiCredentialStoreError } from './apiCredentials/store.js';
 
-export { Config, CONFIG, InsecureFilePermissionsError } from './config.js';
+export {
+  Config,
+  CONFIG,
+  InsecureFilePermissionsError,
+  CurlNotFoundError,
+  InvalidGatewayListenPortError,
+} from './config.js';
+
+export { MigrationError } from './migrations.js';
+export { PluginLoadError } from './plugins.js';
 
 export {
   encrypt,
@@ -87,3 +96,24 @@ export {
 
 // ServiceRegistry
 export { ServiceRegistry } from './serviceRegistry.js';
+
+// Gateway, for serving it from an existing HTTP server
+export {
+  createEmbeddedGateway,
+  EmbeddedGatewayInGatewayModeError,
+  type EmbeddedGatewayOptions,
+} from './gateway/embedded.js';
+export type { GatewayRequestHandler } from './gateway/server.js';
+export {
+  ExtensionLoadError,
+  ExtensionStartError,
+  loadExtensions,
+  type Extension,
+  type ExtensionContext,
+  type ExtensionHandler,
+  type ExtensionLifecycleHook,
+} from './gateway/extensions.js';
+
+// The command-line interface, for running commands without spawning a process
+export { runCli, type CliResult, type RunCliOptions } from './runCli.js';
+export type { LatchkeyEnvironment } from './config.js';
