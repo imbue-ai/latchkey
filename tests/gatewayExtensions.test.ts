@@ -268,6 +268,27 @@ describe('startExtensions / stopExtensions', () => {
     expect(existsSync(recordPath)).toBe(false);
   });
 
+  it('stops the extensions already started when a later start hook throws', async () => {
+    const events: string[] = [];
+    const started = (name: string) => ({
+      name,
+      handler: () => false,
+      start: () => void events.push(`${name} started`),
+      stop: () => void events.push(`${name} stopped`),
+    });
+    const failing = {
+      name: 'failing',
+      handler: () => false,
+      start: () => Promise.reject(new Error('start-failed')),
+      stop: () => void events.push('failing stopped'),
+    };
+
+    await expect(
+      startExtensions([started('first'), started('second'), failing, started('never')])
+    ).rejects.toThrow(ExtensionStartError);
+    expect(events).toEqual(['first started', 'second started', 'second stopped', 'first stopped']);
+  });
+
   it('calls stop on every extension in load order', async () => {
     const recordPath = join(tempDir, 'stop-order.txt');
     writeExtension(

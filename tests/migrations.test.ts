@@ -135,6 +135,22 @@ describe('migrations', () => {
         MigrationError
       );
     });
+
+    it('should wrap a failure of a migration in a MigrationError', async () => {
+      writeFileSync(config.credentialStorePath, 'not encrypted', { mode: 0o600 });
+
+      const error: unknown = await runMigrations(
+        config,
+        encryptedStorage,
+        inconclusiveResolver
+      ).catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(MigrationError);
+      expect((error as MigrationError).message).toMatch(
+        /^Migration to data format version 1 failed: /
+      );
+      expect((error as MigrationError).cause).toBeInstanceOf(Error);
+      expect(readDataFormatVersion(config)).toBe(0);
+    });
   });
 
   describe('migration 1: split google credentials', () => {

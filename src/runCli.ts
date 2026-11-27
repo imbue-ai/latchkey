@@ -43,7 +43,10 @@ class CliExit extends Error {
  *
  * `latchkey curl` blocks the event loop until curl finishes.
  */
-export function runCli(args: readonly string[], options: RunCliOptions = {}): Promise<CliResult> {
+export async function runCli(
+  args: readonly string[],
+  options: RunCliOptions = {}
+): Promise<CliResult> {
   return runWithConfig(configFromEnvironment(options.env), () =>
     runCliWithCurrentConfig(args, options)
   );

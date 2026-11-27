@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { runCli as runCliType } from '../src/index.js';
@@ -96,6 +96,32 @@ describe('runCli', () => {
       expect(withOtherCurl.stderr).toContain("'no-such-curl' is not available");
     } finally {
       rmSync(otherDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects rather than throws when the given environment is invalid', async () => {
+    const { InvalidGatewayListenPortError } = await import('../src/index.js');
+    const result = runCli(['services', 'list'], { env: { LATCHKEY_GATEWAY_LISTEN_PORT: 'abc' } });
+    await expect(result).rejects.toBeInstanceOf(InvalidGatewayListenPortError);
+  });
+
+  it('reports a failed migration like the executable does', async () => {
+    const brokenDirectory = mkdtempSync(join(tmpdir(), 'latchkey-run-cli-broken-'));
+    try {
+      writeFileSync(join(brokenDirectory, 'credentials.json.enc'), 'not encrypted', {
+        mode: 0o600,
+      });
+      const result = await runCli(['services', 'list'], {
+        env: {
+          LATCHKEY_DIRECTORY: brokenDirectory,
+          LATCHKEY_ENCRYPTION_KEY: 'dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q=',
+          LATCHKEY_DISABLE_COUNTING: '1',
+        },
+      });
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('Migration to data format version 1 failed');
+    } finally {
+      rmSync(brokenDirectory, { recursive: true, force: true });
     }
   });
 

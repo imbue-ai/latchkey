@@ -190,18 +190,28 @@ export async function loadExtensions(directory: string): Promise<readonly Extens
  * load order. Throws `ExtensionStartError` on the first failure; the
  * caller must avoid starting the HTTP server in that case.
  *
- * Extensions whose `start` already succeeded are NOT rolled back via
- * `stop` on failure - the gateway process is expected to exit on startup
- * failure, letting the OS reclaim any resources.
+ * Extensions that were already started are stopped again on failure, in
+ * reverse order, since a program embedding the gateway outlives it.
  */
 export async function startExtensions(extensions: readonly Extension[]): Promise<void> {
-  for (const extension of extensions) {
+  for (const [index, extension] of extensions.entries()) {
     if (extension.start === undefined) continue;
     try {
       await extension.start();
     } catch (error) {
+      await stopExtensionsIgnoringErrors([...extensions.slice(0, index)].reverse());
       const message = error instanceof Error ? error.message : String(error);
       throw new ExtensionStartError(`Extension '${extension.name}' failed to start: ${message}`);
+    }
+  }
+}
+
+async function stopExtensionsIgnoringErrors(extensions: readonly Extension[]): Promise<void> {
+  for (const extension of extensions) {
+    try {
+      await extension.stop?.();
+    } catch {
+      // The start failure is the error worth reporting.
     }
   }
 }

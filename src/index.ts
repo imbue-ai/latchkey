@@ -19,7 +19,16 @@ export { SlackApiCredentials } from './services/slack.js';
 
 export { ApiCredentialStore, ApiCredentialStoreError } from './apiCredentials/store.js';
 
-export { Config, CONFIG, InsecureFilePermissionsError } from './config.js';
+export {
+  Config,
+  CONFIG,
+  InsecureFilePermissionsError,
+  CurlNotFoundError,
+  InvalidGatewayListenPortError,
+} from './config.js';
+
+export { MigrationError } from './migrations.js';
+export { PluginLoadError } from './plugins.js';
 
 export {
   encrypt,
@@ -95,11 +104,13 @@ export {
   type EmbeddedGatewayOptions,
 } from './gateway/embedded.js';
 export type { GatewayRequestHandler } from './gateway/server.js';
-export type {
-  Extension,
-  ExtensionContext,
-  ExtensionHandler,
-  ExtensionLifecycleHook,
+export {
+  ExtensionLoadError,
+  ExtensionStartError,
+  type Extension,
+  type ExtensionContext,
+  type ExtensionHandler,
+  type ExtensionLifecycleHook,
 } from './gateway/extensions.js';
 
 // The command-line interface, for running commands without spawning a process
