@@ -7,12 +7,16 @@ import {
   buildAuthorizationUrl,
   buildClientRegistrationBody,
   buildMcpInitializeCurlArguments,
+  ClientRegistrationFailedError,
+  ClientRegistrationRefusedError,
   extractMcpToolResultTexts,
   fetchAccountFromMcpTool,
+  parseClientRegistrationResponse,
   parseMcpResponseBody,
   RemoteMcpService,
 } from '../src/services/core/remoteMcp.js';
 import { BUILTIN_SERVICES } from '../src/serviceRegistry.js';
+import { LoginFailedError } from '../src/services/core/base.js';
 
 describe('buildAuthorizationState', () => {
   it('puts the loopback port in the last dot-separated segment', () => {
@@ -48,6 +52,92 @@ describe('buildClientRegistrationBody', () => {
     const body = buildClientRegistrationBody('http://localhost:1/cb', 'name', ['read', 'write']);
 
     expect(body.scope).toBe('read write');
+  });
+});
+
+describe('parseClientRegistrationResponse', () => {
+  const REGISTRATION_ENDPOINT = 'https://auth.example.com/register';
+
+  function parse(httpStatusCode: number, body: string) {
+    return parseClientRegistrationResponse(REGISTRATION_ENDPOINT, httpStatusCode, body);
+  }
+
+  function catchError(httpStatusCode: number, body: string): Error {
+    try {
+      parse(httpStatusCode, body);
+    } catch (error) {
+      return error as Error;
+    }
+    return expect.fail('Expected the registration response to be rejected.');
+  }
+
+  it('returns the registered client', () => {
+    expect(parse(201, '{"client_id": "client-1"}')).toEqual({
+      client_id: 'client-1',
+      client_secret: '',
+    });
+    expect(parse(200, '{"client_id": "client-1", "client_secret": "secret-1"}')).toEqual({
+      client_id: 'client-1',
+      client_secret: 'secret-1',
+    });
+  });
+
+  it.each([
+    ['a plain-text 403', 403, 'Forbidden', 'Forbidden'],
+    ['an empty 401', 401, '', '(empty response)'],
+    [
+      'an RFC 7591 error body',
+      400,
+      '{"error": "invalid_client_metadata", "error_description": "client_name is not allowed"}',
+      'invalid_client_metadata: client_name is not allowed',
+    ],
+    ['an error body without a description', 403, '{"error": "access_denied"}', 'access_denied'],
+    [
+      'an error body sent with a success status',
+      200,
+      '{"error": "access_denied"}',
+      'access_denied',
+    ],
+  ])('reports %s as a refusal', (_case, httpStatusCode, body, detail) => {
+    const error = catchError(httpStatusCode, body);
+
+    expect(error).toBeInstanceOf(ClientRegistrationRefusedError);
+    expect(error).toBeInstanceOf(LoginFailedError);
+    expect(error.message).toBe(
+      `OAuth client registration was refused by ${REGISTRATION_ENDPOINT} ` +
+        `(HTTP ${httpStatusCode.toString()}): ${detail}`
+    );
+    expect((error as ClientRegistrationRefusedError).httpStatusCode).toBe(httpStatusCode);
+  });
+
+  it.each([
+    ['a server error page', 503, '<html>Service Unavailable</html>'],
+    ['rate limiting', 429, 'Too Many Requests'],
+    ['a server error with an error body', 500, '{"error": "server_error"}'],
+    ['a missing endpoint', 404, 'Not Found'],
+  ])('reports %s as a failure naming the status', (_case, httpStatusCode, body) => {
+    const error = catchError(httpStatusCode, body);
+
+    expect(error).toBeInstanceOf(ClientRegistrationFailedError);
+    expect(error).not.toBeInstanceOf(ClientRegistrationRefusedError);
+    expect(error.message).toBe(
+      `OAuth client registration failed at ${REGISTRATION_ENDPOINT} ` +
+        `(HTTP ${httpStatusCode.toString()}): ${body}`
+    );
+  });
+
+  it('shortens a long response body', () => {
+    const error = catchError(502, 'x'.repeat(10_000));
+
+    expect(error.message.length).toBeLessThan(1000);
+  });
+
+  it('rejects a successful response that is not a registration', () => {
+    expect(catchError(200, 'OK').message).toBe('Failed to parse client registration response: OK');
+    expect(catchError(201, '{"client_name": "latchkey"}').message).toBe(
+      'Client registration response missing client_id: {"client_name": "latchkey"}'
+    );
+    expect(catchError(200, 'OK')).not.toBeInstanceOf(ClientRegistrationFailedError);
   });
 });
 

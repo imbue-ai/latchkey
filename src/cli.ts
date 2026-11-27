@@ -4,25 +4,8 @@
  * Command-line interface entry point for latchkey.
  */
 
-import { existsSync } from 'node:fs';
-import { program } from 'commander';
-import {
-  registerCommands,
-  createDefaultDependencies,
-  type CliDependencies,
-} from './cliCommands.js';
-import { CurlNotFoundError, InsecureFilePermissionsError } from './config.js';
-import { EncryptedStorage } from './encryptedStorage.js';
-import {
-  EncryptionKeyLostError,
-  EncryptionKeyUnavailableError,
-  resolveEncryptionKey,
-} from './encryption.js';
-import { KeychainTimeoutError } from './keychain.js';
-import { MigrationError, runMigrations } from './migrations.js';
-import { countDailyIfNeeded } from './dailyCounting.js';
-import { PluginLoadError } from './plugins.js';
-import { VERSION } from './version.js';
+import { createDefaultDependencies, createProgram } from './cliCommands.js';
+import { describeStartupError, runStartupTasks } from './startup.js';
 
 // Node starts its inspector (a local debug port with full access to the
 // process's memory, including decrypted credentials) whenever it receives
@@ -33,80 +16,15 @@ process.on('SIGUSR1', () => {
   // Intentionally ignore the signal.
 });
 
-let deps: CliDependencies;
 try {
-  deps = await createDefaultDependencies();
+  const deps = await createDefaultDependencies();
+  await runStartupTasks(deps.config);
+  createProgram(deps).parse();
 } catch (error) {
-  if (error instanceof PluginLoadError) {
-    console.error(`Error: ${error.message}`);
-    process.exit(1);
-  }
-  throw error;
-}
-const gatewayMode = deps.config.gatewayUrl !== null;
-
-try {
-  deps.config.checkSystemPrerequisites();
-  if (!gatewayMode) {
-    deps.config.checkSensitiveFilePermissions();
-  }
-} catch (error) {
-  if (error instanceof InsecureFilePermissionsError || error instanceof CurlNotFoundError) {
-    console.error(`Error: ${error.message}`);
-    process.exit(1);
-  }
-  throw error;
-}
-
-if (!gatewayMode) {
-  try {
-    countDailyIfNeeded(deps.config);
-  } catch {
-    // Non-essential daily usage counting — never prevent the main application from running.
-  }
-
-  const hasEncryptedData =
-    existsSync(deps.config.credentialStorePath) || existsSync(deps.config.browserStatePath);
-
-  try {
-    const encryptionKey = await resolveEncryptionKey({
-      encryptionKeyOverride: deps.config.encryptionKeyOverride,
-      serviceName: deps.config.serviceName,
-      accountName: deps.config.accountName,
-      allowKeyGeneration: !hasEncryptedData,
-    });
-    await runMigrations(deps.config, new EncryptedStorage(encryptionKey));
-  } catch (error) {
-    if (error instanceof KeychainTimeoutError) {
-      console.error(`Error: ${error.message}`);
-      process.exit(1);
-    }
-    if (error instanceof EncryptionKeyLostError || error instanceof MigrationError) {
-      console.error(`Error: ${error.message}`);
-      process.exit(1);
-    }
-    if (error instanceof EncryptionKeyUnavailableError) {
-      console.error(
-        'No encryption key available.\n\n' +
-          'Latchkey needs an encryption key to store credentials securely.\n' +
-          'Either ensure your system keychain is accessible, or set the\n' +
-          'LATCHKEY_ENCRYPTION_KEY environment variable. For example:\n\n' +
-          '  export LATCHKEY_ENCRYPTION_KEY="$(openssl rand -base64 32)"\n\n' +
-          'Add this to your shell profile to persist it across sessions.'
-      );
-      process.exit(1);
-    }
+  const message = describeStartupError(error);
+  if (message === null) {
     throw error;
   }
+  console.error(message);
+  process.exit(1);
 }
-
-program
-  .name('latchkey')
-  .description(
-    'A command-line tool that injects API credentials to curl requests to known public APIs.'
-  )
-  .version(VERSION);
-
-registerCommands(program, deps);
-
-program.parse();

@@ -2,7 +2,7 @@
  * CLI command implementations with dependency injection for testability.
  */
 
-import type { Command } from 'commander';
+import { Command } from 'commander';
 import { existsSync, statSync, unlinkSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -43,7 +43,7 @@ import {
   importChromeBrowserState,
   InvalidBrowserStateError,
 } from './browserStateImport.js';
-import { Config, CONFIG } from './config.js';
+import { Config, getConfig } from './config.js';
 import { deleteRegisteredService, saveRegisteredService } from './configDataStore.js';
 import {
   BrowserDisabledError,
@@ -102,6 +102,7 @@ import {
   writeDataFormatVersionOfDirectory,
 } from './migrations.js';
 import { getSkillMdContent } from './skillMd.js';
+import { DEFAULT_GATEWAY_MAX_BODY_SIZE } from './gateway/gatewayEndpoint.js';
 import { startGateway } from './gateway/server.js';
 import {
   buildCurlDryRunRequest,
@@ -179,7 +180,8 @@ export interface CliDependencies {
  * it is asynchronous; throws `PluginLoadError` when one of them is broken.
  */
 export async function createDefaultDependencies(): Promise<CliDependencies> {
-  const plugins = await loadPlugins(CONFIG.pluginsDirectoryPath, createLatchkeySdk(VERSION));
+  const config = getConfig();
+  const plugins = await loadPlugins(config.pluginsDirectoryPath, createLatchkeySdk(VERSION));
   const baseServices = combineWithPluginServices(BUILTIN_SERVICES, plugins);
   return {
     // Pointed at a remote gateway, the CLI forwards commands rather than
@@ -187,15 +189,15 @@ export async function createDefaultDependencies(): Promise<CliDependencies> {
     // gateway.
     registry: createServiceRegistry(
       baseServices,
-      CONFIG.gatewayUrl === null ? CONFIG.configPath : null,
-      CONFIG.hideBuiltinServices
+      config.gatewayUrl === null ? config.configPath : null,
+      config.hideBuiltinServices
     ),
     baseServices,
     apiCredentialsTypes: combineWithPluginApiCredentialsTypes(
       BUILTIN_API_CREDENTIALS_TYPES,
       plugins
     ),
-    config: CONFIG,
+    config,
     runCurl: curlRun,
     runCurlAsync: curlRunAsync,
     checkPermission: checkPermission,
@@ -382,7 +384,7 @@ async function clearAll(deps: CliDependencies, yes: boolean): Promise<void> {
   }
 }
 
-async function resolveEncryptionKeyFromConfig(config: Config): Promise<string> {
+export async function resolveEncryptionKeyFromConfig(config: Config): Promise<string> {
   const hasEncryptedData =
     existsSync(config.credentialStorePath) || existsSync(config.browserStatePath);
   return resolveEncryptionKey({
@@ -398,7 +400,7 @@ async function createEncryptedStorageFromConfig(config: Config): Promise<Encrypt
   return new EncryptedStorage(key);
 }
 
-function createApiCredentialStore(
+export function createApiCredentialStore(
   deps: CliDependencies,
   encryptedStorage: EncryptedStorage
 ): ApiCredentialStore {
@@ -476,6 +478,23 @@ function fullCommandPath(command: Command): string {
     current = current.parent;
   }
   return parts.join(' ');
+}
+
+/**
+ * Build the `latchkey` command-line program on top of `program`. Settings
+ * that subcommands inherit, such as `exitOverride()`, have to be applied to
+ * `program` beforehand, because commander copies them when a subcommand is
+ * created.
+ */
+export function createProgram(deps: CliDependencies, program: Command = new Command()): Command {
+  program
+    .name('latchkey')
+    .description(
+      'A command-line tool that injects API credentials to curl requests to known public APIs.'
+    )
+    .version(VERSION);
+  registerCommands(program, deps);
+  return program;
 }
 
 /**
@@ -1320,7 +1339,7 @@ export function registerCommands(program: Command, deps: CliDependencies): void 
     .option(
       '--max-body-size <bytes>',
       'Maximum request body size in bytes',
-      String(10 * 1024 * 1024)
+      String(DEFAULT_GATEWAY_MAX_BODY_SIZE)
     )
     .action(async (options: { port?: string; host?: string; maxBodySize: string }) => {
       refuseInGatewayMode(deps, 'gateway');

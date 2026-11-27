@@ -85,7 +85,7 @@ describe('loadExtensions', () => {
     );
     const extensions = await loadExtensions(extensionsDir);
     expect(extensions).toHaveLength(1);
-    expect(extensions[0]!.sourceFile).toContain('hello.mjs');
+    expect(extensions[0]!.name).toContain('hello.mjs');
     expect(typeof extensions[0]!.handler).toBe('function');
   });
 
@@ -93,11 +93,11 @@ describe('loadExtensions', () => {
     writeExtension(extensionsDir, 'b-second.mjs', `export default () => false;`);
     writeExtension(extensionsDir, 'a-first.mjs', `export default () => false;`);
     const extensions = await loadExtensions(extensionsDir);
-    expect(extensions.map((extension) => extension.sourceFile.endsWith('a-first.mjs'))).toEqual([
+    expect(extensions.map((extension) => extension.name.endsWith('a-first.mjs'))).toEqual([
       true,
       false,
     ]);
-    expect(extensions.map((extension) => extension.sourceFile.endsWith('b-second.mjs'))).toEqual([
+    expect(extensions.map((extension) => extension.name.endsWith('b-second.mjs'))).toEqual([
       false,
       true,
     ]);
@@ -266,6 +266,27 @@ describe('startExtensions / stopExtensions', () => {
     await expect(startExtensions(extensions)).rejects.toThrow(ExtensionStartError);
     await expect(startExtensions(extensions)).rejects.toThrow(/start-failed/);
     expect(existsSync(recordPath)).toBe(false);
+  });
+
+  it('stops the extensions already started when a later start hook throws', async () => {
+    const events: string[] = [];
+    const started = (name: string) => ({
+      name,
+      handler: () => false,
+      start: () => void events.push(`${name} started`),
+      stop: () => void events.push(`${name} stopped`),
+    });
+    const failing = {
+      name: 'failing',
+      handler: () => false,
+      start: () => Promise.reject(new Error('start-failed')),
+      stop: () => void events.push('failing stopped'),
+    };
+
+    await expect(
+      startExtensions([started('first'), started('second'), failing, started('never')])
+    ).rejects.toThrow(ExtensionStartError);
+    expect(events).toEqual(['first started', 'second started', 'second stopped', 'first stopped']);
   });
 
   it('calls stop on every extension in load order', async () => {

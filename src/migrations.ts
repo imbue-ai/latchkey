@@ -23,8 +23,8 @@ import { BUILTIN_SERVICES, ServiceRegistry } from './serviceRegistry.js';
 const BUILTIN_SERVICE_REGISTRY = new ServiceRegistry(BUILTIN_SERVICES);
 
 export class MigrationError extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
     this.name = 'MigrationError';
   }
 }
@@ -337,7 +337,15 @@ export async function runMigrations(
     if (migration === undefined) {
       throw new MigrationError(`Missing migration function for version ${String(i + 1)}.`);
     }
-    await migration(config, encryptedStorage, resolveCredential);
+    try {
+      await migration(config, encryptedStorage, resolveCredential);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new MigrationError(
+        `Migration to data format version ${String(i + 1)} failed: ${message}`,
+        { cause: error }
+      );
+    }
   }
 
   if (currentVersion < LATEST_VERSION) {

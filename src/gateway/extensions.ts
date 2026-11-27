@@ -80,12 +80,15 @@ export type ExtensionHandler = (
 
 export type ExtensionLifecycleHook = () => void | Promise<void>;
 
-export interface LoadedExtension {
+export interface Extension {
+  /**
+   * Identifies the extension in log and error messages. For an extension
+   * loaded from a file, the absolute path of that file.
+   */
+  readonly name: string;
   readonly handler: ExtensionHandler;
   readonly start?: ExtensionLifecycleHook;
   readonly stop?: ExtensionLifecycleHook;
-  /** Absolute path of the file the handler was loaded from. */
-  readonly sourceFile: string;
 }
 
 export class ExtensionLoadError extends Error {
@@ -140,7 +143,7 @@ function extractOptionalLifecycleHook(
  * directory does not exist. Throws `ExtensionLoadError` on the first file
  * that fails to import or has the wrong shape.
  */
-export async function loadExtensions(directory: string): Promise<readonly LoadedExtension[]> {
+export async function loadExtensions(directory: string): Promise<readonly Extension[]> {
   if (!existsSync(directory)) {
     return [];
   }
@@ -154,7 +157,7 @@ export async function loadExtensions(directory: string): Promise<readonly Loaded
     .map((entry) => entry.name)
     .sort();
 
-  const extensions: LoadedExtension[] = [];
+  const extensions: Extension[] = [];
   for (const fileName of fileNames) {
     const filePath = join(directory, fileName);
     let importedModule: unknown;
@@ -176,7 +179,7 @@ export async function loadExtensions(directory: string): Promise<readonly Loaded
       handler: importedModule.default,
       start,
       stop,
-      sourceFile: filePath,
+      name: filePath,
     });
   }
   return extensions;
@@ -187,20 +190,28 @@ export async function loadExtensions(directory: string): Promise<readonly Loaded
  * load order. Throws `ExtensionStartError` on the first failure; the
  * caller must avoid starting the HTTP server in that case.
  *
- * Extensions whose `start` already succeeded are NOT rolled back via
- * `stop` on failure - the gateway process is expected to exit on startup
- * failure, letting the OS reclaim any resources.
+ * Extensions that were already started are stopped again on failure, in
+ * reverse order, since a program embedding the gateway outlives it.
  */
-export async function startExtensions(extensions: readonly LoadedExtension[]): Promise<void> {
-  for (const extension of extensions) {
+export async function startExtensions(extensions: readonly Extension[]): Promise<void> {
+  for (const [index, extension] of extensions.entries()) {
     if (extension.start === undefined) continue;
     try {
       await extension.start();
     } catch (error) {
+      await stopExtensionsIgnoringErrors([...extensions.slice(0, index)].reverse());
       const message = error instanceof Error ? error.message : String(error);
-      throw new ExtensionStartError(
-        `Extension '${extension.sourceFile}' failed to start: ${message}`
-      );
+      throw new ExtensionStartError(`Extension '${extension.name}' failed to start: ${message}`);
+    }
+  }
+}
+
+async function stopExtensionsIgnoringErrors(extensions: readonly Extension[]): Promise<void> {
+  for (const extension of extensions) {
+    try {
+      await extension.stop?.();
+    } catch {
+      // The start failure is the error worth reporting.
     }
   }
 }
@@ -211,7 +222,7 @@ export async function startExtensions(extensions: readonly LoadedExtension[]): P
  * swallowed so that one misbehaving extension cannot block shutdown.
  */
 export async function stopExtensions(
-  extensions: readonly LoadedExtension[],
+  extensions: readonly Extension[],
   deps: CliDependencies
 ): Promise<void> {
   for (const extension of extensions) {
@@ -220,7 +231,7 @@ export async function stopExtensions(
       await extension.stop();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      deps.errorLog(`Extension '${extension.sourceFile}' stop hook threw: ${message}`);
+      deps.errorLog(`Extension '${extension.name}' stop hook threw: ${message}`);
     }
   }
 }
@@ -275,7 +286,7 @@ function sendErrorResponse(
 export async function dispatchExtensionRequest(
   request: http.IncomingMessage,
   response: http.ServerResponse,
-  extensions: readonly LoadedExtension[],
+  extensions: readonly Extension[],
   deps: CliDependencies,
   permissionsConfigPath: string
 ): Promise<boolean> {
@@ -313,7 +324,7 @@ export async function dispatchExtensionRequest(
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       deps.errorLog(
-        `Unexpected error in extension '${extension.sourceFile}' ` +
+        `Unexpected error in extension '${extension.name}' ` +
           `(${method} ${pathAndQuery}): ${message}`
       );
       sendErrorResponse(response, 500, 'Internal error');

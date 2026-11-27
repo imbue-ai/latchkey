@@ -452,6 +452,25 @@ You can extend the gateway with your own HTTP endpoints. For
 details, see the [extensions docs](./docs/extensions.md).
 
 
+### Embedding
+
+Latchkey can also run inside another Node.js process instead of
+being spawned as an executable: `createEmbeddedGateway()` returns
+the gateway as a request handler for your own HTTP server, and
+`runCli()` runs a one-off command.
+
+```ts
+import * as http from 'node:http';
+import { createEmbeddedGateway, runCli } from 'latchkey';
+
+const gateway = await createEmbeddedGateway();
+// The handler can also be mounted under a path in an existing server (e.g. Express).
+http.createServer(gateway.handleRequest).listen(3000);
+
+const { exitCode, stdout, stderr } = await runCli(['services', 'list']);
+```
+
+
 ### Other configuration
 
 You can set these environment variables to override certain
